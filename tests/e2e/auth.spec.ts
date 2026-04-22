@@ -22,7 +22,7 @@ test.describe("auth golden path", () => {
     await page.getByRole("button", { name: "Sign in" }).click();
 
     await expect(page).toHaveURL("/");
-    await expect(page.getByRole("heading", { name: "Loom Clone" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Recordings" })).toBeVisible();
     await expect(page.getByText(TEST_EMAIL!)).toBeVisible();
 
     await page.getByRole("button", { name: "Sign out" }).click();
