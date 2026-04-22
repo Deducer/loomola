@@ -8,6 +8,13 @@
       "when": 1776898431008,
       "tag": "0000_nappy_xavin",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1776898461000,
+      "tag": "0001_rls_and_auth_fk",
+      "breakpoints": true
     }
   ]
 }
