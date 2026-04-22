@@ -1,25 +1,19 @@
-export function EmptyState({ userEmail }: { userEmail: string }) {
+export function EmptyState() {
   return (
-    <div className="mx-auto max-w-2xl p-8">
-      <h1 className="text-3xl font-semibold">Loom Clone</h1>
-      <p className="mt-2 text-sm opacity-70">
-        Signed in as <code className="rounded bg-white/10 px-1">{userEmail}</code>.
-      </p>
-      <div className="mt-8 rounded-lg border border-white/10 p-6">
-        <h2 className="text-lg font-medium">Milestone 1: Foundation</h2>
-        <p className="mt-2 text-sm opacity-80">
-          The deployment pipeline is working. Recording, sharing, and AI features
-          arrive in Milestones 2–11.
+    <div className="mx-auto max-w-2xl p-6">
+      <div>
+        <h1 className="text-2xl font-semibold">Recordings</h1>
+        <p className="mt-1 text-sm opacity-60">
+          Recording, sharing, and AI features arrive in Milestones 3–11. Set up
+          your brand profiles now so they&apos;re ready when recordings ship.
         </p>
       </div>
-      <form action="/auth/signout" method="post" className="mt-6">
-        <button
-          type="submit"
-          className="rounded border border-white/20 px-3 py-1.5 text-sm hover:bg-white/5"
-        >
-          Sign out
-        </button>
-      </form>
+      <div className="mt-8 rounded-lg border border-white/10 p-6">
+        <h2 className="text-sm font-medium">Current milestone</h2>
+        <p className="mt-1 text-sm opacity-80">
+          M2: Data model + brand profiles CRUD
+        </p>
+      </div>
     </div>
   );
 }
