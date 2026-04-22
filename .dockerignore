@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.env
+.env.*.local
+.env.local
+playwright-report
+test-results
+coverage
+tests
+docs
+*.md
+.DS_Store
+.github
