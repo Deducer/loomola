@@ -15,7 +15,9 @@
     "db:migrate": "tsx scripts/migrate.ts"
   },
   "dependencies": {
+    "drizzle-orm": "^0.45.2",
     "next": "^15.5.15",
+    "postgres": "^3.4.9",
     "react": "^19.2.5",
     "react-dom": "^19.2.5"
   },
@@ -25,6 +27,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitest/ui": "^4.1.5",
+    "drizzle-kit": "^0.31.10",
     "postcss": "^8.5.10",
     "tailwindcss": "^4.2.4",
     "tsx": "^4.21.0",
