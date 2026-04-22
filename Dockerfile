@@ -27,6 +27,13 @@ ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
+# Bundle migrate.ts into self-contained CJS so runtime needs no tsx/esbuild.
+RUN npx esbuild scripts/migrate.ts \
+      --bundle \
+      --platform=node \
+      --format=cjs \
+      --target=node22 \
+      --outfile=scripts/migrate.cjs
 
 ############
 # Runtime
@@ -39,19 +46,16 @@ ENV HOSTNAME=0.0.0.0
 # Install Doppler CLI
 RUN curl -Ls --tlsv1.2 --proto "=https" --retry 3 https://cli.doppler.com/install.sh | sh
 
-# Copy standalone Next.js output
+# Copy standalone Next.js output (includes its own node_modules for what it imports)
 COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
 COPY --from=build /app/public ./public
 
-# Copy migration script + drizzle folder + scripts + tsx for running ts directly
+# Migration artifacts (SQL files + bundled runner)
 COPY --from=build /app/drizzle ./drizzle
-COPY --from=build /app/scripts ./scripts
-COPY --from=build /app/node_modules/tsx ./node_modules/tsx
-COPY --from=build /app/node_modules/postgres ./node_modules/postgres
-COPY --from=build /app/node_modules/drizzle-orm ./node_modules/drizzle-orm
+COPY --from=build /app/scripts/migrate.cjs ./scripts/migrate.cjs
 
 EXPOSE 3000
 
 ENTRYPOINT ["doppler", "run", "--"]
-CMD ["sh", "-c", "node ./node_modules/tsx/dist/cli.mjs ./scripts/migrate.ts && node ./server.js"]
+CMD ["sh", "-c", "node ./scripts/migrate.cjs && node ./server.js"]
