@@ -9,6 +9,7 @@ import type {
 } from "@/lib/recording/types";
 import { DEFAULT_SETTINGS } from "@/lib/recording/types";
 import { BubblePreview } from "./bubble-preview";
+import { DevicePickers } from "./device-pickers";
 import type { BrandProfile } from "@/db/queries/brand-profiles";
 
 type Props = {
@@ -116,6 +117,16 @@ export function PreRecordForm({ brands, onStart }: Props) {
             Capture audio from apps (Chrome only; you&apos;ll be asked to share
             a tab or the whole screen with audio)
           </label>
+        </Group>
+
+        <Group label="Devices">
+          <DevicePickers
+            micDeviceId={settings.micDeviceId}
+            cameraDeviceId={settings.cameraDeviceId}
+            cameraEnabled={settings.cameraEnabled}
+            onMicChange={(id) => update("micDeviceId", id)}
+            onCameraChange={(id) => update("cameraDeviceId", id)}
+          />
         </Group>
 
         <Group label="Brand profile (optional)">

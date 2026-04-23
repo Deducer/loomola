@@ -39,9 +39,12 @@ export async function startRecording(
   );
   let camStream: MediaStream | null = null;
   if (settings.cameraEnabled) {
-    camStream = await captureCameraAndMic();
+    camStream = await captureCameraAndMic(
+      settings.cameraDeviceId,
+      settings.micDeviceId
+    );
   } else {
-    camStream = await captureMicOnly();
+    camStream = await captureMicOnly(settings.micDeviceId);
   }
 
   const screenVideoOnly = extractTracks(screenStream, "video");

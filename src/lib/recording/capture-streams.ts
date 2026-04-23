@@ -38,15 +38,21 @@ export async function captureScreen(
  * regardless of composite resolution — the bubble is displayed small and
  * 1080p is overkill for it.
  */
-export async function captureCameraAndMic(): Promise<MediaStream> {
+export async function captureCameraAndMic(
+  cameraDeviceId: string | null,
+  micDeviceId: string | null
+): Promise<MediaStream> {
   try {
     return await navigator.mediaDevices.getUserMedia({
       video: {
+        ...(cameraDeviceId ? { deviceId: { exact: cameraDeviceId } } : {}),
         width: { ideal: 1920 },
         height: { ideal: 1080 },
         frameRate: { ideal: 30 },
       },
-      audio: true,
+      audio: micDeviceId
+        ? { deviceId: { exact: micDeviceId } }
+        : true,
     });
   } catch (err) {
     throw mapError(err, "camera/mic");
@@ -57,11 +63,50 @@ export async function captureCameraAndMic(): Promise<MediaStream> {
  * Requests only the microphone (used when camera is disabled but audio
  * is still needed for the composite).
  */
-export async function captureMicOnly(): Promise<MediaStream> {
+export async function captureMicOnly(
+  micDeviceId: string | null
+): Promise<MediaStream> {
   try {
-    return await navigator.mediaDevices.getUserMedia({ audio: true });
+    return await navigator.mediaDevices.getUserMedia({
+      audio: micDeviceId
+        ? { deviceId: { exact: micDeviceId } }
+        : true,
+    });
   } catch (err) {
     throw mapError(err, "microphone");
+  }
+}
+
+/**
+ * Enumerates mic + camera devices. Labels are empty strings until the user
+ * has granted permission at least once — call `primeDeviceLabels` first to
+ * trigger a permission prompt without actually recording anything.
+ */
+export async function listMediaDevices(): Promise<{
+  mics: MediaDeviceInfo[];
+  cameras: MediaDeviceInfo[];
+}> {
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  return {
+    mics: devices.filter((d) => d.kind === "audioinput"),
+    cameras: devices.filter((d) => d.kind === "videoinput"),
+  };
+}
+
+/**
+ * Triggers a short getUserMedia call to unlock device labels. The caller
+ * discards the returned stream immediately. Safe no-op if permission is
+ * already granted.
+ */
+export async function primeDeviceLabels(): Promise<void> {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: true,
+    });
+    for (const t of stream.getTracks()) t.stop();
+  } catch (err) {
+    throw mapError(err, "device enumeration");
   }
 }
 

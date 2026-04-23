@@ -19,6 +19,10 @@ export type RecordingSettings = {
   bubblePosition: BubblePosition;
   systemAudioEnabled: boolean;
   brandProfileId: string | null;
+  /** MediaDeviceInfo.deviceId for the selected mic. null = OS default. */
+  micDeviceId: string | null;
+  /** MediaDeviceInfo.deviceId for the selected camera. null = OS default. */
+  cameraDeviceId: string | null;
 };
 
 export type RecorderState =
@@ -56,6 +60,8 @@ export const DEFAULT_SETTINGS: RecordingSettings = {
   bubblePosition: { x: 0.92, y: 0.88 },
   systemAudioEnabled: false,
   brandProfileId: null,
+  micDeviceId: null,
+  cameraDeviceId: null,
 };
 
 /** Pixel dimensions for each resolution preset. */
