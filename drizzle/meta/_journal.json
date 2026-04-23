@@ -15,6 +15,13 @@
       "when": 1776898461000,
       "tag": "0001_rls_and_auth_fk",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1776961520399,
+      "tag": "0002_cultured_adam_warlock",
+      "breakpoints": true
     }
   ]
 }

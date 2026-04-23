@@ -62,6 +62,7 @@ export const mediaObjects = pgTable("media_objects", {
   trimStartSec: numeric("trim_start_sec"),
   trimEndSec: numeric("trim_end_sec"),
   passwordHash: text("password_hash"),
+  uploadMetadata: jsonb("upload_metadata"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
