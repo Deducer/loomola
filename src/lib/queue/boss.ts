@@ -19,6 +19,10 @@ async function init(): Promise<PgBoss> {
 
   await boss.start();
 
+  // pg-boss v10+ requires queues to exist before send()/work() — no auto-create.
+  // Idempotent: safe to call on every boot.
+  await boss.createQueue(TRANSCRIBE_JOB);
+
   await boss.work<TranscribeJobData>(TRANSCRIBE_JOB, async (jobs) => {
     // pg-boss delivers jobs in batches; process each.
     for (const job of jobs) {
