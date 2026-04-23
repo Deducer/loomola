@@ -46,7 +46,7 @@
 ## Milestone Roadmap (Stage 1)
 
 - [x] **M1: Foundation** — deployed auth-gated empty app (spec + plan in `docs/superpowers/`)
-- [ ] M2: Data model + brand profiles CRUD
+- [x] **M2: Data model + brand profiles CRUD** — full schema + `/brands` CRUD UI + top nav
 - [ ] M3: Recording capture (browser + camera bubble, no upload yet)
 - [ ] M4: R2 upload pipeline
 - [ ] M5: Deepgram transcription + pg-boss
