@@ -10,7 +10,20 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   projects: [
-    { name: "chromium", use: { browserName: "chromium" } },
+    {
+      name: "chromium",
+      use: {
+        browserName: "chromium",
+        launchOptions: {
+          args: [
+            "--use-fake-device-for-media-stream",
+            "--use-fake-ui-for-media-stream",
+            "--auto-accept-this-tab-capture",
+          ],
+        },
+        permissions: ["camera", "microphone"],
+      },
+    },
   ],
   webServer: {
     command: "npm run dev",
