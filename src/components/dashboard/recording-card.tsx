@@ -74,6 +74,14 @@ export function RecordingCard({
           <span>{formatDuration(rec.durationSeconds)}</span>
           <span>·</span>
           <span>{formatRelative(new Date(rec.createdAt))}</span>
+          {rec.viewCount > 0 && (
+            <>
+              <span>·</span>
+              <span>
+                {rec.viewCount} view{rec.viewCount === 1 ? "" : "s"}
+              </span>
+            </>
+          )}
           {rec.brand && (
             <>
               <span>·</span>

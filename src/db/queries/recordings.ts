@@ -10,6 +10,7 @@ export type RecordingWithBrand = Recording & {
   aiSummary: string | null;
   aiChapters: Array<{ start_sec: number; title: string }> | null;
   aiActionItems: Array<{ text: string; timestamp_sec: number }> | null;
+  viewCount: number;
 };
 
 export async function listRecordings(
@@ -35,6 +36,9 @@ export async function listRecordings(
     )
     .orderBy(desc(mediaObjects.createdAt));
 
+  const { listViewCounts } = await import("@/db/queries/views");
+  const counts = await listViewCounts(rows.map((r) => r.rec.id));
+
   return rows.map((r) => ({
     ...r.rec,
     brand: r.brandId
@@ -44,6 +48,7 @@ export async function listRecordings(
     aiSummary: r.aiSummary,
     aiChapters: r.aiChapters as RecordingWithBrand["aiChapters"],
     aiActionItems: r.aiActionItems as RecordingWithBrand["aiActionItems"],
+    viewCount: counts[r.rec.id] ?? 0,
   }));
 }
 
@@ -69,6 +74,8 @@ export async function getRecordingBySlug(
     .limit(1);
 
   if (!row) return null;
+  const { countViews } = await import("@/db/queries/views");
+  const viewCount = await countViews(row.rec.id);
   return {
     ...row.rec,
     brand: row.brandId
@@ -78,6 +85,7 @@ export async function getRecordingBySlug(
     aiSummary: row.aiSummary,
     aiChapters: row.aiChapters as RecordingWithBrand["aiChapters"],
     aiActionItems: row.aiActionItems as RecordingWithBrand["aiActionItems"],
+    viewCount,
   };
 }
 
