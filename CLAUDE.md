@@ -56,7 +56,7 @@ See [`ROADMAP.md`](ROADMAP.md) for the live status table that Ian checks. Update
 - [x] **M5: Deepgram transcription** — pg-boss lazy-init, Deepgram async API, HMAC-signed webhook, transcripts in DB with word timestamps.
 - [x] **M6: AI outputs + thumbnails** — webhook fans out 4 jobs (title_summary, chapters, action_items, thumbnail); Claude Sonnet 4.6 via Vercel AI SDK with Zod schemas; system ffmpeg (apk) reads from signed R2 URL; `flipToReadyIfComplete` idempotently transitions to ready.
 - [x] **M7: Viewer page** — public `/v/:slug` with Plyr player, paragraph-synced transcript (click-to-seek + auto-scroll), chapter markers, signed-URL 403 refresh via `/api/v/:slug/refresh-url`, brand logo + accent in header.
-- [ ] M8: Password-protect + view tracking
+- [x] **M8: Password protect + view tracking** — per-video bcrypt passwords, HMAC-signed slug-scoped unlock cookies (24h, auto-invalidated on password change), anonymous view tracking via sendBeacon, owner-only 10-bucket drop-off chart, view counts on dashboard + share page.
 - [ ] M9: Comments (V4) + Resend notifications
 - [ ] M10: Trim editing + raw stream downloads
 - [ ] M11: Polish + full-pipeline smoke E2E
