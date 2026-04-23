@@ -1,10 +1,15 @@
 import { db } from "@/db";
-import { mediaObjects, brandProfiles } from "@/db/schema";
+import { mediaObjects, brandProfiles, aiOutputs } from "@/db/schema";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 
 export type Recording = typeof mediaObjects.$inferSelect;
+
 export type RecordingWithBrand = Recording & {
   brand: { id: string; name: string; accentColor: string } | null;
+  aiTitle: string | null;
+  aiSummary: string | null;
+  aiChapters: Array<{ start_sec: number; title: string }> | null;
+  aiActionItems: Array<{ text: string; timestamp_sec: number }> | null;
 };
 
 export async function listRecordings(
@@ -16,9 +21,14 @@ export async function listRecordings(
       brandId: brandProfiles.id,
       brandName: brandProfiles.name,
       brandAccent: brandProfiles.accentColor,
+      aiTitle: aiOutputs.titleSuggested,
+      aiSummary: aiOutputs.summary,
+      aiChapters: aiOutputs.chapters,
+      aiActionItems: aiOutputs.actionItems,
     })
     .from(mediaObjects)
     .leftJoin(brandProfiles, eq(mediaObjects.brandProfileId, brandProfiles.id))
+    .leftJoin(aiOutputs, eq(aiOutputs.mediaObjectId, mediaObjects.id))
     .where(
       and(eq(mediaObjects.ownerId, ownerId), isNull(mediaObjects.deletedAt))
     )
@@ -29,6 +39,10 @@ export async function listRecordings(
     brand: r.brandId
       ? { id: r.brandId, name: r.brandName!, accentColor: r.brandAccent! }
       : null,
+    aiTitle: r.aiTitle,
+    aiSummary: r.aiSummary,
+    aiChapters: r.aiChapters as RecordingWithBrand["aiChapters"],
+    aiActionItems: r.aiActionItems as RecordingWithBrand["aiActionItems"],
   }));
 }
 
@@ -41,9 +55,14 @@ export async function getRecordingBySlug(
       brandId: brandProfiles.id,
       brandName: brandProfiles.name,
       brandAccent: brandProfiles.accentColor,
+      aiTitle: aiOutputs.titleSuggested,
+      aiSummary: aiOutputs.summary,
+      aiChapters: aiOutputs.chapters,
+      aiActionItems: aiOutputs.actionItems,
     })
     .from(mediaObjects)
     .leftJoin(brandProfiles, eq(mediaObjects.brandProfileId, brandProfiles.id))
+    .leftJoin(aiOutputs, eq(aiOutputs.mediaObjectId, mediaObjects.id))
     .where(and(eq(mediaObjects.slug, slug), isNull(mediaObjects.deletedAt)))
     .limit(1);
 
@@ -53,6 +72,10 @@ export async function getRecordingBySlug(
     brand: row.brandId
       ? { id: row.brandId, name: row.brandName!, accentColor: row.brandAccent! }
       : null,
+    aiTitle: row.aiTitle,
+    aiSummary: row.aiSummary,
+    aiChapters: row.aiChapters as RecordingWithBrand["aiChapters"],
+    aiActionItems: row.aiActionItems as RecordingWithBrand["aiActionItems"],
   };
 }
 
