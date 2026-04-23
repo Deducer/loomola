@@ -31,8 +31,9 @@ export async function updateSession(request: NextRequest) {
   const isAuthRoute = url.pathname.startsWith("/login") ||
                       url.pathname.startsWith("/auth");
   const isApiHealth = url.pathname === "/api/health";
+  const isPublicShare = url.pathname.startsWith("/v/");
 
-  if (!user && !isAuthRoute && !isApiHealth) {
+  if (!user && !isAuthRoute && !isApiHealth && !isPublicShare) {
     url.pathname = "/login";
     return NextResponse.redirect(url);
   }
