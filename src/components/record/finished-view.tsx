@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { RecordingResult, TrackKind } from "@/lib/recording/types";
+import Link from "next/link";
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -21,9 +22,11 @@ function trackLabel(kind: TrackKind): string {
 }
 
 export function FinishedView({
+  slug,
   result,
   onReset,
 }: {
+  slug: string;
   result: RecordingResult;
   onReset: () => void;
 }) {
@@ -50,9 +53,23 @@ export function FinishedView({
         <h2 className="text-2xl font-semibold">Recording ready</h2>
         <p className="mt-1 text-sm opacity-60">
           Duration: {result.durationSeconds.toFixed(1)}s · Resolution:{" "}
-          {result.settings.resolution.toUpperCase()} · {urls.length} track
-          {urls.length === 1 ? "" : "s"}
+          {result.settings.resolution.toUpperCase()} · Uploaded to your account
         </p>
+      </div>
+
+      <div className="rounded-lg border border-white/10 p-4">
+        <p className="text-sm font-medium">Share link</p>
+        <div className="mt-2 flex items-center gap-2">
+          <code className="flex-1 rounded bg-white/5 px-3 py-2 text-sm">
+            /v/{slug}
+          </code>
+          <Link
+            href={`/v/${slug}`}
+            className="rounded bg-white/90 px-3 py-2 text-sm font-medium text-black hover:bg-white"
+          >
+            Open
+          </Link>
+        </div>
       </div>
 
       {composite && (
@@ -64,7 +81,7 @@ export function FinishedView({
       )}
 
       <div>
-        <h3 className="text-sm font-medium">Downloads</h3>
+        <h3 className="text-sm font-medium">Local downloads (also on R2)</h3>
         <ul className="mt-2 grid gap-2">
           {urls.map((u) => (
             <li

@@ -14,6 +14,7 @@ import {
 } from "./capture-streams";
 import { createAudioMixer } from "./audio-mixer";
 import { startCompositor } from "./composite-canvas";
+import type { UploadCoordinator } from "./upload-coordinator";
 
 const VP9_MIME = "video/webm;codecs=vp9,opus";
 const OPUS_MIME = "audio/webm;codecs=opus";
@@ -30,9 +31,21 @@ type RecorderSlot = {
   mimeType: string;
 };
 
+export type StartRecordingOptions = {
+  settings: RecordingSettings;
+  /**
+   * Optional: if provided, each MediaRecorder chunk is pushed into the
+   * coordinator for streaming multipart upload to R2. Blobs are still
+   * accumulated locally so the client has a RecordingResult at stop.
+   */
+  coordinator?: UploadCoordinator;
+};
+
 export async function startRecording(
-  settings: RecordingSettings
+  opts: StartRecordingOptions
 ): Promise<RecorderHandle> {
+  const { settings, coordinator } = opts;
+
   const screenStream = await captureScreen(
     settings.resolution,
     settings.systemAudioEnabled
@@ -63,14 +76,19 @@ export async function startRecording(
   ]);
 
   const slots: RecorderSlot[] = [];
-  slots.push(makeSlot("composite", compositeStream, VP9_MIME));
-  if (screenVideoOnly) slots.push(makeSlot("screen", screenVideoOnly, VP9_MIME));
-  if (cameraVideoOnly) slots.push(makeSlot("camera", cameraVideoOnly, VP9_MIME));
-  if (micOnly) slots.push(makeSlot("mic", micOnly, OPUS_MIME));
+  slots.push(makeSlot("composite", compositeStream, VP9_MIME, coordinator));
+  if (screenVideoOnly)
+    slots.push(makeSlot("screen", screenVideoOnly, VP9_MIME, coordinator));
+  if (cameraVideoOnly)
+    slots.push(makeSlot("camera", cameraVideoOnly, VP9_MIME, coordinator));
+  if (micOnly) slots.push(makeSlot("mic", micOnly, OPUS_MIME, coordinator));
   if (screenAudioOnly)
-    slots.push(makeSlot("system-audio", screenAudioOnly, OPUS_MIME));
+    slots.push(
+      makeSlot("system-audio", screenAudioOnly, OPUS_MIME, coordinator)
+    );
 
-  for (const s of slots) s.recorder.start();
+  // 5-second timeslice so ondataavailable fires regularly for streaming uploads
+  for (const s of slots) s.recorder.start(5000);
 
   const startTime = performance.now();
   let settledResolve: () => void = () => {};
@@ -100,11 +118,19 @@ export async function startRecording(
           })
       );
 
-      Promise.all(stops).then((tracks) => {
+      Promise.all(stops).then(async (tracks) => {
         compositor.stop();
         mixer.dispose();
         stopStream(screenStream);
         stopStream(camStream);
+
+        // Flush any buffered parts through the coordinator
+        if (coordinator) {
+          await Promise.all(
+            tracks.map((t) => coordinator.finalize(t.kind))
+          );
+        }
+
         settledResolve();
         resolve({ durationSeconds, settings, tracks });
       });
@@ -127,7 +153,8 @@ export async function startRecording(
 function makeSlot(
   kind: TrackKind,
   stream: MediaStream,
-  preferredMime: string
+  preferredMime: string,
+  coordinator?: UploadCoordinator
 ): RecorderSlot {
   const mimeType = MediaRecorder.isTypeSupported(preferredMime)
     ? preferredMime
@@ -135,7 +162,10 @@ function makeSlot(
   const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
   const chunks: Blob[] = [];
   recorder.addEventListener("dataavailable", (evt) => {
-    if (evt.data && evt.data.size > 0) chunks.push(evt.data);
+    if (evt.data && evt.data.size > 0) {
+      chunks.push(evt.data);
+      coordinator?.pushChunk(kind, evt.data);
+    }
   });
   return { kind, recorder, chunks, mimeType: mimeType || "video/webm" };
 }

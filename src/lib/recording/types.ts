@@ -29,7 +29,8 @@ export type RecorderState =
   | { kind: "idle" }
   | { kind: "countdown"; secondsLeft: number }
   | { kind: "recording"; startedAt: number }
-  | { kind: "finished"; result: RecordingResult }
+  | { kind: "uploading"; progress: number }
+  | { kind: "finished"; slug: string; result: RecordingResult }
   | { kind: "error"; message: string };
 
 export type TrackKind =
