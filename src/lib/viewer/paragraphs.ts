@@ -66,3 +66,29 @@ export function groupWordsIntoParagraphs(
   flush();
   return paragraphs;
 }
+
+/**
+ * Binary search for the paragraph whose [startSec, endSec) window contains
+ * `currentSec`. Returns the clamped last index if `currentSec` is past the
+ * end, 0 if before the start, and -1 if the array is empty.
+ */
+export function findActiveParagraphIndex(
+  paragraphs: Paragraph[],
+  currentSec: number
+): number {
+  if (paragraphs.length === 0) return -1;
+  if (currentSec < paragraphs[0].startSec) return 0;
+  if (currentSec >= paragraphs[paragraphs.length - 1].endSec) {
+    return paragraphs.length - 1;
+  }
+  let lo = 0;
+  let hi = paragraphs.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const p = paragraphs[mid];
+    if (currentSec < p.startSec) hi = mid - 1;
+    else if (currentSec >= p.endSec) lo = mid + 1;
+    else return mid;
+  }
+  return Math.max(0, hi);
+}

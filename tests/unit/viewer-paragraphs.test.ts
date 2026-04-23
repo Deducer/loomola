@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { groupWordsIntoParagraphs, type Word } from "@/lib/viewer/paragraphs";
+import {
+  groupWordsIntoParagraphs,
+  findActiveParagraphIndex,
+  type Word,
+} from "@/lib/viewer/paragraphs";
 
 function w(word: string, start: number, end: number): Word {
   return { word, start, end };
@@ -51,5 +55,34 @@ describe("groupWordsIntoParagraphs", () => {
       { word: "world", start: 0.6, end: 1.2, punctuated_word: "world." },
     ];
     expect(groupWordsIntoParagraphs(words)[0].text).toBe("Hello, world.");
+  });
+});
+
+describe("findActiveParagraphIndex", () => {
+  const paragraphs = [
+    { startSec: 0, endSec: 5, text: "a" },
+    { startSec: 5, endSec: 12, text: "b" },
+    { startSec: 12, endSec: 20, text: "c" },
+  ];
+
+  it("returns -1 for empty input", () => {
+    expect(findActiveParagraphIndex([], 3)).toBe(-1);
+  });
+
+  it("returns 0 before the first paragraph", () => {
+    expect(findActiveParagraphIndex(paragraphs, -1)).toBe(0);
+  });
+
+  it("returns the last index past the end", () => {
+    expect(findActiveParagraphIndex(paragraphs, 999)).toBe(2);
+  });
+
+  it("finds the paragraph containing the timestamp", () => {
+    expect(findActiveParagraphIndex(paragraphs, 0)).toBe(0);
+    expect(findActiveParagraphIndex(paragraphs, 4.9)).toBe(0);
+    expect(findActiveParagraphIndex(paragraphs, 5)).toBe(1);
+    expect(findActiveParagraphIndex(paragraphs, 11.9)).toBe(1);
+    expect(findActiveParagraphIndex(paragraphs, 12)).toBe(2);
+    expect(findActiveParagraphIndex(paragraphs, 19.9)).toBe(2);
   });
 });
