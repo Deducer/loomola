@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { getRecordingBySlug } from "@/db/queries/recordings";
 import { presignGet } from "@/lib/r2/presigned-get";
+import { cookieName, verifyUnlockToken } from "@/lib/viewer/unlock-cookie";
 
 export async function POST(
   _req: Request,
@@ -13,6 +15,13 @@ export async function POST(
   }
   if (rec.status !== "ready" || !rec.r2CompositeKey) {
     return NextResponse.json({ error: "not_ready" }, { status: 409 });
+  }
+  if (rec.passwordHash) {
+    const jar = await cookies();
+    const token = jar.get(cookieName(slug))?.value ?? "";
+    if (!verifyUnlockToken({ slug, passwordHash: rec.passwordHash, token })) {
+      return NextResponse.json({ error: "locked" }, { status: 403 });
+    }
   }
   const url = await presignGet(rec.r2CompositeKey);
   return NextResponse.json({ url });
