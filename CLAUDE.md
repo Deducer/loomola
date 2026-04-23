@@ -41,7 +41,7 @@
 - **Transcription:** Deepgram Nova with webhook callback
 - **LLM:** Claude Sonnet 4.6 via Vercel AI SDK (provider-agnostic; swappable to GPT-4o-mini or Gemini)
 - **Email:** Resend for comment notifications
-- **Thumbnails:** `ffmpeg-static` in-process
+- **Thumbnails:** system `ffmpeg` (apk-installed in the container, or `brew install ffmpeg` locally; override with `FFMPEG_PATH`)
 
 ## Milestone Roadmap (Stage 1)
 
@@ -54,9 +54,7 @@ See [`ROADMAP.md`](ROADMAP.md) for the live status table that Ian checks. Update
 - [x] **M3.1: Mic/camera device pickers** — dropdowns in pre-record form respect OS default fallback.
 - [x] **M4: R2 upload + recordings list** — multipart streaming to R2, dashboard grid, /v/[slug] dual-mode share page.
 - [x] **M5: Deepgram transcription** — pg-boss lazy-init, Deepgram async API, HMAC-signed webhook, transcripts in DB with word timestamps.
-- [ ] M4: R2 upload pipeline
-- [ ] M5: Deepgram transcription + pg-boss
-- [ ] M6: AI outputs + thumbnails
+- [x] **M6: AI outputs + thumbnails** — webhook fans out 4 jobs (title_summary, chapters, action_items, thumbnail); Claude Sonnet 4.6 via Vercel AI SDK with Zod schemas; system ffmpeg (apk) reads from signed R2 URL; `flipToReadyIfComplete` idempotently transitions to ready.
 - [ ] M7: Viewer page (Plyr + transcript + chapters)
 - [ ] M8: Password-protect + view tracking
 - [ ] M9: Comments (V4) + Resend notifications
