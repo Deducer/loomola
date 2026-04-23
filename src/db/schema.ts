@@ -6,6 +6,7 @@ import {
   timestamp,
   numeric,
   jsonb,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 // ---------------------------------------------------------------------------
@@ -113,23 +114,32 @@ export const aiOutputs = pgTable("ai_outputs", {
 // views — anonymous playback tracking (drop-off chart source)
 // ---------------------------------------------------------------------------
 
-export const views = pgTable("views", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  mediaObjectId: uuid("media_object_id")
-    .notNull()
-    .references(() => mediaObjects.id, { onDelete: "cascade" }),
-  viewerIpHash: text("viewer_ip_hash").notNull(),
-  viewerCountry: text("viewer_country"),
-  watchedSeconds: numeric("watched_seconds").default("0"),
-  maxWatchedSec: numeric("max_watched_sec").default("0"),
-  userAgentSummary: text("user_agent_summary"),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+export const views = pgTable(
+  "views",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    mediaObjectId: uuid("media_object_id")
+      .notNull()
+      .references(() => mediaObjects.id, { onDelete: "cascade" }),
+    viewerIpHash: text("viewer_ip_hash").notNull(),
+    viewerCountry: text("viewer_country"),
+    watchedSeconds: numeric("watched_seconds").default("0"),
+    maxWatchedSec: numeric("max_watched_sec").default("0"),
+    userAgentSummary: text("user_agent_summary"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    uqMediaVisitor: uniqueIndex("views_media_visitor_uq").on(
+      t.mediaObjectId,
+      t.viewerIpHash
+    ),
+  })
+);
 
 // ---------------------------------------------------------------------------
 // comments — timestamped, anonymous (email required)

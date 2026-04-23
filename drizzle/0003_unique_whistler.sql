@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "views_media_visitor_uq" ON "views" USING btree ("media_object_id","viewer_ip_hash");
