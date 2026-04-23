@@ -4,7 +4,7 @@
 # Base
 ############
 FROM node:22-alpine AS base
-RUN apk add --no-cache libc6-compat curl bash gnupg
+RUN apk add --no-cache libc6-compat curl bash gnupg ffmpeg
 WORKDIR /app
 
 ############
@@ -54,11 +54,6 @@ COPY --from=build /app/public ./public
 # Migration artifacts (SQL files + bundled runner)
 COPY --from=build /app/drizzle ./drizzle
 COPY --from=build /app/scripts/migrate.cjs ./scripts/migrate.cjs
-
-# ffmpeg-static ships a binary that Next.js standalone tracing doesn't pick
-# up because the default export is just a path string — the binary file is
-# a sibling that needs to come along explicitly.
-COPY --from=build /app/node_modules/ffmpeg-static ./node_modules/ffmpeg-static
 
 EXPOSE 3000
 

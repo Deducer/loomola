@@ -21,8 +21,7 @@ export const chaptersSchema = z.object({
       z.object({
         start_sec: z
           .number()
-          .min(0)
-          .describe("Start timestamp in seconds, must be within recording duration."),
+          .describe("Start timestamp in seconds (>= 0, within recording duration)."),
         title: z
           .string()
           .min(2)
@@ -48,9 +47,8 @@ export const actionItemsSchema = z.object({
           .describe("Action item as a single imperative sentence."),
         timestamp_sec: z
           .number()
-          .min(0)
           .describe(
-            "Timestamp (in seconds) where this item was discussed. If unclear, use the start of the relevant section."
+            "Timestamp in seconds (>= 0) where this item was discussed. If unclear, use the start of the relevant section."
           ),
       })
     )

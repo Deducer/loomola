@@ -1,5 +1,4 @@
 import { spawn } from "node:child_process";
-import ffmpegStatic from "ffmpeg-static";
 import { presignGet } from "@/lib/r2/presigned-get";
 import { uploadBytes } from "@/lib/r2/upload-bytes";
 import { db } from "@/db";
@@ -11,7 +10,9 @@ export const THUMBNAIL_JOB = "generate_thumbnail";
 
 export type ThumbnailJobData = { mediaObjectId: string; compositeKey: string };
 
-const ffmpegPath = ffmpegStatic as unknown as string;
+// System ffmpeg: apk-installed in the container (musl-native, correct DNS).
+// Local dev needs `brew install ffmpeg` (or similar). Override via FFMPEG_PATH.
+const ffmpegPath = process.env.FFMPEG_PATH ?? "ffmpeg";
 
 /**
  * Extracts a JPG frame at the 1-second mark from the composite video using
@@ -20,10 +21,6 @@ const ffmpegPath = ffmpegStatic as unknown as string;
  * media_objects row.
  */
 export async function runThumbnailJob(data: ThumbnailJobData): Promise<void> {
-  if (!ffmpegPath) {
-    throw new Error("ffmpeg-static did not resolve an ffmpeg binary path");
-  }
-
   const videoUrl = await presignGet(data.compositeKey);
 
   const jpg = await ffmpegExtractFrame(videoUrl, 1.0);
