@@ -1,17 +1,12 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getRecordingBySlug } from "@/db/queries/recordings";
 import { getTranscriptByRecording } from "@/db/queries/transcripts";
 import { presignGet } from "@/lib/r2/presigned-get";
 import { CopyLinkButton } from "@/components/share/copy-link-button";
-import Link from "next/link";
-
-function formatTs(seconds: number): string {
-  const s = Math.floor(seconds);
-  const m = Math.floor(s / 60);
-  const rem = s % 60;
-  return `${m}:${rem.toString().padStart(2, "0")}`;
-}
+import { ViewerShell } from "@/components/viewer/viewer-shell";
+import type { Word } from "@/lib/viewer/paragraphs";
 
 export default async function SharePage({
   params,
@@ -30,14 +25,14 @@ export default async function SharePage({
   const shareUrl = `${appUrl}/v/${slug}`;
   const accent = rec.brand?.accentColor ?? "#4F46E5";
 
-  let signedVideoUrl: string | null = null;
-  if (isOwner && rec.status === "ready" && rec.r2CompositeKey) {
-    signedVideoUrl = await presignGet(rec.r2CompositeKey);
-  }
-
-  const transcript = isOwner ? await getTranscriptByRecording(rec.id) : null;
+  const transcript = await getTranscriptByRecording(rec.id);
+  const words: Word[] = Array.isArray(transcript?.wordTimestamps)
+    ? (transcript.wordTimestamps as Word[])
+    : [];
 
   const displayTitle = rec.title || rec.aiTitle || "Untitled recording";
+  const isReady = rec.status === "ready" && !!rec.r2CompositeKey;
+  const signedVideoUrl = isReady ? await presignGet(rec.r2CompositeKey!) : null;
 
   return (
     <div className="min-h-screen">
@@ -46,6 +41,13 @@ export default async function SharePage({
         style={{ borderBottomColor: accent }}
       >
         <div className="flex items-center gap-3">
+          {rec.brand?.logoUrl && (
+            <img
+              src={rec.brand.logoUrl}
+              alt={rec.brand.name}
+              className="h-6 w-auto"
+            />
+          )}
           {rec.brand?.name && (
             <span className="text-sm font-semibold">{rec.brand.name}</span>
           )}
@@ -60,83 +62,40 @@ export default async function SharePage({
       <div className="mx-auto max-w-3xl p-6">
         <h1 className="text-2xl font-semibold">{displayTitle}</h1>
         <p className="mt-1 text-sm opacity-60">
-          {rec.status === "ready" ? "Ready" : `Status: ${rec.status}`}
+          {isReady ? "Ready" : `Status: ${rec.status}`}
         </p>
 
         {rec.aiSummary && (
           <p className="mt-4 text-sm leading-relaxed opacity-80">{rec.aiSummary}</p>
         )}
 
-        {isOwner && signedVideoUrl && (
-          <video
-            src={signedVideoUrl}
-            controls
-            className="mt-6 w-full rounded border border-white/10 bg-black"
-          />
-        )}
-
-        {!isOwner && (
+        {isReady && signedVideoUrl ? (
+          <div className="mt-6">
+            <ViewerShell
+              slug={slug}
+              signedVideoUrl={signedVideoUrl}
+              accentColor={accent}
+              chapters={rec.aiChapters ?? []}
+              actionItems={rec.aiActionItems ?? []}
+              words={words}
+              fullText={transcript?.fullText ?? ""}
+            />
+          </div>
+        ) : (
           <div className="mt-6 rounded-lg border border-white/10 p-8 text-center">
-            <p className="text-lg">Viewer coming in M7.</p>
+            <p className="text-lg">
+              {rec.status === "transcribing"
+                ? "Transcription in progress"
+                : rec.status === "processing"
+                  ? "AI outputs generating"
+                  : rec.status === "uploading"
+                    ? "Uploading"
+                    : "Not ready"}
+            </p>
             <p className="mt-2 text-sm opacity-60">
-              Playback, transcripts, chapters, and comments ship in a later
-              milestone. For now, the recording exists and will be playable
-              here once the viewer lands.
+              Refresh in ~15–30 seconds.
             </p>
           </div>
-        )}
-
-        {isOwner && rec.aiChapters && rec.aiChapters.length > 0 && (
-          <div className="mt-8">
-            <h2 className="text-sm font-medium">Chapters</h2>
-            <ul className="mt-2 space-y-1">
-              {rec.aiChapters.map((c, i) => (
-                <li key={i} className="flex items-baseline gap-3 text-sm">
-                  <code className="shrink-0 rounded bg-white/5 px-1.5 py-0.5 font-mono text-xs opacity-80">
-                    {formatTs(c.start_sec)}
-                  </code>
-                  <span>{c.title}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {isOwner && rec.aiActionItems && rec.aiActionItems.length > 0 && (
-          <div className="mt-8">
-            <h2 className="text-sm font-medium">Action items</h2>
-            <ul className="mt-2 space-y-2">
-              {rec.aiActionItems.map((a, i) => (
-                <li key={i} className="flex items-baseline gap-3 text-sm">
-                  <code className="shrink-0 rounded bg-white/5 px-1.5 py-0.5 font-mono text-xs opacity-80">
-                    {formatTs(a.timestamp_sec)}
-                  </code>
-                  <span>{a.text}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {isOwner && transcript && (
-          <div className="mt-8">
-            <h2 className="text-sm font-medium">Transcript</h2>
-            <p className="mt-2 text-xs opacity-60">
-              {transcript.fullText.split(/\s+/).filter(Boolean).length} words ·
-              language {transcript.language ?? "unknown"}
-            </p>
-            <div className="mt-3 max-h-96 overflow-y-auto rounded-lg border border-white/10 p-4 text-sm leading-relaxed">
-              {transcript.fullText || "(empty transcript)"}
-            </div>
-          </div>
-        )}
-
-        {isOwner && (rec.status === "transcribing" || rec.status === "processing") && (
-          <p className="mt-6 text-xs opacity-60">
-            {rec.status === "transcribing"
-              ? "Transcription in progress — refresh in ~30 seconds."
-              : "AI outputs generating — refresh in ~15-30 seconds."}
-          </p>
         )}
 
         <div className="mt-6 flex items-center gap-3 rounded-lg border border-white/10 p-4">

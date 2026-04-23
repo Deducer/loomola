@@ -1,5 +1,6 @@
 "use client";
 
+import "plyr/dist/plyr.css";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 
 export type Chapter = { start_sec: number; title: string };
@@ -31,7 +32,6 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
     let cancelled = false;
     (async () => {
       const Plyr = (await import("plyr")).default;
-      await import("plyr/dist/plyr.css");
       if (cancelled || !videoRef.current) return;
       plyrRef.current = new Plyr(videoRef.current, {
         markers: {

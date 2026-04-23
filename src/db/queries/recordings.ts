@@ -5,7 +5,7 @@ import { and, desc, eq, isNull, sql } from "drizzle-orm";
 export type Recording = typeof mediaObjects.$inferSelect;
 
 export type RecordingWithBrand = Recording & {
-  brand: { id: string; name: string; accentColor: string } | null;
+  brand: { id: string; name: string; accentColor: string; logoUrl: string | null } | null;
   aiTitle: string | null;
   aiSummary: string | null;
   aiChapters: Array<{ start_sec: number; title: string }> | null;
@@ -21,6 +21,7 @@ export async function listRecordings(
       brandId: brandProfiles.id,
       brandName: brandProfiles.name,
       brandAccent: brandProfiles.accentColor,
+      brandLogoUrl: brandProfiles.logoUrl,
       aiTitle: aiOutputs.titleSuggested,
       aiSummary: aiOutputs.summary,
       aiChapters: aiOutputs.chapters,
@@ -37,7 +38,7 @@ export async function listRecordings(
   return rows.map((r) => ({
     ...r.rec,
     brand: r.brandId
-      ? { id: r.brandId, name: r.brandName!, accentColor: r.brandAccent! }
+      ? { id: r.brandId, name: r.brandName!, accentColor: r.brandAccent!, logoUrl: r.brandLogoUrl ?? null }
       : null,
     aiTitle: r.aiTitle,
     aiSummary: r.aiSummary,
@@ -55,6 +56,7 @@ export async function getRecordingBySlug(
       brandId: brandProfiles.id,
       brandName: brandProfiles.name,
       brandAccent: brandProfiles.accentColor,
+      brandLogoUrl: brandProfiles.logoUrl,
       aiTitle: aiOutputs.titleSuggested,
       aiSummary: aiOutputs.summary,
       aiChapters: aiOutputs.chapters,
@@ -70,7 +72,7 @@ export async function getRecordingBySlug(
   return {
     ...row.rec,
     brand: row.brandId
-      ? { id: row.brandId, name: row.brandName!, accentColor: row.brandAccent! }
+      ? { id: row.brandId, name: row.brandName!, accentColor: row.brandAccent!, logoUrl: row.brandLogoUrl ?? null }
       : null,
     aiTitle: row.aiTitle,
     aiSummary: row.aiSummary,
