@@ -12,8 +12,8 @@ This is the single source of truth for what's shipped, what's in progress, and w
 | M2 | Data model + brand profiles | ✅ shipped | All 6 tables + RLS + `/brands` CRUD UI + top nav |
 | M3 | Recording capture | ✅ shipped | `/record` state machine, 5 parallel MediaRecorders, composite + raw tracks, local-only downloads |
 | M3.1 | Mic/camera device pickers | ✅ shipped | Dropdowns in pre-record form to choose mic + camera device; respects the user's choice instead of OS default |
-| M4 | R2 upload + recordings list | 🔄 next | Upload blobs to Cloudflare R2 during recording, persist `media_objects` rows, show recordings grid on dashboard |
-| M5 | Deepgram transcription | ⏳ planned | Webhook-driven transcription via pg-boss |
+| M4 | R2 upload + recordings list | ✅ shipped | 5-track multipart upload streaming from browser to R2, `media_objects` row per recording, dashboard grid, `/v/:slug` dual-mode share page |
+| M5 | Deepgram transcription | 🔄 next | Webhook-driven transcription via pg-boss |
 | M6 | AI outputs + thumbnails | ⏳ planned | Claude (via Vercel AI SDK) generates title / summary / chapters / action items; ffmpeg-static for thumbnails |
 | M7 | Viewer page | ⏳ planned | `/v/:slug` with Plyr player, signed R2 URLs, chapters on seek bar, transcript panel |
 | M8 | Password protect + view tracking | ⏳ planned | Unlock cookies, views table, drop-off chart |

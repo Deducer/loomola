@@ -50,7 +50,9 @@ See [`ROADMAP.md`](ROADMAP.md) for the live status table that Ian checks. Update
 
 - [x] **M1: Foundation** — deployed auth-gated empty app (spec + plan in `docs/superpowers/`)
 - [x] **M2: Data model + brand profiles CRUD** — full schema + `/brands` CRUD UI + top nav
-- [x] **M3: Recording capture** — `/record` state machine, 5 parallel MediaRecorders, composite + raw tracks, local-only downloads. Known gap: mic device selection defaults to whatever the selected camera has; see M3.5 plan.
+- [x] **M3: Recording capture** — `/record` state machine, 5 parallel MediaRecorders, composite + raw tracks, local-only downloads.
+- [x] **M3.1: Mic/camera device pickers** — dropdowns in pre-record form respect OS default fallback.
+- [x] **M4: R2 upload + recordings list** — multipart streaming to R2, dashboard grid, /v/[slug] dual-mode share page.
 - [ ] M4: R2 upload pipeline
 - [ ] M5: Deepgram transcription + pg-boss
 - [ ] M6: AI outputs + thumbnails
