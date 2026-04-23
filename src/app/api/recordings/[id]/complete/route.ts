@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { mediaObjects } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import type { TrackKind } from "@/lib/recording/types";
+import { enqueueTranscription } from "@/lib/queue/boss";
 
 type CompleteRequest = {
   tracks: Partial<
@@ -33,10 +34,7 @@ export async function POST(
 
   const meta = recording.uploadMetadata as UploadMeta | null;
   if (!meta) {
-    return NextResponse.json(
-      { error: "No active uploads" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "No active uploads" }, { status: 400 });
   }
 
   const keyUpdates: {
@@ -77,17 +75,31 @@ export async function POST(
   }
   await Promise.all(completions);
 
+  // Flip to 'transcribing' (was 'ready' pre-M5). Webhook moves to 'ready'.
   await db
     .update(mediaObjects)
     .set({
       ...keyUpdates,
       durationSeconds: String(body.durationSeconds),
-      status: "ready",
+      status: "transcribing",
       uploadMetadata: null,
     })
     .where(
       and(eq(mediaObjects.id, recording.id), eq(mediaObjects.ownerId, user.id))
     );
+
+  // Enqueue transcription only if we have a composite to transcribe.
+  if (keyUpdates.r2CompositeKey) {
+    try {
+      await enqueueTranscription({
+        mediaObjectId: recording.id,
+        compositeKey: keyUpdates.r2CompositeKey,
+      });
+    } catch (err) {
+      console.error("[complete] failed to enqueue transcription:", err);
+      // Fall through — user still gets a slug; stuck row is visible via status.
+    }
+  }
 
   return NextResponse.json({ slug: recording.slug });
 }
