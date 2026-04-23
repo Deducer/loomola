@@ -2,7 +2,13 @@ import Link from "next/link";
 import type { RecordingWithBrand } from "@/db/queries/recordings";
 import { RecordingCard } from "./recording-card";
 
-export function RecordingList({ recordings }: { recordings: RecordingWithBrand[] }) {
+export function RecordingList({
+  recordings,
+  thumbnailUrls,
+}: {
+  recordings: RecordingWithBrand[];
+  thumbnailUrls: Record<string, string>;
+}) {
   if (recordings.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-white/15 p-10 text-center">
@@ -20,7 +26,10 @@ export function RecordingList({ recordings }: { recordings: RecordingWithBrand[]
     <ul className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
       {recordings.map((r) => (
         <li key={r.id}>
-          <RecordingCard rec={r} />
+          <RecordingCard
+            rec={r}
+            thumbnailUrl={thumbnailUrls[r.id] ?? null}
+          />
         </li>
       ))}
     </ul>

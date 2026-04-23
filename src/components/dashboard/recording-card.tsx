@@ -30,7 +30,14 @@ const STATUS_STYLES: Record<string, string> = {
   failed: "bg-red-500/20 text-red-200",
 };
 
-export function RecordingCard({ rec }: { rec: RecordingWithBrand }) {
+export function RecordingCard({
+  rec,
+  thumbnailUrl,
+}: {
+  rec: RecordingWithBrand;
+  thumbnailUrl: string | null;
+}) {
+  const displayTitle = rec.title || rec.aiTitle || "Untitled recording";
   return (
     <Link
       href={`/v/${rec.slug}`}
@@ -41,14 +48,20 @@ export function RecordingCard({ rec }: { rec: RecordingWithBrand }) {
           : undefined
       }
     >
-      <div className="flex aspect-video w-full items-center justify-center rounded bg-white/5 text-xs opacity-40">
-        No thumbnail yet
-      </div>
+      {thumbnailUrl ? (
+        <img
+          src={thumbnailUrl}
+          alt=""
+          className="aspect-video w-full rounded object-cover"
+        />
+      ) : (
+        <div className="flex aspect-video w-full items-center justify-center rounded bg-white/5 text-xs opacity-40">
+          {rec.status === "ready" ? "No thumbnail" : "Generating…"}
+        </div>
+      )}
       <div>
         <div className="flex items-center justify-between gap-2">
-          <h3 className="truncate text-sm font-medium">
-            {rec.title || "Untitled recording"}
-          </h3>
+          <h3 className="truncate text-sm font-medium">{displayTitle}</h3>
           <span
             className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${
               STATUS_STYLES[rec.status] ?? "bg-white/10"

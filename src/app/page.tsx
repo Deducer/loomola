@@ -1,5 +1,6 @@
 import { requireAuth } from "@/lib/require-auth";
 import { listRecordings } from "@/db/queries/recordings";
+import { presignGet } from "@/lib/r2/presigned-get";
 import { TopNav } from "@/components/nav/top-nav";
 import { RecordingList } from "@/components/dashboard/recording-list";
 import Link from "next/link";
@@ -7,6 +8,17 @@ import Link from "next/link";
 export default async function HomePage() {
   const user = await requireAuth();
   const recordings = await listRecordings(user.id);
+
+  // Resolve a signed GET URL for each recording's thumbnail (if any).
+  const thumbnailUrls: Record<string, string> = {};
+  await Promise.all(
+    recordings.map(async (r) => {
+      if (r.compositeThumbnailKey) {
+        thumbnailUrls[r.id] = await presignGet(r.compositeThumbnailKey);
+      }
+    })
+  );
+
   return (
     <>
       <TopNav userEmail={user.email ?? "unknown"} activePath="recordings" />
@@ -28,7 +40,7 @@ export default async function HomePage() {
           </Link>
         </div>
         <div className="mt-6">
-          <RecordingList recordings={recordings} />
+          <RecordingList recordings={recordings} thumbnailUrls={thumbnailUrls} />
         </div>
       </div>
     </>
