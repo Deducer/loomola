@@ -32,9 +32,10 @@ export async function updateSession(request: NextRequest) {
                       url.pathname.startsWith("/auth");
   const isApiHealth = url.pathname === "/api/health";
   const isPublicShare = url.pathname.startsWith("/v/");
+  const isPublicViewerApi = url.pathname.startsWith("/api/v/");
   const isWebhook = url.pathname.startsWith("/api/webhooks/");
 
-  if (!user && !isAuthRoute && !isApiHealth && !isPublicShare && !isWebhook) {
+  if (!user && !isAuthRoute && !isApiHealth && !isPublicShare && !isPublicViewerApi && !isWebhook) {
     url.pathname = "/login";
     return NextResponse.redirect(url);
   }
