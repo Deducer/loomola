@@ -47,7 +47,7 @@
 
 - [x] **M1: Foundation** — deployed auth-gated empty app (spec + plan in `docs/superpowers/`)
 - [x] **M2: Data model + brand profiles CRUD** — full schema + `/brands` CRUD UI + top nav
-- [ ] M3: Recording capture (browser + camera bubble, no upload yet)
+- [x] **M3: Recording capture** — `/record` state machine, 5 parallel MediaRecorders, composite + raw tracks, local-only downloads. Known gap: mic device selection defaults to whatever the selected camera has; see M3.5 plan.
 - [ ] M4: R2 upload pipeline
 - [ ] M5: Deepgram transcription + pg-boss
 - [ ] M6: AI outputs + thumbnails
