@@ -2,11 +2,12 @@ import Link from "next/link";
 
 type Props = {
   userEmail: string;
-  activePath: "recordings" | "brands";
+  activePath: "recordings" | "brands" | "record";
 };
 
 export function TopNav({ userEmail, activePath }: Props) {
   const items = [
+    { href: "/record", label: "Record", key: "record" as const },
     { href: "/", label: "Recordings", key: "recordings" as const },
     { href: "/brands", label: "Brands", key: "brands" as const },
   ];
