@@ -150,8 +150,21 @@ export function RecordFlow({ brands }: { brands: BrandProfile[] }) {
     const recordingId = recordingIdRef.current;
     if (!handle || !coordinator || !recordingId) return;
 
-    const result = await handle.stop();
+    // Prevent duplicate work if the user mashes the stop button.
     handleRef.current = null;
+
+    let result;
+    try {
+      result = await handle.stop();
+    } catch (err) {
+      await fetch(`/api/recordings/${recordingId}/abort`, { method: "POST" })
+        .catch(() => {});
+      dispatch({
+        type: "error",
+        message: `Failed to finalise recording: ${String(err)}`,
+      });
+      return;
+    }
 
     dispatch({ type: "begin-upload" });
     const unsubscribe = coordinator.onProgress((progress) => {
@@ -174,7 +187,8 @@ export function RecordFlow({ brands }: { brands: BrandProfile[] }) {
       dispatch({ type: "finish", slug: data.slug, result });
     } catch (err) {
       unsubscribe();
-      await fetch(`/api/recordings/${recordingId}/abort`, { method: "POST" });
+      await fetch(`/api/recordings/${recordingId}/abort`, { method: "POST" })
+        .catch(() => {});
       dispatch({
         type: "error",
         message: `Upload failed: ${String(err)}`,

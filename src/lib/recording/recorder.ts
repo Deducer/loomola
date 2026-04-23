@@ -94,8 +94,16 @@ export async function startRecording(
   let settledResolve: () => void = () => {};
   const settled = new Promise<void>((res) => (settledResolve = res));
 
-  const stop = (): Promise<RecordingResult> =>
-    new Promise<RecordingResult>((resolve) => {
+  // Idempotent stop: repeated calls (e.g. user mashing the button, or
+  // screen-share-ended firing after the user clicked Stop) return the same
+  // in-flight promise. MediaRecorder.stop() on an already-stopped recorder
+  // throws, which previously hung the whole chain.
+  let stopPromise: Promise<RecordingResult> | null = null;
+
+  const stop = (): Promise<RecordingResult> => {
+    if (stopPromise) return stopPromise;
+
+    stopPromise = new Promise<RecordingResult>((resolve, reject) => {
       const durationSeconds = (performance.now() - startTime) / 1000;
 
       const stops = slots.map(
@@ -114,34 +122,59 @@ export async function startRecording(
               },
               { once: true }
             );
-            slot.recorder.stop();
+            try {
+              if (slot.recorder.state !== "inactive") slot.recorder.stop();
+            } catch (err) {
+              console.error(`[recorder] MediaRecorder.stop() on ${slot.kind} threw:`, err);
+            }
           })
       );
 
-      Promise.all(stops).then(async (tracks) => {
-        compositor.stop();
-        mixer.dispose();
-        stopStream(screenStream);
-        stopStream(camStream);
+      Promise.all(stops)
+        .then(async (tracks) => {
+          compositor.stop();
+          mixer.dispose();
+          stopStream(screenStream);
+          stopStream(camStream);
 
-        // Flush any buffered parts through the coordinator
-        if (coordinator) {
-          await Promise.all(
-            tracks.map((t) => coordinator.finalize(t.kind))
-          );
-        }
+          // Flush any buffered parts through the coordinator. Use allSettled
+          // so one track's upload failure doesn't hang the whole stop chain —
+          // individual failures are logged; the caller gets back whatever
+          // tracks finished (their local blobs are always available).
+          if (coordinator) {
+            const results = await Promise.allSettled(
+              tracks.map((t) => coordinator.finalize(t.kind))
+            );
+            for (const [i, r] of results.entries()) {
+              if (r.status === "rejected") {
+                console.error(
+                  `[recorder] finalize failed for ${tracks[i].kind}:`,
+                  r.reason
+                );
+              }
+            }
+          }
 
-        settledResolve();
-        resolve({ durationSeconds, settings, tracks });
-      });
+          settledResolve();
+          resolve({ durationSeconds, settings, tracks });
+        })
+        .catch((err) => {
+          settledResolve();
+          reject(err);
+        });
     });
+
+    return stopPromise;
+  };
 
   const primaryScreenTrack = screenStream.getVideoTracks()[0];
   if (primaryScreenTrack) {
     primaryScreenTrack.addEventListener(
       "ended",
       () => {
-        void stop();
+        void stop().catch(() => {
+          /* errors are surfaced via the explicit stop() call from the UI */
+        });
       },
       { once: true }
     );
