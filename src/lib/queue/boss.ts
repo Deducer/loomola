@@ -1,5 +1,25 @@
 import { PgBoss } from "pg-boss";
 import { TRANSCRIBE_JOB, runTranscribeJob, type TranscribeJobData } from "./jobs/transcribe";
+import {
+  TITLE_SUMMARY_JOB,
+  runTitleSummaryJob,
+  type TitleSummaryJobData,
+} from "./jobs/generate-title-summary";
+import {
+  CHAPTERS_JOB,
+  runChaptersJob,
+  type ChaptersJobData,
+} from "./jobs/generate-chapters";
+import {
+  ACTION_ITEMS_JOB,
+  runActionItemsJob,
+  type ActionItemsJobData,
+} from "./jobs/extract-action-items";
+import {
+  THUMBNAIL_JOB,
+  runThumbnailJob,
+  type ThumbnailJobData,
+} from "./jobs/generate-thumbnail";
 
 let cached: PgBoss | null = null;
 let starting: Promise<PgBoss> | null = null;
@@ -10,7 +30,7 @@ async function init(): Promise<PgBoss> {
 
   const boss = new PgBoss({
     connectionString,
-    max: 4,
+    max: 8,
   });
 
   boss.on("error", (err: unknown) => {
@@ -22,15 +42,28 @@ async function init(): Promise<PgBoss> {
   // pg-boss v10+ requires queues to exist before send()/work() — no auto-create.
   // Idempotent: safe to call on every boot.
   await boss.createQueue(TRANSCRIBE_JOB);
+  await boss.createQueue(TITLE_SUMMARY_JOB);
+  await boss.createQueue(CHAPTERS_JOB);
+  await boss.createQueue(ACTION_ITEMS_JOB);
+  await boss.createQueue(THUMBNAIL_JOB);
 
   await boss.work<TranscribeJobData>(TRANSCRIBE_JOB, async (jobs) => {
-    // pg-boss delivers jobs in batches; process each.
-    for (const job of jobs) {
-      await runTranscribeJob(job.data);
-    }
+    for (const job of jobs) await runTranscribeJob(job.data);
+  });
+  await boss.work<TitleSummaryJobData>(TITLE_SUMMARY_JOB, async (jobs) => {
+    for (const job of jobs) await runTitleSummaryJob(job.data);
+  });
+  await boss.work<ChaptersJobData>(CHAPTERS_JOB, async (jobs) => {
+    for (const job of jobs) await runChaptersJob(job.data);
+  });
+  await boss.work<ActionItemsJobData>(ACTION_ITEMS_JOB, async (jobs) => {
+    for (const job of jobs) await runActionItemsJob(job.data);
+  });
+  await boss.work<ThumbnailJobData>(THUMBNAIL_JOB, async (jobs) => {
+    for (const job of jobs) await runThumbnailJob(job.data);
   });
 
-  console.log("[pg-boss] started and workers registered");
+  console.log("[pg-boss] started and workers registered (5 queues)");
   return boss;
 }
 
@@ -55,6 +88,6 @@ export async function enqueueTranscription(
     retryLimit: 3,
     retryDelay: 30,
     retryBackoff: true,
-    expireInSeconds: 3600, // allow up to 1h for Deepgram to respond
+    expireInSeconds: 3600,
   });
 }
