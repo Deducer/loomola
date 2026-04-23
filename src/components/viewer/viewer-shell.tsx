@@ -5,6 +5,7 @@ import { VideoPlayer, type VideoPlayerHandle } from "./video-player";
 import { TranscriptPanel } from "./transcript-panel";
 import { ChaptersList } from "./chapters-list";
 import { ActionItemsList } from "./action-items-list";
+import { Tracking } from "./tracking";
 import type { Word } from "@/lib/viewer/paragraphs";
 
 export type ViewerShellProps = {
@@ -15,6 +16,7 @@ export type ViewerShellProps = {
   actionItems: Array<{ timestamp_sec: number; text: string }>;
   words: Word[];
   fullText: string;
+  isOwner: boolean;
 };
 
 export function ViewerShell({
@@ -25,12 +27,18 @@ export function ViewerShell({
   actionItems,
   words,
   fullText,
+  isOwner,
 }: ViewerShellProps) {
   const playerRef = useRef<VideoPlayerHandle | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
 
   const handleSeek = useCallback((sec: number) => {
     playerRef.current?.seek(sec);
+  }, []);
+
+  const getCurrentTime = useCallback(() => {
+    return playerRef.current?.getCurrentTime() ?? 0;
   }, []);
 
   return (
@@ -42,7 +50,15 @@ export function ViewerShell({
         chapters={chapters}
         accentColor={accentColor}
         onTimeUpdate={setCurrentTime}
+        onPlayStateChange={setIsPlaying}
       />
+      {!isOwner && (
+        <Tracking
+          slug={slug}
+          isPlaying={isPlaying}
+          getCurrentTime={getCurrentTime}
+        />
+      )}
       <TranscriptPanel
         words={words}
         fullText={fullText}

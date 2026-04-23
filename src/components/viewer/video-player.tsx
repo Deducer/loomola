@@ -16,10 +16,11 @@ type Props = {
   chapters: Chapter[];
   accentColor: string;
   onTimeUpdate: (sec: number) => void;
+  onPlayStateChange?: (isPlaying: boolean) => void;
 };
 
 export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
-  { slug, initialSignedUrl, chapters, accentColor, onTimeUpdate },
+  { slug, initialSignedUrl, chapters, accentColor, onTimeUpdate, onPlayStateChange },
   ref
 ) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -42,13 +43,16 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
       plyrRef.current.on("timeupdate", () => {
         onTimeUpdate(plyrRef.current?.currentTime ?? 0);
       });
+      plyrRef.current.on("play", () => onPlayStateChange?.(true));
+      plyrRef.current.on("pause", () => onPlayStateChange?.(false));
+      plyrRef.current.on("ended", () => onPlayStateChange?.(false));
     })();
     return () => {
       cancelled = true;
       plyrRef.current?.destroy();
       plyrRef.current = null;
     };
-  }, [chapters, onTimeUpdate]);
+  }, [chapters, onTimeUpdate, onPlayStateChange]);
 
   useImperativeHandle(ref, () => ({
     seek: (sec: number) => {
