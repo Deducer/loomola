@@ -53,6 +53,7 @@ See [`ROADMAP.md`](ROADMAP.md) for the live status table that Ian checks. Update
 - [x] **M3: Recording capture** — `/record` state machine, 5 parallel MediaRecorders, composite + raw tracks, local-only downloads.
 - [x] **M3.1: Mic/camera device pickers** — dropdowns in pre-record form respect OS default fallback.
 - [x] **M4: R2 upload + recordings list** — multipart streaming to R2, dashboard grid, /v/[slug] dual-mode share page.
+- [x] **M5: Deepgram transcription** — pg-boss lazy-init, Deepgram async API, HMAC-signed webhook, transcripts in DB with word timestamps.
 - [ ] M4: R2 upload pipeline
 - [ ] M5: Deepgram transcription + pg-boss
 - [ ] M6: AI outputs + thumbnails
