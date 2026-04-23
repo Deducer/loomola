@@ -6,6 +6,13 @@ import { presignGet } from "@/lib/r2/presigned-get";
 import { CopyLinkButton } from "@/components/share/copy-link-button";
 import Link from "next/link";
 
+function formatTs(seconds: number): string {
+  const s = Math.floor(seconds);
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return `${m}:${rem.toString().padStart(2, "0")}`;
+}
+
 export default async function SharePage({
   params,
 }: {
@@ -30,6 +37,8 @@ export default async function SharePage({
 
   const transcript = isOwner ? await getTranscriptByRecording(rec.id) : null;
 
+  const displayTitle = rec.title || rec.aiTitle || "Untitled recording";
+
   return (
     <div className="min-h-screen">
       <header
@@ -49,12 +58,14 @@ export default async function SharePage({
       </header>
 
       <div className="mx-auto max-w-3xl p-6">
-        <h1 className="text-2xl font-semibold">
-          {rec.title || "Untitled recording"}
-        </h1>
+        <h1 className="text-2xl font-semibold">{displayTitle}</h1>
         <p className="mt-1 text-sm opacity-60">
           {rec.status === "ready" ? "Ready" : `Status: ${rec.status}`}
         </p>
+
+        {rec.aiSummary && (
+          <p className="mt-4 text-sm leading-relaxed opacity-80">{rec.aiSummary}</p>
+        )}
 
         {isOwner && signedVideoUrl && (
           <video
@@ -75,6 +86,38 @@ export default async function SharePage({
           </div>
         )}
 
+        {isOwner && rec.aiChapters && rec.aiChapters.length > 0 && (
+          <div className="mt-8">
+            <h2 className="text-sm font-medium">Chapters</h2>
+            <ul className="mt-2 space-y-1">
+              {rec.aiChapters.map((c, i) => (
+                <li key={i} className="flex items-baseline gap-3 text-sm">
+                  <code className="shrink-0 rounded bg-white/5 px-1.5 py-0.5 font-mono text-xs opacity-80">
+                    {formatTs(c.start_sec)}
+                  </code>
+                  <span>{c.title}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {isOwner && rec.aiActionItems && rec.aiActionItems.length > 0 && (
+          <div className="mt-8">
+            <h2 className="text-sm font-medium">Action items</h2>
+            <ul className="mt-2 space-y-2">
+              {rec.aiActionItems.map((a, i) => (
+                <li key={i} className="flex items-baseline gap-3 text-sm">
+                  <code className="shrink-0 rounded bg-white/5 px-1.5 py-0.5 font-mono text-xs opacity-80">
+                    {formatTs(a.timestamp_sec)}
+                  </code>
+                  <span>{a.text}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {isOwner && transcript && (
           <div className="mt-8">
             <h2 className="text-sm font-medium">Transcript</h2>
@@ -88,10 +131,11 @@ export default async function SharePage({
           </div>
         )}
 
-        {isOwner && rec.status === "transcribing" && (
+        {isOwner && (rec.status === "transcribing" || rec.status === "processing") && (
           <p className="mt-6 text-xs opacity-60">
-            Transcription in progress — refresh in ~30 seconds for short
-            recordings, a couple of minutes for longer ones.
+            {rec.status === "transcribing"
+              ? "Transcription in progress — refresh in ~30 seconds."
+              : "AI outputs generating — refresh in ~15-30 seconds."}
           </p>
         )}
 
