@@ -36,11 +36,9 @@ type DeepgramCallbackBody = {
 
 export async function POST(
   request: Request,
-  { params }: { params: Promise<{ recordingId: string }> }
+  { params }: { params: Promise<{ recordingId: string; sig: string }> }
 ) {
-  const { recordingId } = await params;
-  const { searchParams } = new URL(request.url);
-  const sig = searchParams.get("sig") ?? "";
+  const { recordingId, sig } = await params;
 
   if (!verifyRecordingSignature(recordingId, sig)) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
