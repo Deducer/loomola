@@ -4,6 +4,8 @@ import { db } from "@/db";
 import { mediaObjects } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { insertTranscript, type WordTimestamp } from "@/db/queries/transcripts";
+import { insertBlankAiOutput } from "@/db/queries/ai-outputs";
+import { enqueueProcessingJobs } from "@/lib/queue/enqueue-processing";
 
 type DeepgramWord = {
   word: string;
@@ -67,13 +69,49 @@ export async function POST(
     wordTimestamps,
   });
 
+  // Fetch the recording to get its composite key (needed for thumbnail job)
+  // and ensure it exists before fanning out.
+  const [rec] = await db
+    .select({
+      id: mediaObjects.id,
+      r2CompositeKey: mediaObjects.r2CompositeKey,
+    })
+    .from(mediaObjects)
+    .where(eq(mediaObjects.id, recordingId))
+    .limit(1);
+
+  if (!rec?.r2CompositeKey) {
+    console.error(
+      `[webhook/deepgram] recording ${recordingId} has no composite key; skipping processing`
+    );
+    return NextResponse.json({ ok: true });
+  }
+
+  // Pre-create the ai_outputs row so the 4 UPDATE-based jobs have a target.
+  const llmModel = process.env.LLM_MODEL_ID ?? "claude-sonnet-4-6";
+  await insertBlankAiOutput(recordingId, llmModel);
+
+  // Flip to 'processing' and fan out the 4 jobs. The last job to finish
+  // will call flipToReadyIfComplete and move status to 'ready'.
   await db
     .update(mediaObjects)
-    .set({ status: "ready" })
+    .set({ status: "processing" })
     .where(eq(mediaObjects.id, recordingId));
 
+  try {
+    await enqueueProcessingJobs({
+      mediaObjectId: recordingId,
+      compositeKey: rec.r2CompositeKey,
+    });
+  } catch (err) {
+    console.error(
+      `[webhook/deepgram] failed to enqueue processing jobs for ${recordingId}:`,
+      err
+    );
+  }
+
   console.log(
-    `[webhook/deepgram] saved transcript for recording ${recordingId} (${wordTimestamps.length} words)`
+    `[webhook/deepgram] transcript saved, processing jobs enqueued for ${recordingId} (${wordTimestamps.length} words)`
   );
 
   return NextResponse.json({ ok: true });
