@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { describe, it, expect, beforeAll } from "vitest";
 
 // happy-dom doesn't ship Path2D. Polyfill with a minimal stub that records

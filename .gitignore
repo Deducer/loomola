@@ -12,3 +12,5 @@ playwright-report/
 test-results/
 .vercel
 next-env.d.ts
+tsconfig.tsbuildinfo
+supabase/
