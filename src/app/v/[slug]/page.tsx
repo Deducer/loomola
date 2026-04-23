@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getRecordingBySlug } from "@/db/queries/recordings";
+import { getTranscriptByRecording } from "@/db/queries/transcripts";
 import { presignGet } from "@/lib/r2/presigned-get";
 import { CopyLinkButton } from "@/components/share/copy-link-button";
 import Link from "next/link";
@@ -26,6 +27,8 @@ export default async function SharePage({
   if (isOwner && rec.status === "ready" && rec.r2CompositeKey) {
     signedVideoUrl = await presignGet(rec.r2CompositeKey);
   }
+
+  const transcript = isOwner ? await getTranscriptByRecording(rec.id) : null;
 
   return (
     <div className="min-h-screen">
@@ -70,6 +73,26 @@ export default async function SharePage({
               here once the viewer lands.
             </p>
           </div>
+        )}
+
+        {isOwner && transcript && (
+          <div className="mt-8">
+            <h2 className="text-sm font-medium">Transcript</h2>
+            <p className="mt-2 text-xs opacity-60">
+              {transcript.fullText.split(/\s+/).filter(Boolean).length} words ·
+              language {transcript.language ?? "unknown"}
+            </p>
+            <div className="mt-3 max-h-96 overflow-y-auto rounded-lg border border-white/10 p-4 text-sm leading-relaxed">
+              {transcript.fullText || "(empty transcript)"}
+            </div>
+          </div>
+        )}
+
+        {isOwner && rec.status === "transcribing" && (
+          <p className="mt-6 text-xs opacity-60">
+            Transcription in progress — refresh in ~30 seconds for short
+            recordings, a couple of minutes for longer ones.
+          </p>
         )}
 
         <div className="mt-6 flex items-center gap-3 rounded-lg border border-white/10 p-4">
