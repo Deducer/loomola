@@ -14,6 +14,10 @@ export type TranscribeJobData = {
  * URL. Deepgram will POST the transcript to our webhook when ready. The
  * job itself completes as soon as Deepgram ACKs the request; the webhook
  * handler persists the transcript to the DB and flips status to 'ready'.
+ *
+ * The HMAC signature is carried as a path segment (not a query string) so
+ * Deepgram's URL-encoding of our callback URL into its own query string
+ * can't double-encode or mangle it.
  */
 export async function runTranscribeJob(data: TranscribeJobData): Promise<void> {
   const { mediaObjectId, compositeKey } = data;
@@ -23,16 +27,14 @@ export async function runTranscribeJob(data: TranscribeJobData): Promise<void> {
 
   const audioUrl = await presignGet(compositeKey);
   const sig = signRecordingId(mediaObjectId);
-  const callbackUrl = `${appUrl}/api/webhooks/deepgram/${mediaObjectId}?sig=${sig}`;
+  const callbackUrl = `${appUrl}/api/webhooks/deepgram/${mediaObjectId}/${sig}`;
 
   const dg = getDeepgramClient();
   await dg.listen.v1.media.transcribeUrl({
     url: audioUrl,
     callback: callbackUrl,
-    callback_method: "POST",
     model: "nova-2",
     smart_format: true,
-    punctuate: true,
     language: "en",
   });
 
