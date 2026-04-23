@@ -1,11 +1,18 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { getRecordingBySlug } from "@/db/queries/recordings";
 import { getTranscriptByRecording } from "@/db/queries/transcripts";
+import { listMaxWatched, countViews } from "@/db/queries/views";
 import { presignGet } from "@/lib/r2/presigned-get";
 import { CopyLinkButton } from "@/components/share/copy-link-button";
 import { ViewerShell } from "@/components/viewer/viewer-shell";
+import { PasswordGate } from "@/components/viewer/password-gate";
+import { OwnerToolbar } from "@/components/viewer/owner-toolbar";
+import { DropoffChart } from "@/components/viewer/dropoff-chart";
+import { cookieName, verifyUnlockToken } from "@/lib/viewer/unlock-cookie";
+import { bucketize } from "@/lib/viewer/dropoff";
 import type { Word } from "@/lib/viewer/paragraphs";
 
 export default async function SharePage({
@@ -25,6 +32,31 @@ export default async function SharePage({
   const shareUrl = `${appUrl}/v/${slug}`;
   const accent = rec.brand?.accentColor ?? "#4F46E5";
 
+  // Password gate: if password set and visitor isn't owner and cookie invalid,
+  // render just the gate. Owner bypasses the gate.
+  let unlocked = true;
+  if (rec.passwordHash && !isOwner) {
+    const jar = await cookies();
+    const token = jar.get(cookieName(slug))?.value ?? "";
+    unlocked = verifyUnlockToken({
+      slug,
+      passwordHash: rec.passwordHash,
+      token,
+    });
+  }
+
+  if (!unlocked) {
+    return (
+      <div className="min-h-screen">
+        <header
+          className="flex items-center justify-between border-b border-white/10 px-6 py-3"
+          style={{ borderBottomColor: accent }}
+        />
+        <PasswordGate slug={slug} />
+      </div>
+    );
+  }
+
   const transcript = await getTranscriptByRecording(rec.id);
   const words: Word[] = Array.isArray(transcript?.wordTimestamps)
     ? (transcript.wordTimestamps as Word[])
@@ -33,6 +65,16 @@ export default async function SharePage({
   const displayTitle = rec.title || rec.aiTitle || "Untitled recording";
   const isReady = rec.status === "ready" && !!rec.r2CompositeKey;
   const signedVideoUrl = isReady ? await presignGet(rec.r2CompositeKey!) : null;
+
+  // Owner-only analytics
+  let dropoffBuckets: number[] | null = null;
+  let viewCount = 0;
+  if (isOwner && isReady) {
+    const durationSec = parseFloat(String(rec.durationSeconds ?? "0"));
+    const maxList = await listMaxWatched(rec.id);
+    dropoffBuckets = bucketize(maxList, durationSec, 10);
+    viewCount = await countViews(rec.id);
+  }
 
   return (
     <div className="min-h-screen">
@@ -63,10 +105,20 @@ export default async function SharePage({
         <h1 className="text-2xl font-semibold">{displayTitle}</h1>
         <p className="mt-1 text-sm opacity-60">
           {isReady ? "Ready" : `Status: ${rec.status}`}
+          {isOwner && isReady && viewCount > 0 && (
+            <> · {viewCount} view{viewCount === 1 ? "" : "s"}</>
+          )}
         </p>
 
         {rec.aiSummary && (
           <p className="mt-4 text-sm leading-relaxed opacity-80">{rec.aiSummary}</p>
+        )}
+
+        {isOwner && (
+          <OwnerToolbar
+            recordingId={rec.id}
+            hasPassword={!!rec.passwordHash}
+          />
         )}
 
         {isReady && signedVideoUrl ? (
@@ -79,6 +131,7 @@ export default async function SharePage({
               actionItems={rec.aiActionItems ?? []}
               words={words}
               fullText={transcript?.fullText ?? ""}
+              isOwner={isOwner}
             />
           </div>
         ) : (
@@ -97,6 +150,8 @@ export default async function SharePage({
             </p>
           </div>
         )}
+
+        {isOwner && dropoffBuckets && <DropoffChart buckets={dropoffBuckets} />}
 
         <div className="mt-6 flex items-center gap-3 rounded-lg border border-white/10 p-4">
           <code className="flex-1 truncate rounded bg-white/5 px-3 py-2 text-sm">
