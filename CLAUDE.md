@@ -45,6 +45,9 @@
 
 ## Milestone Roadmap (Stage 1)
 
+See [`ROADMAP.md`](ROADMAP.md) for the live status table that Ian checks. Update that file when milestones ship. The list below is a stub for new-session context; defer to ROADMAP.md.
+
+
 - [x] **M1: Foundation** — deployed auth-gated empty app (spec + plan in `docs/superpowers/`)
 - [x] **M2: Data model + brand profiles CRUD** — full schema + `/brands` CRUD UI + top nav
 - [x] **M3: Recording capture** — `/record` state machine, 5 parallel MediaRecorders, composite + raw tracks, local-only downloads. Known gap: mic device selection defaults to whatever the selected camera has; see M3.5 plan.
