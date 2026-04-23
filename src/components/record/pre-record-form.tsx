@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type {
   RecordingSettings,
   Resolution,
@@ -29,11 +29,40 @@ const POSITIONS = [
 
 export function PreRecordForm({ brands, onStart }: Props) {
   const [settings, setSettings] = useState<RecordingSettings>(DEFAULT_SETTINGS);
+  // null = still checking (SSR / first render); false = unsupported; true = OK
+  const [supported, setSupported] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    // getDisplayMedia is desktop-only. iOS Safari, Chrome on iOS, and most
+    // mobile browsers don't expose it — detect and gate the form.
+    const ok =
+      typeof navigator !== "undefined" &&
+      typeof navigator.mediaDevices?.getDisplayMedia === "function" &&
+      typeof navigator.mediaDevices?.getUserMedia === "function";
+    setSupported(ok);
+  }, []);
 
   const update = <K extends keyof RecordingSettings>(
     key: K,
     value: RecordingSettings[K]
   ) => setSettings((s) => ({ ...s, [key]: value }));
+
+  if (supported === false) {
+    return (
+      <div className="mx-auto max-w-lg rounded-lg border border-white/10 p-6 text-center">
+        <h2 className="text-lg font-semibold">Recording isn&apos;t supported on this browser</h2>
+        <p className="mt-2 text-sm opacity-70">
+          Screen capture requires <code className="rounded bg-white/10 px-1">getDisplayMedia</code>,
+          which isn&apos;t available on mobile browsers or iOS Safari. Open this
+          page on desktop Chrome (or a Chromium-based browser on macOS / Windows / Linux) to record.
+        </p>
+        <p className="mt-3 text-xs opacity-50">
+          The macOS menubar app (Stage 2) will eventually remove the browser
+          dependency entirely.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="grid gap-6 md:grid-cols-[1fr_1fr]">
