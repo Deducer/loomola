@@ -17,10 +17,11 @@ type Props = {
   accentColor: string;
   onTimeUpdate: (sec: number) => void;
   onPlayStateChange?: (isPlaying: boolean) => void;
+  onReady?: () => void;
 };
 
 export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
-  { slug, initialSignedUrl, chapters, accentColor, onTimeUpdate, onPlayStateChange },
+  { slug, initialSignedUrl, chapters, accentColor, onTimeUpdate, onPlayStateChange, onReady },
   ref
 ) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -46,13 +47,14 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
       plyrRef.current.on("play", () => onPlayStateChange?.(true));
       plyrRef.current.on("pause", () => onPlayStateChange?.(false));
       plyrRef.current.on("ended", () => onPlayStateChange?.(false));
+      plyrRef.current.on("ready", () => onReady?.());
     })();
     return () => {
       cancelled = true;
       plyrRef.current?.destroy();
       plyrRef.current = null;
     };
-  }, [chapters, onTimeUpdate, onPlayStateChange]);
+  }, [chapters, onTimeUpdate, onPlayStateChange, onReady]);
 
   useImperativeHandle(ref, () => ({
     seek: (sec: number) => {

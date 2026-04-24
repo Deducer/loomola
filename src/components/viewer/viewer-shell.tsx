@@ -6,7 +6,16 @@ import { TranscriptPanel } from "./transcript-panel";
 import { ChaptersList } from "./chapters-list";
 import { ActionItemsList } from "./action-items-list";
 import { Tracking } from "./tracking";
+import { CommentsSection } from "./comments-section";
 import type { Word } from "@/lib/viewer/paragraphs";
+
+type CommentRow = {
+  id: string;
+  commenterName: string;
+  body: string;
+  timestampSec: number;
+  createdAt: string;
+};
 
 export type ViewerShellProps = {
   slug: string;
@@ -17,6 +26,7 @@ export type ViewerShellProps = {
   words: Word[];
   fullText: string;
   isOwner: boolean;
+  comments: CommentRow[];
 };
 
 export function ViewerShell({
@@ -28,6 +38,7 @@ export function ViewerShell({
   words,
   fullText,
   isOwner,
+  comments,
 }: ViewerShellProps) {
   const playerRef = useRef<VideoPlayerHandle | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
@@ -41,6 +52,19 @@ export function ViewerShell({
     return playerRef.current?.getCurrentTime() ?? 0;
   }, []);
 
+  // Deep-link support: on player ready, if the URL has a #t=<sec> fragment,
+  // seek to it once.
+  const handleReady = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const match = window.location.hash.match(/^#t=(\d+(?:\.\d+)?)/);
+    if (match) {
+      const t = parseFloat(match[1]);
+      if (isFinite(t) && t >= 0) {
+        playerRef.current?.seek(t);
+      }
+    }
+  }, []);
+
   return (
     <div>
       <VideoPlayer
@@ -51,6 +75,7 @@ export function ViewerShell({
         accentColor={accentColor}
         onTimeUpdate={setCurrentTime}
         onPlayStateChange={setIsPlaying}
+        onReady={handleReady}
       />
       {!isOwner && (
         <Tracking
@@ -67,6 +92,13 @@ export function ViewerShell({
       />
       <ChaptersList chapters={chapters} onSeek={handleSeek} />
       <ActionItemsList actionItems={actionItems} onSeek={handleSeek} />
+      <CommentsSection
+        comments={comments}
+        slug={slug}
+        isOwner={isOwner}
+        onSeek={handleSeek}
+        getCurrentTime={getCurrentTime}
+      />
     </div>
   );
 }
