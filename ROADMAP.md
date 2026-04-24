@@ -48,6 +48,15 @@ After each milestone ships, the `/record` flow (or relevant feature) goes live a
 
 Testing is not required between every commit — just at milestone boundaries.
 
+## Stage 1.5 — Premium UX + Organization
+
+| Phase | What it ships |
+|-------|---------------|
+| 1.5a  | CSS-var design tokens (dark + light via `next-themes`), Geist Sans/Mono, primitive components under `src/components/ui/`, every existing surface rethemed in the Linear/v0 aesthetic lane |
+| 1.5b  | `folders` table with subfolders (single-parent hierarchy), Postgres FTS over title + AI title + summary + transcripts (weighted tsvector + GIN), sort/filter, sidebar dashboard layout, drag-and-drop recordings between folders, card hover-menu (move / delete) |
+
+**Status:** ✅ shipped 2026-04-24. Primary dashboard now at `/?q=...&sort=...&folder=...&status=...&brand=...`. Theme toggle in top nav.
+
 ## Known gaps / bugs being tracked
 
 See open issues: https://github.com/Deducer/loom-clone/issues
