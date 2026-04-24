@@ -3,14 +3,22 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { getR2Client, r2BucketName } from "./client";
 
 /**
- * Returns a signed GET URL valid for 1 hour. Used by the owner's preview
- * player in /v/:slug; the viewer page fetches fresh URLs as needed.
+ * Returns a signed GET URL valid for 1 hour. When `opts.filename` is
+ * supplied, the signed URL includes a `Content-Disposition: attachment`
+ * directive with the given filename — clicking it triggers a browser
+ * download instead of inline playback.
  */
-export async function presignGet(key: string): Promise<string> {
+export async function presignGet(
+  key: string,
+  opts: { filename?: string } = {}
+): Promise<string> {
   const client = getR2Client();
-  return getSignedUrl(
-    client,
-    new GetObjectCommand({ Bucket: r2BucketName(), Key: key }),
-    { expiresIn: 3600 }
-  );
+  const command = new GetObjectCommand({
+    Bucket: r2BucketName(),
+    Key: key,
+    ResponseContentDisposition: opts.filename
+      ? `attachment; filename="${opts.filename.replace(/"/g, "")}"`
+      : undefined,
+  });
+  return getSignedUrl(client, command, { expiresIn: 3600 });
 }
