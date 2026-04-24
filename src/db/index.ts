@@ -1,5 +1,6 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+import { logBootSummaryOnce } from "@/lib/boot-log";
 
 type Db = ReturnType<typeof drizzle>;
 
@@ -7,6 +8,7 @@ let cached: Db | undefined;
 
 function getDb(): Db {
   if (cached) return cached;
+  logBootSummaryOnce();
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     throw new Error("DATABASE_URL is not set");
