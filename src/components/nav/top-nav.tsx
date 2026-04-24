@@ -1,4 +1,9 @@
 import Link from "next/link";
+import { Video } from "lucide-react";
+import { Avatar } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { cn } from "@/lib/cn";
 
 type Props = {
   userEmail: string;
@@ -7,44 +12,47 @@ type Props = {
 
 export function TopNav({ userEmail, activePath }: Props) {
   const items = [
-    { href: "/record", label: "Record", key: "record" as const },
     { href: "/", label: "Recordings", key: "recordings" as const },
     { href: "/brands", label: "Brands", key: "brands" as const },
   ];
 
+  const linkClass = (active: boolean) =>
+    cn(
+      "text-sm transition-colors",
+      active ? "text-text font-medium" : "text-text-muted hover:text-text"
+    );
+
   return (
-    <nav className="flex items-center justify-between border-b border-white/10 px-6 py-3">
-      <div className="flex items-center gap-6">
-        <Link href="/" className="text-sm font-semibold">
-          Loom Clone
+    <nav className="sticky top-0 z-40 border-b border-border bg-bg/80 backdrop-blur">
+      <div className="mx-auto flex h-14 max-w-5xl items-center gap-6 px-6">
+        <Link
+          href="/"
+          className="flex items-center gap-2 text-sm font-semibold text-text"
+        >
+          <Video className="h-4 w-4 text-accent" />
+          <span>Loom Clone</span>
         </Link>
-        <ul className="flex items-center gap-4">
+        <ul className="flex items-center gap-5">
           {items.map((item) => (
             <li key={item.key}>
-              <Link
-                href={item.href}
-                className={
-                  item.key === activePath
-                    ? "text-sm font-medium"
-                    : "text-sm opacity-60 hover:opacity-100"
-                }
-              >
+              <Link href={item.href} className={linkClass(item.key === activePath)}>
                 {item.label}
               </Link>
             </li>
           ))}
         </ul>
-      </div>
-      <div className="flex items-center gap-3">
-        <span className="text-xs opacity-60">{userEmail}</span>
-        <form action="/auth/signout" method="post">
-          <button
-            type="submit"
-            className="rounded border border-white/20 px-2.5 py-1 text-xs hover:bg-white/5"
-          >
-            Sign out
-          </button>
-        </form>
+        <div className="ml-auto flex items-center gap-3">
+          <ThemeToggle />
+          <div className="flex items-center gap-2 text-sm text-text-muted">
+            <Avatar name={userEmail} size={24} />
+            <span className="hidden sm:inline">{userEmail}</span>
+          </div>
+          <form action="/auth/signout" method="post">
+            <Button type="submit" variant="ghost" size="sm">
+              Sign out
+            </Button>
+          </form>
+        </div>
       </div>
     </nav>
   );
