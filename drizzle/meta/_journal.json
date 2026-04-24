@@ -22,6 +22,13 @@
       "when": 1776961520399,
       "tag": "0002_cultured_adam_warlock",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1776983544834,
+      "tag": "0003_unique_whistler",
+      "breakpoints": true
     }
   ]
 }

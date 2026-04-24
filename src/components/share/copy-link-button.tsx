@@ -1,6 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { Check, Copy } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/cn";
 
 export function CopyLinkButton({
   url,
@@ -11,8 +14,10 @@ export function CopyLinkButton({
 }) {
   const [copied, setCopied] = useState(false);
   return (
-    <button
+    <Button
       type="button"
+      variant="outline"
+      size="sm"
       onClick={async () => {
         try {
           await navigator.clipboard.writeText(url);
@@ -22,12 +27,19 @@ export function CopyLinkButton({
           // Clipboard may be blocked in iframes / old browsers; noop
         }
       }}
-      className={
-        className ??
-        "rounded border border-white/20 px-3 py-1.5 text-xs hover:bg-white/5"
-      }
+      className={cn(className)}
     >
-      {copied ? "Copied!" : "Copy share link"}
-    </button>
+      {copied ? (
+        <>
+          <Check className="h-3.5 w-3.5" />
+          Copied
+        </>
+      ) : (
+        <>
+          <Copy className="h-3.5 w-3.5" />
+          Copy link
+        </>
+      )}
+    </Button>
   );
 }

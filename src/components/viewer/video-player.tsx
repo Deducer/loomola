@@ -157,7 +157,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
         playsInline
         preload="metadata"
         onError={handleError}
-        className="w-full rounded border border-white/10 bg-black"
+        className="w-full rounded-xl border border-border bg-black"
       />
       {error && (
         <div className="mt-2 flex items-center gap-3 rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm">
