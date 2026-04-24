@@ -57,6 +57,14 @@ Testing is not required between every commit — just at milestone boundaries.
 
 **Status:** ✅ shipped 2026-04-24. Primary dashboard now at `/?q=...&sort=...&folder=...&status=...&brand=...`. Theme toggle in top nav.
 
+### Stage 1.5 polish follow-ups (candidate for Stage 1.6)
+
+- **Move creator controls off `/v/:slug`** — password / trim / downloads currently render inline on the share page for the owner. Non-owners already can't see them (gated on `isOwner`), but mixing creator tools with the viewer surface muddies the product. Move to a dedicated `/recordings/[id]/edit` page or a settings drawer accessible from the dashboard card.
+- **Redesign the drop-off chart** — current 10-bar histogram is functional but visually weak. Try a smooth filled area chart, sparkline, or "retention at N%" inline metric.
+- **Declutter the share page vertical stack** — many sections stack below the player; revisit a two-column or tabbed layout (the original spec's layout was two-column).
+- **Loom-style trim handles on Plyr's seek bar** — replace the two-range-slider UI with inline drag handles on the progress bar itself.
+- **Inline creator edit affordances** — title rename, brand change, delete. Consolidate into the creator-edit surface above.
+
 ## Known gaps / bugs being tracked
 
 See open issues: https://github.com/Deducer/loom-clone/issues
