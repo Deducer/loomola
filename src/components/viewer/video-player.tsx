@@ -58,9 +58,28 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
 
   useImperativeHandle(ref, () => ({
     seek: (sec: number) => {
-      if (plyrRef.current) plyrRef.current.currentTime = sec;
+      const video = videoRef.current;
+      if (!video) return;
+      // Metadata must be loaded before a seek takes effect; otherwise the
+      // browser silently stores the request and only applies it once data
+      // arrives, which feels like a dead click. If unloaded, trigger a load
+      // and apply the seek once `loadedmetadata` fires.
+      const apply = () => {
+        video.currentTime = sec;
+        if (plyrRef.current) plyrRef.current.currentTime = sec;
+      };
+      if (video.readyState >= 1) {
+        apply();
+      } else {
+        const onMeta = () => {
+          apply();
+          video.removeEventListener("loadedmetadata", onMeta);
+        };
+        video.addEventListener("loadedmetadata", onMeta);
+        video.load();
+      }
     },
-    getCurrentTime: () => plyrRef.current?.currentTime ?? 0,
+    getCurrentTime: () => plyrRef.current?.currentTime ?? videoRef.current?.currentTime ?? 0,
   }));
 
   async function refreshUrl() {
@@ -101,6 +120,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
         src={initialSignedUrl}
         controls
         playsInline
+        preload="metadata"
         onError={handleError}
         className="w-full rounded border border-white/10 bg-black"
       />
