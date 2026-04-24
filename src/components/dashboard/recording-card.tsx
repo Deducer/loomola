@@ -12,16 +12,14 @@ function formatDuration(seconds: string | number | null): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-function formatRelative(date: Date): string {
-  const diffMs = Date.now() - date.getTime();
-  const diffMin = Math.floor(diffMs / 60_000);
-  if (diffMin < 1) return "just now";
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  const diffDay = Math.floor(diffHr / 24);
-  if (diffDay < 30) return `${diffDay}d ago`;
-  return date.toLocaleDateString();
+function formatShortDate(date: Date): string {
+  const now = new Date();
+  const sameYear = date.getFullYear() === now.getFullYear();
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    ...(sameYear ? {} : { year: "numeric" }),
+  });
 }
 
 type BadgeVariant =
@@ -84,7 +82,7 @@ export function RecordingCard({
         <div className="flex items-center gap-1.5 text-xs text-text-subtle">
           <span>{formatDuration(rec.durationSeconds)}</span>
           <span>·</span>
-          <span>{formatRelative(new Date(rec.createdAt))}</span>
+          <span>{formatShortDate(new Date(rec.createdAt))}</span>
           {rec.viewCount > 0 && (
             <>
               <span>·</span>
