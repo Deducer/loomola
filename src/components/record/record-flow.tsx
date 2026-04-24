@@ -220,13 +220,15 @@ export function RecordFlow({ brands }: { brands: BrandProfile[] }) {
     return <FinishedView slug={state.slug} result={state.result} onReset={onReset} />;
   }
   return (
-    <div className="mx-auto max-w-lg space-y-4 p-6 text-center">
-      <h2 className="text-xl font-semibold">Couldn&apos;t complete recording</h2>
-      <p className="text-sm opacity-70">{state.message}</p>
+    <div className="mx-auto max-w-lg space-y-4 rounded-xl border border-border bg-bg-subtle p-8 text-center">
+      <h2 className="text-lg font-semibold text-text">
+        Couldn&apos;t complete recording
+      </h2>
+      <p className="text-sm text-text-muted">{state.message}</p>
       <button
         type="button"
         onClick={onReset}
-        className="rounded border border-white/20 px-4 py-2 text-sm hover:bg-white/5"
+        className="rounded-md border border-border-strong px-4 py-2 text-sm text-text-muted hover:bg-bg-elevated hover:text-text"
       >
         Try again
       </button>

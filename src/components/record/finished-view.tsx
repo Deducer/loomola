@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { RecordingResult, TrackKind } from "@/lib/recording/types";
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import type { RecordingResult, TrackKind } from "@/lib/recording/types";
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -13,11 +14,16 @@ function formatBytes(n: number): string {
 
 function trackLabel(kind: TrackKind): string {
   switch (kind) {
-    case "composite": return "Composite (share-ready)";
-    case "screen": return "Raw screen video";
-    case "camera": return "Raw camera video";
-    case "mic": return "Raw microphone audio";
-    case "system-audio": return "Raw system audio";
+    case "composite":
+      return "Composite (share-ready)";
+    case "screen":
+      return "Raw screen video";
+    case "camera":
+      return "Raw camera video";
+    case "mic":
+      return "Raw microphone audio";
+    case "system-audio":
+      return "Raw system audio";
   }
 }
 
@@ -50,24 +56,23 @@ export function FinishedView({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-semibold">Recording ready</h2>
-        <p className="mt-1 text-sm opacity-60">
+        <h2 className="text-2xl font-semibold tracking-tight text-text">
+          Recording ready
+        </h2>
+        <p className="mt-1 text-sm text-text-muted">
           Duration: {result.durationSeconds.toFixed(1)}s · Resolution:{" "}
           {result.settings.resolution.toUpperCase()} · Uploaded to your account
         </p>
       </div>
 
-      <div className="rounded-lg border border-white/10 p-4">
-        <p className="text-sm font-medium">Share link</p>
+      <div className="rounded-xl border border-border bg-bg-subtle p-4">
+        <p className="text-sm font-medium text-text">Share link</p>
         <div className="mt-2 flex items-center gap-2">
-          <code className="flex-1 rounded bg-white/5 px-3 py-2 text-sm">
+          <code className="flex-1 truncate rounded-md bg-bg-elevated px-3 py-2 font-mono text-xs text-text-muted">
             /v/{slug}
           </code>
-          <Link
-            href={`/v/${slug}`}
-            className="rounded bg-white/90 px-3 py-2 text-sm font-medium text-black hover:bg-white"
-          >
-            Open
+          <Link href={`/v/${slug}`}>
+            <Button size="sm">Open</Button>
           </Link>
         </div>
       </div>
@@ -76,28 +81,32 @@ export function FinishedView({
         <video
           src={composite.url}
           controls
-          className="w-full rounded border border-white/10 bg-black"
+          className="w-full rounded-xl border border-border bg-black"
         />
       )}
 
       <div>
-        <h3 className="text-sm font-medium">Local downloads (also on R2)</h3>
-        <ul className="mt-2 grid gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-text-muted">
+          Local downloads (also on R2)
+        </h3>
+        <ul className="mt-3 grid gap-2">
           {urls.map((u) => (
             <li
               key={u.kind}
-              className="flex items-center justify-between rounded border border-white/10 p-3"
+              className="flex items-center justify-between rounded-lg border border-border bg-bg-subtle p-3"
             >
               <div className="min-w-0">
-                <div className="text-sm font-medium">{trackLabel(u.kind)}</div>
-                <div className="mt-0.5 text-xs opacity-60">
+                <div className="text-sm font-medium text-text">
+                  {trackLabel(u.kind)}
+                </div>
+                <div className="mt-0.5 text-xs text-text-subtle">
                   {u.mimeType} · {formatBytes(u.sizeBytes)}
                 </div>
               </div>
               <a
                 href={u.url}
                 download={`loom-${result.settings.resolution}-${u.kind}.webm`}
-                className="rounded border border-white/20 px-3 py-1.5 text-xs hover:bg-white/5"
+                className="inline-flex items-center rounded-md border border-border-strong px-3 py-1.5 text-xs text-text-muted hover:bg-bg-elevated hover:text-text"
               >
                 Download
               </a>
@@ -106,13 +115,9 @@ export function FinishedView({
         </ul>
       </div>
 
-      <button
-        type="button"
-        onClick={onReset}
-        className="rounded border border-white/20 px-4 py-2 text-sm hover:bg-white/5"
-      >
+      <Button variant="outline" onClick={onReset}>
         New recording
-      </button>
+      </Button>
     </div>
   );
 }

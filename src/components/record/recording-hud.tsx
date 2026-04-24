@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
 
 function formatElapsed(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -25,27 +26,23 @@ export function RecordingHud({
   }, [startedAt]);
 
   return (
-    <div className="flex min-h-[300px] flex-col items-center justify-center gap-6">
+    <div className="flex min-h-[300px] flex-col items-center justify-center gap-6 rounded-xl border border-border bg-bg-subtle p-10">
       <div className="flex items-center gap-3">
         <span
           aria-hidden="true"
-          className="h-3 w-3 animate-pulse rounded-full bg-red-500"
+          className="h-3 w-3 animate-pulse rounded-full bg-destructive"
         />
-        <span className="text-2xl font-semibold tabular-nums">
+        <span className="font-mono text-3xl font-semibold tabular-nums text-text">
           {formatElapsed(elapsed)}
         </span>
       </div>
-      <p className="max-w-md text-center text-sm opacity-60">
+      <p className="max-w-md text-center text-sm text-text-muted">
         Recording in progress. Click stop below or end screen sharing from the
         browser bar to finalise the recording.
       </p>
-      <button
-        type="button"
-        onClick={onStop}
-        className="rounded bg-red-500/90 px-6 py-2 text-sm font-medium text-white hover:bg-red-500"
-      >
+      <Button onClick={onStop} variant="destructive" size="lg">
         Stop recording
-      </button>
+      </Button>
     </div>
   );
 }

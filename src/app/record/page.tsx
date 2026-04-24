@@ -9,15 +9,17 @@ export default async function RecordPage() {
   return (
     <>
       <TopNav userEmail={user.email ?? "unknown"} activePath="record" />
-      <div className="mx-auto max-w-4xl p-6">
-        <h1 className="text-2xl font-semibold">New recording</h1>
-        <p className="mt-1 text-sm opacity-60">
-          Recording runs in your browser. Blobs stay local until upload ships in M4.
+      <main className="mx-auto max-w-4xl px-6 py-10">
+        <h1 className="text-2xl font-semibold tracking-tight text-text">
+          New recording
+        </h1>
+        <p className="mt-1 text-sm text-text-muted">
+          Capture your screen, camera, and audio — all in the browser.
         </p>
-        <div className="mt-6">
+        <div className="mt-8">
           <RecordFlow brands={brands} />
         </div>
-      </div>
+      </main>
     </>
   );
 }

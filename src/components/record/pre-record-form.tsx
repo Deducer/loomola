@@ -10,6 +10,8 @@ import type {
 import { DEFAULT_SETTINGS } from "@/lib/recording/types";
 import { BubblePreview } from "./bubble-preview";
 import { DevicePickers } from "./device-pickers";
+import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import type { BrandProfile } from "@/db/queries/brand-profiles";
 
 type Props = {
@@ -29,12 +31,9 @@ const POSITIONS = [
 
 export function PreRecordForm({ brands, onStart }: Props) {
   const [settings, setSettings] = useState<RecordingSettings>(DEFAULT_SETTINGS);
-  // null = still checking (SSR / first render); false = unsupported; true = OK
   const [supported, setSupported] = useState<boolean | null>(null);
 
   useEffect(() => {
-    // getDisplayMedia is desktop-only. iOS Safari, Chrome on iOS, and most
-    // mobile browsers don't expose it — detect and gate the form.
     const ok =
       typeof navigator !== "undefined" &&
       typeof navigator.mediaDevices?.getDisplayMedia === "function" &&
@@ -49,14 +48,20 @@ export function PreRecordForm({ brands, onStart }: Props) {
 
   if (supported === false) {
     return (
-      <div className="mx-auto max-w-lg rounded-lg border border-white/10 p-6 text-center">
-        <h2 className="text-lg font-semibold">Recording isn&apos;t supported on this browser</h2>
-        <p className="mt-2 text-sm opacity-70">
-          Screen capture requires <code className="rounded bg-white/10 px-1">getDisplayMedia</code>,
-          which isn&apos;t available on mobile browsers or iOS Safari. Open this
-          page on desktop Chrome (or a Chromium-based browser on macOS / Windows / Linux) to record.
+      <div className="mx-auto max-w-lg rounded-xl border border-border bg-bg-subtle p-6 text-center">
+        <h2 className="text-lg font-semibold text-text">
+          Recording isn&apos;t supported on this browser
+        </h2>
+        <p className="mt-2 text-sm text-text-muted">
+          Screen capture requires{" "}
+          <code className="rounded bg-bg-elevated px-1 font-mono text-xs">
+            getDisplayMedia
+          </code>
+          , which isn&apos;t available on mobile browsers or iOS Safari. Open
+          this page on desktop Chrome (or a Chromium-based browser on macOS /
+          Windows / Linux) to record.
         </p>
-        <p className="mt-3 text-xs opacity-50">
+        <p className="mt-3 text-xs text-text-subtle">
           The macOS menubar app (Stage 2) will eventually remove the browser
           dependency entirely.
         </p>
@@ -74,18 +79,20 @@ export function PreRecordForm({ brands, onStart }: Props) {
             onChange={(v) => update("resolution", v as Resolution)}
           />
           {settings.resolution === "4k" && (
-            <p className="mt-1 text-xs opacity-60">
+            <p className="mt-1.5 text-xs text-text-subtle">
               4K uses significant CPU — if you see dropped frames, drop to 1440p.
             </p>
           )}
         </Group>
 
         <Group label="Camera">
-          <label className="flex items-center gap-2 text-sm">
+          <label className="flex items-center gap-2 text-sm text-text-muted">
             <input
               type="checkbox"
               checked={settings.cameraEnabled}
               onChange={(e) => update("cameraEnabled", e.target.checked)}
+              className="h-4 w-4 rounded border-border-strong bg-bg-subtle"
+              style={{ accentColor: "var(--accent)" }}
             />
             Include camera bubble
           </label>
@@ -114,37 +121,45 @@ export function PreRecordForm({ brands, onStart }: Props) {
 
             <Group label="Bubble position">
               <div className="grid grid-cols-2 gap-2">
-                {POSITIONS.map((p) => (
-                  <button
-                    key={p.label}
-                    type="button"
-                    onClick={() =>
-                      update("bubblePosition", { x: p.x, y: p.y })
-                    }
-                    className={
-                      Math.abs(settings.bubblePosition.x - p.x) < 0.01 &&
-                      Math.abs(settings.bubblePosition.y - p.y) < 0.01
-                        ? "rounded border border-white/60 px-3 py-1.5 text-xs"
-                        : "rounded border border-white/15 px-3 py-1.5 text-xs hover:border-white/40"
-                    }
-                  >
-                    {p.label}
-                  </button>
-                ))}
+                {POSITIONS.map((p) => {
+                  const active =
+                    Math.abs(settings.bubblePosition.x - p.x) < 0.01 &&
+                    Math.abs(settings.bubblePosition.y - p.y) < 0.01;
+                  return (
+                    <button
+                      key={p.label}
+                      type="button"
+                      onClick={() =>
+                        update("bubblePosition", { x: p.x, y: p.y })
+                      }
+                      className={
+                        active
+                          ? "rounded-md border border-accent bg-accent/10 px-3 py-1.5 text-xs text-text"
+                          : "rounded-md border border-border px-3 py-1.5 text-xs text-text-muted hover:border-border-strong hover:text-text"
+                      }
+                    >
+                      {p.label}
+                    </button>
+                  );
+                })}
               </div>
             </Group>
           </>
         )}
 
         <Group label="System audio">
-          <label className="flex items-center gap-2 text-sm">
+          <label className="flex items-start gap-2 text-sm text-text-muted">
             <input
               type="checkbox"
               checked={settings.systemAudioEnabled}
               onChange={(e) => update("systemAudioEnabled", e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-border-strong bg-bg-subtle"
+              style={{ accentColor: "var(--accent)" }}
             />
-            Capture audio from apps (Chrome only; you&apos;ll be asked to share
-            a tab or the whole screen with audio)
+            <span>
+              Capture audio from apps (Chrome only; you&apos;ll be asked to
+              share a tab or the whole screen with audio)
+            </span>
           </label>
         </Group>
 
@@ -159,12 +174,9 @@ export function PreRecordForm({ brands, onStart }: Props) {
         </Group>
 
         <Group label="Brand profile (optional)">
-          <select
+          <Select
             value={settings.brandProfileId ?? ""}
-            onChange={(e) =>
-              update("brandProfileId", e.target.value || null)
-            }
-            className="w-full rounded border border-white/20 bg-transparent px-3 py-2 text-sm outline-none focus:border-white/40"
+            onChange={(e) => update("brandProfileId", e.target.value || null)}
           >
             <option value="">None</option>
             {brands.map((b) => (
@@ -172,7 +184,7 @@ export function PreRecordForm({ brands, onStart }: Props) {
                 {b.name}
               </option>
             ))}
-          </select>
+          </Select>
         </Group>
       </div>
 
@@ -181,22 +193,31 @@ export function PreRecordForm({ brands, onStart }: Props) {
           <BubblePreview settings={settings} />
         </Group>
 
-        <button
-          type="button"
+        <Button
           onClick={() => onStart(settings)}
-          className="w-full rounded bg-red-500/90 px-4 py-2.5 text-sm font-medium text-white hover:bg-red-500"
+          variant="destructive"
+          size="lg"
+          className="w-full"
         >
           Start recording
-        </button>
+        </Button>
       </div>
     </div>
   );
 }
 
-function Group({ label, children }: { label: string; children: React.ReactNode }) {
+function Group({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div>
-      <div className="mb-1 text-sm font-medium">{label}</div>
+      <div className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-text-muted">
+        {label}
+      </div>
       {children}
     </div>
   );
@@ -212,7 +233,7 @@ function Segmented<T extends string>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div className="inline-flex rounded border border-white/15 p-0.5">
+    <div className="inline-flex rounded-md border border-border p-0.5">
       {options.map((o) => (
         <button
           key={o.value}
@@ -220,8 +241,8 @@ function Segmented<T extends string>({
           onClick={() => onChange(o.value)}
           className={
             o.value === value
-              ? "rounded bg-white/90 px-3 py-1.5 text-xs capitalize text-black"
-              : "rounded px-3 py-1.5 text-xs capitalize opacity-70 hover:opacity-100"
+              ? "rounded-sm bg-bg-elevated px-3 py-1.5 text-xs capitalize text-text"
+              : "rounded-sm px-3 py-1.5 text-xs capitalize text-text-subtle hover:text-text-muted"
           }
         >
           {o.label}

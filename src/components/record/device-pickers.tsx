@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { Select } from "@/components/ui/select";
 import {
   listMediaDevices,
   primeDeviceLabels,
@@ -85,13 +86,13 @@ export function DevicePickers({
         <button
           type="button"
           onClick={() => void unlock()}
-          className="rounded border border-white/20 px-3 py-1.5 text-xs hover:bg-white/5"
+          className="rounded-md border border-border-strong px-3 py-1.5 text-xs text-text-muted hover:bg-bg-elevated hover:text-text"
         >
           Show specific devices
         </button>
       )}
       {state.error && (
-        <p className="text-xs text-red-300">{state.error}</p>
+        <p className="text-xs text-destructive">{state.error}</p>
       )}
     </div>
   );
@@ -112,19 +113,22 @@ function Picker({
 }) {
   return (
     <div>
-      <label className="block text-xs opacity-70">{label}</label>
-      <select
+      <label className="block text-xs text-text-subtle">{label}</label>
+      <Select
         value={value ?? ""}
         onChange={(e) => onChange(e.target.value || null)}
-        className="mt-1 w-full rounded border border-white/20 bg-transparent px-3 py-2 text-sm outline-none focus:border-white/40"
+        className="mt-1"
       >
         <option value="">System default</option>
         {devices.map((d) => (
           <option key={d.deviceId} value={d.deviceId}>
-            {d.label || (hasLabels ? `(unnamed ${d.kind})` : "Tap button below to load names")}
+            {d.label ||
+              (hasLabels
+                ? `(unnamed ${d.kind})`
+                : "Tap button below to load names")}
           </option>
         ))}
-      </select>
+      </Select>
     </div>
   );
 }

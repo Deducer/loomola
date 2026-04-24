@@ -48,7 +48,7 @@ export function BubblePreview({ settings }: { settings: RecordingSettings }) {
       ref={canvasRef}
       width={480}
       height={270}
-      className="w-full rounded border border-white/10"
+      className="w-full rounded-lg border border-border"
     />
   );
 }
