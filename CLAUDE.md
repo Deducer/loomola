@@ -58,6 +58,7 @@ See [`ROADMAP.md`](ROADMAP.md) for the live status table that Ian checks. Update
 - [x] **M7: Viewer page** — public `/v/:slug` with Plyr player, paragraph-synced transcript (click-to-seek + auto-scroll), chapter markers, signed-URL 403 refresh via `/api/v/:slug/refresh-url`, brand logo + accent in header.
 - [x] **M8: Password protect + view tracking** — per-video bcrypt passwords, HMAC-signed slug-scoped unlock cookies (24h, auto-invalidated on password change), anonymous view tracking via sendBeacon, owner-only 10-bucket drop-off chart, view counts on dashboard + share page.
 - [x] **M9: Comments** — anonymous timestamped comments on /v/:slug with name/email/body, auto-captured playhead, owner-only delete, per-visitor rate limit (3/5min), Mailgun notifications (MAILGUN_API_KEY + MAILGUN_DOMAIN=mg.dissonance.cloud + MAIL_FROM_ADDRESS), `#t=<sec>` deep-link seek on page load.
+- [x] **M10: Trim editing + raw downloads** — owner-only trim editor with Save/Reset, PUT/DELETE /api/recordings/:id/trim, viewer-side playback clamp to [trim_start_sec, trim_end_sec], per-raw-track signed download links with Content-Disposition filenames.
 - [ ] M9: Comments (V4) + Resend notifications
 - [ ] M10: Trim editing + raw stream downloads
 - [ ] M11: Polish + full-pipeline smoke E2E
