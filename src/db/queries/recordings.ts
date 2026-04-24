@@ -112,3 +112,36 @@ export async function softDeleteRecording(
     .returning({ id: mediaObjects.id });
   return result.length > 0;
 }
+
+export async function updateTrim(params: {
+  id: string;
+  ownerId: string;
+  startSec: number;
+  endSec: number;
+}): Promise<boolean> {
+  const result = await db
+    .update(mediaObjects)
+    .set({
+      trimStartSec: String(params.startSec),
+      trimEndSec: String(params.endSec),
+    })
+    .where(
+      and(eq(mediaObjects.id, params.id), eq(mediaObjects.ownerId, params.ownerId))
+    )
+    .returning({ id: mediaObjects.id });
+  return result.length > 0;
+}
+
+export async function clearTrim(params: {
+  id: string;
+  ownerId: string;
+}): Promise<boolean> {
+  const result = await db
+    .update(mediaObjects)
+    .set({ trimStartSec: null, trimEndSec: null })
+    .where(
+      and(eq(mediaObjects.id, params.id), eq(mediaObjects.ownerId, params.ownerId))
+    )
+    .returning({ id: mediaObjects.id });
+  return result.length > 0;
+}
