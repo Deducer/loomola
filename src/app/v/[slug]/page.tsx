@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getRecordingBySlug } from "@/db/queries/recordings";
 import { getTranscriptByRecording } from "@/db/queries/transcripts";
 import { listMaxWatched, countViews } from "@/db/queries/views";
+import { listCommentsForRecording } from "@/db/queries/comments";
 import { presignGet } from "@/lib/r2/presigned-get";
 import { CopyLinkButton } from "@/components/share/copy-link-button";
 import { ViewerShell } from "@/components/viewer/viewer-shell";
@@ -61,6 +62,15 @@ export default async function SharePage({
   const words: Word[] = Array.isArray(transcript?.wordTimestamps)
     ? (transcript.wordTimestamps as Word[])
     : [];
+
+  const rawComments = await listCommentsForRecording(rec.id);
+  const commentRows = rawComments.map((c) => ({
+    id: c.id,
+    commenterName: c.commenterName,
+    body: c.body,
+    timestampSec: parseFloat(String(c.timestampSec)),
+    createdAt: c.createdAt.toISOString(),
+  }));
 
   const displayTitle = rec.title || rec.aiTitle || "Untitled recording";
   const isReady = rec.status === "ready" && !!rec.r2CompositeKey;
@@ -132,6 +142,7 @@ export default async function SharePage({
               words={words}
               fullText={transcript?.fullText ?? ""}
               isOwner={isOwner}
+              comments={commentRows}
             />
           </div>
         ) : (
