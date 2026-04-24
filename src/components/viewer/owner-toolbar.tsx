@@ -2,13 +2,23 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { TrimEditor } from "./trim-editor";
+import { DownloadsList, type DownloadLink } from "./downloads-list";
 
 export function OwnerToolbar({
   recordingId,
   hasPassword,
+  durationSec,
+  trimStartSec,
+  trimEndSec,
+  downloads,
 }: {
   recordingId: string;
   hasPassword: boolean;
+  durationSec: number | null;
+  trimStartSec: number | null;
+  trimEndSec: number | null;
+  downloads: DownloadLink[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -60,6 +70,7 @@ export function OwnerToolbar({
   }
 
   return (
+    <>
     <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg border border-white/10 p-3 text-sm">
       <span className="opacity-60">Password:</span>
       <span className={hasPassword ? "text-emerald-300" : "opacity-70"}>
@@ -103,5 +114,13 @@ export function OwnerToolbar({
         </div>
       )}
     </div>
+    <TrimEditor
+      recordingId={recordingId}
+      durationSec={durationSec}
+      initialStart={trimStartSec}
+      initialEnd={trimEndSec}
+    />
+    <DownloadsList links={downloads} />
+    </>
   );
 }

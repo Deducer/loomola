@@ -42,9 +42,10 @@ export function TrimEditor({
       </div>
     );
   }
+  const dur: number = durationSec;
 
   const hasTrim = initialStart != null && initialEnd != null;
-  const check = validateTrim({ startSec: start, endSec: end, durationSec });
+  const check = validateTrim({ startSec: start, endSec: end, durationSec: dur });
 
   async function save() {
     if (!check.ok) {
@@ -88,7 +89,7 @@ export function TrimEditor({
       }
       setOpen(false);
       setStart(0);
-      setEnd(durationSec);
+      setEnd(dur);
       router.refresh();
     } finally {
       setBusy(false);
@@ -135,7 +136,7 @@ export function TrimEditor({
           <input
             type="range"
             min={0}
-            max={durationSec}
+            max={dur}
             step={0.5}
             value={start}
             onChange={(e) => setStart(parseFloat(e.target.value))}
@@ -145,7 +146,7 @@ export function TrimEditor({
           <input
             type="range"
             min={0}
-            max={durationSec}
+            max={dur}
             step={0.5}
             value={end}
             onChange={(e) => setEnd(parseFloat(e.target.value))}
@@ -159,7 +160,7 @@ export function TrimEditor({
                 setOpen(false);
                 setError(null);
                 setStart(initialStart ?? 0);
-                setEnd(initialEnd ?? durationSec);
+                setEnd(initialEnd ?? dur);
               }}
               className="rounded px-2 py-1 text-xs opacity-70 hover:opacity-100"
             >
