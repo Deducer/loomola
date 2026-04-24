@@ -7,7 +7,15 @@ import {
   numeric,
   jsonb,
   uniqueIndex,
+  index,
+  customType,
 } from "drizzle-orm/pg-core";
+
+const tsvector = customType<{ data: string; driverData: string }>({
+  dataType() {
+    return "tsvector";
+  },
+});
 
 // ---------------------------------------------------------------------------
 // Enums
@@ -39,6 +47,30 @@ export const brandProfiles = pgTable("brand_profiles", {
 });
 
 // ---------------------------------------------------------------------------
+// folders — hierarchical organization (one folder per recording)
+// ---------------------------------------------------------------------------
+
+export const folders = pgTable(
+  "folders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: uuid("owner_id").notNull(),
+    parentId: uuid("parent_id"),
+    name: text("name").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    ownerIdx: index("folders_owner_idx").on(t.ownerId),
+    parentIdx: index("folders_parent_idx").on(t.parentId),
+  })
+);
+
+// ---------------------------------------------------------------------------
 // media_objects — polymorphic core (video today, audio in future milestones)
 // ---------------------------------------------------------------------------
 
@@ -64,6 +96,8 @@ export const mediaObjects = pgTable("media_objects", {
   trimEndSec: numeric("trim_end_sec"),
   passwordHash: text("password_hash"),
   uploadMetadata: jsonb("upload_metadata"),
+  folderId: uuid("folder_id"),
+  searchTsv: tsvector("search_tsv"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -86,6 +120,7 @@ export const transcripts = pgTable("transcripts", {
   language: text("language").default("en"),
   fullText: text("full_text").notNull(),
   wordTimestamps: jsonb("word_timestamps").notNull(),
+  searchTsv: tsvector("search_tsv"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -105,6 +140,7 @@ export const aiOutputs = pgTable("ai_outputs", {
   chapters: jsonb("chapters"),
   actionItems: jsonb("action_items"),
   llmModel: text("llm_model").notNull(),
+  searchTsv: tsvector("search_tsv"),
   generatedAt: timestamp("generated_at", { withTimezone: true })
     .defaultNow()
     .notNull(),

@@ -29,6 +29,13 @@
       "when": 1776983544834,
       "tag": "0003_unique_whistler",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1777003564693,
+      "tag": "0004_quick_hitman",
+      "breakpoints": true
     }
   ]
 }
