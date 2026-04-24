@@ -35,9 +35,11 @@ export function TranscriptPanel({
 
   if (paragraphs.length === 0) {
     return (
-      <div className="mt-8">
-        <h2 className="text-sm font-medium">Transcript</h2>
-        <p className="mt-3 rounded-lg border border-white/10 p-4 text-sm leading-relaxed opacity-80">
+      <div className="mt-10">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-text-muted">
+          Transcript
+        </h2>
+        <p className="mt-3 rounded-xl border border-border bg-bg-subtle p-4 text-sm leading-7 text-text-muted">
           {fullText || "(empty transcript)"}
         </p>
       </div>
@@ -45,23 +47,26 @@ export function TranscriptPanel({
   }
 
   return (
-    <div className="mt-8">
-      <h2 className="text-sm font-medium">Transcript</h2>
+    <div className="mt-10">
+      <h2 className="text-xs font-semibold uppercase tracking-wider text-text-muted">
+        Transcript
+      </h2>
       <div
         ref={containerRef}
-        className="mt-3 max-h-96 overflow-y-auto rounded-lg border border-white/10 p-2"
+        className="mt-3 max-h-96 overflow-y-auto rounded-xl border border-border bg-bg-subtle p-2"
       >
         {paragraphs.map((p, i) => (
           <button
             key={i}
+            type="button"
             ref={(el) => {
               paragraphRefs.current[i] = el;
             }}
             onClick={() => onSeek(p.startSec)}
-            className={`block w-full rounded px-2 py-2 text-left text-sm leading-relaxed transition-colors ${
+            className={`block w-full rounded-md px-3 py-2 text-left text-sm leading-7 transition-colors ${
               i === activeIdx
-                ? "bg-white/10"
-                : "opacity-70 hover:bg-white/5 hover:opacity-100"
+                ? "bg-accent/10 text-text"
+                : "text-text-muted hover:bg-bg-elevated hover:text-text"
             }`}
           >
             {p.text}

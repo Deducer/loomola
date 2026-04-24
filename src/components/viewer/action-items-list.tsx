@@ -17,16 +17,19 @@ export function ActionItemsList({
 }) {
   if (actionItems.length === 0) return null;
   return (
-    <div className="mt-8">
-      <h2 className="text-sm font-medium">Action items</h2>
-      <ul className="mt-2 space-y-2">
+    <div className="mt-10">
+      <h2 className="text-xs font-semibold uppercase tracking-wider text-text-muted">
+        Action items
+      </h2>
+      <ul className="mt-3 space-y-1">
         {actionItems.map((a, i) => (
           <li key={i}>
             <button
+              type="button"
               onClick={() => onSeek(a.timestamp_sec)}
-              className="flex w-full items-baseline gap-3 rounded px-2 py-1 text-left text-sm hover:bg-white/5"
+              className="flex w-full items-baseline gap-3 rounded-md px-2 py-1.5 text-left text-sm text-text-muted transition-colors hover:bg-bg-subtle hover:text-text"
             >
-              <code className="shrink-0 rounded bg-white/5 px-1.5 py-0.5 font-mono text-xs opacity-80">
+              <code className="shrink-0 rounded bg-bg-elevated px-1.5 py-0.5 font-mono text-[11px] text-text-muted">
                 {formatTs(a.timestamp_sec)}
               </code>
               <span>{a.text}</span>
