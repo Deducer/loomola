@@ -61,7 +61,11 @@ export function CommentItem({
   return (
     <li className="flex gap-3 rounded border border-white/10 p-3 text-sm">
       <button
-        onClick={() => onSeek(timestampSec)}
+        type="button"
+        onClick={() => {
+          console.log("[comment-item] seek click", { timestampSec });
+          onSeek(timestampSec);
+        }}
         className="shrink-0 self-start rounded bg-white/5 px-1.5 py-0.5 font-mono text-xs opacity-80 hover:bg-white/10"
       >
         {formatTs(timestampSec)}
