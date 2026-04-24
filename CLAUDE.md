@@ -59,6 +59,9 @@ See [`ROADMAP.md`](ROADMAP.md) for the live status table that Ian checks. Update
 - [x] **M8: Password protect + view tracking** — per-video bcrypt passwords, HMAC-signed slug-scoped unlock cookies (24h, auto-invalidated on password change), anonymous view tracking via sendBeacon, owner-only 10-bucket drop-off chart, view counts on dashboard + share page.
 - [x] **M9: Comments** — anonymous timestamped comments on /v/:slug with name/email/body, auto-captured playhead, owner-only delete, per-visitor rate limit (3/5min), Mailgun notifications (MAILGUN_API_KEY + MAILGUN_DOMAIN=mg.dissonance.cloud + MAIL_FROM_ADDRESS), `#t=<sec>` deep-link seek on page load.
 - [x] **M10: Trim editing + raw downloads** — owner-only trim editor with Save/Reset, PUT/DELETE /api/recordings/:id/trim, viewer-side playback clamp to [trim_start_sec, trim_end_sec], per-raw-track signed download links with Content-Disposition filenames.
+- [x] **M11: Polish + full-pipeline smoke E2E** — `npm run smoke` runs the full pipeline via scripts/e2e-smoke.mjs; env pre-flight in src/lib/env-check.ts; boot summary in src/lib/boot-log.ts (hooked via src/db/index.ts); robots.txt + noindex meta on /v/:slug; log prefixes already normalized.
+
+**Stage 1 complete.** Every feature outlined in the design spec (docs/superpowers/specs/2026-04-22-loom-clone-design.md) is live at https://loom.dissonance.cloud and covered by the smoke script.
 - [ ] M9: Comments (V4) + Resend notifications
 - [ ] M10: Trim editing + raw stream downloads
 - [ ] M11: Polish + full-pipeline smoke E2E
