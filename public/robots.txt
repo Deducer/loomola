@@ -1,0 +1,5 @@
+User-agent: *
+Disallow: /v/
+Disallow: /record
+Disallow: /api/
+Allow: /

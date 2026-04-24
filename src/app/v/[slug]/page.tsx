@@ -15,6 +15,11 @@ import { DropoffChart } from "@/components/viewer/dropoff-chart";
 import { cookieName, verifyUnlockToken } from "@/lib/viewer/unlock-cookie";
 import { bucketize } from "@/lib/viewer/dropoff";
 import type { Word } from "@/lib/viewer/paragraphs";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 export default async function SharePage({
   params,
