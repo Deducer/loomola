@@ -12,7 +12,8 @@
     "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "tsx scripts/migrate.ts"
+    "db:migrate": "tsx scripts/migrate.ts",
+    "smoke": "doppler run --project dissonance-cloud --config prd_loom -- node scripts/e2e-smoke.mjs"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.71",
