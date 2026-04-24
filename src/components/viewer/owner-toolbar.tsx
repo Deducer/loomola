@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Lock, LockOpen, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { TrimEditor } from "./trim-editor";
 import { DownloadsList, type DownloadLink } from "./downloads-list";
 
@@ -70,57 +73,65 @@ export function OwnerToolbar({
   }
 
   return (
-    <>
-    <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg border border-white/10 p-3 text-sm">
-      <span className="opacity-60">Password:</span>
-      <span className={hasPassword ? "text-emerald-300" : "opacity-70"}>
-        {hasPassword ? "on" : "off"}
-      </span>
-      <button
-        onClick={() => {
-          setOpen(!open);
-          setError(null);
-        }}
-        className="ml-auto rounded bg-white/10 px-2 py-1 text-xs hover:bg-white/20"
-      >
-        {hasPassword ? "Change" : "Add password"}
-      </button>
-      {hasPassword && (
-        <button
-          onClick={removePassword}
-          disabled={busy}
-          className="rounded bg-red-500/20 px-2 py-1 text-xs text-red-200 hover:bg-red-500/30 disabled:opacity-50"
-        >
-          Remove
-        </button>
-      )}
-      {open && (
-        <div className="flex w-full items-center gap-2 border-t border-white/10 pt-3">
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder={hasPassword ? "New password" : "Password"}
-            className="flex-1 rounded border border-white/20 bg-white/5 px-2 py-1 text-sm"
-          />
-          <button
-            onClick={savePassword}
-            disabled={busy}
-            className="rounded bg-white/20 px-2 py-1 text-xs hover:bg-white/30 disabled:opacity-50"
-          >
-            Save
-          </button>
-          {error && <p className="text-xs text-red-400">{error}</p>}
+    <div className="mt-6 space-y-3">
+      <div className="rounded-xl border border-border bg-bg-subtle p-3 text-sm">
+        <div className="flex items-center gap-3">
+          {hasPassword ? (
+            <Lock className="h-4 w-4 text-emerald-400" />
+          ) : (
+            <LockOpen className="h-4 w-4 text-text-subtle" />
+          )}
+          <span className="text-text-muted">Password</span>
+          <span className={hasPassword ? "text-emerald-400" : "text-text-subtle"}>
+            {hasPassword ? "on" : "off"}
+          </span>
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setOpen(!open);
+                setError(null);
+              }}
+            >
+              {hasPassword ? "Change" : "Add password"}
+            </Button>
+            {hasPassword && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={removePassword}
+                disabled={busy}
+                aria-label="Remove password"
+              >
+                <Trash2 className="h-4 w-4 text-destructive" />
+              </Button>
+            )}
+          </div>
         </div>
-      )}
+        {open && (
+          <div className="mt-3 flex items-center gap-2 border-t border-border pt-3">
+            <Input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder={hasPassword ? "New password" : "Password"}
+              className="flex-1"
+            />
+            <Button size="sm" onClick={savePassword} disabled={busy}>
+              Save
+            </Button>
+          </div>
+        )}
+        {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
+      </div>
+      <TrimEditor
+        recordingId={recordingId}
+        durationSec={durationSec}
+        initialStart={trimStartSec}
+        initialEnd={trimEndSec}
+      />
+      <DownloadsList links={downloads} />
     </div>
-    <TrimEditor
-      recordingId={recordingId}
-      durationSec={durationSec}
-      initialStart={trimStartSec}
-      initialEnd={trimEndSec}
-    />
-    <DownloadsList links={downloads} />
-    </>
   );
 }

@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { cookies } from "next/headers";
+import { ArrowLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getRecordingBySlug } from "@/db/queries/recordings";
 import { getTranscriptByRecording } from "@/db/queries/transcripts";
@@ -36,10 +37,8 @@ export default async function SharePage({
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
   const shareUrl = `${appUrl}/v/${slug}`;
-  const accent = rec.brand?.accentColor ?? "#4F46E5";
+  const accent = rec.brand?.accentColor ?? null;
 
-  // Password gate: if password set and visitor isn't owner and cookie invalid,
-  // render just the gate. Owner bypasses the gate.
   let unlocked = true;
   if (rec.passwordHash && !isOwner) {
     const jar = await cookies();
@@ -54,9 +53,11 @@ export default async function SharePage({
   if (!unlocked) {
     return (
       <div className="min-h-screen">
-        <header
-          className="flex items-center justify-between border-b border-white/10 px-6 py-3"
-          style={{ borderBottomColor: accent }}
+        <BrandHeader
+          brandName={rec.brand?.name}
+          brandLogoUrl={rec.brand?.logoUrl}
+          accent={accent}
+          isOwner={false}
         />
         <PasswordGate slug={slug} />
       </div>
@@ -105,8 +106,8 @@ export default async function SharePage({
   const displayTitle = rec.title || rec.aiTitle || "Untitled recording";
   const isReady = rec.status === "ready" && !!rec.r2CompositeKey;
   const signedVideoUrl = isReady ? await presignGet(rec.r2CompositeKey!) : null;
+  const playerAccent = accent ?? "#8b5cf6";
 
-  // Owner-only analytics
   let dropoffBuckets: number[] | null = null;
   let viewCount = 0;
   if (isOwner && isReady) {
@@ -118,40 +119,31 @@ export default async function SharePage({
 
   return (
     <div className="min-h-screen">
-      <header
-        className="flex items-center justify-between border-b border-white/10 px-6 py-3"
-        style={{ borderBottomColor: accent }}
-      >
-        <div className="flex items-center gap-3">
-          {rec.brand?.logoUrl && (
-            <img
-              src={rec.brand.logoUrl}
-              alt={rec.brand.name}
-              className="h-6 w-auto"
-            />
-          )}
-          {rec.brand?.name && (
-            <span className="text-sm font-semibold">{rec.brand.name}</span>
-          )}
-        </div>
-        {isOwner && (
-          <Link href="/" className="text-xs opacity-60 hover:opacity-100">
-            Back to dashboard
-          </Link>
-        )}
-      </header>
+      <BrandHeader
+        brandName={rec.brand?.name}
+        brandLogoUrl={rec.brand?.logoUrl}
+        accent={accent}
+        isOwner={isOwner}
+      />
 
-      <div className="mx-auto max-w-3xl p-6">
-        <h1 className="text-2xl font-semibold">{displayTitle}</h1>
-        <p className="mt-1 text-sm opacity-60">
+      <main className="mx-auto max-w-3xl px-6 py-10">
+        <h1 className="text-2xl font-semibold tracking-tight text-text">
+          {displayTitle}
+        </h1>
+        <p className="mt-2 text-sm text-text-muted">
           {isReady ? "Ready" : `Status: ${rec.status}`}
           {isOwner && isReady && viewCount > 0 && (
-            <> · {viewCount} view{viewCount === 1 ? "" : "s"}</>
+            <>
+              {" · "}
+              {viewCount} view{viewCount === 1 ? "" : "s"}
+            </>
           )}
         </p>
 
         {rec.aiSummary && (
-          <p className="mt-4 text-sm leading-relaxed opacity-80">{rec.aiSummary}</p>
+          <p className="mt-6 text-[15px] leading-7 text-text-muted">
+            {rec.aiSummary}
+          </p>
         )}
 
         {isOwner && (
@@ -170,11 +162,11 @@ export default async function SharePage({
         )}
 
         {isReady && signedVideoUrl ? (
-          <div className="mt-6">
+          <div className="mt-8">
             <ViewerShell
               slug={slug}
               signedVideoUrl={signedVideoUrl}
-              accentColor={accent}
+              accentColor={playerAccent}
               chapters={rec.aiChapters ?? []}
               actionItems={rec.aiActionItems ?? []}
               words={words}
@@ -186,8 +178,8 @@ export default async function SharePage({
             />
           </div>
         ) : (
-          <div className="mt-6 rounded-lg border border-white/10 p-8 text-center">
-            <p className="text-lg">
+          <div className="mt-8 rounded-xl border border-border bg-bg-subtle p-10 text-center">
+            <p className="text-base font-medium text-text">
               {rec.status === "transcribing"
                 ? "Transcription in progress"
                 : rec.status === "processing"
@@ -196,7 +188,7 @@ export default async function SharePage({
                     ? "Uploading"
                     : "Not ready"}
             </p>
-            <p className="mt-2 text-sm opacity-60">
+            <p className="mt-2 text-sm text-text-subtle">
               Refresh in ~15–30 seconds.
             </p>
           </div>
@@ -204,13 +196,57 @@ export default async function SharePage({
 
         {isOwner && dropoffBuckets && <DropoffChart buckets={dropoffBuckets} />}
 
-        <div className="mt-6 flex items-center gap-3 rounded-lg border border-white/10 p-4">
-          <code className="flex-1 truncate rounded bg-white/5 px-3 py-2 text-sm">
+        <div className="mt-10 flex items-center gap-3 rounded-lg border border-border bg-bg-subtle p-3">
+          <code className="flex-1 truncate rounded-md bg-bg-elevated px-3 py-2 font-mono text-xs text-text-muted">
             {shareUrl}
           </code>
           <CopyLinkButton url={shareUrl} />
         </div>
-      </div>
+      </main>
     </div>
+  );
+}
+
+function BrandHeader({
+  brandName,
+  brandLogoUrl,
+  accent,
+  isOwner,
+}: {
+  brandName?: string | null;
+  brandLogoUrl?: string | null;
+  accent: string | null;
+  isOwner: boolean;
+}) {
+  return (
+    <>
+      <header className="flex h-14 items-center justify-between border-b border-border px-6">
+        <div className="flex items-center gap-3">
+          {brandLogoUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={brandLogoUrl}
+              alt={brandName ?? ""}
+              className="h-6 w-auto"
+            />
+          )}
+          {brandName && (
+            <span className="text-sm font-semibold text-text">{brandName}</span>
+          )}
+        </div>
+        {isOwner && (
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-text"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Dashboard
+          </Link>
+        )}
+      </header>
+      {accent && (
+        <div className="h-[2px] w-full" style={{ backgroundColor: accent }} />
+      )}
+    </>
   );
 }

@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Lock } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 export function PasswordGate({ slug }: { slug: string }) {
   const router = useRouter();
@@ -34,29 +37,33 @@ export function PasswordGate({ slug }: { slug: string }) {
   }
 
   return (
-    <div className="mx-auto mt-12 max-w-sm rounded-lg border border-white/10 p-6">
-      <h2 className="text-lg font-semibold">Password required</h2>
-      <p className="mt-1 text-sm opacity-60">
-        Enter the password to view this recording.
-      </p>
-      <form onSubmit={onSubmit} className="mt-4 space-y-3">
-        <input
+    <div className="mx-auto mt-24 max-w-sm rounded-xl border border-border bg-bg-subtle p-8">
+      <div className="flex items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent/15 text-accent">
+          <Lock className="h-5 w-5" />
+        </div>
+        <div>
+          <h2 className="text-base font-semibold text-text">Password required</h2>
+          <p className="text-xs text-text-muted">Enter the password to continue.</p>
+        </div>
+      </div>
+      <form onSubmit={onSubmit} className="mt-6 space-y-3">
+        <Input
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoFocus
           required
-          className="w-full rounded border border-white/20 bg-white/5 px-3 py-2 text-sm"
           placeholder="Password"
         />
-        {error && <p className="text-sm text-red-400">{error}</p>}
-        <button
+        {error && <p className="text-xs text-destructive">{error}</p>}
+        <Button
           type="submit"
           disabled={submitting || password.length === 0}
-          className="w-full rounded bg-white/20 px-3 py-2 text-sm font-medium hover:bg-white/30 disabled:opacity-50"
+          className="w-full"
         >
           {submitting ? "Unlocking…" : "Unlock"}
-        </button>
+        </Button>
       </form>
     </div>
   );
