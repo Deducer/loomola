@@ -57,6 +57,7 @@ See [`ROADMAP.md`](ROADMAP.md) for the live status table that Ian checks. Update
 - [x] **M6: AI outputs + thumbnails** — webhook fans out 4 jobs (title_summary, chapters, action_items, thumbnail); Claude Sonnet 4.6 via Vercel AI SDK with Zod schemas; system ffmpeg (apk) reads from signed R2 URL; `flipToReadyIfComplete` idempotently transitions to ready.
 - [x] **M7: Viewer page** — public `/v/:slug` with Plyr player, paragraph-synced transcript (click-to-seek + auto-scroll), chapter markers, signed-URL 403 refresh via `/api/v/:slug/refresh-url`, brand logo + accent in header.
 - [x] **M8: Password protect + view tracking** — per-video bcrypt passwords, HMAC-signed slug-scoped unlock cookies (24h, auto-invalidated on password change), anonymous view tracking via sendBeacon, owner-only 10-bucket drop-off chart, view counts on dashboard + share page.
+- [x] **M9: Comments** — anonymous timestamped comments on /v/:slug with name/email/body, auto-captured playhead, owner-only delete, per-visitor rate limit (3/5min), Mailgun notifications (MAILGUN_API_KEY + MAILGUN_DOMAIN=mg.dissonance.cloud + MAIL_FROM_ADDRESS), `#t=<sec>` deep-link seek on page load.
 - [ ] M9: Comments (V4) + Resend notifications
 - [ ] M10: Trim editing + raw stream downloads
 - [ ] M11: Polish + full-pipeline smoke E2E
