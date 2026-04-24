@@ -27,6 +27,8 @@ export type ViewerShellProps = {
   fullText: string;
   isOwner: boolean;
   comments: CommentRow[];
+  trimStartSec: number | null;
+  trimEndSec: number | null;
 };
 
 export function ViewerShell({
@@ -39,6 +41,8 @@ export function ViewerShell({
   fullText,
   isOwner,
   comments,
+  trimStartSec,
+  trimEndSec,
 }: ViewerShellProps) {
   const playerRef = useRef<VideoPlayerHandle | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
@@ -76,6 +80,8 @@ export function ViewerShell({
         onTimeUpdate={setCurrentTime}
         onPlayStateChange={setIsPlaying}
         onReady={handleReady}
+        trimStartSec={trimStartSec}
+        trimEndSec={trimEndSec}
       />
       {!isOwner && (
         <Tracking

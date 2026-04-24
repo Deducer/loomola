@@ -72,6 +72,31 @@ export default async function SharePage({
     createdAt: c.createdAt.toISOString(),
   }));
 
+  const trimStartSec =
+    rec.trimStartSec != null ? parseFloat(String(rec.trimStartSec)) : null;
+  const trimEndSec =
+    rec.trimEndSec != null ? parseFloat(String(rec.trimEndSec)) : null;
+
+  const downloadKinds: Array<{ kind: string; key: string | null; fileKind: string }> = [
+    { kind: "Composite", key: rec.r2CompositeKey, fileKind: "composite" },
+    { kind: "Screen", key: rec.r2ScreenKey, fileKind: "screen" },
+    { kind: "Camera", key: rec.r2CameraKey, fileKind: "camera" },
+    { kind: "Mic", key: rec.r2MicKey, fileKind: "mic" },
+    { kind: "System audio", key: rec.r2SystemaudioKey, fileKind: "systemaudio" },
+  ];
+  const downloads = isOwner
+    ? await Promise.all(
+        downloadKinds
+          .filter((d) => !!d.key)
+          .map(async (d) => ({
+            kind: d.kind,
+            href: await presignGet(d.key!, {
+              filename: `${slug}-${d.fileKind}.webm`,
+            }),
+          }))
+      )
+    : [];
+
   const displayTitle = rec.title || rec.aiTitle || "Untitled recording";
   const isReady = rec.status === "ready" && !!rec.r2CompositeKey;
   const signedVideoUrl = isReady ? await presignGet(rec.r2CompositeKey!) : null;
@@ -128,6 +153,14 @@ export default async function SharePage({
           <OwnerToolbar
             recordingId={rec.id}
             hasPassword={!!rec.passwordHash}
+            durationSec={
+              rec.durationSeconds != null
+                ? parseFloat(String(rec.durationSeconds))
+                : null
+            }
+            trimStartSec={trimStartSec}
+            trimEndSec={trimEndSec}
+            downloads={downloads}
           />
         )}
 
@@ -143,6 +176,8 @@ export default async function SharePage({
               fullText={transcript?.fullText ?? ""}
               isOwner={isOwner}
               comments={commentRows}
+              trimStartSec={trimStartSec}
+              trimEndSec={trimEndSec}
             />
           </div>
         ) : (
