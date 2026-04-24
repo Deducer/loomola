@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { Film } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import type { RecordingWithBrand } from "@/db/queries/recordings";
 
 function formatDuration(seconds: string | number | null): string {
@@ -22,13 +24,12 @@ function formatRelative(date: Date): string {
   return date.toLocaleDateString();
 }
 
-const STATUS_STYLES: Record<string, string> = {
-  uploading: "bg-blue-500/20 text-blue-200",
-  transcribing: "bg-yellow-500/20 text-yellow-200",
-  processing: "bg-yellow-500/20 text-yellow-200",
-  ready: "bg-emerald-500/20 text-emerald-200",
-  failed: "bg-red-500/20 text-red-200",
-};
+type BadgeVariant =
+  | "ready"
+  | "uploading"
+  | "failed"
+  | "processing"
+  | "transcribing";
 
 export function RecordingCard({
   rec,
@@ -38,39 +39,49 @@ export function RecordingCard({
   thumbnailUrl: string | null;
 }) {
   const displayTitle = rec.title || rec.aiTitle || "Untitled recording";
+  const accent = rec.brand?.accentColor;
+  const statusVariant: BadgeVariant =
+    rec.status === "ready"
+      ? "ready"
+      : rec.status === "uploading"
+        ? "uploading"
+        : rec.status === "failed"
+          ? "failed"
+          : rec.status === "transcribing"
+            ? "transcribing"
+            : "processing";
+
   return (
     <Link
       href={`/v/${rec.slug}`}
-      className="flex flex-col gap-3 rounded-lg border border-white/10 p-4 hover:border-white/30"
-      style={
-        rec.brand
-          ? { borderLeftColor: rec.brand.accentColor, borderLeftWidth: 4 }
-          : undefined
-      }
+      className="group flex flex-col overflow-hidden rounded-xl border border-border bg-bg-subtle transition-colors hover:border-border-strong"
     >
-      {thumbnailUrl ? (
-        <img
-          src={thumbnailUrl}
-          alt=""
-          className="aspect-video w-full rounded object-cover"
-        />
-      ) : (
-        <div className="flex aspect-video w-full items-center justify-center rounded bg-white/5 text-xs opacity-40">
-          {rec.status === "ready" ? "No thumbnail" : "Generating…"}
+      <div className="relative aspect-video w-full overflow-hidden bg-bg-elevated">
+        {thumbnailUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={thumbnailUrl}
+            alt=""
+            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-text-subtle">
+            <Film className="h-8 w-8" />
+          </div>
+        )}
+        <div className="absolute right-2 top-2">
+          <Badge variant={statusVariant}>{rec.status}</Badge>
         </div>
-      )}
-      <div>
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="truncate text-sm font-medium">{displayTitle}</h3>
-          <span
-            className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${
-              STATUS_STYLES[rec.status] ?? "bg-white/10"
-            }`}
-          >
-            {rec.status}
-          </span>
-        </div>
-        <div className="mt-1 flex items-center gap-2 text-xs opacity-60">
+        {accent && (
+          <div
+            className="absolute inset-x-0 bottom-0 h-[3px]"
+            style={{ backgroundColor: accent }}
+          />
+        )}
+      </div>
+      <div className="flex flex-col gap-1 p-3">
+        <h3 className="truncate text-sm font-medium text-text">{displayTitle}</h3>
+        <div className="flex items-center gap-1.5 text-xs text-text-subtle">
           <span>{formatDuration(rec.durationSeconds)}</span>
           <span>·</span>
           <span>{formatRelative(new Date(rec.createdAt))}</span>
@@ -85,7 +96,7 @@ export function RecordingCard({
           {rec.brand && (
             <>
               <span>·</span>
-              <span>{rec.brand.name}</span>
+              <span className="truncate">{rec.brand.name}</span>
             </>
           )}
         </div>
