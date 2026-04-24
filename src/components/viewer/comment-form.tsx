@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 type Props = {
   slug: string;
@@ -33,9 +36,7 @@ export function CommentForm({ slug, getCurrentTime }: Props) {
       });
       if (res.status === 429) {
         const data = (await res.json()) as { retryAfterSec?: number };
-        setError(
-          `You've hit the comment rate limit. Try again in ${data.retryAfterSec ?? 60}s.`
-        );
+        setError(`Slow down — try again in ${data.retryAfterSec ?? 60}s.`);
         return;
       }
       if (res.status === 403) {
@@ -69,44 +70,37 @@ export function CommentForm({ slug, getCurrentTime }: Props) {
   return (
     <form
       onSubmit={onSubmit}
-      className="mt-4 space-y-2 rounded border border-white/10 p-3"
+      className="mt-4 space-y-3 rounded-xl border border-border bg-bg-subtle p-4"
     >
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <input
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Input
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Your name"
-          className="rounded border border-white/20 bg-white/5 px-2 py-1 text-sm"
           required
         />
-        <input
+        <Input
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="Email (not shown publicly)"
-          className="rounded border border-white/20 bg-white/5 px-2 py-1 text-sm"
           required
         />
       </div>
-      <textarea
+      <Textarea
         value={body}
         onChange={(e) => setBody(e.target.value)}
         placeholder="Add a comment at this timestamp…"
         rows={3}
-        className="w-full rounded border border-white/20 bg-white/5 px-2 py-1 text-sm"
         required
       />
-      {error && <p className="text-xs text-red-400">{error}</p>}
-      <div className="flex items-center justify-between text-xs opacity-60">
-        <span>Your email is used only to notify the creator, never shown here.</span>
-        <button
-          type="submit"
-          disabled={submitting}
-          className="rounded bg-white/20 px-3 py-1 text-xs hover:bg-white/30 disabled:opacity-50"
-        >
+      {error && <p className="text-xs text-destructive">{error}</p>}
+      <div className="flex items-center justify-between gap-3 text-xs text-text-subtle">
+        <span>Your email is only used to notify the creator.</span>
+        <Button type="submit" disabled={submitting} size="sm">
           {submitting ? "Posting…" : "Post comment"}
-        </button>
+        </Button>
       </div>
     </form>
   );

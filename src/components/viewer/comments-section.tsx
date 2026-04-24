@@ -25,11 +25,13 @@ export function CommentsSection({
   getCurrentTime: () => number;
 }) {
   return (
-    <div className="mt-8">
-      <h2 className="text-sm font-medium">
+    <div className="mt-10">
+      <h2 className="text-xs font-semibold uppercase tracking-wider text-text-muted">
         Comments{" "}
         {comments.length > 0 && (
-          <span className="opacity-60">({comments.length})</span>
+          <span className="text-text-subtle normal-case tracking-normal">
+            ({comments.length})
+          </span>
         )}
       </h2>
       <CommentList comments={comments} isOwner={isOwner} onSeek={onSeek} />

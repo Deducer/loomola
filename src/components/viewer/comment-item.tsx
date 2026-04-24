@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { X } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 function formatTs(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));
@@ -59,32 +61,36 @@ export function CommentItem({
   }
 
   return (
-    <li className="flex gap-3 rounded border border-white/10 p-3 text-sm">
+    <li className="group flex gap-3 rounded-lg border border-border bg-bg-subtle p-3 text-sm">
       <button
         type="button"
         onClick={() => onSeek(timestampSec)}
-        className="shrink-0 self-start rounded bg-white/5 px-1.5 py-0.5 font-mono text-xs opacity-80 hover:bg-white/10"
+        className="shrink-0 self-start rounded bg-bg-elevated px-1.5 py-0.5 font-mono text-[11px] text-text-muted hover:text-text"
       >
         {formatTs(timestampSec)}
       </button>
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline justify-between gap-2">
-          <span className="font-medium">{name}</span>
-          <span className="shrink-0 text-xs opacity-50">
+          <span className="font-medium text-text">{name}</span>
+          <span className="shrink-0 text-xs text-text-subtle">
             {formatRelative(createdAt)}
           </span>
         </div>
-        <p className="mt-1 whitespace-pre-wrap break-words opacity-90">{body}</p>
+        <p className="mt-1 whitespace-pre-wrap break-words text-text-muted">
+          {body}
+        </p>
       </div>
       {isOwner && (
-        <button
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={handleDelete}
           disabled={deleting}
-          className="shrink-0 self-start rounded px-2 py-1 text-xs text-red-300 hover:bg-red-500/20 disabled:opacity-50"
           aria-label="Delete comment"
+          className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100"
         >
-          ✕
-        </button>
+          <X className="h-3.5 w-3.5 text-destructive" />
+        </Button>
       )}
     </li>
   );

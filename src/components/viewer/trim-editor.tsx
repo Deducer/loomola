@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Scissors } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { validateTrim, type TrimError } from "@/lib/viewer/trim-validate";
 
 function formatTs(seconds: number): string {
@@ -36,14 +38,12 @@ export function TrimEditor({
 
   if (durationSec == null || durationSec <= 0) {
     return (
-      <div className="mt-4 rounded-lg border border-white/10 p-3 text-sm opacity-60">
-        Trim: duration not available yet — try again after the recording
-        finishes processing.
+      <div className="rounded-xl border border-border bg-bg-subtle p-3 text-sm text-text-subtle">
+        Trim unavailable — duration not yet known.
       </div>
     );
   }
-  const dur: number = durationSec;
-
+  const dur = durationSec;
   const hasTrim = initialStart != null && initialEnd != null;
   const check = validateTrim({ startSec: start, endSec: end, durationSec: dur });
 
@@ -97,42 +97,45 @@ export function TrimEditor({
   }
 
   return (
-    <div className="mt-4 rounded-lg border border-white/10 p-3 text-sm">
+    <div className="rounded-xl border border-border bg-bg-subtle p-3 text-sm">
       <div className="flex items-center gap-3">
-        <span className="opacity-60">Trim:</span>
-        <span className={hasTrim ? "text-emerald-300" : "opacity-70"}>
+        <Scissors className="h-4 w-4 text-text-subtle" />
+        <span className="text-text-muted">Trim</span>
+        <span className={hasTrim ? "text-accent" : "text-text-subtle"}>
           {hasTrim
             ? `${formatTs(initialStart!)}–${formatTs(initialEnd!)}`
             : "off"}
         </span>
-        <button
-          type="button"
-          onClick={() => {
-            setOpen(!open);
-            setError(null);
-          }}
-          className="ml-auto rounded bg-white/10 px-2 py-1 text-xs hover:bg-white/20"
-        >
-          {hasTrim ? "Edit" : "Set trim"}
-        </button>
-        {hasTrim && (
-          <button
-            type="button"
-            onClick={reset}
-            disabled={busy}
-            className="rounded bg-red-500/20 px-2 py-1 text-xs text-red-200 hover:bg-red-500/30 disabled:opacity-50"
+        <div className="ml-auto flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setOpen(!open);
+              setError(null);
+            }}
           >
-            Reset
-          </button>
-        )}
+            {hasTrim ? "Edit" : "Set trim"}
+          </Button>
+          {hasTrim && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={reset}
+              disabled={busy}
+              className="text-destructive hover:bg-destructive/10"
+            >
+              Reset
+            </Button>
+          )}
+        </div>
       </div>
       {open && (
-        <div className="mt-3 space-y-2 border-t border-white/10 pt-3">
-          <div className="flex items-center justify-between text-xs opacity-70">
+        <div className="mt-3 space-y-3 border-t border-border pt-3">
+          <div className="flex items-center justify-between text-xs text-text-muted">
             <span>Start: {formatTs(start)}</span>
             <span>End: {formatTs(end)}</span>
           </div>
-          <label className="block text-xs opacity-60">Start</label>
           <input
             type="range"
             min={0}
@@ -141,8 +144,8 @@ export function TrimEditor({
             value={start}
             onChange={(e) => setStart(parseFloat(e.target.value))}
             className="w-full"
+            style={{ accentColor: "var(--accent)" }}
           />
-          <label className="block text-xs opacity-60">End</label>
           <input
             type="range"
             min={0}
@@ -151,29 +154,25 @@ export function TrimEditor({
             value={end}
             onChange={(e) => setEnd(parseFloat(e.target.value))}
             className="w-full"
+            style={{ accentColor: "var(--accent)" }}
           />
-          {error && <p className="text-xs text-red-400">{error}</p>}
+          {error && <p className="text-xs text-destructive">{error}</p>}
           <div className="flex items-center justify-end gap-2">
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => {
                 setOpen(false);
                 setError(null);
                 setStart(initialStart ?? 0);
                 setEnd(initialEnd ?? dur);
               }}
-              className="rounded px-2 py-1 text-xs opacity-70 hover:opacity-100"
             >
               Cancel
-            </button>
-            <button
-              type="button"
-              onClick={save}
-              disabled={busy || !check.ok}
-              className="rounded bg-white/20 px-3 py-1 text-xs hover:bg-white/30 disabled:opacity-50"
-            >
+            </Button>
+            <Button size="sm" onClick={save} disabled={busy || !check.ok}>
               {busy ? "Saving…" : "Save"}
-            </button>
+            </Button>
           </div>
         </div>
       )}

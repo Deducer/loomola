@@ -21,7 +21,7 @@ export function CommentList({
 }) {
   if (comments.length === 0) {
     return (
-      <p className="mt-3 text-sm opacity-60">
+      <p className="mt-3 text-sm text-text-subtle">
         No comments yet. Be the first to leave one.
       </p>
     );
