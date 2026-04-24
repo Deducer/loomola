@@ -18,10 +18,22 @@ type Props = {
   onTimeUpdate: (sec: number) => void;
   onPlayStateChange?: (isPlaying: boolean) => void;
   onReady?: () => void;
+  trimStartSec?: number | null;
+  trimEndSec?: number | null;
 };
 
 export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
-  { slug, initialSignedUrl, chapters, accentColor, onTimeUpdate, onPlayStateChange, onReady },
+  {
+    slug,
+    initialSignedUrl,
+    chapters,
+    accentColor,
+    onTimeUpdate,
+    onPlayStateChange,
+    onReady,
+    trimStartSec,
+    trimEndSec,
+  },
   ref
 ) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -42,19 +54,42 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
         },
       });
       plyrRef.current.on("timeupdate", () => {
-        onTimeUpdate(plyrRef.current?.currentTime ?? 0);
+        const t = plyrRef.current?.currentTime ?? 0;
+        if (
+          typeof trimEndSec === "number" &&
+          trimEndSec > 0 &&
+          t >= trimEndSec
+        ) {
+          plyrRef.current?.pause();
+          if (videoRef.current) {
+            videoRef.current.currentTime = Math.max(0, trimEndSec - 0.05);
+          }
+          onTimeUpdate(trimEndSec);
+          return;
+        }
+        onTimeUpdate(t);
       });
       plyrRef.current.on("play", () => onPlayStateChange?.(true));
       plyrRef.current.on("pause", () => onPlayStateChange?.(false));
       plyrRef.current.on("ended", () => onPlayStateChange?.(false));
       plyrRef.current.on("ready", () => onReady?.());
+      plyrRef.current.on("loadedmetadata", () => {
+        if (
+          typeof trimStartSec === "number" &&
+          trimStartSec > 0 &&
+          (plyrRef.current?.currentTime ?? 0) < trimStartSec &&
+          videoRef.current
+        ) {
+          videoRef.current.currentTime = trimStartSec;
+        }
+      });
     })();
     return () => {
       cancelled = true;
       plyrRef.current?.destroy();
       plyrRef.current = null;
     };
-  }, [chapters, onTimeUpdate, onPlayStateChange, onReady]);
+  }, [chapters, onTimeUpdate, onPlayStateChange, onReady, trimStartSec, trimEndSec]);
 
   useImperativeHandle(ref, () => ({
     seek: (sec: number) => {
