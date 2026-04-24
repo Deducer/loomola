@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Input } from "@/components/ui/input";
 
 type Props = {
   name: string;
@@ -8,37 +9,40 @@ type Props = {
   error?: string;
 };
 
-export function ColorSwatch({ name, defaultValue = "#4F46E5", error }: Props) {
+export function ColorSwatch({ name, defaultValue = "#7c3aed", error }: Props) {
   const [value, setValue] = useState(defaultValue);
   return (
     <div>
-      <label htmlFor={name} className="block text-sm">
+      <label
+        htmlFor={name}
+        className="block text-xs font-semibold uppercase tracking-wider text-text-muted"
+      >
         Accent color
       </label>
-      <div className="mt-1 flex items-center gap-2">
+      <div className="mt-1.5 flex items-center gap-2">
         <div
           aria-hidden="true"
-          className="h-10 w-10 shrink-0 rounded border border-white/20"
+          className="h-9 w-9 shrink-0 rounded-md border border-border-strong"
           style={{ background: value }}
         />
-        <input
+        <Input
           id={name}
           name={name}
           type="text"
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder="#FF6B35"
-          className="flex-1 rounded border border-white/20 bg-transparent px-3 py-2 font-mono text-sm outline-none focus:border-white/40"
+          placeholder="#7c3aed"
+          className="flex-1 font-mono"
         />
         <input
           type="color"
           aria-label="Pick color"
-          value={/^#[0-9a-fA-F]{6}$/.test(value) ? value : "#4F46E5"}
+          value={/^#[0-9a-fA-F]{6}$/.test(value) ? value : "#7c3aed"}
           onChange={(e) => setValue(e.target.value)}
-          className="h-10 w-10 cursor-pointer rounded border border-white/20 bg-transparent"
+          className="h-9 w-9 cursor-pointer rounded-md border border-border-strong bg-transparent"
         />
       </div>
-      {error && <p className="mt-1 text-xs text-red-300">{error}</p>}
+      {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
     </div>
   );
 }

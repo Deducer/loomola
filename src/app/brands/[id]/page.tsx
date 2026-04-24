@@ -6,6 +6,7 @@ import {
   deleteBrandProfileAction,
 } from "../actions";
 import { TopNav } from "@/components/nav/top-nav";
+import { Button } from "@/components/ui/button";
 import { notFound } from "next/navigation";
 
 export default async function EditBrandPage({
@@ -24,9 +25,11 @@ export default async function EditBrandPage({
   return (
     <>
       <TopNav userEmail={user.email ?? "unknown"} activePath="brands" />
-      <div className="mx-auto max-w-xl p-6">
-        <h1 className="text-2xl font-semibold">Edit brand profile</h1>
-        <div className="mt-6">
+      <main className="mx-auto max-w-xl px-6 py-10">
+        <h1 className="text-2xl font-semibold tracking-tight text-text">
+          Edit brand profile
+        </h1>
+        <div className="mt-8">
           <BrandForm
             action={boundUpdate}
             initialValues={brand}
@@ -34,20 +37,19 @@ export default async function EditBrandPage({
           />
         </div>
 
-        <form action={boundDelete} className="mt-10 border-t border-white/10 pt-6">
-          <h2 className="text-sm font-medium text-red-300">Danger zone</h2>
-          <p className="mt-1 text-xs opacity-60">
-            Deleting a brand unlinks it from any recordings that use it. Recordings
-            themselves aren&apos;t deleted.
+        <form action={boundDelete} className="mt-12 border-t border-border pt-6">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-destructive">
+            Danger zone
+          </h2>
+          <p className="mt-2 text-sm text-text-muted">
+            Deleting a brand unlinks it from any recordings that use it.
+            Recordings themselves aren&apos;t deleted.
           </p>
-          <button
-            type="submit"
-            className="mt-3 rounded border border-red-400/30 px-3 py-1.5 text-xs text-red-200 hover:bg-red-500/10"
-          >
+          <Button type="submit" variant="destructive" size="sm" className="mt-3">
             Delete brand profile
-          </button>
+          </Button>
         </form>
-      </div>
+      </main>
     </>
   );
 }

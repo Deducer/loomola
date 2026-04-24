@@ -1,4 +1,7 @@
+import { Video } from "lucide-react";
 import { signIn } from "./actions";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 export default async function LoginPage({
   searchParams,
@@ -10,42 +13,52 @@ export default async function LoginPage({
     <div className="flex min-h-screen items-center justify-center p-4">
       <form
         action={signIn}
-        className="w-full max-w-sm space-y-4 rounded-lg border border-white/10 p-6"
+        className="w-full max-w-sm space-y-5 rounded-xl border border-border bg-bg-subtle p-8"
       >
-        <h1 className="text-2xl font-semibold">Sign in</h1>
+        <div className="flex items-center gap-2">
+          <Video className="h-5 w-5 text-accent" />
+          <h1 className="text-xl font-semibold text-text">Sign in</h1>
+        </div>
         {params.error && (
-          <p className="rounded bg-red-500/20 p-2 text-sm text-red-200">
+          <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2.5 text-xs text-destructive">
             {params.error}
           </p>
         )}
         <div>
-          <label htmlFor="email" className="block text-sm">Email</label>
-          <input
+          <label
+            htmlFor="email"
+            className="block text-xs font-semibold uppercase tracking-wider text-text-muted"
+          >
+            Email
+          </label>
+          <Input
             id="email"
             name="email"
             type="email"
             required
             autoComplete="email"
-            className="mt-1 w-full rounded border border-white/20 bg-transparent px-3 py-2 outline-none focus:border-white/40"
+            className="mt-1.5"
           />
         </div>
         <div>
-          <label htmlFor="password" className="block text-sm">Password</label>
-          <input
+          <label
+            htmlFor="password"
+            className="block text-xs font-semibold uppercase tracking-wider text-text-muted"
+          >
+            Password
+          </label>
+          <Input
             id="password"
             name="password"
             type="password"
             required
             autoComplete="current-password"
-            className="mt-1 w-full rounded border border-white/20 bg-transparent px-3 py-2 outline-none focus:border-white/40"
+            className="mt-1.5"
           />
         </div>
-        <button
-          type="submit"
-          className="w-full rounded bg-white/90 py-2 text-sm font-medium text-black hover:bg-white"
-        >
+        <Button type="submit" className="w-full">
           Sign in
-        </button>
+        </Button>
       </form>
     </div>
   );

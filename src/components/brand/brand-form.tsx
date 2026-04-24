@@ -1,7 +1,10 @@
 "use client";
 
 import { useActionState } from "react";
+import Link from "next/link";
 import { ColorSwatch } from "./color-swatch";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import type { BrandProfile } from "@/db/queries/brand-profiles";
 
 type ActionResult =
@@ -25,8 +28,13 @@ export function BrandForm({ action, initialValues, submitLabel }: Props) {
   return (
     <form action={formAction} className="space-y-5">
       <div>
-        <label htmlFor="name" className="block text-sm">Name</label>
-        <input
+        <label
+          htmlFor="name"
+          className="block text-xs font-semibold uppercase tracking-wider text-text-muted"
+        >
+          Name
+        </label>
+        <Input
           id="name"
           name="name"
           type="text"
@@ -34,46 +42,51 @@ export function BrandForm({ action, initialValues, submitLabel }: Props) {
           defaultValue={initialValues?.name ?? ""}
           maxLength={60}
           placeholder="Vayu Labs"
-          className="mt-1 w-full rounded border border-white/20 bg-transparent px-3 py-2 outline-none focus:border-white/40"
+          className="mt-1.5"
         />
-        {errors.name && <p className="mt-1 text-xs text-red-300">{errors.name}</p>}
+        {errors.name && (
+          <p className="mt-1 text-xs text-destructive">{errors.name}</p>
+        )}
       </div>
 
       <ColorSwatch
         name="accentColor"
-        defaultValue={initialValues?.accentColor ?? "#4F46E5"}
+        defaultValue={initialValues?.accentColor ?? "#7c3aed"}
         error={errors.accentColor}
       />
 
       <div>
-        <label htmlFor="logoUrl" className="block text-sm">
-          Logo URL <span className="opacity-60">(optional)</span>
+        <label
+          htmlFor="logoUrl"
+          className="block text-xs font-semibold uppercase tracking-wider text-text-muted"
+        >
+          Logo URL{" "}
+          <span className="font-normal normal-case tracking-normal text-text-subtle">
+            (optional)
+          </span>
         </label>
-        <input
+        <Input
           id="logoUrl"
           name="logoUrl"
           type="url"
           defaultValue={initialValues?.logoUrl ?? ""}
           placeholder="https://vayulabs.com/logo.png"
-          className="mt-1 w-full rounded border border-white/20 bg-transparent px-3 py-2 outline-none focus:border-white/40"
+          className="mt-1.5"
         />
-        {errors.logoUrl && <p className="mt-1 text-xs text-red-300">{errors.logoUrl}</p>}
+        {errors.logoUrl && (
+          <p className="mt-1 text-xs text-destructive">{errors.logoUrl}</p>
+        )}
       </div>
 
-      <div className="flex items-center gap-3">
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded bg-white/90 px-4 py-2 text-sm font-medium text-black hover:bg-white disabled:opacity-50"
-        >
+      <div className="flex items-center gap-3 pt-2">
+        <Button type="submit" disabled={pending}>
           {pending ? "Saving…" : submitLabel}
-        </button>
-        <a
-          href="/brands"
-          className="rounded border border-white/20 px-4 py-2 text-sm hover:bg-white/5"
-        >
-          Cancel
-        </a>
+        </Button>
+        <Link href="/brands">
+          <Button variant="outline" type="button">
+            Cancel
+          </Button>
+        </Link>
       </div>
     </form>
   );
