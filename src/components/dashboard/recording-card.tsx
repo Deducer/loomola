@@ -63,6 +63,7 @@ export function RecordingCard({
         e.dataTransfer.effectAllowed = "move";
       }}
       className="group relative"
+      data-recording-id={rec.id}
     >
       <Link
         href={`/v/${rec.slug}`}
