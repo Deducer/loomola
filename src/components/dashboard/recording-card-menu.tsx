@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { MoreHorizontal, Trash2, FolderInput } from "lucide-react";
+import Link from "next/link";
+import { MoreHorizontal, Trash2, FolderInput, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Folder } from "@/db/queries/folders";
 
@@ -91,6 +92,14 @@ export function RecordingCardMenu({
               </>
             ) : (
               <>
+                <Link
+                  href={`/recordings/${recordingId}/edit`}
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-text-muted hover:bg-bg-subtle hover:text-text"
+                  onClick={() => setOpen(false)}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  Edit
+                </Link>
                 <button
                   type="button"
                   onClick={() => setShowMove(true)}

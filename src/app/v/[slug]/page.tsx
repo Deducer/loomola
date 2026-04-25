@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { cookies } from "next/headers";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Pencil } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getRecordingBySlug } from "@/db/queries/recordings";
 import { getTranscriptByRecording } from "@/db/queries/transcripts";
@@ -51,6 +51,7 @@ export default async function SharePage({
           brandLogoUrl={rec.brand?.logoUrl}
           accent={accent}
           isOwner={false}
+          recordingId={rec.id}
         />
         <PasswordGate slug={slug} />
       </div>
@@ -88,6 +89,7 @@ export default async function SharePage({
         brandLogoUrl={rec.brand?.logoUrl}
         accent={accent}
         isOwner={isOwner}
+        recordingId={rec.id}
       />
 
       <main className="mx-auto max-w-3xl px-6 py-10">
@@ -147,11 +149,13 @@ function BrandHeader({
   brandLogoUrl,
   accent,
   isOwner,
+  recordingId,
 }: {
   brandName?: string | null;
   brandLogoUrl?: string | null;
   accent: string | null;
   isOwner: boolean;
+  recordingId?: string;
 }) {
   return (
     <>
@@ -169,14 +173,23 @@ function BrandHeader({
             <span className="text-sm font-semibold text-text">{brandName}</span>
           )}
         </div>
-        {isOwner && (
-          <Link
-            href="/"
-            className="inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-text"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            Dashboard
-          </Link>
+        {isOwner && recordingId && (
+          <div className="flex items-center gap-3">
+            <Link
+              href={`/recordings/${recordingId}/edit`}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-2.5 py-1 text-xs text-text-muted hover:border-accent hover:text-text"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Edit
+            </Link>
+            <Link
+              href="/"
+              className="inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-text"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Dashboard
+            </Link>
+          </div>
         )}
       </header>
       {accent && (
