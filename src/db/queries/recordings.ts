@@ -145,3 +145,52 @@ export async function clearTrim(params: {
     .returning({ id: mediaObjects.id });
   return result.length > 0;
 }
+
+export async function getRecordingForEdit(
+  id: string,
+  ownerId: string
+): Promise<RecordingWithBrand | null> {
+  const [row] = await db
+    .select({
+      rec: mediaObjects,
+      brandId: brandProfiles.id,
+      brandName: brandProfiles.name,
+      brandAccent: brandProfiles.accentColor,
+      brandLogoUrl: brandProfiles.logoUrl,
+      aiTitle: aiOutputs.titleSuggested,
+      aiSummary: aiOutputs.summary,
+      aiChapters: aiOutputs.chapters,
+      aiActionItems: aiOutputs.actionItems,
+    })
+    .from(mediaObjects)
+    .leftJoin(brandProfiles, eq(mediaObjects.brandProfileId, brandProfiles.id))
+    .leftJoin(aiOutputs, eq(aiOutputs.mediaObjectId, mediaObjects.id))
+    .where(
+      and(
+        eq(mediaObjects.id, id),
+        eq(mediaObjects.ownerId, ownerId),
+        isNull(mediaObjects.deletedAt)
+      )
+    )
+    .limit(1);
+
+  if (!row) return null;
+  const { countViews } = await import("@/db/queries/views");
+  const viewCount = await countViews(row.rec.id);
+  return {
+    ...row.rec,
+    brand: row.brandId
+      ? {
+          id: row.brandId,
+          name: row.brandName!,
+          accentColor: row.brandAccent!,
+          logoUrl: row.brandLogoUrl ?? null,
+        }
+      : null,
+    aiTitle: row.aiTitle,
+    aiSummary: row.aiSummary,
+    aiChapters: row.aiChapters as RecordingWithBrand["aiChapters"],
+    aiActionItems: row.aiActionItems as RecordingWithBrand["aiActionItems"],
+    viewCount,
+  };
+}
