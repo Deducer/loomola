@@ -5,16 +5,11 @@ import { ArrowLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getRecordingBySlug } from "@/db/queries/recordings";
 import { getTranscriptByRecording } from "@/db/queries/transcripts";
-import { listMaxWatched, countViews } from "@/db/queries/views";
 import { listCommentsForRecording } from "@/db/queries/comments";
 import { presignGet } from "@/lib/r2/presigned-get";
-import { CopyLinkButton } from "@/components/share/copy-link-button";
 import { ViewerShell } from "@/components/viewer/viewer-shell";
 import { PasswordGate } from "@/components/viewer/password-gate";
-import { OwnerToolbar } from "@/components/viewer/owner-toolbar";
-import { DropoffChart } from "@/components/viewer/dropoff-chart";
 import { cookieName, verifyUnlockToken } from "@/lib/viewer/unlock-cookie";
-import { bucketize } from "@/lib/viewer/dropoff";
 import type { Word } from "@/lib/viewer/paragraphs";
 import type { Metadata } from "next";
 
@@ -35,8 +30,6 @@ export default async function SharePage({
   const { data: { user } } = await supabase.auth.getUser();
   const isOwner = !!user && user.id === rec.ownerId;
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
-  const shareUrl = `${appUrl}/v/${slug}`;
   const accent = rec.brand?.accentColor ?? null;
 
   let unlocked = true;
@@ -83,39 +76,10 @@ export default async function SharePage({
   const trimEndSec =
     rec.trimEndSec != null ? parseFloat(String(rec.trimEndSec)) : null;
 
-  const downloadKinds: Array<{ kind: string; key: string | null; fileKind: string }> = [
-    { kind: "Composite", key: rec.r2CompositeKey, fileKind: "composite" },
-    { kind: "Screen", key: rec.r2ScreenKey, fileKind: "screen" },
-    { kind: "Camera", key: rec.r2CameraKey, fileKind: "camera" },
-    { kind: "Mic", key: rec.r2MicKey, fileKind: "mic" },
-    { kind: "System audio", key: rec.r2SystemaudioKey, fileKind: "systemaudio" },
-  ];
-  const downloads = isOwner
-    ? await Promise.all(
-        downloadKinds
-          .filter((d) => !!d.key)
-          .map(async (d) => ({
-            kind: d.kind,
-            href: await presignGet(d.key!, {
-              filename: `${slug}-${d.fileKind}.webm`,
-            }),
-          }))
-      )
-    : [];
-
   const displayTitle = rec.title || rec.aiTitle || "Untitled recording";
   const isReady = rec.status === "ready" && !!rec.r2CompositeKey;
   const signedVideoUrl = isReady ? await presignGet(rec.r2CompositeKey!) : null;
   const playerAccent = accent ?? "#8b5cf6";
-
-  let dropoffBuckets: number[] | null = null;
-  let viewCount = 0;
-  if (isOwner && isReady) {
-    const durationSec = parseFloat(String(rec.durationSeconds ?? "0"));
-    const maxList = await listMaxWatched(rec.id);
-    dropoffBuckets = bucketize(maxList, durationSec, 10);
-    viewCount = await countViews(rec.id);
-  }
 
   return (
     <div className="min-h-screen">
@@ -132,33 +96,12 @@ export default async function SharePage({
         </h1>
         <p className="mt-2 text-sm text-text-muted">
           {isReady ? "Ready" : `Status: ${rec.status}`}
-          {isOwner && isReady && viewCount > 0 && (
-            <>
-              {" · "}
-              {viewCount} view{viewCount === 1 ? "" : "s"}
-            </>
-          )}
         </p>
 
         {rec.aiSummary && (
           <p className="mt-6 text-[15px] leading-7 text-text-muted">
             {rec.aiSummary}
           </p>
-        )}
-
-        {isOwner && (
-          <OwnerToolbar
-            recordingId={rec.id}
-            hasPassword={!!rec.passwordHash}
-            durationSec={
-              rec.durationSeconds != null
-                ? parseFloat(String(rec.durationSeconds))
-                : null
-            }
-            trimStartSec={trimStartSec}
-            trimEndSec={trimEndSec}
-            downloads={downloads}
-          />
         )}
 
         {isReady && signedVideoUrl ? (
@@ -194,14 +137,6 @@ export default async function SharePage({
           </div>
         )}
 
-        {isOwner && dropoffBuckets && <DropoffChart buckets={dropoffBuckets} />}
-
-        <div className="mt-10 flex items-center gap-3 rounded-lg border border-border bg-bg-subtle p-3">
-          <code className="flex-1 truncate rounded-md bg-bg-elevated px-3 py-2 font-mono text-xs text-text-muted">
-            {shareUrl}
-          </code>
-          <CopyLinkButton url={shareUrl} />
-        </div>
       </main>
     </div>
   );
