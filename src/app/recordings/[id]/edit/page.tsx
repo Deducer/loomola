@@ -8,6 +8,7 @@ import { presignGet } from "@/lib/r2/presigned-get";
 import { bucketize } from "@/lib/viewer/dropoff";
 import { OwnerToolbar } from "@/components/viewer/owner-toolbar";
 import { DropoffChart } from "@/components/viewer/dropoff-chart";
+import { PreviewPlayer } from "@/components/edit/preview-player";
 import { CopyLinkButton } from "@/components/share/copy-link-button";
 import type { Metadata } from "next";
 
@@ -52,6 +53,7 @@ export default async function EditRecordingPage({
   );
 
   const isReady = rec.status === "ready" && !!rec.r2CompositeKey;
+  const signedVideoUrl = isReady ? await presignGet(rec.r2CompositeKey!) : null;
   let dropoffBuckets: number[] | null = null;
   let viewCount = 0;
   if (isReady) {
@@ -102,6 +104,12 @@ export default async function EditRecordingPage({
           </code>
           <CopyLinkButton url={shareUrl} />
         </div>
+
+        {signedVideoUrl && (
+          <div className="mt-6">
+            <PreviewPlayer signedUrl={signedVideoUrl} />
+          </div>
+        )}
 
         <OwnerToolbar
           recordingId={rec.id}
