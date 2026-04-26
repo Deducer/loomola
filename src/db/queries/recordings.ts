@@ -194,3 +194,41 @@ export async function getRecordingForEdit(
     viewCount,
   };
 }
+
+export async function updateRecordingTitle(params: {
+  id: string;
+  ownerId: string;
+  title: string;
+}): Promise<boolean> {
+  const trimmed = params.title.trim();
+  if (trimmed.length === 0 || trimmed.length > 200) return false;
+  const result = await db
+    .update(mediaObjects)
+    .set({ title: trimmed, updatedAt: sql`now()` })
+    .where(
+      and(
+        eq(mediaObjects.id, params.id),
+        eq(mediaObjects.ownerId, params.ownerId)
+      )
+    )
+    .returning({ id: mediaObjects.id });
+  return result.length > 0;
+}
+
+export async function updateRecordingBrand(params: {
+  id: string;
+  ownerId: string;
+  brandProfileId: string | null;
+}): Promise<boolean> {
+  const result = await db
+    .update(mediaObjects)
+    .set({ brandProfileId: params.brandProfileId, updatedAt: sql`now()` })
+    .where(
+      and(
+        eq(mediaObjects.id, params.id),
+        eq(mediaObjects.ownerId, params.ownerId)
+      )
+    )
+    .returning({ id: mediaObjects.id });
+  return result.length > 0;
+}
