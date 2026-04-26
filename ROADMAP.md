@@ -59,11 +59,28 @@ Testing is not required between every commit — just at milestone boundaries.
 
 ### Stage 1.5 polish follow-ups (candidate for Stage 1.6)
 
-- **Move creator controls off `/v/:slug`** — password / trim / downloads currently render inline on the share page for the owner. Non-owners already can't see them (gated on `isOwner`), but mixing creator tools with the viewer surface muddies the product. Move to a dedicated `/recordings/[id]/edit` page or a settings drawer accessible from the dashboard card.
-- **Redesign the drop-off chart** — current 10-bar histogram is functional but visually weak. Try a smooth filled area chart, sparkline, or "retention at N%" inline metric.
-- **Declutter the share page vertical stack** — many sections stack below the player; revisit a two-column or tabbed layout (the original spec's layout was two-column).
-- **Loom-style trim handles on Plyr's seek bar** — replace the two-range-slider UI with inline drag handles on the progress bar itself.
-- **Inline creator edit affordances** — title rename, brand change, delete. Consolidate into the creator-edit surface above.
+- ~~**Move creator controls off `/v/:slug`**~~ — ✅ shipped in Stage 1.6 (creator console at `/recordings/[id]/edit`).
+- ~~**Redesign the drop-off chart**~~ — ✅ shipped in Stage 1.6 (filled-area SVG with hover percentile + viewer count).
+- ~~**Declutter the share page vertical stack**~~ — ✅ shipped in Stage 1.6 (chapter segments on seekbar; summary / actions / chapters above tabs).
+- **Loom-style trim handles on Plyr's seek bar** — still deferred. Different problem from chapter segments; lives in the trim UX rebuild.
+- ~~**Inline creator edit affordances**~~ — ✅ shipped in Stage 1.6 (inline title rename, brand picker, type-to-confirm delete on the edit page).
+
+## Stage 1.6 — Share page redesign + creator console
+
+| What it ships |
+|---|
+| Watch-first share page: title → player (with Loom-style chapter segments painted on the seekbar) → AI summary → action items (auto-hide if empty) → chapters list → tabs (Transcript · Comments) with `?tab=` URL state. |
+| Hard creator/visitor split: `/v/:slug` is purely a visitor surface (owner sees the same view + a small Edit pill in the brand header). All creator controls moved to a new `/recordings/[id]/edit` page. |
+| Dashboard card click now lands on the edit page (creator-first), not the share page. |
+| `/recordings/[id]/edit` is a sticky-preview two-column console: small Plyr preview on the left, sections on the right (Settings / Trim / Downloads / Analytics / Danger zone). |
+| Inline title rename, brand reassignment, redesigned drop-off chart (smooth filled-area SVG with hover percentile + viewer count), type-to-confirm delete. |
+| Bug fix: Chrome permission prompts now happen BEFORE the 3-2-1 countdown (previously: countdown → prompt → recording, now: prompt → countdown → recording). |
+| Bug fix: `POST /api/recordings/:id/complete` now returns structured per-track error details on failure (was: opaque 500). |
+
+**Status:** ✅ shipped 2026-04-26.
+
+**Spec:** `docs/superpowers/specs/2026-04-25-share-page-redesign-design.md`
+**Plan:** `docs/superpowers/plans/2026-04-25-share-page-redesign.md`
 
 ## Known gaps / bugs being tracked
 
