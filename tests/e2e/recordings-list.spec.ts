@@ -18,7 +18,7 @@ test.describe("recordings dashboard", () => {
     await expect(page.getByRole("heading", { name: "Recordings" })).toBeVisible();
     // Either the empty-state message OR at least one recording card should be visible
     const empty = page.getByText("No recordings yet.");
-    const cards = page.locator('a[href^="/v/"]');
+    const cards = page.locator("[data-recording-id]");
     await expect(async () => {
       const emptyVisible = await empty.isVisible().catch(() => false);
       const cardCount = await cards.count();

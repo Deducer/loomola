@@ -66,7 +66,7 @@ export function RecordingCard({
       data-recording-id={rec.id}
     >
       <Link
-        href={`/v/${rec.slug}`}
+        href={`/recordings/${rec.id}/edit`}
         className="flex flex-col overflow-hidden rounded-xl border border-border bg-bg-subtle transition-colors hover:border-border-strong"
       >
         <div className="relative aspect-video w-full overflow-hidden bg-bg-elevated">
