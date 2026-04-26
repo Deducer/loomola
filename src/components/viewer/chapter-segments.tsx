@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 export type Chapter = { start_sec: number; title: string };
 
@@ -45,10 +46,13 @@ type OverlayProps = {
 
 /**
  * Paints chapter segments on top of Plyr's `.plyr__progress` element.
- * Renders a list of absolutely-positioned buttons, one per segment.
- * `progressEl` is the element returned by Plyr; we apply our overlay
- * via React portal-style positioning (we keep our own wrapper div
- * mounted as a sibling, sized to match).
+ *
+ * The overlay is portaled to `document.body` so its `position: fixed`
+ * coordinates align with the viewport regardless of any positioned or
+ * sticky ancestor in the player tree (e.g. fullscreen, the edit page's
+ * sticky preview column, etc.). We use viewport-relative `fixed` (not
+ * page-absolute `absolute`) so scrolling doesn't drift the overlay off
+ * the seekbar.
  */
 export function ChapterSegmentsOverlay({
   progressEl,
@@ -58,38 +62,50 @@ export function ChapterSegmentsOverlay({
   onSeek,
 }: OverlayProps) {
   const [, forceTick] = useState(0);
+  const [mounted, setMounted] = useState(false);
 
-  // Re-measure on resize so segments stay aligned with Plyr's progress bar.
+  // Wait for client-side mount before reading the DOM (Next.js may SSR
+  // this component even with "use client", and `document` is undefined
+  // server-side).
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Re-render whenever the progress bar's position or size could have
+  // changed: window resize, scroll, or the element itself resizes.
   useEffect(() => {
     if (!progressEl) return;
-    const onResize = () => forceTick((n) => n + 1);
-    window.addEventListener("resize", onResize);
-    const ro = new ResizeObserver(onResize);
+    const onChange = () => forceTick((n) => n + 1);
+    window.addEventListener("resize", onChange);
+    window.addEventListener("scroll", onChange, true /* capture: catch nested scrollers */);
+    const ro = new ResizeObserver(onChange);
     ro.observe(progressEl);
     return () => {
-      window.removeEventListener("resize", onResize);
+      window.removeEventListener("resize", onChange);
+      window.removeEventListener("scroll", onChange, true);
       ro.disconnect();
     };
   }, [progressEl]);
 
-  if (!progressEl || totalDuration <= 0) return null;
+  if (!mounted || !progressEl || totalDuration <= 0) return null;
   const segments = computeSegments(chapters, totalDuration);
   if (segments.length === 0) return null;
 
   const rect = progressEl.getBoundingClientRect();
 
-  return (
+  const overlay = (
     <div
       aria-hidden="true"
       style={{
-        position: "absolute",
-        top: rect.top + window.scrollY,
-        left: rect.left + window.scrollX,
+        position: "fixed",
+        top: rect.top,
+        left: rect.left,
         width: rect.width,
         height: rect.height,
         pointerEvents: "none",
         display: "flex",
         gap: "1px",
+        zIndex: 10,
       }}
     >
       {segments.map((seg, i) => {
@@ -123,4 +139,6 @@ export function ChapterSegmentsOverlay({
       })}
     </div>
   );
+
+  return createPortal(overlay, document.body);
 }

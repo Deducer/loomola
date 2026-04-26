@@ -32,10 +32,14 @@ test.describe("/recordings/[id]/edit", () => {
     await expect(
       page.getByRole("link", { name: /Dashboard/i })
     ).toBeVisible();
+    // Edit page header shows the share URL with a "View public →" link
+    // and a Rename pencil button. Status renders as a Badge (no "Status:" prefix).
     await expect(
-      page.getByRole("link", { name: /View public page/i })
+      page.getByRole("link", { name: /View public/i })
     ).toBeVisible();
-    await expect(page.getByText(/Status:/)).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /Rename/i })
+    ).toBeVisible();
   });
 
   test("non-owner gets 404", async ({ page }) => {

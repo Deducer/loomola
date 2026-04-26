@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { requireAuth } from "@/lib/require-auth";
 import { getRecordingForEdit } from "@/db/queries/recordings";
-import { listMaxWatched, countViews } from "@/db/queries/views";
+import { listMaxWatched } from "@/db/queries/views";
 import { listBrandProfiles } from "@/db/queries/brand-profiles";
 import { presignGet } from "@/lib/r2/presigned-get";
 import { bucketize } from "@/lib/viewer/dropoff";
@@ -61,13 +61,12 @@ export default async function EditRecordingPage({
   const signedVideoUrl = isReady ? await presignGet(rec.r2CompositeKey!) : null;
 
   let dropoffBuckets: number[] = [];
-  let viewCount = 0;
   if (isReady) {
     const durationSec = parseFloat(String(rec.durationSeconds ?? "0"));
     const maxList = await listMaxWatched(rec.id);
     dropoffBuckets = bucketize(maxList, durationSec, 10);
-    viewCount = await countViews(rec.id);
   }
+  const viewCount = rec.viewCount;
 
   const brandOptions = await listBrandProfiles(user.id);
   const displayTitle = rec.title || rec.aiTitle || "Untitled recording";
