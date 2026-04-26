@@ -2,6 +2,7 @@
 
 import "plyr/dist/plyr.css";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { ChapterSegmentsOverlay } from "./chapter-segments";
 
 export type Chapter = { start_sec: number; title: string };
 
@@ -40,6 +41,9 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
   const plyrRef = useRef<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [progressEl, setProgressEl] = useState<HTMLElement | null>(null);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [totalDuration, setTotalDuration] = useState(0);
 
   useEffect(() => {
     if (!videoRef.current) return;
@@ -47,14 +51,10 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
     (async () => {
       const Plyr = (await import("plyr")).default;
       if (cancelled || !videoRef.current) return;
-      plyrRef.current = new Plyr(videoRef.current, {
-        markers: {
-          enabled: chapters.length > 0,
-          points: chapters.map((c) => ({ time: c.start_sec, label: c.title })),
-        },
-      });
+      plyrRef.current = new Plyr(videoRef.current, {});
       plyrRef.current.on("timeupdate", () => {
         const t = plyrRef.current?.currentTime ?? 0;
+        setCurrentTime(t);
         if (
           typeof trimEndSec === "number" &&
           trimEndSec > 0 &&
@@ -72,8 +72,15 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
       plyrRef.current.on("play", () => onPlayStateChange?.(true));
       plyrRef.current.on("pause", () => onPlayStateChange?.(false));
       plyrRef.current.on("ended", () => onPlayStateChange?.(false));
-      plyrRef.current.on("ready", () => onReady?.());
+      plyrRef.current.on("ready", () => {
+        onReady?.();
+        // Plyr exposes its DOM via player.elements.progress
+        const el = plyrRef.current?.elements?.progress as HTMLElement | undefined;
+        if (el) setProgressEl(el);
+      });
       plyrRef.current.on("loadedmetadata", () => {
+        const dur = videoRef.current?.duration ?? 0;
+        if (isFinite(dur) && dur > 0) setTotalDuration(dur);
         if (
           typeof trimStartSec === "number" &&
           trimStartSec > 0 &&
@@ -158,6 +165,18 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
         preload="metadata"
         onError={handleError}
         className="w-full rounded-xl border border-border bg-black"
+      />
+      <ChapterSegmentsOverlay
+        progressEl={progressEl}
+        chapters={chapters}
+        totalDuration={totalDuration}
+        currentTime={currentTime}
+        onSeek={(sec) => {
+          const video = videoRef.current;
+          if (!video) return;
+          video.currentTime = sec;
+          if (plyrRef.current) plyrRef.current.currentTime = sec;
+        }}
       />
       {error && (
         <div className="mt-2 flex items-center gap-3 rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm">
