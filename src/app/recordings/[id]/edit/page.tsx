@@ -4,12 +4,17 @@ import { ArrowLeft } from "lucide-react";
 import { requireAuth } from "@/lib/require-auth";
 import { getRecordingForEdit } from "@/db/queries/recordings";
 import { listMaxWatched, countViews } from "@/db/queries/views";
+import { listBrandProfiles } from "@/db/queries/brand-profiles";
 import { presignGet } from "@/lib/r2/presigned-get";
 import { bucketize } from "@/lib/viewer/dropoff";
-import { OwnerToolbar } from "@/components/viewer/owner-toolbar";
-import { DropoffChart } from "@/components/viewer/dropoff-chart";
+import { EditShell } from "@/components/edit/edit-shell";
+import { EditHeader } from "@/components/edit/edit-header";
 import { PreviewPlayer } from "@/components/edit/preview-player";
-import { CopyLinkButton } from "@/components/share/copy-link-button";
+import { SettingsSection } from "@/components/edit/settings-section";
+import { TrimEditor } from "@/components/viewer/trim-editor";
+import { DownloadsList } from "@/components/viewer/downloads-list";
+import { DropoffChart } from "@/components/edit/dropoff-chart";
+import { DangerZone } from "@/components/edit/danger-zone";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -54,7 +59,8 @@ export default async function EditRecordingPage({
 
   const isReady = rec.status === "ready" && !!rec.r2CompositeKey;
   const signedVideoUrl = isReady ? await presignGet(rec.r2CompositeKey!) : null;
-  let dropoffBuckets: number[] | null = null;
+
+  let dropoffBuckets: number[] = [];
   let viewCount = 0;
   if (isReady) {
     const durationSec = parseFloat(String(rec.durationSeconds ?? "0"));
@@ -63,11 +69,12 @@ export default async function EditRecordingPage({
     viewCount = await countViews(rec.id);
   }
 
+  const brandOptions = await listBrandProfiles(user.id);
   const displayTitle = rec.title || rec.aiTitle || "Untitled recording";
 
   return (
     <div className="min-h-screen">
-      <header className="flex h-14 items-center justify-between border-b border-border px-6">
+      <header className="flex h-14 items-center border-b border-border px-6">
         <Link
           href="/"
           className="inline-flex items-center gap-1.5 text-sm text-text-muted hover:text-text"
@@ -75,56 +82,80 @@ export default async function EditRecordingPage({
           <ArrowLeft className="h-4 w-4" />
           Dashboard
         </Link>
-        <Link
-          href={`/v/${rec.slug}`}
-          target="_blank"
-          className="text-sm text-text-muted hover:text-text"
-        >
-          View public page →
-        </Link>
       </header>
-
-      <main className="mx-auto max-w-5xl px-6 py-10">
-        <h1 className="text-2xl font-semibold tracking-tight text-text">
-          {displayTitle}
-        </h1>
-        <p className="mt-2 text-sm text-text-muted">
-          Status: {rec.status}
-          {viewCount > 0 && (
-            <>
-              {" · "}
-              {viewCount} view{viewCount === 1 ? "" : "s"}
-            </>
-          )}
-        </p>
-
-        <div className="mt-6 flex items-center gap-3 rounded-lg border border-border bg-bg-subtle p-3">
-          <code className="flex-1 truncate rounded-md bg-bg-elevated px-3 py-2 font-mono text-xs text-text-muted">
-            {shareUrl}
-          </code>
-          <CopyLinkButton url={shareUrl} />
-        </div>
-
-        {signedVideoUrl && (
-          <div className="mt-6">
-            <PreviewPlayer signedUrl={signedVideoUrl} />
-          </div>
-        )}
-
-        <OwnerToolbar
-          recordingId={rec.id}
-          hasPassword={!!rec.passwordHash}
-          durationSec={
-            rec.durationSeconds != null
-              ? parseFloat(String(rec.durationSeconds))
-              : null
+      <main className="mx-auto max-w-6xl px-6 py-10">
+        <EditShell
+          header={
+            <EditHeader
+              recordingId={rec.id}
+              slug={rec.slug}
+              title={displayTitle}
+              status={rec.status}
+              shareUrl={shareUrl}
+            />
           }
-          trimStartSec={trimStartSec}
-          trimEndSec={trimEndSec}
-          downloads={downloads}
+          preview={
+            signedVideoUrl ? (
+              <>
+                <PreviewPlayer signedUrl={signedVideoUrl} />
+                <div className="mt-4 rounded-lg border border-border bg-bg-subtle p-3 text-xs text-text-muted">
+                  <div>Views: <span className="text-text">{viewCount}</span></div>
+                  <div className="mt-1">
+                    Duration: <span className="text-text">
+                      {rec.durationSeconds
+                        ? `${Math.round(parseFloat(String(rec.durationSeconds)))}s`
+                        : "—"}
+                    </span>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="rounded-xl border border-border bg-bg-subtle p-10 text-center text-sm text-text-subtle">
+                Preview available once processing finishes.
+              </div>
+            )
+          }
+          settings={
+            <SettingsSection
+              recordingId={rec.id}
+              hasPassword={!!rec.passwordHash}
+              brandProfileId={rec.brand?.id ?? null}
+              brandOptions={brandOptions.map((b) => ({ id: b.id, name: b.name }))}
+            />
+          }
+          trim={
+            <section>
+              <h2 className="mb-3 text-sm font-semibold text-text">Trim</h2>
+              <TrimEditor
+                recordingId={rec.id}
+                durationSec={
+                  rec.durationSeconds != null
+                    ? parseFloat(String(rec.durationSeconds))
+                    : null
+                }
+                initialStart={trimStartSec}
+                initialEnd={trimEndSec}
+              />
+            </section>
+          }
+          downloads={
+            downloads.length > 0 ? (
+              <section>
+                <h2 className="mb-3 text-sm font-semibold text-text">Downloads</h2>
+                <DownloadsList links={downloads} />
+              </section>
+            ) : null
+          }
+          analytics={
+            isReady ? (
+              <section>
+                <h2 className="mb-3 text-sm font-semibold text-text">Analytics</h2>
+                <DropoffChart buckets={dropoffBuckets} />
+              </section>
+            ) : null
+          }
+          danger={<DangerZone recordingId={rec.id} title={displayTitle} />}
         />
-
-        {dropoffBuckets && <DropoffChart buckets={dropoffBuckets} />}
       </main>
     </div>
   );
