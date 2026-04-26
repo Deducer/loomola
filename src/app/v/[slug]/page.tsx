@@ -92,12 +92,22 @@ export default async function SharePage({
         recordingId={rec.id}
       />
 
-      <main className="mx-auto max-w-3xl px-6 py-14">
-        <h1 className="text-[28px] font-semibold tracking-tight text-text">
+      <main className="mx-auto max-w-4xl px-6 py-14">
+        <h1 className="truncate text-[28px] font-semibold tracking-tight text-text">
           {displayTitle}
         </h1>
-        <p className="mt-2 text-sm text-text-muted">
-          {isReady ? "Ready" : `Status: ${rec.status}`}
+        <p className="mt-1.5 text-sm text-text-muted">
+          {rec.brand?.name && (
+            <span className="text-text">{rec.brand.name}</span>
+          )}
+          {rec.brand?.name && <span className="mx-2 text-text-subtle">·</span>}
+          <span className="text-text-muted">{formatRelativeTime(rec.createdAt)}</span>
+          {!isReady && (
+            <>
+              <span className="mx-2 text-text-subtle">·</span>
+              <span className="text-text-muted">{rec.status}</span>
+            </>
+          )}
         </p>
 
         {isReady && signedVideoUrl ? (
@@ -137,6 +147,25 @@ export default async function SharePage({
       </main>
     </div>
   );
+}
+
+function formatRelativeTime(date: Date): string {
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffSec = Math.floor(diffMs / 1000);
+  if (diffSec < 60) return "just now";
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} minute${diffMin === 1 ? "" : "s"} ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr} hour${diffHr === 1 ? "" : "s"} ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay < 7) return `${diffDay} day${diffDay === 1 ? "" : "s"} ago`;
+  const diffWk = Math.floor(diffDay / 7);
+  if (diffWk < 4) return `${diffWk} week${diffWk === 1 ? "" : "s"} ago`;
+  const diffMo = Math.floor(diffDay / 30);
+  if (diffMo < 12) return `${diffMo} month${diffMo === 1 ? "" : "s"} ago`;
+  const diffYr = Math.floor(diffDay / 365);
+  return `${diffYr} year${diffYr === 1 ? "" : "s"} ago`;
 }
 
 function BrandHeader({

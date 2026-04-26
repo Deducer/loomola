@@ -51,7 +51,28 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
     (async () => {
       const Plyr = (await import("plyr")).default;
       if (cancelled || !videoRef.current) return;
-      plyrRef.current = new Plyr(videoRef.current, {});
+      plyrRef.current = new Plyr(videoRef.current, {
+        // Show elapsed time with total duration in "0:45 / 1:52" format,
+        // not Plyr's default countdown (which renders weirdly when seconds
+        // go briefly negative due to floating-point precision).
+        invertTime: false,
+        toggleInvert: false,
+        displayDuration: true,
+        controls: [
+          "play-large",
+          "play",
+          "progress",
+          "current-time",
+          "duration",
+          "mute",
+          "volume",
+          "captions",
+          "settings",
+          "pip",
+          "airplay",
+          "fullscreen",
+        ],
+      });
       plyrRef.current.on("timeupdate", () => {
         const t = plyrRef.current?.currentTime ?? 0;
         setCurrentTime(t);
@@ -164,7 +185,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
         playsInline
         preload="metadata"
         onError={handleError}
-        className="w-full rounded-xl border border-border bg-black"
+        className="w-full overflow-hidden rounded-2xl border border-border bg-black"
       />
       <ChapterSegmentsOverlay
         progressEl={progressEl}
