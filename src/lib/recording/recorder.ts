@@ -24,6 +24,15 @@ export type RecorderHandle = {
   settled: Promise<void>;
 };
 
+export type PreparedRecording = {
+  // Begins all MediaRecorders and starts the duration timer. Returns the
+  // running handle. Permissions and stream wiring happened during prepare.
+  start: () => RecorderHandle;
+  // Tear down streams without ever starting the recorders (used if the
+  // user aborts during countdown, or screen-share ends pre-record).
+  abort: () => void;
+};
+
 type RecorderSlot = {
   kind: TrackKind;
   recorder: MediaRecorder;
@@ -41,9 +50,14 @@ export type StartRecordingOptions = {
   coordinator?: UploadCoordinator;
 };
 
-export async function startRecording(
+/**
+ * Acquire all media streams (triggers browser permission prompts) and wire up
+ * the compositor + mixer + MediaRecorders, but do NOT start recording yet.
+ * The caller invokes `.start()` to begin (e.g. after a 3-2-1 countdown).
+ */
+export async function prepareRecording(
   opts: StartRecordingOptions
-): Promise<RecorderHandle> {
+): Promise<PreparedRecording> {
   const { settings, coordinator } = opts;
 
   const screenStream = await captureScreen(
@@ -86,6 +100,76 @@ export async function startRecording(
     slots.push(
       makeSlot("system-audio", screenAudioOnly, OPUS_MIME, coordinator)
     );
+
+  let aborted = false;
+  let started = false;
+
+  const abort = () => {
+    if (started || aborted) return;
+    aborted = true;
+    compositor.stop();
+    mixer.dispose();
+    stopStream(screenStream);
+    stopStream(camStream);
+  };
+
+  // If the user closes Chrome's share picker / stops sharing during the
+  // countdown, tear everything down cleanly.
+  const primaryScreenTrack = screenStream.getVideoTracks()[0];
+  if (primaryScreenTrack) {
+    primaryScreenTrack.addEventListener(
+      "ended",
+      () => {
+        if (!started) abort();
+      },
+      { once: true }
+    );
+  }
+
+  return {
+    start: () => {
+      if (aborted) {
+        throw new Error("prepared recording was aborted");
+      }
+      started = true;
+      return beginRecording({
+        slots,
+        compositor,
+        mixer,
+        screenStream,
+        camStream,
+        settings,
+        coordinator,
+      });
+    },
+    abort,
+  };
+}
+
+/**
+ * Backwards-compatible wrapper: prepares streams AND starts recording in one
+ * await (legacy API; callers wanting the countdown should use
+ * `prepareRecording` then `.start()` instead).
+ */
+export async function startRecording(
+  opts: StartRecordingOptions
+): Promise<RecorderHandle> {
+  const prepared = await prepareRecording(opts);
+  return prepared.start();
+}
+
+type BeginArgs = {
+  slots: RecorderSlot[];
+  compositor: ReturnType<typeof startCompositor>;
+  mixer: ReturnType<typeof createAudioMixer>;
+  screenStream: MediaStream;
+  camStream: MediaStream | null;
+  settings: RecordingSettings;
+  coordinator?: UploadCoordinator;
+};
+
+function beginRecording(args: BeginArgs): RecorderHandle {
+  const { slots, compositor, mixer, screenStream, camStream, settings, coordinator } = args;
 
   // 5-second timeslice so ondataavailable fires regularly for streaming uploads
   for (const s of slots) s.recorder.start(5000);

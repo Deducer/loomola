@@ -45,16 +45,28 @@ export async function POST(
     r2SystemaudioKey?: string;
   } = {};
 
-  const completions: Promise<void>[] = [];
+  // Track which kinds we've enqueued so the error message can name the failing one.
+  const completionPlans: Array<{
+    kind: TrackKind;
+    key: string;
+    uploadId: string;
+    partCount: number;
+    promise: Promise<void>;
+  }> = [];
+
   for (const [kind, parts] of Object.entries(body.tracks) as Array<
     [TrackKind, Array<{ PartNumber: number; ETag: string }>]
   >) {
     const trackMeta = meta[kind];
     if (!trackMeta) continue;
     if (!parts || parts.length === 0) continue;
-    completions.push(
-      completeMultipartUpload(trackMeta.key, trackMeta.uploadId, parts)
-    );
+    completionPlans.push({
+      kind,
+      key: trackMeta.key,
+      uploadId: trackMeta.uploadId,
+      partCount: parts.length,
+      promise: completeMultipartUpload(trackMeta.key, trackMeta.uploadId, parts),
+    });
     switch (kind) {
       case "composite":
         keyUpdates.r2CompositeKey = trackMeta.key;
@@ -73,20 +85,58 @@ export async function POST(
         break;
     }
   }
-  await Promise.all(completions);
 
-  // Flip to 'transcribing' (was 'ready' pre-M5). Webhook moves to 'ready'.
-  await db
-    .update(mediaObjects)
-    .set({
-      ...keyUpdates,
-      durationSeconds: String(body.durationSeconds),
-      status: "transcribing",
-      uploadMetadata: null,
-    })
-    .where(
-      and(eq(mediaObjects.id, recording.id), eq(mediaObjects.ownerId, user.id))
+  // Run all multipart completions in parallel. Use allSettled so we can name
+  // every failing track in the response — debugging "complete failed: 500"
+  // by digging through Coolify logs is awful otherwise.
+  const results = await Promise.allSettled(completionPlans.map((p) => p.promise));
+  const failed = results
+    .map((r, i) => (r.status === "rejected" ? { plan: completionPlans[i], reason: r.reason } : null))
+    .filter((x): x is { plan: typeof completionPlans[number]; reason: unknown } => x !== null);
+
+  if (failed.length > 0) {
+    for (const f of failed) {
+      console.error(
+        `[complete] R2 multipart completion failed: kind=${f.plan.kind} key=${f.plan.key} parts=${f.plan.partCount}`,
+        f.reason
+      );
+    }
+    return NextResponse.json(
+      {
+        error: "multipart_complete_failed",
+        details: failed.map((f) => ({
+          kind: f.plan.kind,
+          partCount: f.plan.partCount,
+          message: f.reason instanceof Error ? f.reason.message : String(f.reason),
+        })),
+      },
+      { status: 500 }
     );
+  }
+
+  try {
+    // Flip to 'transcribing' (was 'ready' pre-M5). Webhook moves to 'ready'.
+    await db
+      .update(mediaObjects)
+      .set({
+        ...keyUpdates,
+        durationSeconds: String(body.durationSeconds),
+        status: "transcribing",
+        uploadMetadata: null,
+      })
+      .where(
+        and(eq(mediaObjects.id, recording.id), eq(mediaObjects.ownerId, user.id))
+      );
+  } catch (err) {
+    console.error(`[complete] db update failed for recording=${recording.id}`, err);
+    return NextResponse.json(
+      {
+        error: "db_update_failed",
+        message: err instanceof Error ? err.message : String(err),
+      },
+      { status: 500 }
+    );
+  }
 
   // Enqueue transcription only if we have a composite to transcribe.
   if (keyUpdates.r2CompositeKey) {

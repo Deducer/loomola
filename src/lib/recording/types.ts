@@ -27,6 +27,7 @@ export type RecordingSettings = {
 
 export type RecorderState =
   | { kind: "idle" }
+  | { kind: "preparing" }
   | { kind: "countdown"; secondsLeft: number }
   | { kind: "recording"; startedAt: number }
   | { kind: "uploading"; progress: number }

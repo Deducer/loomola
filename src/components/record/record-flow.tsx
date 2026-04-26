@@ -8,8 +8,9 @@ import type {
   TrackKind,
 } from "@/lib/recording/types";
 import {
-  startRecording,
+  prepareRecording,
   type RecorderHandle,
+  type PreparedRecording,
 } from "@/lib/recording/recorder";
 import { CaptureError } from "@/lib/recording/capture-streams";
 import {
@@ -25,6 +26,7 @@ import { FinishedView } from "./finished-view";
 import { UploadProgress } from "./upload-progress";
 
 type Action =
+  | { type: "begin-preparing" }
   | { type: "start-countdown"; settings: RecordingSettings }
   | { type: "begin-recording"; startedAt: number }
   | { type: "begin-upload" }
@@ -35,6 +37,8 @@ type Action =
 
 function reducer(state: RecorderState, action: Action): RecorderState {
   switch (action.type) {
+    case "begin-preparing":
+      return { kind: "preparing" };
     case "start-countdown":
       return { kind: "countdown", secondsLeft: 3 };
     case "begin-recording":
@@ -57,18 +61,18 @@ function reducer(state: RecorderState, action: Action): RecorderState {
 export function RecordFlow({ brands }: { brands: BrandProfile[] }) {
   const [state, dispatch] = useReducer(reducer, { kind: "idle" } as RecorderState);
   const handleRef = useRef<RecorderHandle | null>(null);
+  const preparedRef = useRef<PreparedRecording | null>(null);
   const coordinatorRef = useRef<UploadCoordinator | null>(null);
   const recordingIdRef = useRef<string | null>(null);
   const pendingSettingsRef = useRef<RecordingSettings | null>(null);
 
-  const onStart = useCallback((settings: RecordingSettings) => {
+  // 1. PREPARE: provision the server-side row + multipart uploads, build the
+  // coordinator, then acquire streams (Chrome permission prompts). After
+  // preparation, transition to countdown — so 3-2-1 actually counts down to
+  // recording, not to permission prompts.
+  const onStart = useCallback(async (settings: RecordingSettings) => {
     pendingSettingsRef.current = settings;
-    dispatch({ type: "start-countdown", settings });
-  }, []);
-
-  const onCountdownDone = useCallback(async () => {
-    const settings = pendingSettingsRef.current;
-    if (!settings) return;
+    dispatch({ type: "begin-preparing" });
     try {
       const tracksRequested: Array<{ kind: TrackKind; mimeType: string }> = [
         { kind: "composite", mimeType: "video/webm;codecs=vp9,opus" },
@@ -132,15 +136,48 @@ export function RecordFlow({ brands }: { brands: BrandProfile[] }) {
       );
       coordinatorRef.current = coordinator;
 
-      const handle = await startRecording({ settings, coordinator });
-      handleRef.current = handle;
-      dispatch({ type: "begin-recording", startedAt: performance.now() });
+      // Acquire streams + wire MediaRecorders to the coordinator (Chrome
+      // permission prompts happen here). Single prepare call, single set of
+      // prompts — done before the countdown begins.
+      const prepared = await prepareRecording({ settings, coordinator });
+      preparedRef.current = prepared;
+
+      dispatch({ type: "start-countdown", settings });
     } catch (err) {
       const message =
         err instanceof CaptureError
           ? err.message
           : `Failed to start recording: ${String(err)}`;
+      // Best-effort cleanup of the server-side row if API succeeded but we
+      // failed to acquire streams.
+      const id = recordingIdRef.current;
+      if (id) {
+        await fetch(`/api/recordings/${id}/abort`, { method: "POST" }).catch(
+          () => {}
+        );
+      }
       dispatch({ type: "error", message });
+    }
+  }, []);
+
+  // 2. COUNTDOWN DONE: streams are already live; just kick off the
+  // MediaRecorders. This is synchronous-ish (Promise resolves immediately
+  // after start() — no permission prompts can happen here).
+  const onCountdownDone = useCallback(async () => {
+    const prepared = preparedRef.current;
+    if (!prepared) {
+      dispatch({ type: "error", message: "Internal error: recording not prepared" });
+      return;
+    }
+    try {
+      const handle = prepared.start();
+      handleRef.current = handle;
+      dispatch({ type: "begin-recording", startedAt: performance.now() });
+    } catch (err) {
+      dispatch({
+        type: "error",
+        message: `Failed to start recording: ${String(err)}`,
+      });
     }
   }, []);
 
@@ -181,7 +218,25 @@ export function RecordFlow({ brands }: { brands: BrandProfile[] }) {
           durationSeconds: result.durationSeconds,
         }),
       });
-      if (!res.ok) throw new Error(`complete failed: ${res.status}`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        const detail =
+          body && typeof body === "object"
+            ? body.error
+              ? `${body.error}${body.message ? ` — ${body.message}` : ""}${
+                  Array.isArray(body.details)
+                    ? ` (${body.details
+                        .map(
+                          (d: { kind?: string; message?: string }) =>
+                            `${d.kind ?? "?"}: ${d.message ?? "?"}`
+                        )
+                        .join(", ")})`
+                    : ""
+                }`
+              : JSON.stringify(body)
+            : `status ${res.status}`;
+        throw new Error(`complete failed: ${detail}`);
+      }
       const data = (await res.json()) as { slug: string };
       unsubscribe();
       dispatch({ type: "finish", slug: data.slug, result });
@@ -198,6 +253,7 @@ export function RecordFlow({ brands }: { brands: BrandProfile[] }) {
 
   const onReset = useCallback(() => {
     handleRef.current = null;
+    preparedRef.current = null;
     coordinatorRef.current = null;
     recordingIdRef.current = null;
     pendingSettingsRef.current = null;
@@ -206,6 +262,16 @@ export function RecordFlow({ brands }: { brands: BrandProfile[] }) {
 
   if (state.kind === "idle") {
     return <PreRecordForm brands={brands} onStart={onStart} />;
+  }
+  if (state.kind === "preparing") {
+    return (
+      <div className="mx-auto max-w-lg rounded-xl border border-border bg-bg-subtle p-8 text-center">
+        <h2 className="text-base font-semibold text-text">Setting up</h2>
+        <p className="mt-2 text-sm text-text-muted">
+          Pick the screen, camera, and mic when prompted by your browser.
+        </p>
+      </div>
+    );
   }
   if (state.kind === "countdown") {
     return <Countdown seconds={state.secondsLeft} onComplete={onCountdownDone} />;
