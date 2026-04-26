@@ -4,7 +4,9 @@ import { useCallback, useRef, useState } from "react";
 import { VideoPlayer, type VideoPlayerHandle } from "./video-player";
 import { TranscriptPanel } from "./transcript-panel";
 import { ChaptersList } from "./chapters-list";
-import { ActionItemsList } from "./action-items-list";
+import { SummaryBlock } from "./summary-block";
+import { ActionItemsBlock } from "./action-items-block";
+import { ContentTabs } from "./content-tabs";
 import { Tracking } from "./tracking";
 import { CommentsSection } from "./comments-section";
 import type { Word } from "@/lib/viewer/paragraphs";
@@ -21,6 +23,7 @@ export type ViewerShellProps = {
   slug: string;
   signedVideoUrl: string;
   accentColor: string;
+  summary: string | null | undefined;
   chapters: Array<{ start_sec: number; title: string }>;
   actionItems: Array<{ timestamp_sec: number; text: string }>;
   words: Word[];
@@ -35,6 +38,7 @@ export function ViewerShell({
   slug,
   signedVideoUrl,
   accentColor,
+  summary,
   chapters,
   actionItems,
   words,
@@ -56,8 +60,6 @@ export function ViewerShell({
     return playerRef.current?.getCurrentTime() ?? 0;
   }, []);
 
-  // Deep-link support: on player ready, if the URL has a #t=<sec> fragment,
-  // seek to it once.
   const handleReady = useCallback(() => {
     if (typeof window === "undefined") return;
     const match = window.location.hash.match(/^#t=(\d+(?:\.\d+)?)/);
@@ -90,20 +92,29 @@ export function ViewerShell({
           getCurrentTime={getCurrentTime}
         />
       )}
-      <TranscriptPanel
-        words={words}
-        fullText={fullText}
-        currentTime={currentTime}
-        onSeek={handleSeek}
-      />
+
+      <SummaryBlock summary={summary} />
+      <ActionItemsBlock actionItems={actionItems} onSeek={handleSeek} />
       <ChaptersList chapters={chapters} onSeek={handleSeek} />
-      <ActionItemsList actionItems={actionItems} onSeek={handleSeek} />
-      <CommentsSection
-        comments={comments}
-        slug={slug}
-        isOwner={isOwner}
-        onSeek={handleSeek}
-        getCurrentTime={getCurrentTime}
+
+      <ContentTabs
+        transcript={
+          <TranscriptPanel
+            words={words}
+            fullText={fullText}
+            currentTime={currentTime}
+            onSeek={handleSeek}
+          />
+        }
+        comments={
+          <CommentsSection
+            comments={comments}
+            slug={slug}
+            isOwner={isOwner}
+            onSeek={handleSeek}
+            getCurrentTime={getCurrentTime}
+          />
+        }
       />
     </div>
   );

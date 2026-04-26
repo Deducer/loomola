@@ -92,19 +92,13 @@ export default async function SharePage({
         recordingId={rec.id}
       />
 
-      <main className="mx-auto max-w-3xl px-6 py-10">
-        <h1 className="text-2xl font-semibold tracking-tight text-text">
+      <main className="mx-auto max-w-3xl px-6 py-14">
+        <h1 className="text-[28px] font-semibold tracking-tight text-text">
           {displayTitle}
         </h1>
         <p className="mt-2 text-sm text-text-muted">
           {isReady ? "Ready" : `Status: ${rec.status}`}
         </p>
-
-        {rec.aiSummary && (
-          <p className="mt-6 text-[15px] leading-7 text-text-muted">
-            {rec.aiSummary}
-          </p>
-        )}
 
         {isReady && signedVideoUrl ? (
           <div className="mt-8">
@@ -112,6 +106,7 @@ export default async function SharePage({
               slug={slug}
               signedVideoUrl={signedVideoUrl}
               accentColor={playerAccent}
+              summary={rec.aiSummary}
               chapters={rec.aiChapters ?? []}
               actionItems={rec.aiActionItems ?? []}
               words={words}
