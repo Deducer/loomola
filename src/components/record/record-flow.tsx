@@ -161,18 +161,29 @@ export function RecordFlow({ brands }: { brands: BrandProfile[] }) {
   }, []);
 
   // 2. COUNTDOWN DONE: streams are already live; just kick off the
-  // MediaRecorders. This is synchronous-ish (Promise resolves immediately
-  // after start() — no permission prompts can happen here).
+  // MediaRecorders. We swap the UI to the recording HUD FIRST and wait two
+  // animation frames for the browser to paint, so MediaRecorders never
+  // capture a lingering countdown frame (which used to leak into the
+  // generated thumbnail at t=1s). Then we start the recorders.
   const onCountdownDone = useCallback(async () => {
     const prepared = preparedRef.current;
     if (!prepared) {
       dispatch({ type: "error", message: "Internal error: recording not prepared" });
       return;
     }
+    dispatch({ type: "begin-recording", startedAt: performance.now() });
+    // Yield two frames so React paints the post-countdown state (Countdown
+    // unmounted, RecordingHud mounted) before we start capturing canvas
+    // frames. Otherwise the first ~16ms of the recording is the still-
+    // visible "1" — and ffmpeg's t=1s thumbnail extraction grabs it.
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => resolve())
+      )
+    );
     try {
       const handle = prepared.start();
       handleRef.current = handle;
-      dispatch({ type: "begin-recording", startedAt: performance.now() });
     } catch (err) {
       dispatch({
         type: "error",
