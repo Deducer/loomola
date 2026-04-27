@@ -100,19 +100,22 @@ html, body {
 
 /* Plyr's default applies `margin-right: auto` to the first control, which
    pushes everything to the right of the play button — fine for a single-
-   row layout, but it breaks our centered-time layout. Override it. */
+   row layout, but it breaks our centered-time layout. Override it.
+   `!important` because Plyr's CSS loads after our globals.css in the
+   bundled output and matches at the same specificity (3 classes), so
+   source-order alone isn't enough. */
 .plyr-progress-on-top .plyr__controls > :first-child {
-  margin-right: 2.5px;
+  margin-right: 2.5px !important;
 }
 
 /* Centre the time pair on row 2: auto-margin on each side claims equal
    space, sandwiching the time block between the play button (left) and
-   the right-side cluster (mute / volume / settings / …). */
+   the right-side cluster (volume / settings / …). */
 .plyr-progress-on-top .plyr__time--current {
-  margin-left: auto;
+  margin-left: auto !important;
 }
 .plyr-progress-on-top .plyr__time--duration {
-  margin-right: auto;
+  margin-right: auto !important;
 }
 
 /* Round the player frame. The <video> element on its own can be rounded,
