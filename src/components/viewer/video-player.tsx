@@ -25,6 +25,9 @@ type Props = {
   // Required because Chrome's <video>.duration returns Infinity for
   // MediaRecorder-produced webm files, breaking Plyr's duration display.
   durationSec?: number | null;
+  // VTT URL for hover-scrub thumbnails (Plyr's previewThumbnails feature).
+  // When null, hover-scrub is silently disabled.
+  previewThumbnailsVttUrl?: string | null;
 };
 
 export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
@@ -39,6 +42,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
     trimStartSec,
     trimEndSec,
     durationSec,
+    previewThumbnailsVttUrl,
   },
   ref
 ) {
@@ -68,6 +72,18 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
         // "0:00 / 0:21" instead of "0:00 / 0:00".
         ...(durationSec && isFinite(durationSec) && durationSec > 0
           ? { duration: durationSec }
+          : {}),
+        // YouTube/Loom-style hover-scrub: Plyr fetches a WebVTT cue list
+        // pointing at slices of an R2-hosted sprite sheet. Silently
+        // disabled when the VTT URL is unset (recording too short, sprite
+        // job still pending, or job failed — viewer just sees no preview).
+        ...(previewThumbnailsVttUrl
+          ? {
+              previewThumbnails: {
+                enabled: true,
+                src: previewThumbnailsVttUrl,
+              },
+            }
           : {}),
         controls: [
           "play-large",

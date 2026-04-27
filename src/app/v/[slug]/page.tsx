@@ -130,6 +130,11 @@ export default async function SharePage({
                   ? parseFloat(String(rec.durationSeconds))
                   : null
               }
+              previewThumbnailsVttUrl={
+                rec.previewSpriteKey
+                  ? `/api/v/${slug}/preview-thumbnails.vtt`
+                  : null
+              }
             />
           </div>
         ) : (

@@ -20,6 +20,11 @@ import {
   runThumbnailJob,
   type ThumbnailJobData,
 } from "./jobs/generate-thumbnail";
+import {
+  PREVIEW_SPRITE_JOB,
+  runPreviewSpriteJob,
+  type PreviewSpriteJobData,
+} from "./jobs/generate-preview-sprite";
 
 let cached: PgBoss | null = null;
 let starting: Promise<PgBoss> | null = null;
@@ -46,6 +51,7 @@ async function init(): Promise<PgBoss> {
   await boss.createQueue(CHAPTERS_JOB);
   await boss.createQueue(ACTION_ITEMS_JOB);
   await boss.createQueue(THUMBNAIL_JOB);
+  await boss.createQueue(PREVIEW_SPRITE_JOB);
 
   await boss.work<TranscribeJobData>(TRANSCRIBE_JOB, async (jobs) => {
     for (const job of jobs) await runTranscribeJob(job.data);
@@ -62,8 +68,11 @@ async function init(): Promise<PgBoss> {
   await boss.work<ThumbnailJobData>(THUMBNAIL_JOB, async (jobs) => {
     for (const job of jobs) await runThumbnailJob(job.data);
   });
+  await boss.work<PreviewSpriteJobData>(PREVIEW_SPRITE_JOB, async (jobs) => {
+    for (const job of jobs) await runPreviewSpriteJob(job.data);
+  });
 
-  console.log("[pg-boss] started and workers registered (5 queues)");
+  console.log("[pg-boss] started and workers registered (6 queues)");
   return boss;
 }
 

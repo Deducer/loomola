@@ -33,6 +33,7 @@ export type ViewerShellProps = {
   trimStartSec: number | null;
   trimEndSec: number | null;
   durationSec: number | null;
+  previewThumbnailsVttUrl: string | null;
 };
 
 export function ViewerShell({
@@ -49,6 +50,7 @@ export function ViewerShell({
   trimStartSec,
   trimEndSec,
   durationSec,
+  previewThumbnailsVttUrl,
 }: ViewerShellProps) {
   const playerRef = useRef<VideoPlayerHandle | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
@@ -87,6 +89,7 @@ export function ViewerShell({
         trimStartSec={trimStartSec}
         trimEndSec={trimEndSec}
         durationSec={durationSec}
+        previewThumbnailsVttUrl={previewThumbnailsVttUrl}
       />
       {!isOwner && (
         <Tracking

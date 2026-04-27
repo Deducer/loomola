@@ -9,6 +9,10 @@ import {
   type ActionItemsJobData,
 } from "./jobs/extract-action-items";
 import { THUMBNAIL_JOB, type ThumbnailJobData } from "./jobs/generate-thumbnail";
+import {
+  PREVIEW_SPRITE_JOB,
+  type PreviewSpriteJobData,
+} from "./jobs/generate-preview-sprite";
 
 const COMMON_OPTIONS = {
   retryLimit: 3,
@@ -29,10 +33,17 @@ export async function enqueueProcessingJobs(params: {
     mediaObjectId: params.mediaObjectId,
     compositeKey: params.compositeKey,
   };
+  const ps: PreviewSpriteJobData = {
+    mediaObjectId: params.mediaObjectId,
+    compositeKey: params.compositeKey,
+  };
   await Promise.all([
     boss.send(TITLE_SUMMARY_JOB, ts, COMMON_OPTIONS),
     boss.send(CHAPTERS_JOB, ch, COMMON_OPTIONS),
     boss.send(ACTION_ITEMS_JOB, ai, COMMON_OPTIONS),
     boss.send(THUMBNAIL_JOB, th, COMMON_OPTIONS),
+    // Preview-sprite is best-effort and not required for status:ready —
+    // viewer page hides hover-scrub gracefully when the sprite key is null.
+    boss.send(PREVIEW_SPRITE_JOB, ps, COMMON_OPTIONS),
   ]);
 }

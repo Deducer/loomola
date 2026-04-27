@@ -41,6 +41,12 @@ export const brandProfiles = pgTable("brand_profiles", {
   name: text("name").notNull(),
   accentColor: text("accent_color").notNull(),
   logoUrl: text("logo_url"),
+  // Layer 2 — full-page theming on share pages.
+  tagline: text("tagline"),
+  fontFamily: text("font_family"),
+  ctaLabel: text("cta_label"),
+  ctaUrl: text("cta_url"),
+  footerText: text("footer_text"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -92,6 +98,7 @@ export const mediaObjects = pgTable("media_objects", {
   r2MicKey: text("r2_mic_key"),
   r2SystemaudioKey: text("r2_systemaudio_key"),
   compositeThumbnailKey: text("composite_thumbnail_key"),
+  previewSpriteKey: text("preview_sprite_key"),
   trimStartSec: numeric("trim_start_sec"),
   trimEndSec: numeric("trim_end_sec"),
   passwordHash: text("password_hash"),
