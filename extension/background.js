@@ -23,24 +23,51 @@ async function writeState(value) {
 
 /**
  * Inject the bubble into a tab by sending its content script a "show" message.
- * The content script handles the actual DOM injection.
+ * If the content script isn't loaded (the tab was open before the extension
+ * was installed / reloaded), inject it programmatically first via
+ * chrome.scripting, then send the message.
  */
 async function broadcastShowBubble(state) {
   const tabs = await chrome.tabs.query({});
   await Promise.all(
     tabs.map(async (tab) => {
-      if (!tab.id) return;
-      // Skip the loom-clone tab itself — that's where the recording UI lives,
-      // we don't want to overlay the app on top of itself.
-      if (tab.url && tab.url.startsWith("https://loom.dissonance.cloud")) return;
+      if (!tab.id || !tab.url) return;
+      if (tab.url.startsWith("https://loom.dissonance.cloud")) return;
+      // chrome:// and similar pages are off-limits for extensions.
+      if (
+        tab.url.startsWith("chrome://") ||
+        tab.url.startsWith("chrome-extension://") ||
+        tab.url.startsWith("edge://") ||
+        tab.url.startsWith("about:")
+      ) {
+        return;
+      }
       try {
         await chrome.tabs.sendMessage(tab.id, {
           type: "loom-clone:show-bubble",
           state,
         });
       } catch {
-        // Content script not yet injected on this tab (e.g. chrome:// pages
-        // we can't inject into). Silent.
+        // No content script in this tab — likely opened before the extension
+        // was installed/reloaded. Inject programmatically and retry.
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            files: ["content-script-page.js"],
+          });
+          await chrome.tabs.sendMessage(tab.id, {
+            type: "loom-clone:show-bubble",
+            state,
+          });
+          console.log(
+            `[loom-clone-ext:bg] injected content-script into tab ${tab.id}`
+          );
+        } catch (err) {
+          console.warn(
+            `[loom-clone-ext:bg] couldn't inject into tab ${tab.id}:`,
+            err
+          );
+        }
       }
     })
   );

@@ -125,6 +125,16 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
         // Plyr exposes its DOM via player.elements.progress
         const el = plyrRef.current?.elements?.progress as HTMLElement | undefined;
         if (el) setProgressEl(el);
+        // Force-render the duration display when Chrome's
+        // <video>.duration is Infinity (the well-known MediaRecorder webm
+        // bug). Plyr's `duration` config option overrides player.duration,
+        // but its built-in duration element only paints if the underlying
+        // <video>'s duration event fires with a finite number — which it
+        // doesn't here, so the Duration "0:21" stays blank during playback
+        // until the video actually reaches its end. Paint it ourselves.
+        if (durationSec && isFinite(durationSec) && durationSec > 0) {
+          paintDuration(plyrRef.current, durationSec);
+        }
       });
       plyrRef.current.on("loadedmetadata", () => {
         const dur = videoRef.current?.duration ?? 0;
@@ -240,3 +250,25 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
     </div>
   );
 });
+
+/**
+ * Plyr's built-in duration display element doesn't render a value when
+ * `<video>.duration` is `Infinity` (Chrome's MediaRecorder webm bug).
+ * Paint the formatted duration into it ourselves once the player is ready.
+ */
+function paintDuration(player: any, durationSec: number) {
+  try {
+    const el = player?.elements?.display?.duration as HTMLElement | undefined;
+    if (!el) return;
+    el.textContent = formatPlyrDuration(durationSec);
+  } catch {
+    /* ignore — Plyr's internal layout might change between versions */
+  }
+}
+
+function formatPlyrDuration(seconds: number): string {
+  const totalSec = Math.max(0, Math.floor(seconds));
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}

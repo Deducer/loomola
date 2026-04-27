@@ -2,6 +2,7 @@ import { requireAuth } from "@/lib/require-auth";
 import { listBrandProfiles } from "@/db/queries/brand-profiles";
 import { TopNav } from "@/components/nav/top-nav";
 import { RecordFlow } from "@/components/record/record-flow";
+import { ExtensionStatusPill } from "@/components/record/extension-status";
 
 export default async function RecordPage() {
   const user = await requireAuth();
@@ -20,6 +21,7 @@ export default async function RecordPage() {
           <RecordFlow brands={brands} />
         </div>
       </main>
+      <ExtensionStatusPill />
     </>
   );
 }
