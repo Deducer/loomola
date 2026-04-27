@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MainRecorderView: View {
     @StateObject private var viewModel = RecorderViewModel()
+    @FocusState private var focusedField: FocusedField?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -24,8 +25,10 @@ struct MainRecorderView: View {
                         .font(.headline)
                     TextField("Email", text: $viewModel.email)
                         .textFieldStyle(.roundedBorder)
+                        .focused($focusedField, equals: .email)
                     SecureField("Password", text: $viewModel.password)
                         .textFieldStyle(.roundedBorder)
+                        .focused($focusedField, equals: .password)
                     Button("Sign in") {
                         viewModel.signIn()
                     }
@@ -88,7 +91,25 @@ struct MainRecorderView: View {
             }
         }
         .padding(24)
+        .onAppear {
+            AppActivation.bringRecorderToFront()
+            focusDefaultField()
+        }
+        .onChange(of: viewModel.state) { _, _ in
+            focusDefaultField()
+        }
     }
+
+    private func focusDefaultField() {
+        if viewModel.state == .signedOut {
+            focusedField = .email
+        }
+    }
+}
+
+private enum FocusedField: Hashable {
+    case email
+    case password
 }
 
 private struct CaptureSourcesView: View {

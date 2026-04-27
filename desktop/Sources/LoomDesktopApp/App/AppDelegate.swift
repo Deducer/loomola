@@ -7,6 +7,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         configureMenuBar()
+        Task { @MainActor in
+            AppActivation.bringRecorderToFront()
+        }
     }
 
     private func configureMenuBar() {
@@ -14,7 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item.button?.title = "Loom"
 
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Start Recording", action: #selector(startRecording), keyEquivalent: "r"))
+        menu.addItem(NSMenuItem(title: "Show Recorder", action: #selector(showRecorder), keyEquivalent: "r"))
         menu.addItem(NSMenuItem(title: "Show Bubble Overlay", action: #selector(showBubbleOverlay), keyEquivalent: "b"))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Open Dashboard", action: #selector(openDashboard), keyEquivalent: "d"))
@@ -24,8 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = item
     }
 
-    @objc private func startRecording() {
-        NSApp.activate(ignoringOtherApps: true)
+    @objc private func showRecorder() {
+        AppActivation.bringRecorderToFront()
     }
 
     @objc private func showBubbleOverlay() {

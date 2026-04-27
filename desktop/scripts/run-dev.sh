@@ -4,6 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 if [[ -f .env.local ]]; then
+  echo "Loading desktop/.env.local"
   set -a
   # shellcheck disable=SC1091
   source .env.local
@@ -11,6 +12,7 @@ if [[ -f .env.local ]]; then
 fi
 
 if [[ -f ../.env.local ]]; then
+  echo "Loading ../.env.local"
   set -a
   # shellcheck disable=SC1091
   source ../.env.local
@@ -27,4 +29,6 @@ if [[ -z "${LOOM_SUPABASE_URL:-}" || -z "${LOOM_SUPABASE_ANON_KEY:-}" ]]; then
   exit 1
 fi
 
+echo "Using API base: ${LOOM_API_BASE_URL}"
+echo "Launching Loom Desktop dev build..."
 swift run LoomDesktop
