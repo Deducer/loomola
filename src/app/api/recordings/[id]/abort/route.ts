@@ -12,10 +12,10 @@ type UploadMeta = {
 };
 
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const user = await requireAuth();
+  const user = await requireAuth(request);
   const { id } = await params;
 
   const recording = await getRecordingOwned(id, user.id);

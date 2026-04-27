@@ -23,7 +23,7 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const user = await requireAuth();
+  const user = await requireAuth(request);
   const { id } = await params;
   const body = (await request.json()) as CompleteRequest;
 
