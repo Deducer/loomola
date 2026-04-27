@@ -24,13 +24,14 @@ This directory is a development app, not a finished recorder. It includes:
 - Keychain-backed session storage.
 - Backend start/abort handshake against the existing `/api/recordings/*` routes.
 - ScreenCaptureKit source listing for displays/windows.
-- ScreenCaptureKit first-display preview stream that counts frames.
+- ScreenCaptureKit first-display MP4 recording path on macOS 15+.
+- Upload of that local MP4 as the `composite` track through the existing backend.
 - Bubble overlay `NSPanel` with a live camera preview clipped into a circle.
 - Capture/composite/upload organization sketches for the remaining work.
 - API model types matching the existing `/api/recordings/*` routes.
 - Xcode signing/notarization placeholders.
 
-It does **not** yet write a complete MP4/M4A recording or upload real recorded files. The next major implementation slice is `AVAssetWriter` output for composite + raw tracks.
+It does **not** yet composite the camera bubble into the exported video or write separate raw camera/mic/system-audio tracks. The current desktop recording path is first-display screen + ScreenCaptureKit audio to a local MP4, uploaded as the `composite` track. The next major implementation slice is `AVAssetWriter` compositing for screen + bubble + raw tracks.
 
 The implementation spec lives at:
 
@@ -69,7 +70,7 @@ The runnable dev app can currently test:
 - Saved session restore from Keychain.
 - `Test Backend`: creates a desktop-shaped `media_objects` upload row, then aborts it.
 - `Refresh Sources`: lists displays, windows, cameras, and microphones.
-- `Start Recording`: starts a ScreenCaptureKit stream from the first display and counts frames.
+- `Start Recording`: records the first display to a local MP4 on macOS 15+, then `Stop` uploads it through the existing backend as the composite track.
 - Menu bar `Show Bubble Overlay`: shows a draggable circular camera bubble.
 
 For serious ScreenCaptureKit work, create an Xcode macOS App target from this scaffold so `Info.plist`, entitlements, signing, and privacy prompts behave like a real app bundle.

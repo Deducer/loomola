@@ -20,6 +20,7 @@ final class RecorderViewModel: ObservableObject {
     private var backendClient: BackendClient?
     private let captureSourceProvider: CaptureSourceProvider?
     private let screenCaptureCoordinator: ScreenCaptureCoordinator?
+    private var activeRecordingURL: URL?
 
     init() {
         if #available(macOS 14.0, *) {
@@ -167,6 +168,67 @@ final class RecorderViewModel: ObservableObject {
             } catch {
                 state = .failed(message: error.localizedDescription)
                 statusMessage = "Could not stop screen stream: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func startLocalRecording() {
+        guard let screenCaptureCoordinator else {
+            statusMessage = "ScreenCaptureKit requires macOS 14 or newer."
+            return
+        }
+        let outputURL = FileManager.default.temporaryDirectory
+            .appending(path: "loom-desktop-\(UUID().uuidString).mp4")
+        activeRecordingURL = outputURL
+        state = .recording
+        statusMessage = "Starting local MP4 recording..."
+        Task {
+            do {
+                let display = try await screenCaptureCoordinator.startFirstDisplayRecording(outputURL: outputURL)
+                statusMessage = "Recording \(display.name) to a local MP4."
+            } catch {
+                state = .failed(message: error.localizedDescription)
+                statusMessage = "Local recording failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func stopLocalRecordingAndUpload() {
+        guard let screenCaptureCoordinator, let backendClient else { return }
+        state = .finalizing
+        statusMessage = "Finalizing local MP4..."
+        Task {
+            do {
+                let file = try await screenCaptureCoordinator.stopRecording()
+                state = .uploading(progress: 0.1)
+                statusMessage = "Creating upload row..."
+                let start = try await backendClient.startRecording(
+                    StartRecordingRequest(
+                        tracks: [.init(kind: .composite, mimeType: "video/mp4")],
+                        resolution: "screen-native",
+                        brandProfileId: nil
+                    )
+                )
+                let uploader = MultipartUploadCoordinator(backend: backendClient)
+                statusMessage = "Uploading composite MP4..."
+                let parts = try await uploader.uploadFile(
+                    url: file.url,
+                    recordingId: start.recordingId,
+                    track: .composite
+                )
+                state = .uploading(progress: 0.9)
+                let complete = try await backendClient.complete(
+                    recordingId: start.recordingId,
+                    request: CompleteRecordingRequest(
+                        tracks: [.composite: parts],
+                        durationSeconds: max(file.durationSeconds, 1)
+                    )
+                )
+                state = .complete(slug: complete.slug)
+                statusMessage = "Uploaded. Recording slug: \(complete.slug)"
+            } catch {
+                state = .failed(message: error.localizedDescription)
+                statusMessage = "Recording upload failed: \(error.localizedDescription)"
             }
         }
     }
