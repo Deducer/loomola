@@ -61,6 +61,8 @@ cp .env.example .env.local
 ./scripts/run-dev.sh
 ```
 
+The helper also falls back to the repo-root `.env.local` names used by the web app (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `NEXT_PUBLIC_APP_URL`), so an existing local web-app env file is enough for a development run.
+
 The runnable dev app can currently test:
 
 - Email/password sign-in to Supabase.

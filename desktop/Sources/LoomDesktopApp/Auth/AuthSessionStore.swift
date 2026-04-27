@@ -12,10 +12,16 @@ struct DesktopAuthConfiguration: Sendable {
         guard let apiBaseURL = URL(string: apiBase) else {
             throw DesktopConfigurationError.invalidURL("LOOM_API_BASE_URL")
         }
-        guard let supabaseRaw = environment["LOOM_SUPABASE_URL"], let supabaseURL = URL(string: supabaseRaw) else {
+        let supabaseRaw = environment["LOOM_SUPABASE_URL"]
+            ?? environment["NEXT_PUBLIC_SUPABASE_URL"]
+            ?? environment["SUPABASE_URL"]
+        guard let supabaseRaw, let supabaseURL = URL(string: supabaseRaw) else {
             throw DesktopConfigurationError.missingOrInvalid("LOOM_SUPABASE_URL")
         }
-        guard let anonKey = environment["LOOM_SUPABASE_ANON_KEY"], !anonKey.isEmpty else {
+        let anonKey = environment["LOOM_SUPABASE_ANON_KEY"]
+            ?? environment["NEXT_PUBLIC_SUPABASE_ANON_KEY"]
+            ?? environment["SUPABASE_ANON_KEY"]
+        guard let anonKey, !anonKey.isEmpty else {
             throw DesktopConfigurationError.missingOrInvalid("LOOM_SUPABASE_ANON_KEY")
         }
         return DesktopAuthConfiguration(apiBaseURL: apiBaseURL, supabaseURL: supabaseURL, anonKey: anonKey)

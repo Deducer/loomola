@@ -22,4 +22,16 @@ final class DesktopConfigurationTests: XCTestCase {
 
         XCTAssertEqual(config.apiBaseURL.absoluteString, "https://loom.dissonance.cloud")
     }
+
+    func testConfigurationCanUseWebAppEnvironmentNames() throws {
+        let config = try DesktopAuthConfiguration.fromEnvironment([
+            "NEXT_PUBLIC_SUPABASE_URL": "https://example.supabase.co",
+            "NEXT_PUBLIC_SUPABASE_ANON_KEY": "anon",
+            "NEXT_PUBLIC_APP_URL": "https://loom.dissonance.cloud"
+        ])
+
+        XCTAssertEqual(config.apiBaseURL.absoluteString, "https://loom.dissonance.cloud")
+        XCTAssertEqual(config.supabaseURL.absoluteString, "https://example.supabase.co")
+        XCTAssertEqual(config.anonKey, "anon")
+    }
 }
