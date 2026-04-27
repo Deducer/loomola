@@ -36,6 +36,11 @@ export async function createBrandProfile(
       name: input.name,
       accentColor: input.accentColor,
       logoUrl: input.logoUrl ?? null,
+      tagline: input.tagline ?? null,
+      fontFamily: input.fontFamily ?? null,
+      ctaLabel: input.ctaLabel ?? null,
+      ctaUrl: input.ctaUrl ?? null,
+      footerText: input.footerText ?? null,
     })
     .returning();
   return row;
@@ -52,6 +57,11 @@ export async function updateBrandProfile(
       name: input.name,
       accentColor: input.accentColor,
       logoUrl: input.logoUrl ?? null,
+      tagline: input.tagline ?? null,
+      fontFamily: input.fontFamily ?? null,
+      ctaLabel: input.ctaLabel ?? null,
+      ctaUrl: input.ctaUrl ?? null,
+      footerText: input.footerText ?? null,
     })
     .where(and(eq(brandProfiles.id, id), eq(brandProfiles.ownerId, ownerId)))
     .returning();

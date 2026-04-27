@@ -3,6 +3,20 @@ import { z } from "zod";
 // Accept 3 or 6-digit hex with the leading #
 const HEX_COLOR = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
+const optionalUrl = z
+  .string()
+  .url("Must be a valid URL")
+  .max(2048, "URL too long")
+  .optional()
+  .or(z.literal("").transform(() => undefined));
+
+const optionalText = (max: number, label = "Field") =>
+  z
+    .string()
+    .max(max, `${label} too long`)
+    .optional()
+    .or(z.literal("").transform(() => undefined));
+
 export const brandProfileInputSchema = z.object({
   name: z
     .string()
@@ -12,12 +26,13 @@ export const brandProfileInputSchema = z.object({
   accentColor: z
     .string()
     .regex(HEX_COLOR, "Accent color must be a hex code like #FF6B35"),
-  logoUrl: z
-    .string()
-    .url("Logo URL must be a valid URL")
-    .max(2048, "Logo URL too long")
-    .optional()
-    .or(z.literal("").transform(() => undefined)),
+  logoUrl: optionalUrl,
+  // Layer 2 — full-page theming on share pages.
+  tagline: optionalText(140, "Tagline"),
+  fontFamily: optionalText(60, "Font family"),
+  ctaLabel: optionalText(40, "CTA label"),
+  ctaUrl: optionalUrl,
+  footerText: optionalText(280, "Footer"),
 });
 
 export type BrandProfileInput = z.infer<typeof brandProfileInputSchema>;

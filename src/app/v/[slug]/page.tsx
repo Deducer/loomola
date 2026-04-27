@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { cookies } from "next/headers";
-import { ArrowLeft, Pencil } from "lucide-react";
+import { ArrowLeft, ExternalLink, Pencil } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getRecordingBySlug } from "@/db/queries/recordings";
 import { getTranscriptByRecording } from "@/db/queries/transcripts";
@@ -17,6 +17,17 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+type BrandLike = {
+  name?: string | null;
+  logoUrl?: string | null;
+  accentColor?: string | null;
+  tagline?: string | null;
+  fontFamily?: string | null;
+  ctaLabel?: string | null;
+  ctaUrl?: string | null;
+  footerText?: string | null;
+} | null;
+
 export default async function SharePage({
   params,
 }: {
@@ -30,7 +41,8 @@ export default async function SharePage({
   const { data: { user } } = await supabase.auth.getUser();
   const isOwner = !!user && user.id === rec.ownerId;
 
-  const accent = rec.brand?.accentColor ?? null;
+  const brand = rec.brand ?? null;
+  const accent = brand?.accentColor ?? null;
 
   let unlocked = true;
   if (rec.passwordHash && !isOwner) {
@@ -45,16 +57,16 @@ export default async function SharePage({
 
   if (!unlocked) {
     return (
-      <div className="min-h-screen">
+      <BrandFrame brand={brand}>
         <BrandHeader
-          brandName={rec.brand?.name}
-          brandLogoUrl={rec.brand?.logoUrl}
-          accent={accent}
+          brand={brand}
           isOwner={false}
           recordingId={rec.id}
+          showCta={true}
         />
         <PasswordGate slug={slug} />
-      </div>
+        <BrandFooter brand={brand} />
+      </BrandFrame>
     );
   }
 
@@ -83,13 +95,12 @@ export default async function SharePage({
   const playerAccent = accent ?? "#8b5cf6";
 
   return (
-    <div className="min-h-screen">
+    <BrandFrame brand={brand}>
       <BrandHeader
-        brandName={rec.brand?.name}
-        brandLogoUrl={rec.brand?.logoUrl}
-        accent={accent}
+        brand={brand}
         isOwner={isOwner}
         recordingId={rec.id}
+        showCta={!isOwner}
       />
 
       <main className="mx-auto max-w-4xl px-6 py-14">
@@ -97,10 +108,10 @@ export default async function SharePage({
           {displayTitle}
         </h1>
         <p className="mt-1.5 text-sm text-text-muted">
-          {rec.brand?.name && (
-            <span className="text-text">{rec.brand.name}</span>
+          {brand?.name && (
+            <span className="text-text">{brand.name}</span>
           )}
-          {rec.brand?.name && <span className="mx-2 text-text-subtle">·</span>}
+          {brand?.name && <span className="mx-2 text-text-subtle">·</span>}
           <span className="text-text-muted">{formatRelativeTime(rec.createdAt)}</span>
           {!isReady && (
             <>
@@ -155,7 +166,9 @@ export default async function SharePage({
         )}
 
       </main>
-    </div>
+
+      <BrandFooter brand={brand} />
+    </BrandFrame>
   );
 }
 
@@ -178,57 +191,141 @@ function formatRelativeTime(date: Date): string {
   return `${diffYr} year${diffYr === 1 ? "" : "s"} ago`;
 }
 
+function googleFontHref(fontFamily: string): string {
+  // e.g. "IBM Plex Sans" → "IBM+Plex+Sans"
+  const encoded = encodeURIComponent(fontFamily.trim()).replace(/%20/g, "+");
+  return `https://fonts.googleapis.com/css2?family=${encoded}:wght@400;500;600;700&display=swap`;
+}
+
+function BrandFrame({
+  brand,
+  children,
+}: {
+  brand: BrandLike;
+  children: React.ReactNode;
+}) {
+  const fontFamily = brand?.fontFamily?.trim();
+  // Apply the brand font as the page's primary font when set; otherwise the
+  // `text-text`/etc tokens cascade naturally from globals.css.
+  const style = fontFamily
+    ? { fontFamily: `"${fontFamily}", var(--font-sans, ui-sans-serif, system-ui, sans-serif)` }
+    : undefined;
+  return (
+    <div className="min-h-screen" style={style}>
+      {fontFamily && (
+        <>
+          {/* eslint-disable-next-line @next/next/no-page-custom-font */}
+          <link
+            rel="preconnect"
+            href="https://fonts.googleapis.com"
+          />
+          {/* eslint-disable-next-line @next/next/no-page-custom-font */}
+          <link
+            rel="preconnect"
+            href="https://fonts.gstatic.com"
+            crossOrigin=""
+          />
+          {/* eslint-disable-next-line @next/next/no-page-custom-font */}
+          <link
+            rel="stylesheet"
+            href={googleFontHref(fontFamily)}
+          />
+        </>
+      )}
+      {children}
+    </div>
+  );
+}
+
 function BrandHeader({
-  brandName,
-  brandLogoUrl,
-  accent,
+  brand,
   isOwner,
   recordingId,
+  showCta,
 }: {
-  brandName?: string | null;
-  brandLogoUrl?: string | null;
-  accent: string | null;
+  brand: BrandLike;
   isOwner: boolean;
   recordingId?: string;
+  showCta: boolean;
 }) {
+  const accent = brand?.accentColor ?? null;
+  const ctaActive =
+    showCta && !!brand?.ctaLabel?.trim() && !!brand?.ctaUrl?.trim();
+
   return (
     <>
-      <header className="flex h-14 items-center justify-between border-b border-border px-6">
-        <div className="flex items-center gap-3">
-          {brandLogoUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={brandLogoUrl}
-              alt={brandName ?? ""}
-              className="h-6 w-auto"
-            />
-          )}
-          {brandName && (
-            <span className="text-sm font-semibold text-text">{brandName}</span>
+      <header className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-3">
+        <div className="flex flex-col gap-0.5">
+          <div className="flex items-center gap-3">
+            {brand?.logoUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={brand.logoUrl}
+                alt={brand.name ?? ""}
+                className="h-6 w-auto"
+              />
+            )}
+            {brand?.name && (
+              <span className="text-sm font-semibold text-text">{brand.name}</span>
+            )}
+          </div>
+          {brand?.tagline && (
+            <p className="ml-0 max-w-[60ch] text-xs text-text-muted">
+              {brand.tagline}
+            </p>
           )}
         </div>
-        {isOwner && recordingId && (
-          <div className="flex items-center gap-3">
-            <Link
-              href={`/recordings/${recordingId}/edit`}
-              className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-2.5 py-1 text-xs text-text-muted hover:border-accent hover:text-text"
+
+        <div className="flex items-center gap-3">
+          {ctaActive && (
+            <a
+              href={brand!.ctaUrl!}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-accent-fg transition-opacity hover:opacity-90"
+              style={{
+                backgroundColor: accent ?? "var(--accent)",
+              }}
             >
-              <Pencil className="h-3.5 w-3.5" />
-              Edit
-            </Link>
-            <Link
-              href="/"
-              className="inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-text"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              Dashboard
-            </Link>
-          </div>
-        )}
+              {brand!.ctaLabel}
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
+          {isOwner && recordingId && (
+            <>
+              <Link
+                href={`/recordings/${recordingId}/edit`}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border-strong px-2.5 py-1 text-xs text-text-muted hover:border-accent hover:text-text"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Edit
+              </Link>
+              <Link
+                href="/"
+                className="inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-text"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+                Dashboard
+              </Link>
+            </>
+          )}
+        </div>
       </header>
       {accent && (
         <div className="h-[2px] w-full" style={{ backgroundColor: accent }} />
       )}
     </>
+  );
+}
+
+function BrandFooter({ brand }: { brand: BrandLike }) {
+  const text = brand?.footerText?.trim();
+  if (!text) return null;
+  return (
+    <footer className="mt-12 border-t border-border px-6 py-8">
+      <div className="mx-auto max-w-4xl text-xs leading-relaxed text-text-muted">
+        {text}
+      </div>
+    </footer>
   );
 }

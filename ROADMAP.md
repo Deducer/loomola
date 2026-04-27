@@ -82,6 +82,17 @@ Testing is not required between every commit — just at milestone boundaries.
 **Spec:** `docs/superpowers/specs/2026-04-25-share-page-redesign-design.md`
 **Plan:** `docs/superpowers/plans/2026-04-25-share-page-redesign.md`
 
+## Stage 1.7 — Hover-scrub + Brand profile Layer 2
+
+| What it ships |
+|---|
+| **Hover-scrub thumbnails:** new pg-boss job runs ffmpeg against the composite to build a sprite sheet at adaptive intervals (~50 tiles capped). Storage key is recorded on `media_objects.preview_sprite_key`. New endpoint `GET /api/v/:slug/preview-thumbnails.vtt` serves a WebVTT cue list pointing at slices of the freshly-presigned sprite — Plyr's `previewThumbnails` config picks it up and renders YouTube-style frame previews on seekbar hover. Mirrors the share page's password gate so locked recordings don't leak preview frames. Best-effort: silently disabled when the sprite is missing (recording too short, job pending, or job failed) — no broken UI. |
+| **Brand profile Layer 2:** brand profiles gain `tagline`, `font_family`, `cta_label`, `cta_url`, `footer_text` fields. Share page applies the brand's Google Font as the page-wide font when set, surfaces the tagline under the brand name in the header, renders an accent-colored CTA pill in the header for visitors (e.g. "Book a call"), and adds a footer block when configured. Falls back gracefully when fields are empty — Layer 1 (logo + accent) still works on its own. |
+
+**Status:** ✅ shipped 2026-04-26.
+
+**Loom parity gap that's narrower now:** branded share pages (custom font, tagline, CTA, footer) is the "why use this over Loom" story for client-facing work. Custom domains per brand (CNAME `videos.acme.com` → VPS) is the natural next step on this thread but remains deferred.
+
 ## Known gaps / bugs being tracked
 
 See open issues: https://github.com/Deducer/loom-clone/issues

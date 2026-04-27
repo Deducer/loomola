@@ -23,6 +23,11 @@ function parseFormData(formData: FormData) {
     name: formData.get("name"),
     accentColor: formData.get("accentColor"),
     logoUrl: formData.get("logoUrl") ?? "",
+    tagline: formData.get("tagline") ?? "",
+    fontFamily: formData.get("fontFamily") ?? "",
+    ctaLabel: formData.get("ctaLabel") ?? "",
+    ctaUrl: formData.get("ctaUrl") ?? "",
+    footerText: formData.get("footerText") ?? "",
   });
 }
 
