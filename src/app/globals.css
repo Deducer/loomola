@@ -86,10 +86,11 @@ html, body {
  */
 .plyr-progress-on-top .plyr__controls {
   flex-wrap: wrap;
-  row-gap: 6px;
+  row-gap: 14px;
   padding-top: 14px;
 }
 
+.plyr-progress-on-top .plyr__progress__container,
 .plyr-progress-on-top .plyr__progress {
   flex: 1 1 100%;
   order: -1;
@@ -97,16 +98,35 @@ html, body {
   padding: 0;
 }
 
-/* Sandwich the time-current/time-duration pair in the centre by claiming
-   flexible space on both sides. Plyr's right-cluster controls (mute,
-   volume, settings, …) already have their own margin-left:auto, so we
-   only need to push the time pair away from the play button on the left
-   and away from the right cluster on the right. */
+/* Plyr's default applies `margin-right: auto` to the first control, which
+   pushes everything to the right of the play button — fine for a single-
+   row layout, but it breaks our centered-time layout. Override it. */
+.plyr-progress-on-top .plyr__controls > :first-child {
+  margin-right: 2.5px;
+}
+
+/* Centre the time pair on row 2: auto-margin on each side claims equal
+   space, sandwiching the time block between the play button (left) and
+   the right-side cluster (mute / volume / settings / …). */
 .plyr-progress-on-top .plyr__time--current {
   margin-left: auto;
 }
 .plyr-progress-on-top .plyr__time--duration {
   margin-right: auto;
+}
+
+/* Round the player frame. The <video> element on its own can be rounded,
+   but Plyr wraps it in `.plyr__video-wrapper` whose square corners would
+   show through. Round both Plyr's outer container and its inner video
+   wrapper so the shape is consistent. */
+.plyr-progress-on-top .plyr {
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.plyr-progress-on-top .plyr__video-wrapper {
+  border-radius: 16px;
+  overflow: hidden;
 }
 
 /* Slightly thicker seek bar for prominence as a row of its own. */

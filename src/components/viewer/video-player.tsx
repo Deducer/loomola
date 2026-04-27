@@ -196,7 +196,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
         playsInline
         preload="metadata"
         onError={handleError}
-        className="w-full overflow-hidden rounded-2xl border border-border bg-black"
+        className="w-full bg-black"
       />
       <ChapterSegmentsOverlay
         progressEl={progressEl}
