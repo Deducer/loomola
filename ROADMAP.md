@@ -93,6 +93,32 @@ Testing is not required between every commit — just at milestone boundaries.
 
 **Loom parity gap that's narrower now:** branded share pages (custom font, tagline, CTA, footer) is the "why use this over Loom" story for client-facing work. Custom domains per brand (CNAME `videos.acme.com` → VPS) is the natural next step on this thread but remains deferred.
 
+## Stage 1.8 — Movable bubble + edit page resize + brand-logo hosting
+
+| What it ships |
+|---|
+| **Movable bubble during recording.** Compositor reads bubble position from a mutable `BubblePositionController` ref each frame; a Chrome `documentPictureInPicture` window opens automatically when recording starts containing only the live camera (clipped to the chosen shape via CSS / clip-path) plus a hover-revealed Stop button. The user drags the pip window itself; we poll its `screenX/Y` each frame and update the controller. The pre-record form's "Bubble position" picker was removed (no fixed positions; you drag during recording). |
+| **Bubble cropping fix.** New `clampBubbleCenter` constrains the bubble center so the bounding box (shape-aware: rectangle is wider) stays inside the canvas with a small margin. Wired into both the live compositor and the pre-record `BubblePreview`. Fixes large + rectangle bubbles being half-cropped at corner positions. |
+| **Edit page layout fix.** Sticky preview column flexes to fill; settings column capped at 360px. Outer max-width `6xl` → `7xl` for ultrawide. The video preview is now the dominant element on the page. |
+| **Brand-logo hosting.** Four hosted logos under `public/brands/` (Project Win, Dissonance Inc., Vayu Labs, Credit Builder Card) so they're served from `loom.dissonance.cloud/brands/<file>.png` instead of breaking when pasted from Google Drive. Long-term: a real file-upload-to-R2 flow on the brand form. |
+
+**Status:** ✅ shipped 2026-04-26.
+
+**Caveat known:** when the user records "Entire screen", Chrome's small window-chrome titlebar on the bubble pip is also visible in the capture (sitting on top of whatever the compositor draws). For tab/window recordings the pip is invisible to the capture. To eliminate this, we'd need a Chrome extension (the bubble would be a content-script-injected DOM element in the captured tab — same architecture Loom's web extension uses). Spec'd as a follow-up; see "Open follow-ups" below.
+
+## Open follow-ups (next milestones to spec)
+
+| Topic | Why | Rough effort |
+|---|---|---|
+| **Chrome extension companion** | Frameless circle bubble (true Loom parity for web). Loom's own web product is also a Chrome extension; document Picture-in-Picture is the closest pure-web gets, and it always shows a titlebar (browser security requirement). | ~1 day for MVP |
+| **Mobile responsive pass** | Designed desktop-first. Each surface (dashboard, record, share, edit) needs a focused audit + fixes for ≤ 768px. | ~0.5–1 day |
+| **macOS desktop / menubar app** | Native overlay bubble + system-audio capture without Chrome dependency. Uses ScreenCaptureKit. | ~1–2 weeks (separate project, own codebase) |
+| **Custom domains per brand** | `videos.acme.com` CNAME → VPS, served as the brand's share-page surface. Pairs with Brand Layer 2. | ~1 day infra + DNS setup |
+| **Reactions on share page** | Emoji reactions on `/v/:slug`. Spec'd as out of Stage 1; engagement booster. | ~1 day |
+| **Re-encoded trim downloads** | Currently trim is JS-side playback clamp only — raw downloads include the trimmed regions. ffmpeg-side re-encode would honor trim. | ~1 day |
+| **AI Q&A chat** | Ask questions about a recording (transcript-grounded RAG). | ~2–3 days |
+| **Granola-alt** | Audio-only capture product reusing the polymorphic `media_objects` table. | Multi-week |
+
 ## Known gaps / bugs being tracked
 
 See open issues: https://github.com/Deducer/loom-clone/issues
