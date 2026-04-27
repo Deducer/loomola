@@ -14,7 +14,9 @@ import type { BubbleShape, BubbleSize } from "@/lib/recording/types";
  * cross-origin postMessage to the parent window; the extension routes them
  * back to the recording tab.
  */
-export const dynamic = "force-static";
+export const metadata = {
+  robots: { index: false, follow: false },
+};
 
 export default async function BubbleIframePage({
   searchParams,

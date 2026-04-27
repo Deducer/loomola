@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>Loom Desktop</string>
+	<key>CFBundleIdentifier</key>
+	<string>cloud.dissonance.loom.desktop</string>
+	<key>CFBundleName</key>
+	<string>Loom Desktop</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>Loom Desktop Auth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>loomclone</string>
+			</array>
+		</dict>
+	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Loom Desktop needs camera access to show and record your camera bubble.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Loom Desktop needs microphone access to record narration.</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>Loom Desktop needs screen recording access to capture the selected screen or window.</string>
+</dict>
+</plist>
