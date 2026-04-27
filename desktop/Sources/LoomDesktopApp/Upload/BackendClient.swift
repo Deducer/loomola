@@ -74,6 +74,31 @@ struct StartRecordingResponse: Decodable, Equatable, Sendable {
     let recordingId: String
     let slug: String
     let uploads: [TrackKind: Upload]
+
+    private enum CodingKeys: String, CodingKey {
+        case recordingId
+        case slug
+        case uploads
+    }
+
+    init(recordingId: String, slug: String, uploads: [TrackKind: Upload]) {
+        self.recordingId = recordingId
+        self.slug = slug
+        self.uploads = uploads
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        recordingId = try container.decode(String.self, forKey: .recordingId)
+        slug = try container.decode(String.self, forKey: .slug)
+        let keyedUploads = try container.decode([String: Upload].self, forKey: .uploads)
+        uploads = Dictionary(
+            uniqueKeysWithValues: keyedUploads.compactMap { key, upload in
+                guard let kind = TrackKind(rawValue: key) else { return nil }
+                return (kind, upload)
+            }
+        )
+    }
 }
 
 struct PartURLRequest: Encodable, Sendable {

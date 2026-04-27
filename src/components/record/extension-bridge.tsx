@@ -31,6 +31,7 @@ export function ExtensionBridge({
   useEffect(() => {
     if (typeof window === "undefined") return;
 
+    console.log("[loom-clone] ExtensionBridge mounted; posting recording-started");
     window.postMessage(
       {
         source: "loom-clone",
@@ -61,6 +62,7 @@ export function ExtensionBridge({
 
     return () => {
       window.removeEventListener("message", onMessage);
+      console.log("[loom-clone] ExtensionBridge unmounting; posting recording-stopped");
       window.postMessage(
         { source: "loom-clone", type: "recording-stopped" },
         window.location.origin
@@ -91,12 +93,14 @@ export function useExtensionInstalled(): boolean {
     if (typeof document === "undefined") return;
 
     if (document.documentElement.dataset.loomCloneExtension === "1") {
+      console.log("[loom-clone] extension detected via dataset marker");
       setInstalled(true);
     }
 
     function onMessage(event: MessageEvent) {
       const data = event.data;
       if (data?.source === "loom-clone-extension" && data.type === "installed") {
+        console.log("[loom-clone] extension detected via postMessage");
         setInstalled(true);
       }
     }

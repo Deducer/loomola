@@ -1,5 +1,6 @@
 import AppKit
 
+@MainActor
 final class BubbleOverlayWindowController {
     private var panel: NSPanel?
 
