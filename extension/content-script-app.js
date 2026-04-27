@@ -15,19 +15,42 @@
  */
 
 (function () {
+  console.log("[loom-clone-ext] content-script-app loaded on", location.href);
+
+  // Synchronous marker on the document element so the React app can detect
+  // the extension at any time without racing the message events. The
+  // dataset attribute is visible across worlds because it's set on the
+  // shared DOM (document.documentElement is the same element in the
+  // isolated world and the page world).
+  document.documentElement.dataset.loomCloneExtension = "1";
+
   // App → background
   window.addEventListener("message", (event) => {
     const data = event.data;
     if (!data || data.source !== "loom-clone") return;
 
     if (data.type === "recording-started") {
-      chrome.runtime.sendMessage({
-        type: "loom-clone:recording-started",
-        bubbleShape: data.bubbleShape,
-        bubbleSize: data.bubbleSize,
-      });
+      console.log("[loom-clone-ext] recording-started", data);
+      chrome.runtime
+        .sendMessage({
+          type: "loom-clone:recording-started",
+          bubbleShape: data.bubbleShape,
+          bubbleSize: data.bubbleSize,
+        })
+        .catch((err) =>
+          console.warn("[loom-clone-ext] recording-started send failed:", err)
+        );
     } else if (data.type === "recording-stopped") {
-      chrome.runtime.sendMessage({ type: "loom-clone:recording-stopped" });
+      console.log("[loom-clone-ext] recording-stopped");
+      chrome.runtime
+        .sendMessage({ type: "loom-clone:recording-stopped" })
+        .catch(() => {});
+    } else if (data.type === "ping-extension") {
+      // App is asking whether we're installed — respond directly.
+      window.postMessage(
+        { source: "loom-clone-extension", type: "installed" },
+        window.location.origin
+      );
     }
   });
 
@@ -46,8 +69,8 @@
     }
   });
 
-  // Tell the page that the extension is installed so the app can hide the
-  // docPiP fallback.
+  // Broadcast "installed" on load — handles the case where the React app
+  // is already listening when this script runs.
   window.postMessage(
     { source: "loom-clone-extension", type: "installed" },
     window.location.origin

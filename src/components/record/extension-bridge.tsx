@@ -74,10 +74,26 @@ export function ExtensionBridge({
 /**
  * True if the extension's content script has signalled `installed`. Used to
  * suppress the in-app docPiP fallback so the user doesn't see two bubbles.
+ *
+ * Detection uses two paths to dodge the obvious race (content script posts
+ * "installed" before React's listener attaches):
+ *
+ * 1. Synchronous: the content script sets
+ *    `document.documentElement.dataset.loomCloneExtension = "1"`. We read
+ *    that on mount; if present, we know the extension is loaded right now.
+ * 2. Async: we listen for the `installed` postMessage AND ping the
+ *    extension on mount. The content script responds to the ping. This
+ *    catches the case where the extension loaded after the React app.
  */
 export function useExtensionInstalled(): boolean {
   const [installed, setInstalled] = useState(false);
   useEffect(() => {
+    if (typeof document === "undefined") return;
+
+    if (document.documentElement.dataset.loomCloneExtension === "1") {
+      setInstalled(true);
+    }
+
     function onMessage(event: MessageEvent) {
       const data = event.data;
       if (data?.source === "loom-clone-extension" && data.type === "installed") {
@@ -85,6 +101,14 @@ export function useExtensionInstalled(): boolean {
       }
     }
     window.addEventListener("message", onMessage);
+
+    // Ping the extension in case its initial broadcast fired before this
+    // listener was attached.
+    window.postMessage(
+      { source: "loom-clone", type: "ping-extension" },
+      window.location.origin
+    );
+
     return () => window.removeEventListener("message", onMessage);
   }, []);
   return installed;

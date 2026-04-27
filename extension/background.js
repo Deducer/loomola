@@ -84,6 +84,7 @@ async function forwardPositionToApp(position) {
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  console.log("[loom-clone-ext:bg] received", msg?.type);
   // Async handlers must return true and call sendResponse later.
   (async () => {
     try {

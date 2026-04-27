@@ -51,10 +51,14 @@ function removeIframe() {
   if (iframe) iframe.remove();
 }
 
+console.log("[loom-clone-ext] content-script-page loaded on", location.href);
+
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg?.type === "loom-clone:show-bubble") {
+    console.log("[loom-clone-ext] show-bubble", msg.state);
     ensureIframe(msg.state ?? {});
   } else if (msg?.type === "loom-clone:hide-bubble") {
+    console.log("[loom-clone-ext] hide-bubble");
     removeIframe();
   }
 });
