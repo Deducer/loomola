@@ -76,3 +76,37 @@ html, body {
   outline-offset: 2px;
   border-radius: var(--radius);
 }
+
+/*
+ * Loom-style Plyr controls: progress bar on its own row above the buttons.
+ * Plyr's default packs everything onto one line; this gives the seek bar
+ * the full video width and centers the time display below it. Scoped to
+ * `.plyr-progress-on-top` so the dashboard preview player (compact
+ * single-row) is unaffected.
+ */
+.plyr-progress-on-top .plyr__controls {
+  flex-wrap: wrap;
+  row-gap: 6px;
+  padding-top: 14px;
+}
+
+.plyr-progress-on-top .plyr__progress {
+  flex: 1 1 100%;
+  order: -1;
+  margin: 0;
+  padding: 0;
+}
+
+/* Push the time display to the centre by claiming the left side of the
+   button row. Right-side controls (mute, volume, settings, …) keep their
+   own margin-left:auto from Plyr defaults, which together with this rule
+   sandwiches the time block between the play button and the right cluster. */
+.plyr-progress-on-top .plyr__time--current {
+  margin-left: auto;
+}
+
+/* Slightly thicker seek bar for prominence as a row of its own. */
+.plyr-progress-on-top {
+  --plyr-range-track-height: 5px;
+  --plyr-range-thumb-height: 14px;
+}

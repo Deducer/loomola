@@ -177,7 +177,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
   }
 
   return (
-    <div className="plyr-wrapper" style={{ ["--plyr-color-main" as never]: accentColor }}>
+    <div className="plyr-wrapper plyr-progress-on-top" style={{ ["--plyr-color-main" as never]: accentColor }}>
       <video
         ref={videoRef}
         src={initialSignedUrl}
