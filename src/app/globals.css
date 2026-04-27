@@ -78,62 +78,18 @@ html, body {
 }
 
 /*
- * Loom-style Plyr controls: progress bar on its own row above the buttons.
- * Plyr's default packs everything onto one line; this gives the seek bar
- * the full video width and centers the time display below it. Scoped to
- * `.plyr-progress-on-top` so the dashboard preview player (compact
- * single-row) is unaffected.
+ * Round the share-page player frame. The <video> element on its own can be
+ * rounded, but Plyr wraps it in `.plyr__video-wrapper` inside `.plyr` whose
+ * square corners would show through. Round both layers + the outer wrapper
+ * so the shape is consistent. Scoped to `.plyr-rounded` so the dashboard
+ * preview player can opt out.
  */
-.plyr-progress-on-top .plyr__controls {
-  flex-wrap: wrap;
-  row-gap: 14px;
-  padding-top: 14px;
-}
-
-.plyr-progress-on-top .plyr__progress__container,
-.plyr-progress-on-top .plyr__progress {
-  flex: 1 1 100%;
-  order: -1;
-  margin: 0;
-  padding: 0;
-}
-
-/* Plyr's default applies `margin-right: auto` to the first control, which
-   pushes everything to the right of the play button — fine for a single-
-   row layout, but it breaks our centered-time layout. Override it.
-   `!important` because Plyr's CSS loads after our globals.css in the
-   bundled output and matches at the same specificity (3 classes), so
-   source-order alone isn't enough. */
-.plyr-progress-on-top .plyr__controls > :first-child {
-  margin-right: 2.5px !important;
-}
-
-/* Centre the time pair on row 2: auto-margin on each side claims equal
-   space, sandwiching the time block between the play button (left) and
-   the right-side cluster (volume / settings / …). */
-.plyr-progress-on-top .plyr__time--current {
-  margin-left: auto !important;
-}
-.plyr-progress-on-top .plyr__time--duration {
-  margin-right: auto !important;
-}
-
-/* Round the player frame. The <video> element on its own can be rounded,
-   but Plyr wraps it in `.plyr__video-wrapper` whose square corners would
-   show through. Round both Plyr's outer container and its inner video
-   wrapper so the shape is consistent. */
-.plyr-progress-on-top .plyr {
+.plyr-rounded .plyr {
   border-radius: 16px;
   overflow: hidden;
   border: 1px solid var(--border);
 }
-.plyr-progress-on-top .plyr__video-wrapper {
+.plyr-rounded .plyr__video-wrapper {
   border-radius: 16px;
   overflow: hidden;
-}
-
-/* Slightly thicker seek bar for prominence as a row of its own. */
-.plyr-progress-on-top {
-  --plyr-range-track-height: 5px;
-  --plyr-range-thumb-height: 14px;
 }
