@@ -97,12 +97,16 @@ html, body {
   padding: 0;
 }
 
-/* Push the time display to the centre by claiming the left side of the
-   button row. Right-side controls (mute, volume, settings, …) keep their
-   own margin-left:auto from Plyr defaults, which together with this rule
-   sandwiches the time block between the play button and the right cluster. */
+/* Sandwich the time-current/time-duration pair in the centre by claiming
+   flexible space on both sides. Plyr's right-cluster controls (mute,
+   volume, settings, …) already have their own margin-left:auto, so we
+   only need to push the time pair away from the play button on the left
+   and away from the right cluster on the right. */
 .plyr-progress-on-top .plyr__time--current {
   margin-left: auto;
+}
+.plyr-progress-on-top .plyr__time--duration {
+  margin-right: auto;
 }
 
 /* Slightly thicker seek bar for prominence as a row of its own. */

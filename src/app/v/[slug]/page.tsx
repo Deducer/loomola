@@ -125,6 +125,11 @@ export default async function SharePage({
               comments={commentRows}
               trimStartSec={trimStartSec}
               trimEndSec={trimEndSec}
+              durationSec={
+                rec.durationSeconds != null
+                  ? parseFloat(String(rec.durationSeconds))
+                  : null
+              }
             />
           </div>
         ) : (

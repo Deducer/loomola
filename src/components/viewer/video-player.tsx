@@ -21,6 +21,10 @@ type Props = {
   onReady?: () => void;
   trimStartSec?: number | null;
   trimEndSec?: number | null;
+  // Duration in seconds, passed in from the recording metadata.
+  // Required because Chrome's <video>.duration returns Infinity for
+  // MediaRecorder-produced webm files, breaking Plyr's duration display.
+  durationSec?: number | null;
 };
 
 export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
@@ -34,6 +38,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
     onReady,
     trimStartSec,
     trimEndSec,
+    durationSec,
   },
   ref
 ) {
@@ -58,6 +63,12 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
         invertTime: false,
         toggleInvert: false,
         displayDuration: true,
+        // Chrome reports Infinity for <video>.duration on MediaRecorder
+        // webms — pass the real duration explicitly so Plyr renders
+        // "0:00 / 0:21" instead of "0:00 / 0:00".
+        ...(durationSec && isFinite(durationSec) && durationSec > 0
+          ? { duration: durationSec }
+          : {}),
         controls: [
           "play-large",
           "play",
