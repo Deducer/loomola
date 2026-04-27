@@ -49,6 +49,8 @@ struct MainRecorderView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            CaptureSourcesView(snapshot: viewModel.captureSources)
+
             Spacer()
 
             HStack {
@@ -68,6 +70,10 @@ struct MainRecorderView: View {
                 }
                 .disabled(viewModel.state == .signedOut)
 
+                Button("Refresh Sources") {
+                    viewModel.refreshCaptureSources()
+                }
+
                 Spacer()
 
                 Button("Open Dashboard") {
@@ -82,6 +88,37 @@ struct MainRecorderView: View {
             }
         }
         .padding(24)
+    }
+}
+
+private struct CaptureSourcesView: View {
+    let snapshot: CaptureSourceSnapshot
+
+    var body: some View {
+        Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
+            GridRow {
+                Text("Displays").font(.caption.weight(.semibold))
+                Text(snapshot.displays.prefix(2).map { "\($0.width)x\($0.height)" }.joined(separator: ", "))
+                    .foregroundStyle(.secondary)
+            }
+            GridRow {
+                Text("Cameras").font(.caption.weight(.semibold))
+                Text(snapshot.cameras.prefix(2).map(\.name).joined(separator: ", "))
+                    .foregroundStyle(.secondary)
+            }
+            GridRow {
+                Text("Mics").font(.caption.weight(.semibold))
+                Text(snapshot.microphones.prefix(2).map(\.name).joined(separator: ", "))
+                    .foregroundStyle(.secondary)
+            }
+            GridRow {
+                Text("Windows").font(.caption.weight(.semibold))
+                Text(snapshot.windows.prefix(2).map { "\($0.applicationName): \($0.title)" }.joined(separator: ", "))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .font(.caption)
     }
 }
 

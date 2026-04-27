@@ -8,12 +8,25 @@ final class RecorderViewModel: ObservableObject {
     @Published var password = ""
     @Published private(set) var statusMessage = "Set LOOM_SUPABASE_URL and LOOM_SUPABASE_ANON_KEY, then sign in."
     @Published private(set) var configuration: DesktopAuthConfiguration?
+    @Published private(set) var captureSources = CaptureSourceSnapshot(
+        displays: [],
+        windows: [],
+        cameras: [],
+        microphones: []
+    )
 
     private var authService: DesktopAuthService?
     private var accessToken: String?
     private var backendClient: BackendClient?
+    private let captureSourceProvider: CaptureSourceProvider?
 
     init() {
+        if #available(macOS 14.0, *) {
+            captureSourceProvider = CaptureSourceProvider()
+        } else {
+            captureSourceProvider = nil
+        }
+
         do {
             let config = try DesktopAuthConfiguration.fromEnvironment()
             configuration = config
@@ -103,6 +116,22 @@ final class RecorderViewModel: ObservableObject {
             } catch {
                 state = .failed(message: error.localizedDescription)
                 statusMessage = "Backend handshake failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func refreshCaptureSources() {
+        guard let captureSourceProvider else {
+            statusMessage = "ScreenCaptureKit source listing requires macOS 14 or newer."
+            return
+        }
+        statusMessage = "Refreshing capture sources..."
+        Task {
+            do {
+                captureSources = try await captureSourceProvider.snapshot()
+                statusMessage = "Found \(captureSources.displays.count) display(s), \(captureSources.windows.count) window(s), \(captureSources.cameras.count) camera(s), and \(captureSources.microphones.count) mic(s)."
+            } catch {
+                statusMessage = "Could not list capture sources: \(error.localizedDescription)"
             }
         }
     }
