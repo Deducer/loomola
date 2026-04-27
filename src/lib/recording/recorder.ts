@@ -13,7 +13,10 @@ import {
   CaptureError,
 } from "./capture-streams";
 import { createAudioMixer } from "./audio-mixer";
-import { startCompositor } from "./composite-canvas";
+import {
+  startCompositor,
+  type BubblePositionController,
+} from "./composite-canvas";
 import type { UploadCoordinator } from "./upload-coordinator";
 
 const VP9_MIME = "video/webm;codecs=vp9,opus";
@@ -31,6 +34,12 @@ export type PreparedRecording = {
   // Tear down streams without ever starting the recorders (used if the
   // user aborts during countdown, or screen-share ends pre-record).
   abort: () => void;
+  // The live screen + camera streams + the mutable bubble position
+  // controller — exposed so the floating recording window can preview
+  // the screen and drag the bubble during recording.
+  screenStream: MediaStream;
+  cameraStream: MediaStream | null;
+  positionController: BubblePositionController;
 };
 
 type RecorderSlot = {
@@ -143,6 +152,9 @@ export async function prepareRecording(
       });
     },
     abort,
+    screenStream,
+    cameraStream: settings.cameraEnabled ? camStream : null,
+    positionController: compositor.positionController,
   };
 }
 

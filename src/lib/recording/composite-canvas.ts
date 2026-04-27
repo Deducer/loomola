@@ -1,11 +1,23 @@
-import type { RecordingSettings } from "./types";
+import type { RecordingSettings, BubblePosition } from "./types";
 import { RESOLUTION_DIMENSIONS, BUBBLE_SIZE_FRACTION } from "./types";
-import { createBubblePath, getBubbleBounds } from "./bubble-shapes";
+import {
+  createBubblePath,
+  getBubbleBounds,
+  clampBubbleCenter,
+} from "./bubble-shapes";
+
+/**
+ * A mutable position holder shared between the React UI and the
+ * compositor's animation loop. The compositor reads `current` on every
+ * frame, so dragging the bubble during recording updates immediately.
+ */
+export type BubblePositionController = { current: BubblePosition };
 
 type CompositeHandles = {
   canvas: HTMLCanvasElement;
   stream: MediaStream;
   stop: () => void;
+  positionController: BubblePositionController;
 };
 
 /**
@@ -46,10 +58,12 @@ export function startCompositor(
   let stopped = false;
 
   const diameter = height * BUBBLE_SIZE_FRACTION[settings.bubbleSize];
-  const cx = width * settings.bubblePosition.x;
-  const cy = height * settings.bubblePosition.y;
-  const bubblePath = createBubblePath(settings.bubbleShape, cx, cy, diameter);
-  const bubbleBounds = getBubbleBounds(settings.bubbleShape, cx, cy, diameter);
+
+  // Mutable position holder. Read on every frame so the React UI can
+  // drag the bubble during recording and the next frame picks it up.
+  const positionController: BubblePositionController = {
+    current: { ...settings.bubblePosition },
+  };
 
   function frame() {
     if (stopped) return;
@@ -62,6 +76,22 @@ export function startCompositor(
     }
 
     if (cameraVideo && cameraVideo.readyState >= 2) {
+      // Compute bubble path + bounds fresh each frame from the position
+      // controller, so dragging mid-recording updates without restart.
+      // Clamp so the bubble's bounding box never escapes the canvas.
+      const desiredCx = width * positionController.current.x;
+      const desiredCy = height * positionController.current.y;
+      const { cx, cy } = clampBubbleCenter(
+        settings.bubbleShape,
+        desiredCx,
+        desiredCy,
+        diameter,
+        width,
+        height
+      );
+      const bubblePath = createBubblePath(settings.bubbleShape, cx, cy, diameter);
+      const bubbleBounds = getBubbleBounds(settings.bubbleShape, cx, cy, diameter);
+
       ctx!.save();
       ctx!.clip(bubblePath);
       const vw = cameraVideo.videoWidth || 1;
@@ -97,5 +127,6 @@ export function startCompositor(
       screenVideo.srcObject = null;
       if (cameraVideo) cameraVideo.srcObject = null;
     },
+    positionController,
   };
 }

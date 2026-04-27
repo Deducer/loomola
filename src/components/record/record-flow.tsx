@@ -24,6 +24,8 @@ import { Countdown } from "./countdown";
 import { RecordingHud } from "./recording-hud";
 import { FinishedView } from "./finished-view";
 import { UploadProgress } from "./upload-progress";
+import { PipWindow, isDocPiPAvailable } from "./pip-window";
+import { FloatingRecordingPanel } from "./floating-recording-panel";
 
 type Action =
   | { type: "begin-preparing" }
@@ -288,7 +290,28 @@ export function RecordFlow({ brands }: { brands: BrandProfile[] }) {
     return <Countdown seconds={state.secondsLeft} onComplete={onCountdownDone} />;
   }
   if (state.kind === "recording") {
-    return <RecordingHud startedAt={state.startedAt} onStop={onStop} />;
+    const settings = pendingSettingsRef.current;
+    const prepared = preparedRef.current;
+    const showFloating =
+      isDocPiPAvailable() && !!settings && !!prepared;
+    return (
+      <>
+        <RecordingHud startedAt={state.startedAt} onStop={onStop} />
+        {showFloating && settings && prepared && (
+          <PipWindow width={320} height={360}>
+            <FloatingRecordingPanel
+              startedAt={state.startedAt}
+              screenStream={prepared.screenStream}
+              cameraEnabled={settings.cameraEnabled}
+              bubbleShape={settings.bubbleShape}
+              bubbleSize={settings.bubbleSize}
+              positionController={prepared.positionController}
+              onStop={onStop}
+            />
+          </PipWindow>
+        )}
+      </>
+    );
   }
   if (state.kind === "uploading") {
     return <UploadProgress progress={state.progress} />;

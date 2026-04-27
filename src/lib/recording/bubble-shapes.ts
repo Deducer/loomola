@@ -80,3 +80,48 @@ export function getBubbleBounds(
   const r = diameter / 2;
   return { x: cx - r, y: cy - r, width: diameter, height: diameter };
 }
+
+/**
+ * Half-width and half-height of the bubble's bounding box for a given
+ * shape and diameter. Used by the position clamp so the bubble's edges
+ * never extend past the composite canvas.
+ */
+export function getBubbleHalfExtents(
+  shape: BubbleShape,
+  diameter: number
+): { halfWidth: number; halfHeight: number } {
+  if (shape === "rectangle") {
+    const aspect = 4 / 3;
+    return { halfWidth: (diameter * aspect) / 2, halfHeight: diameter / 2 };
+  }
+  const r = diameter / 2;
+  return { halfWidth: r, halfHeight: r };
+}
+
+/**
+ * Clamps a desired bubble center (in canvas pixels) so the bubble's
+ * bounding box stays within `[margin, size - margin]` on each axis.
+ * Margin defaults to `Math.max(8, diameter * 0.04)` for a small
+ * breathing space at the edge.
+ */
+export function clampBubbleCenter(
+  shape: BubbleShape,
+  cx: number,
+  cy: number,
+  diameter: number,
+  canvasWidth: number,
+  canvasHeight: number,
+  margin?: number
+): { cx: number; cy: number } {
+  const m = margin ?? Math.max(8, diameter * 0.04);
+  const { halfWidth, halfHeight } = getBubbleHalfExtents(shape, diameter);
+  const minX = halfWidth + m;
+  const maxX = canvasWidth - halfWidth - m;
+  const minY = halfHeight + m;
+  const maxY = canvasHeight - halfHeight - m;
+  // If the bubble is too large to fit at all, snap to centre on the
+  // overflowing axis rather than producing a NaN clamp range.
+  const clampedX = maxX < minX ? canvasWidth / 2 : Math.min(maxX, Math.max(minX, cx));
+  const clampedY = maxY < minY ? canvasHeight / 2 : Math.min(maxY, Math.max(minY, cy));
+  return { cx: clampedX, cy: clampedY };
+}

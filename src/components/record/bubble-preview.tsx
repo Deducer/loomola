@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import type { RecordingSettings } from "@/lib/recording/types";
 import { BUBBLE_SIZE_FRACTION } from "@/lib/recording/types";
-import { createBubblePath } from "@/lib/recording/bubble-shapes";
+import { createBubblePath, clampBubbleCenter } from "@/lib/recording/bubble-shapes";
 
 /**
  * Shows a small mock viewport with a dimmed gradient "screen" and the
@@ -30,8 +30,19 @@ export function BubblePreview({ settings }: { settings: RecordingSettings }) {
     if (!settings.cameraEnabled) return;
 
     const diameter = h * BUBBLE_SIZE_FRACTION[settings.bubbleSize];
-    const cx = w * settings.bubblePosition.x;
-    const cy = h * settings.bubblePosition.y;
+    const desiredCx = w * settings.bubblePosition.x;
+    const desiredCy = h * settings.bubblePosition.y;
+    // Clamp so the bubble's bounding box stays inside the preview canvas
+    // — matches what the compositor does at recording time. Fixes large /
+    // rectangle bubbles being half-cropped at the corners.
+    const { cx, cy } = clampBubbleCenter(
+      settings.bubbleShape,
+      desiredCx,
+      desiredCy,
+      diameter,
+      w,
+      h
+    );
     const path = createBubblePath(settings.bubbleShape, cx, cy, diameter);
 
     ctx.save();
