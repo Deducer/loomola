@@ -19,12 +19,15 @@ final class RecorderViewModel: ObservableObject {
     private var accessToken: String?
     private var backendClient: BackendClient?
     private let captureSourceProvider: CaptureSourceProvider?
+    private let screenCaptureCoordinator: ScreenCaptureCoordinator?
 
     init() {
         if #available(macOS 14.0, *) {
             captureSourceProvider = CaptureSourceProvider()
+            screenCaptureCoordinator = ScreenCaptureCoordinator()
         } else {
             captureSourceProvider = nil
+            screenCaptureCoordinator = nil
         }
 
         do {
@@ -132,6 +135,38 @@ final class RecorderViewModel: ObservableObject {
                 statusMessage = "Found \(captureSources.displays.count) display(s), \(captureSources.windows.count) window(s), \(captureSources.cameras.count) camera(s), and \(captureSources.microphones.count) mic(s)."
             } catch {
                 statusMessage = "Could not list capture sources: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func startScreenPreview() {
+        guard let screenCaptureCoordinator else {
+            statusMessage = "ScreenCaptureKit requires macOS 14 or newer."
+            return
+        }
+        state = .recording
+        statusMessage = "Starting first-display screen stream..."
+        Task {
+            do {
+                let display = try await screenCaptureCoordinator.startFirstDisplayCapture()
+                statusMessage = "Capturing \(display.name) at \(display.width)x\(display.height)."
+            } catch {
+                state = .failed(message: error.localizedDescription)
+                statusMessage = "Screen stream failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func stopScreenPreview() {
+        guard let screenCaptureCoordinator else { return }
+        Task {
+            do {
+                try await screenCaptureCoordinator.stop()
+                state = .signedInIdle
+                statusMessage = "Stopped screen stream after \(screenCaptureCoordinator.frameCount) frame(s)."
+            } catch {
+                state = .failed(message: error.localizedDescription)
+                statusMessage = "Could not stop screen stream: \(error.localizedDescription)"
             }
         }
     }

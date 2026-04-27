@@ -55,13 +55,13 @@ struct MainRecorderView: View {
 
             HStack {
                 Button("Start Recording") {
-                    viewModel.startRecordingPlaceholder()
+                    viewModel.startScreenPreview()
                 }
                 .keyboardShortcut("r", modifiers: [.command])
                 .disabled(viewModel.state == .signedOut)
 
                 Button("Stop") {
-                    viewModel.stopRecordingPlaceholder()
+                    viewModel.stopScreenPreview()
                 }
                 .disabled(!viewModel.state.isRecordingLike)
 
