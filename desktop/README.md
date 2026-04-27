@@ -16,15 +16,21 @@ This app is intentionally a thin record-and-upload client. It should not own met
 
 ## Current Status
 
-This directory is a project scaffold, not a finished app. It includes:
+This directory is a development app, not a finished recorder. It includes:
 
 - `Package.swift` with the initial app target and Supabase dependency.
 - `AppDelegate` menu bar stub.
-- SwiftUI main window stub.
-- Bubble overlay `NSPanel` placeholder.
-- Capture/composite/upload organization sketches.
+- SwiftUI main window with Supabase email/password sign-in.
+- Keychain-backed session storage.
+- Backend start/abort handshake against the existing `/api/recordings/*` routes.
+- ScreenCaptureKit source listing for displays/windows.
+- ScreenCaptureKit first-display preview stream that counts frames.
+- Bubble overlay `NSPanel` with a live camera preview clipped into a circle.
+- Capture/composite/upload organization sketches for the remaining work.
 - API model types matching the existing `/api/recordings/*` routes.
 - Xcode signing/notarization placeholders.
+
+It does **not** yet write a complete MP4/M4A recording or upload real recorded files. The next major implementation slice is `AVAssetWriter` output for composite + raw tracks.
 
 The implementation spec lives at:
 
@@ -47,7 +53,26 @@ swift package resolve
 swift run LoomDesktop
 ```
 
+Or use the helper script:
+
+```bash
+cp .env.example .env.local
+# Fill in LOOM_SUPABASE_URL and LOOM_SUPABASE_ANON_KEY
+./scripts/run-dev.sh
+```
+
+The runnable dev app can currently test:
+
+- Email/password sign-in to Supabase.
+- Saved session restore from Keychain.
+- `Test Backend`: creates a desktop-shaped `media_objects` upload row, then aborts it.
+- `Refresh Sources`: lists displays, windows, cameras, and microphones.
+- `Start Recording`: starts a ScreenCaptureKit stream from the first display and counts frames.
+- Menu bar `Show Bubble Overlay`: shows a draggable circular camera bubble.
+
 For serious ScreenCaptureKit work, create an Xcode macOS App target from this scaffold so `Info.plist`, entitlements, signing, and privacy prompts behave like a real app bundle.
+
+SwiftPM can build and run the dev app, but a proper `.app` bundle is still needed for the real recorder because macOS privacy prompts, usage strings, entitlements, signing, and notarization all behave more predictably from an app bundle than from a raw command-line executable.
 
 Recommended app settings:
 
