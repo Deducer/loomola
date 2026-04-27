@@ -3,8 +3,23 @@ import Security
 import Supabase
 
 struct DesktopAuthConfiguration: Sendable {
+    let apiBaseURL: URL
     let supabaseURL: URL
     let anonKey: String
+
+    static func fromEnvironment(_ environment: [String: String] = ProcessInfo.processInfo.environment) throws -> DesktopAuthConfiguration {
+        let apiBase = environment["LOOM_API_BASE_URL"] ?? "https://loom.dissonance.cloud"
+        guard let apiBaseURL = URL(string: apiBase) else {
+            throw DesktopConfigurationError.invalidURL("LOOM_API_BASE_URL")
+        }
+        guard let supabaseRaw = environment["LOOM_SUPABASE_URL"], let supabaseURL = URL(string: supabaseRaw) else {
+            throw DesktopConfigurationError.missingOrInvalid("LOOM_SUPABASE_URL")
+        }
+        guard let anonKey = environment["LOOM_SUPABASE_ANON_KEY"], !anonKey.isEmpty else {
+            throw DesktopConfigurationError.missingOrInvalid("LOOM_SUPABASE_ANON_KEY")
+        }
+        return DesktopAuthConfiguration(apiBaseURL: apiBaseURL, supabaseURL: supabaseURL, anonKey: anonKey)
+    }
 }
 
 final class AuthSessionStore {
@@ -21,8 +36,21 @@ final class AuthSessionStore {
         try save(value: token, account: "supabase-access-token")
     }
 
+    func saveRefreshToken(_ token: String) throws {
+        try save(value: token, account: "supabase-refresh-token")
+    }
+
+    func save(session: Session) throws {
+        try saveAccessToken(session.accessToken)
+        try saveRefreshToken(session.refreshToken)
+    }
+
     func loadAccessToken() throws -> String? {
         try load(account: "supabase-access-token")
+    }
+
+    func loadRefreshToken() throws -> String? {
+        try load(account: "supabase-refresh-token")
     }
 
     func clear() throws {
@@ -71,4 +99,18 @@ final class AuthSessionStore {
 
 enum KeychainError: Error {
     case unhandledStatus(OSStatus)
+}
+
+enum DesktopConfigurationError: LocalizedError, Equatable {
+    case invalidURL(String)
+    case missingOrInvalid(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidURL(let key):
+            return "\(key) is not a valid URL."
+        case .missingOrInvalid(let key):
+            return "\(key) is missing or invalid."
+        }
+    }
 }
