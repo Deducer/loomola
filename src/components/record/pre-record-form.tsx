@@ -22,12 +22,6 @@ type Props = {
 const RESOLUTIONS: Resolution[] = ["1080p", "1440p", "4k"];
 const SHAPES: BubbleShape[] = ["circle", "rounded-square", "rectangle", "hexagon"];
 const SIZES: BubbleSize[] = ["small", "medium", "large"];
-const POSITIONS = [
-  { label: "Top left", x: 0.08, y: 0.12 },
-  { label: "Top right", x: 0.92, y: 0.12 },
-  { label: "Bottom left", x: 0.08, y: 0.88 },
-  { label: "Bottom right", x: 0.92, y: 0.88 },
-];
 
 export function PreRecordForm({ brands, onStart }: Props) {
   const [settings, setSettings] = useState<RecordingSettings>(DEFAULT_SETTINGS);
@@ -119,31 +113,10 @@ export function PreRecordForm({ brands, onStart }: Props) {
               />
             </Group>
 
-            <Group label="Bubble position">
-              <div className="grid grid-cols-2 gap-2">
-                {POSITIONS.map((p) => {
-                  const active =
-                    Math.abs(settings.bubblePosition.x - p.x) < 0.01 &&
-                    Math.abs(settings.bubblePosition.y - p.y) < 0.01;
-                  return (
-                    <button
-                      key={p.label}
-                      type="button"
-                      onClick={() =>
-                        update("bubblePosition", { x: p.x, y: p.y })
-                      }
-                      className={
-                        active
-                          ? "rounded-md border border-accent bg-accent/10 px-3 py-1.5 text-xs text-text"
-                          : "rounded-md border border-border px-3 py-1.5 text-xs text-text-muted hover:border-border-strong hover:text-text"
-                      }
-                    >
-                      {p.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </Group>
+            <p className="-mt-1 text-xs text-text-subtle">
+              Drag the bubble anywhere on your screen during recording — its
+              position updates live.
+            </p>
           </>
         )}
 

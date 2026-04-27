@@ -24,8 +24,8 @@ import { Countdown } from "./countdown";
 import { RecordingHud } from "./recording-hud";
 import { FinishedView } from "./finished-view";
 import { UploadProgress } from "./upload-progress";
-import { PipWindow, isDocPiPAvailable } from "./pip-window";
-import { FloatingRecordingPanel } from "./floating-recording-panel";
+import { isDocPiPAvailable } from "./pip-window";
+import { BubblePipWindow } from "./bubble-pip-window";
 
 type Action =
   | { type: "begin-preparing" }
@@ -292,23 +292,21 @@ export function RecordFlow({ brands }: { brands: BrandProfile[] }) {
   if (state.kind === "recording") {
     const settings = pendingSettingsRef.current;
     const prepared = preparedRef.current;
-    const showFloating =
-      isDocPiPAvailable() && !!settings && !!prepared;
+    const showBubblePip =
+      isDocPiPAvailable() &&
+      !!settings?.cameraEnabled &&
+      !!prepared?.cameraStream;
     return (
       <>
         <RecordingHud startedAt={state.startedAt} onStop={onStop} />
-        {showFloating && settings && prepared && (
-          <PipWindow width={320} height={360}>
-            <FloatingRecordingPanel
-              startedAt={state.startedAt}
-              screenStream={prepared.screenStream}
-              cameraEnabled={settings.cameraEnabled}
-              bubbleShape={settings.bubbleShape}
-              bubbleSize={settings.bubbleSize}
-              positionController={prepared.positionController}
-              onStop={onStop}
-            />
-          </PipWindow>
+        {showBubblePip && settings && prepared?.cameraStream && (
+          <BubblePipWindow
+            cameraStream={prepared.cameraStream}
+            bubbleShape={settings.bubbleShape}
+            bubbleSize={settings.bubbleSize}
+            positionController={prepared.positionController}
+            onStop={onStop}
+          />
         )}
       </>
     );

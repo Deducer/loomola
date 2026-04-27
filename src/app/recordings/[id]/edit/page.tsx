@@ -82,7 +82,7 @@ export default async function EditRecordingPage({
           Dashboard
         </Link>
       </header>
-      <main className="mx-auto max-w-6xl px-6 py-10">
+      <main className="mx-auto max-w-7xl px-6 py-10">
         <EditShell
           header={
             <EditHeader
