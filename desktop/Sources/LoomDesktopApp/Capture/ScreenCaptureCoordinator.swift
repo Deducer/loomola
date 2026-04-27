@@ -129,6 +129,7 @@ final class ScreenCaptureCoordinator: NSObject, SCStreamOutput, SCStreamDelegate
                     self.stream = nil
                     self.recordingOutput = nil
                     self.isCapturing = false
+                    try? await Task.sleep(for: .seconds(5))
                     if self.recordingFinishContinuation != nil {
                         self.finishRecording(url: recordingURL, duration: fallbackDuration)
                     }
