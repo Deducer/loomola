@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Loom Clone</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 16px;
+        width: 240px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+          sans-serif;
+        font-size: 13px;
+        background: #0b0b0c;
+        color: #e5e5e5;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 14px;
+        font-weight: 600;
+      }
+      p {
+        margin: 0 0 12px;
+        color: #a1a1aa;
+        line-height: 1.5;
+      }
+      a {
+        color: #a78bfa;
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 500;
+        margin-bottom: 8px;
+      }
+      .status-active {
+        background: rgba(239, 68, 68, 0.15);
+        color: #fca5a5;
+      }
+      .status-idle {
+        background: rgba(255, 255, 255, 0.06);
+        color: #a1a1aa;
+      }
+      .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+      }
+      .dot-red {
+        background: #ef4444;
+      }
+      .dot-grey {
+        background: #71717a;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Loom Clone</h1>
+    <div id="status" class="status status-idle">
+      <span class="dot dot-grey"></span>
+      <span id="status-text">No recording in progress</span>
+    </div>
+    <p>
+      Start a recording at
+      <a href="https://loom.dissonance.cloud/record" target="_blank"
+        >loom.dissonance.cloud</a
+      >. The bubble will appear automatically in whichever tab you record.
+    </p>
+    <script src="popup.js"></script>
+  </body>
+</html>

@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "Loom Clone — Frameless Bubble",
+  "short_name": "Loom Clone",
+  "version": "0.1.0",
+  "description": "Companion extension for loom.dissonance.cloud. Injects a frameless, draggable camera bubble into the tab being recorded — true Loom-parity polish that the browser's documentPictureInPicture window can't deliver alone.",
+  "permissions": ["activeTab", "tabs", "storage", "scripting"],
+  "host_permissions": [
+    "https://loom.dissonance.cloud/*",
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://loom.dissonance.cloud/*"],
+      "js": ["content-script-app.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "exclude_matches": ["https://loom.dissonance.cloud/*"],
+      "js": ["content-script-page.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Loom Clone — Frameless Bubble",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["bubble-iframe.html"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
