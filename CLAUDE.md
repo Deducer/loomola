@@ -64,6 +64,7 @@ Stage 1 (M1–M11) + Stage 1.5a/b + Stage 1.6 + Stage 1.7 + Stage 1.8 all shippe
 - `/v/:slug` — visitor share page. Watch-first: title → player (Loom-style chapter segments + hover-scrub thumbnails) → AI summary → action items → chapters list → tabs (Transcript · Comments). Brand-themed when a brand profile is assigned (logo + accent + tagline + custom Google Font + CTA pill + footer text).
 - `/recordings/[id]/edit` — creator console. Sticky preview on the left, settings + trim + downloads + analytics + danger-zone on the right (capped at 360px so the video gets the lion's share of the page).
 - `/brands` — brand profile CRUD with full Layer 2 theming fields.
+- `desktop/` — native macOS companion app scaffold. The implementation spec is [`docs/superpowers/specs/2026-04-27-macos-desktop-app-design.md`](docs/superpowers/specs/2026-04-27-macos-desktop-app-design.md) and the build plan is [`docs/superpowers/plans/2026-04-27-macos-desktop-app.md`](docs/superpowers/plans/2026-04-27-macos-desktop-app.md). It is spec'd, ready to build, and should remain a record/upload client that reuses the existing Next.js API + R2 + Supabase pipeline.
 
 ## Conventions
 
@@ -85,7 +86,7 @@ Stage 1 (M1–M11) + Stage 1.5a/b + Stage 1.6 + Stage 1.7 + Stage 1.8 all shippe
 ## Out-of-Stage-1 Scope (deferred, separate spec when picked up)
 
 - Chrome extension companion (frameless circle bubble — see "Known Issues")
-- macOS menubar / desktop app (native, ScreenCaptureKit on macOS)
+- macOS menubar / desktop app implementation (native, ScreenCaptureKit on macOS) — spec + scaffold exist under `docs/superpowers/specs/2026-04-27-macos-desktop-app-design.md`, `docs/superpowers/plans/2026-04-27-macos-desktop-app.md`, and `desktop/`.
 - iOS / Android apps
 - Multi-tenant / team invites
 - Custom domains per brand (Layer 2 follow-up)
