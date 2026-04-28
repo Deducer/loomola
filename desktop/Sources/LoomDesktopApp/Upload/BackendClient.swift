@@ -43,8 +43,11 @@ actor BackendClient {
         request.httpBody = try JSONEncoder().encode(body)
 
         let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw BackendClientError.badStatus((response as? HTTPURLResponse)?.statusCode ?? -1, data)
+        guard let http = response as? HTTPURLResponse else {
+            throw BackendClientError.nonHTTPResponse(path: path)
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw BackendClientError.badStatus(statusCode: http.statusCode, path: path, body: data)
         }
         if ResponseBody.self == EmptyResponse.self {
             return EmptyResponse() as! ResponseBody
@@ -123,6 +126,21 @@ struct CompleteRecordingResponse: Decodable, Equatable, Sendable {
 private struct EmptyRequest: Encodable {}
 private struct EmptyResponse: Decodable {}
 
-enum BackendClientError: Error {
-    case badStatus(Int, Data)
+enum BackendClientError: LocalizedError {
+    case nonHTTPResponse(path: String)
+    case badStatus(statusCode: Int, path: String, body: Data)
+
+    var errorDescription: String? {
+        switch self {
+        case .nonHTTPResponse(let path):
+            return "Backend returned a non-HTTP response for \(path)."
+        case .badStatus(let statusCode, let path, let body):
+            let bodyText = String(data: body, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if let bodyText, !bodyText.isEmpty {
+                return "Backend returned HTTP \(statusCode) for \(path): \(bodyText)"
+            }
+            return "Backend returned HTTP \(statusCode) for \(path)."
+        }
+    }
 }
