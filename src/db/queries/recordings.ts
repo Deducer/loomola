@@ -1,6 +1,6 @@
 import { db } from "@/db";
-import { mediaObjects, brandProfiles, aiOutputs } from "@/db/schema";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { mediaObjects, brandProfiles, aiOutputs, comments } from "@/db/schema";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 
 export type Recording = typeof mediaObjects.$inferSelect;
 
@@ -11,6 +11,7 @@ export type RecordingWithBrand = Recording & {
   aiChapters: Array<{ start_sec: number; title: string }> | null;
   aiActionItems: Array<{ text: string; timestamp_sec: number }> | null;
   viewCount: number;
+  commentCount: number;
 };
 
 export async function listRecordings(
@@ -27,6 +28,10 @@ export async function listRecordings(
       aiSummary: aiOutputs.summary,
       aiChapters: aiOutputs.chapters,
       aiActionItems: aiOutputs.actionItems,
+      commentCount: sql<number>`(
+        SELECT count(*)::int FROM ${comments}
+        WHERE ${comments.mediaObjectId} = ${mediaObjects.id}
+      )`.as("comment_count"),
     })
     .from(mediaObjects)
     .leftJoin(brandProfiles, eq(mediaObjects.brandProfileId, brandProfiles.id))
@@ -49,6 +54,7 @@ export async function listRecordings(
     aiChapters: r.aiChapters as RecordingWithBrand["aiChapters"],
     aiActionItems: r.aiActionItems as RecordingWithBrand["aiActionItems"],
     viewCount: counts[r.rec.id] ?? 0,
+    commentCount: r.commentCount ?? 0,
   }));
 }
 
@@ -66,6 +72,10 @@ export async function getRecordingBySlug(
       aiSummary: aiOutputs.summary,
       aiChapters: aiOutputs.chapters,
       aiActionItems: aiOutputs.actionItems,
+      commentCount: sql<number>`(
+        SELECT count(*)::int FROM ${comments}
+        WHERE ${comments.mediaObjectId} = ${mediaObjects.id}
+      )`.as("comment_count"),
     })
     .from(mediaObjects)
     .leftJoin(brandProfiles, eq(mediaObjects.brandProfileId, brandProfiles.id))
@@ -86,6 +96,7 @@ export async function getRecordingBySlug(
     aiChapters: row.aiChapters as RecordingWithBrand["aiChapters"],
     aiActionItems: row.aiActionItems as RecordingWithBrand["aiActionItems"],
     viewCount,
+    commentCount: row.commentCount ?? 0,
   };
 }
 
@@ -111,6 +122,19 @@ export async function softDeleteRecording(
     .where(and(eq(mediaObjects.id, id), eq(mediaObjects.ownerId, ownerId)))
     .returning({ id: mediaObjects.id });
   return result.length > 0;
+}
+
+export async function softDeleteRecordings(
+  ids: string[],
+  ownerId: string
+): Promise<number> {
+  if (ids.length === 0) return 0;
+  const result = await db
+    .update(mediaObjects)
+    .set({ deletedAt: sql`now()` })
+    .where(and(eq(mediaObjects.ownerId, ownerId), inArray(mediaObjects.id, ids)))
+    .returning({ id: mediaObjects.id });
+  return result.length;
 }
 
 export async function updateTrim(params: {
@@ -161,6 +185,10 @@ export async function getRecordingForEdit(
       aiSummary: aiOutputs.summary,
       aiChapters: aiOutputs.chapters,
       aiActionItems: aiOutputs.actionItems,
+      commentCount: sql<number>`(
+        SELECT count(*)::int FROM ${comments}
+        WHERE ${comments.mediaObjectId} = ${mediaObjects.id}
+      )`.as("comment_count"),
     })
     .from(mediaObjects)
     .leftJoin(brandProfiles, eq(mediaObjects.brandProfileId, brandProfiles.id))
@@ -192,6 +220,7 @@ export async function getRecordingForEdit(
     aiChapters: row.aiChapters as RecordingWithBrand["aiChapters"],
     aiActionItems: row.aiActionItems as RecordingWithBrand["aiActionItems"],
     viewCount,
+    commentCount: row.commentCount ?? 0,
   };
 }
 

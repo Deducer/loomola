@@ -47,7 +47,7 @@ export function RecordingCardMenu({
       <Button
         variant="ghost"
         size="icon"
-        className="h-7 w-7 bg-bg/80 backdrop-blur hover:bg-bg-elevated"
+        className="h-8 w-8 !bg-white !text-neutral-950 shadow-sm hover:!bg-white/90"
         onClick={() => setOpen(!open)}
         aria-label="Card actions"
       >

@@ -9,7 +9,7 @@ import { TopNav } from "@/components/nav/top-nav";
 import { FolderSidebar } from "@/components/dashboard/folder-sidebar";
 import { SearchFilterBar } from "@/components/dashboard/search-filter-bar";
 import { Breadcrumbs } from "@/components/dashboard/breadcrumbs";
-import { RecordingCard } from "@/components/dashboard/recording-card";
+import { RecordingsGrid } from "@/components/dashboard/recordings-grid";
 import { Button } from "@/components/ui/button";
 
 const VALID_SORTS: SearchSort[] = [
@@ -122,17 +122,11 @@ export default async function HomePage({
                 </p>
               </div>
             ) : (
-              <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {recordings.map((r) => (
-                  <li key={r.id}>
-                    <RecordingCard
-                      rec={r}
-                      thumbnailUrl={thumbnailUrls[r.id] ?? null}
-                      folders={folders}
-                    />
-                  </li>
-                ))}
-              </ul>
+              <RecordingsGrid
+                recordings={recordings}
+                thumbnailUrls={thumbnailUrls}
+                folders={folders}
+              />
             )}
           </div>
         </main>

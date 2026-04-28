@@ -1,8 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { Film } from "lucide-react";
+import { Check, CheckCircle2, Eye, Film, Link2, MessageSquare } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Tooltip } from "@/components/ui/tooltip";
+import { cn } from "@/lib/cn";
 import { RecordingCardMenu } from "./recording-card-menu";
 import type { RecordingWithBrand } from "@/db/queries/recordings";
 import type { Folder } from "@/db/queries/folders";
@@ -37,11 +41,18 @@ export function RecordingCard({
   rec,
   thumbnailUrl,
   folders,
+  selectionActive = false,
+  selected = false,
+  onToggleSelected,
 }: {
   rec: RecordingWithBrand;
   thumbnailUrl: string | null;
   folders: Folder[];
+  selectionActive?: boolean;
+  selected?: boolean;
+  onToggleSelected?: (id: string) => void;
 }) {
+  const [copied, setCopied] = useState(false);
   const displayTitle = rec.title || rec.aiTitle || "Untitled recording";
   const accent = rec.brand?.accentColor;
   const statusVariant: BadgeVariant =
@@ -55,10 +66,25 @@ export function RecordingCard({
             ? "transcribing"
             : "processing";
 
+  async function copyShareLink() {
+    const url = `${window.location.origin}/v/${rec.slug}`;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      return;
+    }
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1200);
+  }
+
   return (
     <div
-      draggable
+      draggable={!selectionActive}
       onDragStart={(e) => {
+        if (selectionActive) {
+          e.preventDefault();
+          return;
+        }
         e.dataTransfer.setData("application/x-recording-id", rec.id);
         e.dataTransfer.effectAllowed = "move";
       }}
@@ -67,7 +93,16 @@ export function RecordingCard({
     >
       <Link
         href={`/recordings/${rec.id}/edit`}
-        className="flex flex-col overflow-hidden rounded-xl border border-border bg-bg-subtle transition-colors hover:border-border-strong"
+        onClick={(e) => {
+          if (selectionActive) {
+            e.preventDefault();
+            onToggleSelected?.(rec.id);
+          }
+        }}
+        className={cn(
+          "flex flex-col overflow-hidden rounded-xl border bg-bg-subtle transition-colors hover:border-border-strong",
+          selected ? "border-accent ring-2 ring-accent/20" : "border-border"
+        )}
       >
         <div className="relative aspect-video w-full overflow-hidden bg-bg-elevated">
           {thumbnailUrl ? (
@@ -82,8 +117,16 @@ export function RecordingCard({
               <Film className="h-8 w-8" />
             </div>
           )}
-          <div className="absolute left-2 top-2">
+          <div
+            className={cn(
+              "absolute left-2 top-2 transition-opacity",
+              selectionActive || selected ? "opacity-0" : "opacity-100 group-hover:opacity-0"
+            )}
+          >
             <Badge variant={statusVariant}>{rec.status}</Badge>
+          </div>
+          <div className="absolute bottom-2 right-2 rounded-md bg-black/65 px-2 py-1 text-xs font-medium text-white">
+            {formatDuration(rec.durationSeconds)}
           </div>
           {accent && (
             <div
@@ -97,17 +140,7 @@ export function RecordingCard({
             {displayTitle}
           </h3>
           <div className="flex items-center gap-1.5 text-xs text-text-subtle">
-            <span>{formatDuration(rec.durationSeconds)}</span>
-            <span>·</span>
             <span>{formatShortDate(new Date(rec.createdAt))}</span>
-            {rec.viewCount > 0 && (
-              <>
-                <span>·</span>
-                <span>
-                  {rec.viewCount} view{rec.viewCount === 1 ? "" : "s"}
-                </span>
-              </>
-            )}
             {rec.brand && (
               <>
                 <span>·</span>
@@ -115,9 +148,63 @@ export function RecordingCard({
               </>
             )}
           </div>
+          <div className="mt-2 flex items-center gap-4 text-xs text-text-subtle">
+            <span className="inline-flex items-center gap-1">
+              <Eye className="h-3.5 w-3.5" />
+              {rec.viewCount}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <MessageSquare className="h-3.5 w-3.5" />
+              {rec.commentCount}
+            </span>
+          </div>
         </div>
       </Link>
-      <div className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100">
+
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onToggleSelected?.(rec.id);
+        }}
+        className={cn(
+          "absolute left-2 top-2 z-20 flex h-6 w-6 items-center justify-center rounded-md border border-white/80 !bg-white !text-neutral-950 shadow-sm transition-opacity hover:!bg-white/90",
+          selectionActive || selected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+          selected && "border-accent !bg-accent !text-accent-fg"
+        )}
+        aria-label={selected ? "Deselect recording" : "Select recording"}
+        aria-pressed={selected}
+      >
+        {selected ? <Check className="h-4 w-4" /> : null}
+      </button>
+
+      <div
+        className={cn(
+          "absolute right-2 top-2 flex flex-col gap-2 opacity-0 transition-opacity",
+          (selectionActive || selected) && "opacity-100",
+          !selectionActive && "group-hover:opacity-100"
+        )}
+      >
+        <Tooltip label={copied ? "Copied" : "Copy link"} side="left">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 !bg-white !text-neutral-950 shadow-sm hover:!bg-white/90"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              void copyShareLink();
+            }}
+            aria-label="Copy share link"
+          >
+            {copied ? (
+              <CheckCircle2 className="h-4 w-4 text-accent" />
+            ) : (
+              <Link2 className="h-4 w-4" />
+            )}
+          </Button>
+        </Tooltip>
         <RecordingCardMenu recordingId={rec.id} folders={folders} />
       </div>
     </div>

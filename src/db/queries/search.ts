@@ -5,6 +5,7 @@ import {
   transcripts,
   brandProfiles,
   views,
+  comments,
 } from "@/db/schema";
 import { and, eq, isNull, sql, type SQL } from "drizzle-orm";
 import type { RecordingWithBrand } from "./recordings";
@@ -72,6 +73,10 @@ export async function searchRecordings(params: {
     SELECT count(*)::int FROM ${views}
     WHERE ${views.mediaObjectId} = ${mediaObjects.id}
   )`.as("view_count");
+  const commentCountExpr = sql<number>`(
+    SELECT count(*)::int FROM ${comments}
+    WHERE ${comments.mediaObjectId} = ${mediaObjects.id}
+  )`.as("comment_count");
 
   const orderBy = hasQuery
     ? sql`rank DESC, ${mediaObjects.createdAt} DESC`
@@ -99,6 +104,7 @@ export async function searchRecordings(params: {
       aiChapters: aiOutputs.chapters,
       aiActionItems: aiOutputs.actionItems,
       viewCount: viewCountExpr,
+      commentCount: commentCountExpr,
       rank: rankExpr.as("rank"),
     })
     .from(mediaObjects)
@@ -125,5 +131,6 @@ export async function searchRecordings(params: {
     aiChapters: r.aiChapters as RecordingWithBrand["aiChapters"],
     aiActionItems: r.aiActionItems as RecordingWithBrand["aiActionItems"],
     viewCount: r.viewCount ?? 0,
+    commentCount: r.commentCount ?? 0,
   }));
 }
