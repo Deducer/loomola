@@ -34,11 +34,16 @@ export async function updateSession(request: NextRequest) {
   const isPublicShare = url.pathname.startsWith("/v/");
   const isPublicViewerApi = url.pathname.startsWith("/api/v/");
   const isWebhook = url.pathname.startsWith("/api/webhooks/");
+  // /bubble is the iframe target embedded by the Chrome extension into the
+  // tab being recorded. The iframe can't carry our auth cookies (cross-
+  // origin embedding), so it must be reachable without auth — the camera
+  // permission is granted by the user inside the iframe at first use.
+  const isBubbleIframe = url.pathname === "/bubble";
   const isBearerRecordingApi =
     url.pathname.startsWith("/api/recordings/") &&
     /^Bearer\s+.+/i.test(request.headers.get("authorization") ?? "");
 
-  if (!user && !isAuthRoute && !isApiHealth && !isPublicShare && !isPublicViewerApi && !isWebhook && !isBearerRecordingApi) {
+  if (!user && !isAuthRoute && !isApiHealth && !isPublicShare && !isPublicViewerApi && !isWebhook && !isBubbleIframe && !isBearerRecordingApi) {
     url.pathname = "/login";
     return NextResponse.redirect(url);
   }
