@@ -2,11 +2,13 @@ import type { RecordingSettings, BubblePosition } from "./types";
 import { RESOLUTION_DIMENSIONS } from "./types";
 
 /**
- * A mutable position holder shared between the React UI and the
- * compositor's worker. The setter on `current` posts the new value to
- * the worker so the next composite frame uses it; the getter returns
- * the last value written (used by callers that want to render a hint
- * in the main-thread UI).
+ * Mutable position holder retained for backwards-compatibility with
+ * extension-bridge.tsx. The compositor itself no longer draws the
+ * bubble — the Chrome extension's injected /bubble iframe is what
+ * appears in the recording (it lives in the captured screen pixels).
+ * The setter is a no-op apart from storing the last value, so any
+ * future code that wants to know "where did the user drag the bubble
+ * to" can still read positionController.current.
  */
 export type BubblePositionController = { current: BubblePosition };
 
@@ -41,10 +43,19 @@ type CompositeHandles = {
  * OffscreenCanvas. We're already Chrome-only by design (system audio
  * + Document PiP), so this constraint is consistent with the rest of
  * the recording pipeline.
+ *
+ * Why no camera/bubble compositing here: the Chrome extension injects
+ * a /bubble iframe directly into the captured tab(s). That iframe is
+ * part of the screen pixels getDisplayMedia hands us, so the bubble
+ * already shows up in the recording without us drawing anything.
+ * Drawing a SECOND bubble in the compositor would duplicate the visible
+ * bubble (often at slightly different positions during drags / tab
+ * switches, which produced the "two bubbles" artifact). The
+ * compositor's only job now is screen aspect-fit + letterbox.
  */
 export function startCompositor(
   screenStream: MediaStream,
-  cameraStream: MediaStream | null,
+  _cameraStream: MediaStream | null,
   settings: RecordingSettings
 ): CompositeHandles {
   ensureSupported();
@@ -52,18 +63,8 @@ export function startCompositor(
 
   const screenTrack = screenStream.getVideoTracks()[0];
   if (!screenTrack) throw new Error("screen stream has no video track");
-  const cameraTrack =
-    cameraStream && settings.cameraEnabled
-      ? (cameraStream.getVideoTracks()[0] ?? null)
-      : null;
 
-  // MediaStreamTrackProcessor's .readable can be transferred to a worker;
-  // the processor itself stays alive on the main thread (it's the source
-  // feeding the readable). Holding refs in `keepalive` so they aren't GC'd.
   const screenProcessor = new MediaStreamTrackProcessor({ track: screenTrack });
-  const cameraProcessor = cameraTrack
-    ? new MediaStreamTrackProcessor({ track: cameraTrack })
-    : null;
   const generator = new MediaStreamTrackGenerator({ kind: "video" });
 
   const worker = new Worker(
@@ -79,35 +80,23 @@ export function startCompositor(
     console.error("[composite-worker] error event:", event.message);
   });
 
-  const transfers: Transferable[] = [
-    screenProcessor.readable,
-    generator.writable,
-  ];
-  if (cameraProcessor) transfers.push(cameraProcessor.readable);
-
   worker.postMessage(
     {
       type: "init",
       width,
       height,
-      bubbleShape: settings.bubbleShape,
-      bubbleSize: settings.bubbleSize,
-      cameraEnabled: !!cameraTrack,
-      initialPosition: { ...settings.bubblePosition },
       screenReadable: screenProcessor.readable,
-      cameraReadable: cameraProcessor?.readable ?? null,
       outputWritable: generator.writable,
     },
-    transfers
+    [screenProcessor.readable, generator.writable]
   );
 
   // The generator IS a MediaStreamTrack — wrap in a stream and we're done.
   const stream = new MediaStream([generator]);
 
-  // Hold processor refs so they aren't GC'd while the worker is reading
-  // the streams that drain through them. Lint won't see them used; that's
-  // intentional — they're side-effect anchors.
-  const keepalive = { screenProcessor, cameraProcessor };
+  // Hold processor ref so it isn't GC'd while the worker is reading the
+  // transferred readable stream that drains through it.
+  const keepalive = { screenProcessor };
   void keepalive;
 
   let _current: BubblePosition = { ...settings.bubblePosition };
@@ -117,7 +106,6 @@ export function startCompositor(
     },
     set current(pos: BubblePosition) {
       _current = pos;
-      worker.postMessage({ type: "position", position: pos });
     },
   };
 
@@ -125,8 +113,6 @@ export function startCompositor(
     stream,
     stop: () => {
       worker.postMessage({ type: "stop" });
-      // Backstop: the worker self-closes after flushing, but if it's
-      // unresponsive (e.g. a write hang) make sure we tear it down.
       setTimeout(() => worker.terminate(), 200);
     },
     positionController,

@@ -79,14 +79,18 @@ function isContextAlive() {
 }
 
 function safeSendMessage(msg) {
-  if (!isContextAlive()) {
-    removeIframe();
-    return Promise.resolve(undefined);
-  }
+  // After an extension reload, the orphan content script keeps running but
+  // its chrome.runtime is dead. Earlier this also called removeIframe() on
+  // failure as a "cleanup" — but when the new script and the orphan both
+  // run side-by-side (Chrome injects the new one without unloading the
+  // orphan), every drag-end fired the orphan's safeSendMessage, which
+  // promptly destroyed the iframe the new script was managing. Now we
+  // just no-op when the context is dead and let the new script own the
+  // iframe lifecycle entirely.
+  if (!isContextAlive()) return Promise.resolve(undefined);
   try {
     return chrome.runtime.sendMessage(msg).catch(() => undefined);
   } catch {
-    removeIframe();
     return Promise.resolve(undefined);
   }
 }

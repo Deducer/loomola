@@ -3,6 +3,7 @@ import Image from "next/image";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { BuildStamp } from "@/components/nav/build-stamp";
 import { cn } from "@/lib/cn";
 
 type Props = {
@@ -59,6 +60,7 @@ export function TopNav({ userEmail, activePath }: Props) {
               Sign out
             </Button>
           </form>
+          <BuildStamp />
         </div>
       </div>
     </nav>
