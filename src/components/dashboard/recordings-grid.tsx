@@ -11,10 +11,12 @@ import type { Folder } from "@/db/queries/folders";
 export function RecordingsGrid({
   recordings,
   thumbnailUrls,
+  previewUrls,
   folders,
 }: {
   recordings: RecordingWithBrand[];
   thumbnailUrls: Record<string, string | null>;
+  previewUrls: Record<string, string | null>;
   folders: Folder[];
 }) {
   const router = useRouter();
@@ -75,6 +77,7 @@ export function RecordingsGrid({
             <RecordingCard
               rec={r}
               thumbnailUrl={thumbnailUrls[r.id] ?? null}
+              previewUrl={previewUrls[r.id] ?? null}
               folders={folders}
               selectionActive={selectionActive}
               selected={selectedSet.has(r.id)}

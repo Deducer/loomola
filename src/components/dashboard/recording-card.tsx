@@ -40,6 +40,7 @@ type BadgeVariant =
 export function RecordingCard({
   rec,
   thumbnailUrl,
+  previewUrl,
   folders,
   selectionActive = false,
   selected = false,
@@ -47,12 +48,14 @@ export function RecordingCard({
 }: {
   rec: RecordingWithBrand;
   thumbnailUrl: string | null;
+  previewUrl: string | null;
   folders: Folder[];
   selectionActive?: boolean;
   selected?: boolean;
   onToggleSelected?: (id: string) => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
   const displayTitle = rec.title || rec.aiTitle || "Untitled recording";
   const accent = rec.brand?.accentColor;
   const statusVariant: BadgeVariant =
@@ -90,6 +93,10 @@ export function RecordingCard({
       }}
       className="group relative"
       data-recording-id={rec.id}
+      onMouseEnter={() => setPreviewing(true)}
+      onMouseLeave={() => setPreviewing(false)}
+      onFocus={() => setPreviewing(true)}
+      onBlur={() => setPreviewing(false)}
     >
       <Link
         href={`/recordings/${rec.id}/edit`}
@@ -110,12 +117,32 @@ export function RecordingCard({
             <img
               src={thumbnailUrl}
               alt=""
-              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+              className={cn(
+                "h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]",
+                previewing && previewUrl ? "opacity-0" : "opacity-100"
+              )}
             />
           ) : (
-            <div className="flex h-full w-full items-center justify-center text-text-subtle">
+            <div
+              className={cn(
+                "flex h-full w-full items-center justify-center text-text-subtle",
+                previewing && previewUrl ? "opacity-0" : "opacity-100"
+              )}
+            >
               <Film className="h-8 w-8" />
             </div>
+          )}
+          {previewing && previewUrl && (
+            <video
+              src={previewUrl}
+              className="absolute inset-0 h-full w-full object-cover"
+              autoPlay
+              muted
+              loop
+              playsInline
+              preload="metadata"
+              aria-hidden="true"
+            />
           )}
           <div
             className={cn(

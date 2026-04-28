@@ -59,10 +59,14 @@ export default async function HomePage({
   ]);
 
   const thumbnailUrls: Record<string, string> = {};
+  const previewUrls: Record<string, string> = {};
   await Promise.all(
     recordings.map(async (r) => {
       if (r.compositeThumbnailKey) {
         thumbnailUrls[r.id] = await presignGet(r.compositeThumbnailKey);
+      }
+      if (r.status === "ready" && r.r2CompositeKey) {
+        previewUrls[r.id] = await presignGet(r.r2CompositeKey);
       }
     })
   );
@@ -125,6 +129,7 @@ export default async function HomePage({
               <RecordingsGrid
                 recordings={recordings}
                 thumbnailUrls={thumbnailUrls}
+                previewUrls={previewUrls}
                 folders={folders}
               />
             )}
