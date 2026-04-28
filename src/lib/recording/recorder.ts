@@ -21,6 +21,24 @@ import type { UploadCoordinator } from "./upload-coordinator";
 
 const VP9_MIME = "video/webm;codecs=vp9,opus";
 const OPUS_MIME = "audio/webm;codecs=opus";
+const VIDEO_MIME_CANDIDATES = [
+  "video/webm;codecs=vp9,opus",
+  "video/webm;codecs=vp8,opus",
+  "video/webm",
+];
+const AUDIO_MIME_CANDIDATES = [
+  "audio/webm;codecs=opus",
+  "audio/webm",
+];
+const VIDEO_BITRATES: Record<
+  RecordingSettings["resolution"],
+  Record<"composite" | "screen" | "camera", number>
+> = {
+  "1080p": { composite: 8_000_000, screen: 6_000_000, camera: 2_500_000 },
+  "1440p": { composite: 14_000_000, screen: 10_000_000, camera: 3_500_000 },
+  "4k": { composite: 28_000_000, screen: 20_000_000, camera: 5_000_000 },
+};
+const AUDIO_BITRATE = 128_000;
 
 export type RecorderHandle = {
   stop: () => Promise<RecordingResult>;
@@ -99,15 +117,15 @@ export async function prepareRecording(
   ]);
 
   const slots: RecorderSlot[] = [];
-  slots.push(makeSlot("composite", compositeStream, VP9_MIME, coordinator));
+  slots.push(makeSlot("composite", compositeStream, VP9_MIME, settings, coordinator));
   if (screenVideoOnly)
-    slots.push(makeSlot("screen", screenVideoOnly, VP9_MIME, coordinator));
+    slots.push(makeSlot("screen", screenVideoOnly, VP9_MIME, settings, coordinator));
   if (cameraVideoOnly)
-    slots.push(makeSlot("camera", cameraVideoOnly, VP9_MIME, coordinator));
-  if (micOnly) slots.push(makeSlot("mic", micOnly, OPUS_MIME, coordinator));
+    slots.push(makeSlot("camera", cameraVideoOnly, VP9_MIME, settings, coordinator));
+  if (micOnly) slots.push(makeSlot("mic", micOnly, OPUS_MIME, settings, coordinator));
   if (screenAudioOnly)
     slots.push(
-      makeSlot("system-audio", screenAudioOnly, OPUS_MIME, coordinator)
+      makeSlot("system-audio", screenAudioOnly, OPUS_MIME, settings, coordinator)
     );
 
   let aborted = false;
@@ -283,12 +301,20 @@ function makeSlot(
   kind: TrackKind,
   stream: MediaStream,
   preferredMime: string,
+  settings: RecordingSettings,
   coordinator?: UploadCoordinator
 ): RecorderSlot {
-  const mimeType = MediaRecorder.isTypeSupported(preferredMime)
-    ? preferredMime
-    : "";
-  const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+  const hasVideo = stream.getVideoTracks().length > 0;
+  const hasAudio = stream.getAudioTracks().length > 0;
+  const mimeType = pickSupportedMime(
+    preferredMime,
+    hasVideo ? VIDEO_MIME_CANDIDATES : AUDIO_MIME_CANDIDATES
+  );
+  const recorder = new MediaRecorder(stream, {
+    ...(mimeType ? { mimeType } : {}),
+    ...(hasVideo ? { videoBitsPerSecond: videoBitrate(kind, settings) } : {}),
+    ...(hasAudio ? { audioBitsPerSecond: AUDIO_BITRATE } : {}),
+  });
   const chunks: Blob[] = [];
   recorder.addEventListener("dataavailable", (evt) => {
     if (evt.data && evt.data.size > 0) {
@@ -296,7 +322,23 @@ function makeSlot(
       coordinator?.pushChunk(kind, evt.data);
     }
   });
-  return { kind, recorder, chunks, mimeType: mimeType || "video/webm" };
+  return {
+    kind,
+    recorder,
+    chunks,
+    mimeType: mimeType || (hasVideo ? "video/webm" : "audio/webm"),
+  };
+}
+
+function pickSupportedMime(preferredMime: string, candidates: string[]): string {
+  if (MediaRecorder.isTypeSupported(preferredMime)) return preferredMime;
+  return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate)) ?? "";
+}
+
+function videoBitrate(kind: TrackKind, settings: RecordingSettings): number {
+  if (kind === "camera") return VIDEO_BITRATES[settings.resolution].camera;
+  if (kind === "screen") return VIDEO_BITRATES[settings.resolution].screen;
+  return VIDEO_BITRATES[settings.resolution].composite;
 }
 
 export { CaptureError };

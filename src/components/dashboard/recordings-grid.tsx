@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FolderInput, MousePointer2, Trash2, X } from "lucide-react";
+import { toast } from "sonner";
 import { RecordingCard } from "./recording-card";
 import { Button } from "@/components/ui/button";
 import type { RecordingWithBrand } from "@/db/queries/recordings";
@@ -22,21 +23,56 @@ export function RecordingsGrid({
   const router = useRouter();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showMove, setShowMove] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const selectionActive = selectedIds.length > 0;
 
-  function toggleSelected(id: string) {
-    setSelectedIds((current) =>
-      current.includes(id)
+  useEffect(() => {
+    if (!selectionActive) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setSelectedIds([]);
+        setShowMove(false);
+        setConfirmingDelete(false);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectionActive]);
+
+  function toggleSelected(id: string, range = false) {
+    const recordingIds = recordings.map((recording) => recording.id);
+    setConfirmingDelete(false);
+    setShowMove(false);
+
+    setSelectedIds((current) => {
+      if (range && lastSelectedId) {
+        const from = recordingIds.indexOf(lastSelectedId);
+        const to = recordingIds.indexOf(id);
+        if (from >= 0 && to >= 0) {
+          const [start, end] = from < to ? [from, to] : [to, from];
+          return Array.from(
+            new Set([...current, ...recordingIds.slice(start, end + 1)])
+          );
+        }
+      }
+
+      return current.includes(id)
         ? current.filter((selectedId) => selectedId !== id)
-        : [...current, id]
-    );
+        : [...current, id];
+    });
+    setLastSelectedId(id);
   }
 
   async function deleteSelected() {
     const count = selectedIds.length;
     if (count === 0) return;
-    if (!confirm(`Delete ${count} recording${count === 1 ? "" : "s"}?`)) return;
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      setShowMove(false);
+      return;
+    }
 
     const res = await fetch("/api/recordings/bulk-delete", {
       method: "POST",
@@ -45,17 +81,19 @@ export function RecordingsGrid({
     });
 
     if (!res.ok) {
-      alert(`Delete failed (${res.status}).`);
+      toast.error(`Delete failed (${res.status}).`);
       return;
     }
 
     setSelectedIds([]);
     setShowMove(false);
+    setConfirmingDelete(false);
+    toast.success(`Deleted ${count} recording${count === 1 ? "" : "s"}.`);
     router.refresh();
   }
 
   async function moveSelected(folderId: string | null) {
-    await Promise.all(
+    const results = await Promise.all(
       selectedIds.map((recordingId) =>
         fetch(`/api/recordings/${recordingId}/folder`, {
           method: "PATCH",
@@ -64,8 +102,14 @@ export function RecordingsGrid({
         })
       )
     );
+    if (results.some((res) => !res.ok)) {
+      toast.error("Move failed for one or more recordings.");
+      return;
+    }
     setSelectedIds([]);
     setShowMove(false);
+    setConfirmingDelete(false);
+    toast.success("Recordings moved.");
     router.refresh();
   }
 
@@ -99,6 +143,7 @@ export function RecordingsGrid({
               onClick={() => {
                 setSelectedIds(recordings.map((r) => r.id));
                 setShowMove(false);
+                setConfirmingDelete(false);
               }}
             >
               <MousePointer2 className="h-4 w-4" />
@@ -108,7 +153,10 @@ export function RecordingsGrid({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setShowMove((open) => !open)}
+                onClick={() => {
+                  setShowMove((open) => !open);
+                  setConfirmingDelete(false);
+                }}
               >
                 <FolderInput className="h-4 w-4" />
                 Move
@@ -135,9 +183,14 @@ export function RecordingsGrid({
                 </div>
               )}
             </div>
-            <Button variant="destructive" size="sm" onClick={deleteSelected}>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={deleteSelected}
+              className={confirmingDelete ? "ring-2 ring-destructive/30" : undefined}
+            >
               <Trash2 className="h-4 w-4" />
-              Delete
+              {confirmingDelete ? "Confirm delete" : "Delete"}
             </Button>
             <Button
               variant="ghost"
@@ -146,6 +199,7 @@ export function RecordingsGrid({
               onClick={() => {
                 setSelectedIds([]);
                 setShowMove(false);
+                setConfirmingDelete(false);
               }}
               aria-label="Cancel selection"
             >

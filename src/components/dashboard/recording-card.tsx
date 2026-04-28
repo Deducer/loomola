@@ -52,7 +52,7 @@ export function RecordingCard({
   folders: Folder[];
   selectionActive?: boolean;
   selected?: boolean;
-  onToggleSelected?: (id: string) => void;
+  onToggleSelected?: (id: string, range?: boolean) => void;
 }) {
   const [copied, setCopied] = useState(false);
   const [previewing, setPreviewing] = useState(false);
@@ -103,7 +103,7 @@ export function RecordingCard({
         onClick={(e) => {
           if (selectionActive) {
             e.preventDefault();
-            onToggleSelected?.(rec.id);
+            onToggleSelected?.(rec.id, e.shiftKey);
           }
         }}
         className={cn(
@@ -193,7 +193,7 @@ export function RecordingCard({
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          onToggleSelected?.(rec.id);
+          onToggleSelected?.(rec.id, e.shiftKey);
         }}
         className={cn(
           "absolute left-2 top-2 z-20 flex h-6 w-6 items-center justify-center rounded-md border border-white/80 !bg-white !text-neutral-950 shadow-sm transition-opacity hover:!bg-white/90",
