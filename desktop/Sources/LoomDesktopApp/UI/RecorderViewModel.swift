@@ -43,7 +43,7 @@ final class RecorderViewModel: ObservableObject {
                 return token
             }
             statusMessage = "Ready to sign in."
-            Task { await restoreSession() }
+            Task { await loadStoredSession() }
         } catch {
             state = .failed(message: error.localizedDescription)
             statusMessage = error.localizedDescription
@@ -59,6 +59,19 @@ final class RecorderViewModel: ObservableObject {
             }
         } catch {
             statusMessage = "Saved session could not be restored. Sign in again."
+        }
+    }
+
+    private func loadStoredSession() async {
+        guard let authService else { return }
+        do {
+            if let storedToken = try await authService.loadStoredAccessToken() {
+                accessToken = storedToken
+                state = .signedInIdle
+                statusMessage = "Loaded saved sign-in token. If backend testing fails, sign out and sign in again."
+            }
+        } catch {
+            statusMessage = "Saved session could not be loaded. Sign in again."
         }
     }
 

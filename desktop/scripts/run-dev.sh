@@ -3,30 +3,66 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-if pgrep -x LoomDesktop >/dev/null; then
+if ps -ax -o comm= | grep -q '/LoomDesktop$'; then
   echo "Loom Desktop is already running."
   echo "Quit the existing Loom Desktop window before starting a new dev build."
   exit 1
 fi
 
+read_env_value() {
+  local file="$1"
+  local key="$2"
+  local line
+  line="$(grep -E "^${key}=" "$file" | tail -n 1 || true)"
+  if [[ -z "${line}" ]]; then
+    return 1
+  fi
+
+  local value="${line#*=}"
+  value="${value%$'\r'}"
+  if [[ "${value}" == \"*\" && "${value}" == *\" ]]; then
+    value="${value:1:${#value}-2}"
+  elif [[ "${value}" == \'*\' && "${value}" == *\' ]]; then
+    value="${value:1:${#value}-2}"
+  fi
+  printf '%s' "${value}"
+}
+
+set_env_from_file() {
+  local target="$1"
+  local file="$2"
+  shift 2
+
+  if [[ -n "${!target:-}" || ! -f "${file}" ]]; then
+    return
+  fi
+
+  local key
+  for key in "$@"; do
+    local value
+    value="$(read_env_value "${file}" "${key}" || true)"
+    if [[ -n "${value}" ]]; then
+      export "${target}=${value}"
+      return
+    fi
+  done
+}
+
 if [[ -f .env.local ]]; then
-  echo "Loading desktop/.env.local"
-  set -a
-  # shellcheck disable=SC1091
-  source .env.local
-  set +a
+  echo "Reading desktop/.env.local"
 fi
 
 if [[ -f ../.env.local ]]; then
-  echo "Loading ../.env.local"
-  set -a
-  # shellcheck disable=SC1091
-  source ../.env.local
-  set +a
+  echo "Reading ../.env.local"
 fi
 
-export LOOM_SUPABASE_URL="${LOOM_SUPABASE_URL:-${NEXT_PUBLIC_SUPABASE_URL:-${SUPABASE_URL:-}}}"
-export LOOM_SUPABASE_ANON_KEY="${LOOM_SUPABASE_ANON_KEY:-${NEXT_PUBLIC_SUPABASE_ANON_KEY:-${SUPABASE_ANON_KEY:-}}}"
+set_env_from_file LOOM_SUPABASE_URL .env.local LOOM_SUPABASE_URL NEXT_PUBLIC_SUPABASE_URL SUPABASE_URL
+set_env_from_file LOOM_SUPABASE_ANON_KEY .env.local LOOM_SUPABASE_ANON_KEY NEXT_PUBLIC_SUPABASE_ANON_KEY SUPABASE_ANON_KEY
+set_env_from_file LOOM_API_BASE_URL .env.local LOOM_API_BASE_URL
+set_env_from_file LOOM_SUPABASE_URL ../.env.local LOOM_SUPABASE_URL NEXT_PUBLIC_SUPABASE_URL SUPABASE_URL
+set_env_from_file LOOM_SUPABASE_ANON_KEY ../.env.local LOOM_SUPABASE_ANON_KEY NEXT_PUBLIC_SUPABASE_ANON_KEY SUPABASE_ANON_KEY
+set_env_from_file LOOM_API_BASE_URL ../.env.local LOOM_API_BASE_URL
+
 export LOOM_API_BASE_URL="${LOOM_API_BASE_URL:-https://loom.dissonance.cloud}"
 
 if [[ -z "${LOOM_SUPABASE_URL:-}" || -z "${LOOM_SUPABASE_ANON_KEY:-}" ]]; then
