@@ -25,10 +25,6 @@ actor DesktopAuthService {
         return session
     }
 
-    func loadStoredAccessToken() throws -> String? {
-        try store.loadAccessToken()
-    }
-
     func signIn(email: String, password: String) async throws -> Session {
         let session = try await client.auth.signIn(email: email, password: password)
         try store.save(session: session)

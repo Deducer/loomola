@@ -52,7 +52,11 @@ actor BackendClient {
         if ResponseBody.self == EmptyResponse.self {
             return EmptyResponse() as! ResponseBody
         }
-        return try JSONDecoder().decode(ResponseBody.self, from: data)
+        do {
+            return try JSONDecoder().decode(ResponseBody.self, from: data)
+        } catch {
+            throw BackendClientError.decodingFailed(path: path, body: data, underlyingError: error)
+        }
     }
 }
 
@@ -129,6 +133,7 @@ private struct EmptyResponse: Decodable {}
 enum BackendClientError: LocalizedError {
     case nonHTTPResponse(path: String)
     case badStatus(statusCode: Int, path: String, body: Data)
+    case decodingFailed(path: String, body: Data, underlyingError: Error)
 
     var errorDescription: String? {
         switch self {
@@ -141,6 +146,13 @@ enum BackendClientError: LocalizedError {
                 return "Backend returned HTTP \(statusCode) for \(path): \(bodyText)"
             }
             return "Backend returned HTTP \(statusCode) for \(path)."
+        case .decodingFailed(let path, let body, let underlyingError):
+            let bodyText = String(data: body, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if let bodyText, !bodyText.isEmpty {
+                return "Could not read backend JSON for \(path): \(underlyingError.localizedDescription). Response: \(bodyText.prefix(500))"
+            }
+            return "Could not read backend JSON for \(path): \(underlyingError.localizedDescription)."
         }
     }
 }
