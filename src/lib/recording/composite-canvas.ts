@@ -72,7 +72,31 @@ export function startCompositor(
     ctx!.fillRect(0, 0, width, height);
 
     if (screenVideo.readyState >= 2) {
-      ctx!.drawImage(screenVideo, 0, 0, width, height);
+      // Aspect-preserving fit (letterbox). Drawing the source straight
+      // into width×height stretches a 16:10 desktop into a 16:9 canvas
+      // and produces visibly-squished thumbnails + recordings. Compute
+      // a fit-inside rect and centre it; the surrounding black is
+      // already painted by the fillRect above.
+      const sw = screenVideo.videoWidth || width;
+      const sh = screenVideo.videoHeight || height;
+      const sourceAspect = sw / sh;
+      const targetAspect = width / height;
+      let dw: number;
+      let dh: number;
+      let dx: number;
+      let dy: number;
+      if (sourceAspect > targetAspect) {
+        dw = width;
+        dh = width / sourceAspect;
+        dx = 0;
+        dy = (height - dh) / 2;
+      } else {
+        dh = height;
+        dw = height * sourceAspect;
+        dx = (width - dw) / 2;
+        dy = 0;
+      }
+      ctx!.drawImage(screenVideo, dx, dy, dw, dh);
     }
 
     if (cameraVideo && cameraVideo.readyState >= 2) {

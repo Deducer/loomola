@@ -272,6 +272,27 @@ export function RecordFlow({ brands }: { brands: BrandProfile[] }) {
     dispatch({ type: "reset" });
   }, []);
 
+  // Settings + prepared are stable across the countdown → recording
+  // transition; rendering ExtensionBridge in BOTH states means the
+  // extension's frameless bubble appears during the 3-2-1 countdown so
+  // the user can see + reposition it BEFORE recording starts. Same camera
+  // stream, same position controller, no remount — so the bubble is
+  // continuous across the state transition.
+  const settings = pendingSettingsRef.current;
+  const prepared = preparedRef.current;
+  const showExtensionBridge =
+    (state.kind === "countdown" || state.kind === "recording") &&
+    !!settings?.cameraEnabled &&
+    !!prepared;
+
+  const extensionBridge = showExtensionBridge && settings && prepared && (
+    <ExtensionBridge
+      bubbleShape={settings.bubbleShape}
+      bubbleSize={settings.bubbleSize}
+      positionController={prepared.positionController}
+    />
+  );
+
   if (state.kind === "idle") {
     return <PreRecordForm brands={brands} onStart={onStart} />;
   }
@@ -286,13 +307,18 @@ export function RecordFlow({ brands }: { brands: BrandProfile[] }) {
     );
   }
   if (state.kind === "countdown") {
-    return <Countdown seconds={state.secondsLeft} onComplete={onCountdownDone} />;
+    return (
+      <>
+        <Countdown
+          seconds={state.secondsLeft}
+          onComplete={onCountdownDone}
+          cameraStream={prepared?.cameraStream ?? null}
+        />
+        {extensionBridge}
+      </>
+    );
   }
   if (state.kind === "recording") {
-    const settings = pendingSettingsRef.current;
-    const prepared = preparedRef.current;
-    const showExtensionBridge =
-      !!settings?.cameraEnabled && !!prepared;
     return (
       <>
         <RecordingHud
@@ -300,13 +326,7 @@ export function RecordFlow({ brands }: { brands: BrandProfile[] }) {
           onStop={onStop}
           cameraStream={prepared?.cameraStream ?? null}
         />
-        {showExtensionBridge && settings && prepared && (
-          <ExtensionBridge
-            bubbleShape={settings.bubbleShape}
-            bubbleSize={settings.bubbleSize}
-            positionController={prepared.positionController}
-          />
-        )}
+        {extensionBridge}
       </>
     );
   }
