@@ -62,7 +62,7 @@ cp .env.example .env.local
 ./scripts/run-dev.sh
 ```
 
-The helper also falls back to the repo-root `.env.local` names used by the web app (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `NEXT_PUBLIC_APP_URL`), so an existing local web-app env file is enough for a development run.
+The helper also falls back to the repo-root `.env.local` Supabase names used by the web app (`NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`), so an existing local web-app env file is enough for a development run. API calls default to `https://loom.dissonance.cloud`; set `LOOM_API_BASE_URL=http://localhost:3000` only when you intentionally want the desktop app to talk to a locally running Next.js server.
 
 The runnable dev app can currently test:
 
