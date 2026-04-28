@@ -43,6 +43,13 @@
       "when": 1777251600000,
       "tag": "0005_stage_1_7_preview_sprite_and_brand_layer_2",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1777510800000,
+      "tag": "0006_folders_rls",
+      "breakpoints": true
     }
   ]
 }
