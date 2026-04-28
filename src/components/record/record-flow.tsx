@@ -324,7 +324,6 @@ export function RecordFlow({ brands }: { brands: BrandProfile[] }) {
         <RecordingHud
           startedAt={state.startedAt}
           onStop={onStop}
-          cameraStream={prepared?.cameraStream ?? null}
         />
         {extensionBridge}
       </>

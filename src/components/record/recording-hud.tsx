@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 
 function formatElapsed(seconds: number): string {
@@ -12,14 +12,11 @@ function formatElapsed(seconds: number): string {
 export function RecordingHud({
   startedAt,
   onStop,
-  cameraStream,
 }: {
   startedAt: number;
   onStop: () => void;
-  cameraStream?: MediaStream | null;
 }) {
   const [elapsed, setElapsed] = useState(0);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -28,37 +25,13 @@ export function RecordingHud({
     return () => clearInterval(id);
   }, [startedAt]);
 
-  // Wire the camera stream into the local preview so the user can see
-  // themselves while still on /record (the extension's frameless bubble
-  // is excluded from this tab; without this preview they'd be flying
-  // blind until they switch to the captured tab).
-  useEffect(() => {
-    const v = videoRef.current;
-    if (!v || !cameraStream) return;
-    v.srcObject = cameraStream;
-    v.muted = true;
-    void v.play().catch(() => {});
-    return () => {
-      v.srcObject = null;
-    };
-  }, [cameraStream]);
-
+  // No camera preview here on purpose. The Chrome extension injects a
+  // /bubble iframe into every tab including /record, and that's what
+  // appears in the recording. Drawing a second camera circle here meant
+  // recordings made while the user was on /record showed two visible
+  // bubbles (the HUD circle + the iframe one).
   return (
     <div className="flex min-h-[300px] flex-col items-center justify-center gap-6 rounded-xl border border-border bg-bg-subtle p-10">
-      {cameraStream && (
-        <div
-          className="relative overflow-hidden rounded-full border-2 border-white/30"
-          style={{ width: 140, height: 140 }}
-        >
-          <video
-            ref={videoRef}
-            playsInline
-            muted
-            autoPlay
-            className="h-full w-full object-cover"
-          />
-        </div>
-      )}
       <div className="flex items-center gap-3">
         <span
           aria-hidden="true"
@@ -69,8 +42,9 @@ export function RecordingHud({
         </span>
       </div>
       <p className="max-w-md text-center text-sm text-text-muted">
-        Recording in progress. Click stop below or end screen sharing from the
-        browser bar to finalise the recording.
+        Recording in progress. Your camera bubble is the floating circle —
+        drag it anywhere on screen. Click stop below or end screen sharing
+        from the browser bar to finalise the recording.
       </p>
       <Button onClick={onStop} variant="destructive" size="lg">
         Stop recording

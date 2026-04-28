@@ -43,6 +43,12 @@ function ensureIframe(state) {
   });
   iframe.setAttribute("aria-label", "Loom Clone camera bubble");
   document.documentElement.appendChild(iframe);
+  console.log(
+    "[loom-clone-ext] iframe injected on",
+    location.href,
+    "size",
+    sizePx
+  );
   return iframe;
 }
 
@@ -51,7 +57,10 @@ function removeIframe() {
   if (iframe) iframe.remove();
 }
 
-console.log("[loom-clone-ext] content-script-page loaded on", location.href);
+console.log(
+  "[loom-clone-ext v0.2.0] content-script-page loaded on",
+  location.href
+);
 
 /**
  * The manifest now matches every URL including loom.dissonance.cloud,
