@@ -180,6 +180,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           startedAt: Date.now(),
           bubbleShape: msg.bubbleShape ?? "circle",
           bubbleSize: msg.bubbleSize ?? "medium",
+          // Fractional (0..1) center position. Persisted across tab
+          // switches so the iframe re-injected on a new tab spawns at
+          // the user's last-dragged position instead of bottom-right.
+          position: msg.bubblePosition ?? null,
         };
         await writeState(state);
         await broadcastShowBubble(state);
@@ -189,6 +193,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         await broadcastHideBubble();
         sendResponse({ ok: true });
       } else if (msg?.type === "loom-clone:bubble-drag") {
+        // Persist the dragged position so the next tab the user activates
+        // gets an iframe that spawns at the same fractional location.
+        const cur = await readState();
+        if (cur) {
+          cur.position = msg.position;
+          await writeState(cur);
+        }
         await forwardPositionToApp(msg.position);
         sendResponse({ ok: true });
       } else if (msg?.type === "loom-clone:get-state") {

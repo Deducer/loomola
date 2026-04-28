@@ -38,6 +38,7 @@ export function ExtensionBridge({
         type: "recording-started",
         bubbleShape,
         bubbleSize,
+        bubblePosition: positionController.current,
       },
       window.location.origin
     );

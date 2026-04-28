@@ -57,6 +57,7 @@
         type: "loom-clone:recording-started",
         bubbleShape: data.bubbleShape,
         bubbleSize: data.bubbleSize,
+        bubblePosition: data.bubblePosition,
       });
     } else if (data.type === "recording-stopped") {
       console.log("[loom-clone-ext] recording-stopped");

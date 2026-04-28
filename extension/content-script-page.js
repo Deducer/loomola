@@ -31,8 +31,6 @@ function ensureIframe(state) {
   const sizePx = IFRAME_SIZE_PX[state.bubbleSize ?? "medium"];
   Object.assign(iframe.style, {
     position: "fixed",
-    bottom: "32px",
-    right: "32px",
     width: `${sizePx}px`,
     height: `${sizePx}px`,
     border: "none",
@@ -41,13 +39,37 @@ function ensureIframe(state) {
     pointerEvents: "auto",
     colorScheme: "normal",
   });
+
+  // If background gave us a remembered fractional position (set on the
+  // previous drag-end, persisted in chrome.storage.session), spawn the
+  // iframe with its center at that position so it stays put when the
+  // user switches tabs. Otherwise fall back to bottom-right anchor.
+  const pos = state.position;
+  if (
+    pos &&
+    typeof pos.x === "number" &&
+    typeof pos.y === "number"
+  ) {
+    const w = window.innerWidth || 1920;
+    const h = window.innerHeight || 1080;
+    const cx = pos.x * w;
+    const cy = pos.y * h;
+    iframe.style.left = `${Math.max(8, Math.min(w - sizePx - 8, cx - sizePx / 2))}px`;
+    iframe.style.top = `${Math.max(8, Math.min(h - sizePx - 8, cy - sizePx / 2))}px`;
+  } else {
+    iframe.style.bottom = "32px";
+    iframe.style.right = "32px";
+  }
+
   iframe.setAttribute("aria-label", "Loom Clone camera bubble");
   document.documentElement.appendChild(iframe);
   console.log(
     "[loom-clone-ext] iframe injected on",
     location.href,
     "size",
-    sizePx
+    sizePx,
+    "pos",
+    pos ?? "default-bottom-right"
   );
   return iframe;
 }
@@ -58,7 +80,7 @@ function removeIframe() {
 }
 
 console.log(
-  "[loom-clone-ext v0.2.0] content-script-page loaded on",
+  "[loom-clone-ext v0.3.0] content-script-page loaded on",
   location.href
 );
 
