@@ -106,8 +106,8 @@ export default async function SharePage({
         showCta={!isOwner}
       />
 
-      <main className="mx-auto max-w-4xl px-6 py-14">
-        <h1 className="truncate text-[28px] font-semibold tracking-tight text-text">
+      <main className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-14">
+        <h1 className="truncate text-2xl font-semibold tracking-tight text-text sm:text-[28px]">
           {displayTitle}
         </h1>
         <p className="mt-1.5 text-sm text-text-muted">
@@ -257,7 +257,7 @@ function BrandHeader({
 
   return (
     <>
-      <header className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-3">
+      <header className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-6">
         <div className="flex flex-col gap-0.5">
           <div className="flex items-center gap-3">
             <BrandLogo
@@ -323,7 +323,7 @@ function BrandFooter({ brand }: { brand: BrandLike }) {
   const text = brand?.footerText?.trim();
   if (!text) return null;
   return (
-    <footer className="mt-12 border-t border-border px-6 py-8">
+    <footer className="mt-12 border-t border-border px-4 py-8 sm:px-6">
       <div className="mx-auto max-w-4xl text-xs leading-relaxed text-text-muted">
         {text}
       </div>

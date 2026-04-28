@@ -17,7 +17,10 @@ export default async function LoginPage({
         width={180}
         height={48}
         priority
-        className="h-12 w-auto"
+        // See top-nav.tsx — the source PNG has dark-gray text that
+        // disappears on dark backgrounds. Flatten to white silhouette
+        // in dark mode until a proper dark variant ships.
+        className="h-12 w-auto dark:brightness-0 dark:invert"
       />
       <form
         action={signIn}

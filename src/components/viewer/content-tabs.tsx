@@ -38,7 +38,7 @@ export function ContentTabs({
   }
 
   return (
-    <div className="mt-12">
+    <div className="mt-8 sm:mt-12">
       <div role="tablist" className="flex gap-6 border-b border-border">
         {TABS.map((t) => {
           const isActive = active === t.key;

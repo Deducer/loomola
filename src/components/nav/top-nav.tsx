@@ -37,7 +37,12 @@ export function TopNav({ userEmail, activePath }: Props) {
             width={120}
             height={32}
             priority
-            className="h-8 w-auto"
+            // Source asset is a colorful sun + dark-gray "loomola" wordmark
+            // — reads great on light, illegible on dark. Until we have a
+            // proper dark-mode variant, flatten to a white silhouette in
+            // dark mode so the wordmark stays readable. Loses the colors
+            // of the sun mark but keeps the shape recognizable.
+            className="h-8 w-auto dark:brightness-0 dark:invert"
           />
         </Link>
         <ul className="flex items-center gap-5">
