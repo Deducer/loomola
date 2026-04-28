@@ -306,7 +306,11 @@ export function RecordFlow({ brands }: { brands: BrandProfile[] }) {
       !!prepared?.cameraStream;
     return (
       <>
-        <RecordingHud startedAt={state.startedAt} onStop={onStop} />
+        <RecordingHud
+          startedAt={state.startedAt}
+          onStop={onStop}
+          cameraStream={prepared?.cameraStream ?? null}
+        />
         {showExtensionBridge && settings && prepared && (
           <ExtensionBridge
             bubbleShape={settings.bubbleShape}

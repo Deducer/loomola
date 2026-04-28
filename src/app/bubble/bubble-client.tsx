@@ -73,37 +73,35 @@ export function BubbleClient({
   }, []);
 
   // Drag: tell the parent to move the iframe.
+  //
+  // Use `screenX/screenY` (absolute desktop coords) instead of
+  // `clientX/clientY` (iframe-relative). When the parent moves the iframe
+  // mid-drag, the cursor's iframe-relative position shifts even though the
+  // physical cursor didn't move — Chrome can synthesise pointermoves that
+  // look like reverse motion → the bubble jitters back and forth. screenX/Y
+  // is invariant to iframe transforms, so deltas are pure user motion.
   useEffect(() => {
     function onPointerDown(e: PointerEvent) {
       dragRef.current.active = true;
-      // The iframe's clientX/Y is relative to the iframe — convert to page
-      // coords by adding the iframe's own offset (we don't know it from
-      // inside, so we let the parent handle the absolute position; we just
-      // track delta-on-drag and post that).
-      dragRef.current.offsetX = e.clientX;
-      dragRef.current.offsetY = e.clientY;
+      dragRef.current.offsetX = e.screenX;
+      dragRef.current.offsetY = e.screenY;
       (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
     }
     function onPointerMove(e: PointerEvent) {
       if (!dragRef.current.active) return;
-      const dx = e.clientX - dragRef.current.offsetX;
-      const dy = e.clientY - dragRef.current.offsetY;
-      // Tell the parent (captured tab) to move the iframe by (dx, dy).
-      // The parent recomputes the iframe's page-position and forwards a
-      // fractional position back to the recording tab.
+      const dx = e.screenX - dragRef.current.offsetX;
+      const dy = e.screenY - dragRef.current.offsetY;
+      if (dx === 0 && dy === 0) return;
       window.parent.postMessage(
         { source: "loom-clone-bubble", type: "delta", dx, dy },
         "*"
       );
-      // Also re-anchor our drag origin so subsequent moves are deltas-from-now.
-      dragRef.current.offsetX = e.clientX;
-      dragRef.current.offsetY = e.clientY;
+      dragRef.current.offsetX = e.screenX;
+      dragRef.current.offsetY = e.screenY;
     }
     function onPointerUp() {
       if (!dragRef.current.active) return;
       dragRef.current.active = false;
-      // Final position notification — the parent already moved the iframe;
-      // it should now publish the resulting fractional position.
       window.parent.postMessage(
         { source: "loom-clone-bubble", type: "drag" },
         "*"

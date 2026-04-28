@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 
 function formatElapsed(seconds: number): string {
@@ -12,11 +12,14 @@ function formatElapsed(seconds: number): string {
 export function RecordingHud({
   startedAt,
   onStop,
+  cameraStream,
 }: {
   startedAt: number;
   onStop: () => void;
+  cameraStream?: MediaStream | null;
 }) {
   const [elapsed, setElapsed] = useState(0);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -25,8 +28,37 @@ export function RecordingHud({
     return () => clearInterval(id);
   }, [startedAt]);
 
+  // Wire the camera stream into the local preview so the user can see
+  // themselves while still on /record (the extension's frameless bubble
+  // is excluded from this tab; without this preview they'd be flying
+  // blind until they switch to the captured tab).
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !cameraStream) return;
+    v.srcObject = cameraStream;
+    v.muted = true;
+    void v.play().catch(() => {});
+    return () => {
+      v.srcObject = null;
+    };
+  }, [cameraStream]);
+
   return (
     <div className="flex min-h-[300px] flex-col items-center justify-center gap-6 rounded-xl border border-border bg-bg-subtle p-10">
+      {cameraStream && (
+        <div
+          className="relative overflow-hidden rounded-full border-2 border-white/30"
+          style={{ width: 140, height: 140 }}
+        >
+          <video
+            ref={videoRef}
+            playsInline
+            muted
+            autoPlay
+            className="h-full w-full object-cover"
+          />
+        </div>
+      )}
       <div className="flex items-center gap-3">
         <span
           aria-hidden="true"
