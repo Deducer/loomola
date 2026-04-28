@@ -30,12 +30,6 @@ export function BubbleClient({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [standalone, setStandalone] = useState(false);
-  const dragRef = useRef<{ active: boolean; offsetX: number; offsetY: number }>({
-    active: false,
-    offsetX: 0,
-    offsetY: 0,
-  });
-
   useEffect(() => {
     if (typeof window === "undefined") return;
     setStandalone(window.parent === window);
@@ -72,51 +66,22 @@ export function BubbleClient({
     };
   }, []);
 
-  // Drag: tell the parent to move the iframe.
-  //
-  // Use `screenX/screenY` (absolute desktop coords) instead of
-  // `clientX/clientY` (iframe-relative). When the parent moves the iframe
-  // mid-drag, the cursor's iframe-relative position shifts even though the
-  // physical cursor didn't move — Chrome can synthesise pointermoves that
-  // look like reverse motion → the bubble jitters back and forth. screenX/Y
-  // is invariant to iframe transforms, so deltas are pure user motion.
+  // Drag: just signal "drag started" to the parent. The parent (the
+  // content script in the captured tab) takes over from there, tracking
+  // mousemove/mouseup on its OWN document — which keeps firing events
+  // even when the cursor leaves the iframe area. Doing it here would
+  // mean the iframe's window stops receiving pointermoves the moment the
+  // cursor exits, leaving the drag stuck or jumping.
   useEffect(() => {
     function onPointerDown(e: PointerEvent) {
-      dragRef.current.active = true;
-      dragRef.current.offsetX = e.screenX;
-      dragRef.current.offsetY = e.screenY;
-      (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-    }
-    function onPointerMove(e: PointerEvent) {
-      if (!dragRef.current.active) return;
-      const dx = e.screenX - dragRef.current.offsetX;
-      const dy = e.screenY - dragRef.current.offsetY;
-      if (dx === 0 && dy === 0) return;
+      e.preventDefault();
       window.parent.postMessage(
-        { source: "loom-clone-bubble", type: "delta", dx, dy },
-        "*"
-      );
-      dragRef.current.offsetX = e.screenX;
-      dragRef.current.offsetY = e.screenY;
-    }
-    function onPointerUp() {
-      if (!dragRef.current.active) return;
-      dragRef.current.active = false;
-      window.parent.postMessage(
-        { source: "loom-clone-bubble", type: "drag" },
+        { source: "loom-clone-bubble", type: "drag-start" },
         "*"
       );
     }
     window.addEventListener("pointerdown", onPointerDown);
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
-    window.addEventListener("pointercancel", onPointerUp);
-    return () => {
-      window.removeEventListener("pointerdown", onPointerDown);
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
-      window.removeEventListener("pointercancel", onPointerUp);
-    };
+    return () => window.removeEventListener("pointerdown", onPointerDown);
   }, []);
 
   const sizePx = STANDALONE_PX_FOR_SIZE[size];
@@ -213,11 +178,11 @@ export function BubbleClient({
             width: "100%",
             height: "100%",
             objectFit: "cover",
-            background: "#000",
+            background: "transparent",
             ...shapeClipStyle(shape),
-            boxShadow: "0 6px 24px rgba(0, 0, 0, 0.45)",
-            border: "2px solid rgba(255, 255, 255, 0.65)",
+            border: "2px solid rgba(255, 255, 255, 0.7)",
             boxSizing: "border-box",
+            display: "block",
           }}
         />
       )}

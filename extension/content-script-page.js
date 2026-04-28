@@ -106,29 +106,38 @@ void safeSendMessage({ type: "loom-clone:get-state" }).then((response) => {
   if (response?.state) ensureIframe(response.state);
 });
 
-// Listen for drag updates from the iframe and forward to background.
-window.addEventListener("message", (event) => {
-  // The iframe's origin is loom.dissonance.cloud.
-  if (event.origin !== "https://loom.dissonance.cloud") return;
-  const data = event.data;
-  if (!data || data.source !== "loom-clone-bubble") return;
+/**
+ * Drag handling lives here in the parent because the iframe's own pointer
+ * events stop firing the moment the cursor leaves the iframe — leading to
+ * "drags from far away" feeling stuck or jumping. The iframe just signals
+ * "drag-start" and we take over with document-level mousemove/mouseup,
+ * which keep firing regardless of where the cursor moves.
+ */
+let dragState = null;
 
+function onDragMove(e) {
+  if (!dragState) return;
   const iframe = document.getElementById(IFRAME_ID);
   if (!iframe) return;
+  if (!dragState.anchored) {
+    dragState.startMouseX = e.clientX;
+    dragState.startMouseY = e.clientY;
+    dragState.anchored = true;
+  }
+  const dx = e.clientX - dragState.startMouseX;
+  const dy = e.clientY - dragState.startMouseY;
+  iframe.style.left = `${dragState.startIframeLeft + dx}px`;
+  iframe.style.top = `${dragState.startIframeTop + dy}px`;
+  iframe.style.right = "auto";
+  iframe.style.bottom = "auto";
+}
 
-  if (data.type === "delta") {
-    // Iframe is mid-drag and asking us to translate by (dx, dy). The first
-    // delta in a drag converts from anchored bottom/right styling into
-    // explicit left/top so subsequent deltas can mutate position.
-    const rect = iframe.getBoundingClientRect();
-    const nextLeft = rect.left + (data.dx ?? 0);
-    const nextTop = rect.top + (data.dy ?? 0);
-    iframe.style.left = `${nextLeft}px`;
-    iframe.style.top = `${nextTop}px`;
-    iframe.style.right = "auto";
-    iframe.style.bottom = "auto";
-  } else if (data.type === "drag") {
-    // Drag finished — compute fractional position and forward to recording.
+function onDragEnd() {
+  document.removeEventListener("mousemove", onDragMove, true);
+  document.removeEventListener("mouseup", onDragEnd, true);
+  if (!dragState) return;
+  const iframe = document.getElementById(IFRAME_ID);
+  if (iframe) {
     const rect = iframe.getBoundingClientRect();
     const viewportW = window.innerWidth || 1920;
     const viewportH = window.innerHeight || 1080;
@@ -140,5 +149,27 @@ window.addEventListener("message", (event) => {
       type: "loom-clone:bubble-drag",
       position: { x: fracX, y: fracY },
     });
+  }
+  dragState = null;
+}
+
+window.addEventListener("message", (event) => {
+  if (event.origin !== "https://loom.dissonance.cloud") return;
+  const data = event.data;
+  if (!data || data.source !== "loom-clone-bubble") return;
+
+  if (data.type === "drag-start") {
+    const iframe = document.getElementById(IFRAME_ID);
+    if (!iframe) return;
+    const rect = iframe.getBoundingClientRect();
+    dragState = {
+      anchored: false,
+      startMouseX: 0,
+      startMouseY: 0,
+      startIframeLeft: rect.left,
+      startIframeTop: rect.top,
+    };
+    document.addEventListener("mousemove", onDragMove, true);
+    document.addEventListener("mouseup", onDragEnd, true);
   }
 });
