@@ -1,5 +1,4 @@
-import { generateObject } from "ai";
-import { getLlm } from "@/lib/ai/client";
+import { generateObjectWithFallback } from "@/lib/ai/with-fallback";
 import { titleSummarySchema } from "@/lib/ai/schemas";
 import { getTranscriptByRecording } from "@/db/queries/transcripts";
 import {
@@ -31,8 +30,7 @@ export async function runTitleSummaryJob(
     return;
   }
 
-  const { object } = await generateObject({
-    model: getLlm(),
+  const { object } = await generateObjectWithFallback({
     schema: titleSummarySchema,
     schemaName: "TitleSummary",
     prompt: [

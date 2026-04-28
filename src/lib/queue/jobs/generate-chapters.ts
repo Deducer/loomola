@@ -1,5 +1,4 @@
-import { generateObject } from "ai";
-import { getLlm } from "@/lib/ai/client";
+import { generateObjectWithFallback } from "@/lib/ai/with-fallback";
 import { chaptersSchema } from "@/lib/ai/schemas";
 import { getTranscriptByRecording, type WordTimestamp } from "@/db/queries/transcripts";
 import {
@@ -56,8 +55,7 @@ export async function runChaptersJob(data: ChaptersJobData): Promise<void> {
   }
 
   const timed = buildTimedTranscript(words);
-  const { object } = await generateObject({
-    model: getLlm(),
+  const { object } = await generateObjectWithFallback({
     schema: chaptersSchema,
     schemaName: "Chapters",
     prompt: [

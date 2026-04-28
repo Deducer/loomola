@@ -1,5 +1,4 @@
-import { generateObject } from "ai";
-import { getLlm } from "@/lib/ai/client";
+import { generateObjectWithFallback } from "@/lib/ai/with-fallback";
 import { actionItemsSchema } from "@/lib/ai/schemas";
 import {
   getTranscriptByRecording,
@@ -35,8 +34,7 @@ export async function runActionItemsJob(
       ? words[words.length - 1]?.end ?? 0
       : 0;
 
-  const { object } = await generateObject({
-    model: getLlm(),
+  const { object } = await generateObjectWithFallback({
     schema: actionItemsSchema,
     schemaName: "ActionItems",
     prompt: [
