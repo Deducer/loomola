@@ -66,28 +66,84 @@ export function BubbleClient({
     };
   }, []);
 
-  // Drag: signal "drag started" to the parent with the click's
-  // iframe-relative offset. The parent uses (offsetX, offsetY) to
-  // position the iframe so the user's click point stays exactly under
-  // the cursor for the entire drag — proper "stick to cursor" UX.
+  // Drag is owned by the iframe. setPointerCapture on documentElement
+  // guarantees every pointermove/pointerup for this pointer id is
+  // delivered here regardless of where the cursor goes — including
+  // when the cursor stays inside the iframe (where the parent's
+  // document would never see the events) or escapes the viewport.
   //
-  // Document-level mousemove/mouseup happens in the parent so events
-  // keep firing wherever the cursor goes on the host page.
+  // We send screen-space deltas to the parent. clientX/Y would create a
+  // feedback loop: when the parent moves the iframe in response to a
+  // delta, the cursor's iframe-relative clientX/Y shifts even though
+  // the cursor didn't actually move, so the next event reports a stale
+  // delta. screenX/Y is global to the OS cursor and is unaffected by
+  // iframe motion.
   useEffect(() => {
+    let dragging = false;
+    let lastScreenX = 0;
+    let lastScreenY = 0;
+    let activePointerId: number | null = null;
+    const captureTarget = document.documentElement;
+
     function onPointerDown(e: PointerEvent) {
+      if (e.button !== 0) return;
       e.preventDefault();
+      try {
+        captureTarget.setPointerCapture(e.pointerId);
+      } catch {
+        /* capture is best-effort */
+      }
+      activePointerId = e.pointerId;
+      dragging = true;
+      lastScreenX = e.screenX;
+      lastScreenY = e.screenY;
       window.parent.postMessage(
-        {
-          source: "loom-clone-bubble",
-          type: "drag-start",
-          offsetX: e.clientX,
-          offsetY: e.clientY,
-        },
+        { source: "loom-clone-bubble", type: "drag-start" },
         "*"
       );
     }
-    window.addEventListener("pointerdown", onPointerDown);
-    return () => window.removeEventListener("pointerdown", onPointerDown);
+
+    function onPointerMove(e: PointerEvent) {
+      if (!dragging || e.pointerId !== activePointerId) return;
+      const dx = e.screenX - lastScreenX;
+      const dy = e.screenY - lastScreenY;
+      if (dx === 0 && dy === 0) return;
+      lastScreenX = e.screenX;
+      lastScreenY = e.screenY;
+      window.parent.postMessage(
+        { source: "loom-clone-bubble", type: "drag-move", dx, dy },
+        "*"
+      );
+    }
+
+    function endDrag(e: PointerEvent) {
+      if (!dragging) return;
+      if (activePointerId !== null && e.pointerId !== activePointerId) return;
+      dragging = false;
+      if (activePointerId !== null) {
+        try {
+          captureTarget.releasePointerCapture(activePointerId);
+        } catch {
+          /* already released */
+        }
+      }
+      activePointerId = null;
+      window.parent.postMessage(
+        { source: "loom-clone-bubble", type: "drag-end" },
+        "*"
+      );
+    }
+
+    captureTarget.addEventListener("pointerdown", onPointerDown);
+    captureTarget.addEventListener("pointermove", onPointerMove);
+    captureTarget.addEventListener("pointerup", endDrag);
+    captureTarget.addEventListener("pointercancel", endDrag);
+    return () => {
+      captureTarget.removeEventListener("pointerdown", onPointerDown);
+      captureTarget.removeEventListener("pointermove", onPointerMove);
+      captureTarget.removeEventListener("pointerup", endDrag);
+      captureTarget.removeEventListener("pointercancel", endDrag);
+    };
   }, []);
 
   const sizePx = STANDALONE_PX_FOR_SIZE[size];

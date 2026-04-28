@@ -107,36 +107,51 @@ void safeSendMessage({ type: "loom-clone:get-state" }).then((response) => {
 });
 
 /**
- * Drag handling lives here in the parent because the iframe's own pointer
- * events stop firing the moment the cursor leaves the iframe — leading to
- * "drags from far away" feeling stuck or jumping. The iframe just signals
- * "drag-start" with the click's iframe-relative offset; we use that
- * offset to keep the click-point glued to the cursor on every mousemove.
+ * Drag is fully owned by the iframe (setPointerCapture inside /bubble).
+ * It streams pure screen-space deltas to us; we just apply them to the
+ * iframe element's left/top.
  *
- *   newIframeLeft = cursorX - clickOffsetX
- *   newIframeTop  = cursorY - clickOffsetY
- *
- * That formula makes the bubble "stick to the cursor" — wherever the user
- * clicked on the bubble stays directly under the cursor for the whole drag.
+ * Why not listen for mousemove/mouseup on the parent document: the
+ * iframe is cross-origin, and Chrome routes every pointer event whose
+ * physical position is inside the iframe rectangle to the iframe
+ * exclusively. The parent only sees events that escape the iframe's
+ * bounds — which is why earlier "the bubble lags the cursor and
+ * pointerup-on-the-bubble never ends the drag" was the bug.
+ * setPointerCapture in the iframe makes events deterministic; we just
+ * listen for postMessage here.
  */
-let dragState = null;
+let dragLeft = 0;
+let dragTop = 0;
+let isDragging = false;
 
-function onDragMove(e) {
-  if (!dragState) return;
+window.addEventListener("message", (event) => {
+  if (event.origin !== "https://loom.dissonance.cloud") return;
+  const data = event.data;
+  if (!data || data.source !== "loom-clone-bubble") return;
+
   const iframe = document.getElementById(IFRAME_ID);
   if (!iframe) return;
-  iframe.style.left = `${e.clientX - dragState.offsetX}px`;
-  iframe.style.top = `${e.clientY - dragState.offsetY}px`;
-  iframe.style.right = "auto";
-  iframe.style.bottom = "auto";
-}
 
-function onDragEnd() {
-  document.removeEventListener("mousemove", onDragMove, true);
-  document.removeEventListener("mouseup", onDragEnd, true);
-  if (!dragState) return;
-  const iframe = document.getElementById(IFRAME_ID);
-  if (iframe) {
+  if (data.type === "drag-start") {
+    const rect = iframe.getBoundingClientRect();
+    dragLeft = rect.left;
+    dragTop = rect.top;
+    isDragging = true;
+    // Pin via left/top so deltas accumulate cleanly even if the iframe
+    // was originally anchored to right/bottom.
+    iframe.style.left = `${dragLeft}px`;
+    iframe.style.top = `${dragTop}px`;
+    iframe.style.right = "auto";
+    iframe.style.bottom = "auto";
+  } else if (data.type === "drag-move") {
+    if (!isDragging) return;
+    dragLeft += Number(data.dx) || 0;
+    dragTop += Number(data.dy) || 0;
+    iframe.style.left = `${dragLeft}px`;
+    iframe.style.top = `${dragTop}px`;
+  } else if (data.type === "drag-end") {
+    if (!isDragging) return;
+    isDragging = false;
     const rect = iframe.getBoundingClientRect();
     const viewportW = window.innerWidth || 1920;
     const viewportH = window.innerHeight || 1080;
@@ -148,26 +163,5 @@ function onDragEnd() {
       type: "loom-clone:bubble-drag",
       position: { x: fracX, y: fracY },
     });
-  }
-  dragState = null;
-}
-
-window.addEventListener("message", (event) => {
-  if (event.origin !== "https://loom.dissonance.cloud") return;
-  const data = event.data;
-  if (!data || data.source !== "loom-clone-bubble") return;
-
-  if (data.type === "drag-start") {
-    const iframe = document.getElementById(IFRAME_ID);
-    if (!iframe) return;
-    // offsetX/offsetY = where on the iframe the user clicked, relative to
-    // the iframe's top-left. We pin that point to the cursor for the
-    // whole drag.
-    dragState = {
-      offsetX: data.offsetX ?? 0,
-      offsetY: data.offsetY ?? 0,
-    };
-    document.addEventListener("mousemove", onDragMove, true);
-    document.addEventListener("mouseup", onDragEnd, true);
   }
 });
