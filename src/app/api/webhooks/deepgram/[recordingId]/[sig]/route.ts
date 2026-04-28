@@ -5,7 +5,7 @@ import { mediaObjects } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { insertTranscript, type WordTimestamp } from "@/db/queries/transcripts";
 import { insertBlankAiOutput } from "@/db/queries/ai-outputs";
-import { enqueueProcessingJobs } from "@/lib/queue/enqueue-processing";
+import { enqueueAiJobs } from "@/lib/queue/enqueue-processing";
 
 type DeepgramWord = {
   word: string;
@@ -69,43 +69,24 @@ export async function POST(
     wordTimestamps,
   });
 
-  // Fetch the recording to get its composite key (needed for thumbnail job)
-  // and ensure it exists before fanning out.
-  const [rec] = await db
-    .select({
-      id: mediaObjects.id,
-      r2CompositeKey: mediaObjects.r2CompositeKey,
-    })
-    .from(mediaObjects)
-    .where(eq(mediaObjects.id, recordingId))
-    .limit(1);
-
-  if (!rec?.r2CompositeKey) {
-    console.error(
-      `[webhook/deepgram] recording ${recordingId} has no composite key; skipping processing`
-    );
-    return NextResponse.json({ ok: true });
-  }
-
-  // Pre-create the ai_outputs row so the 4 UPDATE-based jobs have a target.
+  // Pre-create the ai_outputs row so the 3 UPDATE-based jobs have a target.
   const llmModel = process.env.LLM_MODEL_ID ?? "claude-sonnet-4-6";
   await insertBlankAiOutput(recordingId, llmModel);
 
-  // Flip to 'processing' and fan out the 4 jobs. The last job to finish
-  // will call flipToReadyIfComplete and move status to 'ready'.
+  // Flip to 'processing' and fan out the 3 transcript-dependent AI jobs.
+  // Thumbnail + preview-sprite were already enqueued at upload-complete
+  // time (they don't need the transcript). The last job to finish — AI
+  // or thumbnail — calls flipToReadyIfComplete and moves status to 'ready'.
   await db
     .update(mediaObjects)
     .set({ status: "processing" })
     .where(eq(mediaObjects.id, recordingId));
 
   try {
-    await enqueueProcessingJobs({
-      mediaObjectId: recordingId,
-      compositeKey: rec.r2CompositeKey,
-    });
+    await enqueueAiJobs({ mediaObjectId: recordingId });
   } catch (err) {
     console.error(
-      `[webhook/deepgram] failed to enqueue processing jobs for ${recordingId}:`,
+      `[webhook/deepgram] failed to enqueue AI jobs for ${recordingId}:`,
       err
     );
   }

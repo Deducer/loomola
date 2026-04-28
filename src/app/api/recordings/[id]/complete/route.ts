@@ -6,7 +6,12 @@ import { db } from "@/db";
 import { mediaObjects } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import type { TrackKind } from "@/lib/recording/types";
-import { enqueuePlaybackTranscode, enqueueTranscription } from "@/lib/queue/boss";
+import {
+  enqueuePlaybackTranscode,
+  enqueuePreviewSprite,
+  enqueueThumbnail,
+  enqueueTranscription,
+} from "@/lib/queue/boss";
 
 type CompleteRequest = {
   tracks: Partial<
@@ -138,7 +143,11 @@ export async function POST(
     );
   }
 
-  // Post-upload jobs need the finished composite object.
+  // Post-upload jobs need the finished composite object. Thumbnail and
+  // preview-sprite don't depend on the transcript, so kick them off here
+  // in parallel with Deepgram instead of fanning out from the webhook —
+  // saves the Deepgram round-trip on the dashboard thumbnail's critical
+  // path. The transcript-dependent AI jobs still fire from the webhook.
   if (keyUpdates.r2CompositeKey) {
     try {
       await Promise.all([
@@ -147,6 +156,14 @@ export async function POST(
           compositeKey: keyUpdates.r2CompositeKey,
         }),
         enqueuePlaybackTranscode({
+          mediaObjectId: recording.id,
+          compositeKey: keyUpdates.r2CompositeKey,
+        }),
+        enqueueThumbnail({
+          mediaObjectId: recording.id,
+          compositeKey: keyUpdates.r2CompositeKey,
+        }),
+        enqueuePreviewSprite({
           mediaObjectId: recording.id,
           compositeKey: keyUpdates.r2CompositeKey,
         }),

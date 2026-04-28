@@ -121,3 +121,27 @@ export async function enqueuePlaybackTranscode(
     expireInSeconds: 7200,
   });
 }
+
+const COMPOSITE_JOB_OPTIONS = {
+  retryLimit: 3,
+  retryDelay: 30,
+  retryBackoff: true,
+  expireInSeconds: 1800,
+};
+
+/** Thumbnail + preview-sprite only need the composite key, not the
+ * transcript — they're enqueued at upload-complete time alongside the
+ * Deepgram request and the playback transcode, instead of waiting for
+ * the Deepgram webhook to fan out. Saves the Deepgram round-trip on
+ * the dashboard-card thumbnail's critical path. */
+export async function enqueueThumbnail(data: ThumbnailJobData): Promise<void> {
+  const boss = await getBoss();
+  await boss.send(THUMBNAIL_JOB, data, COMPOSITE_JOB_OPTIONS);
+}
+
+export async function enqueuePreviewSprite(
+  data: PreviewSpriteJobData
+): Promise<void> {
+  const boss = await getBoss();
+  await boss.send(PREVIEW_SPRITE_JOB, data, COMPOSITE_JOB_OPTIONS);
+}

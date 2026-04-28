@@ -8,11 +8,6 @@ import {
   ACTION_ITEMS_JOB,
   type ActionItemsJobData,
 } from "./jobs/extract-action-items";
-import { THUMBNAIL_JOB, type ThumbnailJobData } from "./jobs/generate-thumbnail";
-import {
-  PREVIEW_SPRITE_JOB,
-  type PreviewSpriteJobData,
-} from "./jobs/generate-preview-sprite";
 
 const COMMON_OPTIONS = {
   retryLimit: 3,
@@ -21,29 +16,22 @@ const COMMON_OPTIONS = {
   expireInSeconds: 1800,
 };
 
-export async function enqueueProcessingJobs(params: {
+/**
+ * Enqueues the three transcript-dependent AI jobs (title+summary, chapters,
+ * action items). Called from the Deepgram webhook once the transcript is
+ * persisted. Thumbnail and preview-sprite are NOT here — they don't need
+ * the transcript and are enqueued earlier, at upload-complete time.
+ */
+export async function enqueueAiJobs(params: {
   mediaObjectId: string;
-  compositeKey: string;
 }): Promise<void> {
   const boss = await getBoss();
   const ts: TitleSummaryJobData = { mediaObjectId: params.mediaObjectId };
   const ch: ChaptersJobData = { mediaObjectId: params.mediaObjectId };
   const ai: ActionItemsJobData = { mediaObjectId: params.mediaObjectId };
-  const th: ThumbnailJobData = {
-    mediaObjectId: params.mediaObjectId,
-    compositeKey: params.compositeKey,
-  };
-  const ps: PreviewSpriteJobData = {
-    mediaObjectId: params.mediaObjectId,
-    compositeKey: params.compositeKey,
-  };
   await Promise.all([
     boss.send(TITLE_SUMMARY_JOB, ts, COMMON_OPTIONS),
     boss.send(CHAPTERS_JOB, ch, COMMON_OPTIONS),
     boss.send(ACTION_ITEMS_JOB, ai, COMMON_OPTIONS),
-    boss.send(THUMBNAIL_JOB, th, COMMON_OPTIONS),
-    // Preview-sprite is best-effort and not required for status:ready —
-    // viewer page hides hover-scrub gracefully when the sprite key is null.
-    boss.send(PREVIEW_SPRITE_JOB, ps, COMMON_OPTIONS),
   ]);
 }
