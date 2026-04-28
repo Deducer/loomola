@@ -21,71 +21,128 @@ async function writeState(value) {
   }
 }
 
+const ACTIVE_TAB_KEY = "loomCloneActiveBubbleTabId";
+
+async function readActiveBubbleTabId() {
+  const r = await chrome.storage.session.get(ACTIVE_TAB_KEY);
+  return r[ACTIVE_TAB_KEY] ?? null;
+}
+
+async function writeActiveBubbleTabId(tabId) {
+  if (tabId === null) {
+    await chrome.storage.session.remove(ACTIVE_TAB_KEY);
+  } else {
+    await chrome.storage.session.set({ [ACTIVE_TAB_KEY]: tabId });
+  }
+}
+
 /**
- * Inject the bubble into a tab by sending its content script a "show" message.
- * If the content script isn't loaded (the tab was open before the extension
- * was installed / reloaded), inject it programmatically first via
- * chrome.scripting, then send the message.
+ * Whether a tab is one we can or should inject the bubble into.
+ * Excludes loom.dissonance.cloud (the recording UI itself) and chrome://-
+ * style URLs that extensions can't touch.
+ */
+function isInjectableTab(tab) {
+  if (!tab?.id || !tab.url) return false;
+  if (tab.url.startsWith("https://loom.dissonance.cloud")) return false;
+  if (
+    tab.url.startsWith("chrome://") ||
+    tab.url.startsWith("chrome-extension://") ||
+    tab.url.startsWith("edge://") ||
+    tab.url.startsWith("about:")
+  ) {
+    return false;
+  }
+  return true;
+}
+
+async function showBubbleInTab(tabId, state) {
+  try {
+    await chrome.tabs.sendMessage(tabId, {
+      type: "loom-clone:show-bubble",
+      state,
+    });
+  } catch {
+    // Content script not loaded yet (tab was open before extension was
+    // installed / reloaded). Inject programmatically then resend.
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ["content-script-page.js"],
+      });
+      await chrome.tabs.sendMessage(tabId, {
+        type: "loom-clone:show-bubble",
+        state,
+      });
+      console.log(
+        `[loom-clone-ext:bg] injected content-script into tab ${tabId}`
+      );
+    } catch (err) {
+      console.warn(
+        `[loom-clone-ext:bg] couldn't inject into tab ${tabId}:`,
+        err
+      );
+    }
+  }
+}
+
+async function hideBubbleInTab(tabId) {
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: "loom-clone:hide-bubble" });
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Show the bubble in the currently-active tab only. We can't reliably know
+ * which tab the user picked in the share-picker (Chrome doesn't expose that
+ * mapping), so the model is "follow the active tab" — bubble appears in
+ * whichever tab the user is currently viewing. When they switch to the tab
+ * they're presenting from, the bubble follows them and ends up in the
+ * recording naturally.
  */
 async function broadcastShowBubble(state) {
-  const tabs = await chrome.tabs.query({});
-  await Promise.all(
-    tabs.map(async (tab) => {
-      if (!tab.id || !tab.url) return;
-      if (tab.url.startsWith("https://loom.dissonance.cloud")) return;
-      // chrome:// and similar pages are off-limits for extensions.
-      if (
-        tab.url.startsWith("chrome://") ||
-        tab.url.startsWith("chrome-extension://") ||
-        tab.url.startsWith("edge://") ||
-        tab.url.startsWith("about:")
-      ) {
-        return;
-      }
-      try {
-        await chrome.tabs.sendMessage(tab.id, {
-          type: "loom-clone:show-bubble",
-          state,
-        });
-      } catch {
-        // No content script in this tab — likely opened before the extension
-        // was installed/reloaded. Inject programmatically and retry.
-        try {
-          await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
-            files: ["content-script-page.js"],
-          });
-          await chrome.tabs.sendMessage(tab.id, {
-            type: "loom-clone:show-bubble",
-            state,
-          });
-          console.log(
-            `[loom-clone-ext:bg] injected content-script into tab ${tab.id}`
-          );
-        } catch (err) {
-          console.warn(
-            `[loom-clone-ext:bg] couldn't inject into tab ${tab.id}:`,
-            err
-          );
-        }
-      }
-    })
-  );
+  const [activeTab] = await chrome.tabs.query({
+    active: true,
+    currentWindow: true,
+  });
+  if (!isInjectableTab(activeTab)) {
+    console.log(
+      "[loom-clone-ext:bg] active tab is not injectable; skipping for now"
+    );
+    return;
+  }
+  await showBubbleInTab(activeTab.id, state);
+  await writeActiveBubbleTabId(activeTab.id);
 }
 
 async function broadcastHideBubble() {
+  // Sweep every tab — some may have stale bubbles if the user switched
+  // around during recording.
   const tabs = await chrome.tabs.query({});
   await Promise.all(
-    tabs.map(async (tab) => {
-      if (!tab.id) return;
-      try {
-        await chrome.tabs.sendMessage(tab.id, { type: "loom-clone:hide-bubble" });
-      } catch {
-        // ignore
-      }
-    })
+    tabs.map((tab) => (tab.id ? hideBubbleInTab(tab.id) : null))
   );
+  await writeActiveBubbleTabId(null);
 }
+
+// As the user switches tabs during recording, move the bubble with them so
+// it lands in whichever tab they end up presenting from.
+chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+  const state = await readState();
+  if (!state) return;
+  const previous = await readActiveBubbleTabId();
+  if (previous !== null && previous !== tabId) {
+    await hideBubbleInTab(previous);
+  }
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  if (!isInjectableTab(tab)) {
+    await writeActiveBubbleTabId(null);
+    return;
+  }
+  await showBubbleInTab(tabId, state);
+  await writeActiveBubbleTabId(tabId);
+});
 
 /**
  * Forward a position update from any tab back to the loom-clone tab so the

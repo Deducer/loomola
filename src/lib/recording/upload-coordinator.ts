@@ -2,6 +2,36 @@ import type { TrackKind } from "./types";
 
 const TARGET_PART_SIZE = 8 * 1024 * 1024; // 8MB per part; S3 requires >=5MB except last
 
+/**
+ * Slice an ordered list of Blobs into two groups: the first contains exactly
+ * `target` bytes (splitting a Blob if needed), the second contains the rest.
+ * Used so multipart uploads emit uniformly-sized parts despite the source
+ * MediaRecorder chunks being arbitrarily sized.
+ */
+export function takeExactBytes(
+  blobs: Blob[],
+  target: number
+): { taken: Blob[]; remaining: Blob[]; takenSize: number } {
+  const taken: Blob[] = [];
+  const remaining: Blob[] = [];
+  let need = target;
+  for (const b of blobs) {
+    if (need <= 0) {
+      remaining.push(b);
+      continue;
+    }
+    if (b.size <= need) {
+      taken.push(b);
+      need -= b.size;
+      continue;
+    }
+    taken.push(b.slice(0, need));
+    remaining.push(b.slice(need));
+    need = 0;
+  }
+  return { taken, remaining, takenSize: target - need };
+}
+
 export type TrackUploadInit = {
   kind: TrackKind;
   key: string;
@@ -91,16 +121,29 @@ export function createUploadCoordinator(
   }
 
   function flushBuffer(kind: TrackKind, state: TrackState, isFinal: boolean) {
-    if (state.bufferSize === 0) return;
-    if (!isFinal && state.bufferSize < TARGET_PART_SIZE) return;
+    // R2 (and many S3 implementations) require every non-trailing part of a
+    // multipart upload to have the SAME exact length. MediaRecorder hands us
+    // arbitrarily-sized blobs, so we accumulate and slice off exactly
+    // TARGET_PART_SIZE bytes per part, leaving the remainder in the buffer.
+    // Only the very last part (isFinal && bufferSize > 0) may be smaller.
+    while (true) {
+      if (state.bufferSize === 0) return;
+      const isLastPart = isFinal && state.bufferSize <= TARGET_PART_SIZE;
+      if (!isLastPart && state.bufferSize < TARGET_PART_SIZE) return;
 
-    const body = new Blob(state.buffer);
-    state.buffer = [];
-    state.bufferSize = 0;
-    const partNumber = state.nextPartNumber++;
-    state.totalBytes += body.size;
-    const promise = uploadPart(kind, state, partNumber, body);
-    state.inFlight.push(promise);
+      const target = isLastPart ? state.bufferSize : TARGET_PART_SIZE;
+      const { taken, remaining, takenSize } = takeExactBytes(state.buffer, target);
+      state.buffer = remaining;
+      state.bufferSize -= takenSize;
+
+      const body = new Blob(taken);
+      const partNumber = state.nextPartNumber++;
+      state.totalBytes += body.size;
+      const promise = uploadPart(kind, state, partNumber, body);
+      state.inFlight.push(promise);
+
+      if (isLastPart) return;
+    }
   }
 
   return {
