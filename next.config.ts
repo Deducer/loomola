@@ -8,7 +8,9 @@ const buildTime = new Date().toISOString();
 const nextConfig: NextConfig = {
   output: "standalone",
   experimental: {
-    serverActions: { bodySizeLimit: "2mb" },
+    // 4 MB is enough headroom for a 2 MB logo upload (with multipart
+    // overhead) plus all the brand-form text fields.
+    serverActions: { bodySizeLimit: "4mb" },
   },
   env: {
     NEXT_PUBLIC_BUILD_TIME: buildTime,

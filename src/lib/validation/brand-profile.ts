@@ -36,3 +36,17 @@ export const brandProfileInputSchema = z.object({
 });
 
 export type BrandProfileInput = z.infer<typeof brandProfileInputSchema>;
+
+export const LOGO_MAX_BYTES = 2 * 1024 * 1024; // 2 MB
+export const LOGO_ALLOWED_MIME = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/svg+xml",
+]);
+export const LOGO_MIME_TO_EXT: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+  "image/svg+xml": "svg",
+};

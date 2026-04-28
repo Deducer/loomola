@@ -57,6 +57,13 @@
       "when": 1777514400000,
       "tag": "0007_playback_mp4",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1777748400000,
+      "tag": "0008_brand_logo_r2_key",
+      "breakpoints": true
     }
   ]
 }

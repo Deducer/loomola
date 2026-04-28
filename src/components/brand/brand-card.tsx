@@ -20,11 +20,15 @@ export function BrandCard({ brand }: { brand: BrandProfile }) {
         </p>
       </div>
       {brand.logoUrl && (
+        // Container is height-constrained; object-contain handles both
+        // inline wordmarks (renders at natural width up to max-width)
+        // and square icons (renders compact). Same approach we use in
+        // the share page header.
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={brand.logoUrl}
           alt=""
-          className="h-8 w-8 shrink-0 rounded bg-bg-elevated object-contain p-1"
+          className="h-8 max-w-[120px] shrink-0 object-contain"
         />
       )}
     </Link>
