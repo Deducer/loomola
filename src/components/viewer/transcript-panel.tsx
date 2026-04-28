@@ -29,8 +29,17 @@ export function TranscriptPanel({
 
   useEffect(() => {
     if (activeIdx < 0) return;
+    const container = containerRef.current;
     const el = paragraphRefs.current[activeIdx];
-    if (el) el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    if (!container || !el) return;
+    // Scroll only the transcript container — never the document. Element.scrollIntoView
+    // walks every ancestor scroll container including <html>, which yanks the share
+    // page away from the player every time the active paragraph changes.
+    const containerRect = container.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    if (elRect.top >= containerRect.top && elRect.bottom <= containerRect.bottom) return;
+    const targetTop = container.scrollTop + (elRect.top - containerRect.top);
+    container.scrollTo({ top: targetTop, behavior: "smooth" });
   }, [activeIdx]);
 
   if (paragraphs.length === 0) {
