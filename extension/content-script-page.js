@@ -53,6 +53,24 @@ function removeIframe() {
 
 console.log("[loom-clone-ext] content-script-page loaded on", location.href);
 
+/**
+ * `chrome.runtime.sendMessage` throws synchronously with
+ * "Extension context invalidated" when an old content script keeps
+ * running after the extension is reloaded — the runtime is gone but the
+ * script is still alive in the page. Wrap every send so orphaned scripts
+ * fail silently instead of bombing the console.
+ */
+function safeSendMessage(msg) {
+  try {
+    if (!chrome.runtime?.id) return Promise.resolve(undefined);
+    return chrome.runtime.sendMessage(msg).catch(() => undefined);
+  } catch {
+    // Old content script after extension reload — clean up our orphan UI.
+    removeIframe();
+    return Promise.resolve(undefined);
+  }
+}
+
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg?.type === "loom-clone:show-bubble") {
     console.log("[loom-clone-ext] show-bubble", msg.state);
@@ -65,14 +83,9 @@ chrome.runtime.onMessage.addListener((msg) => {
 
 // On script load, ask the background if a recording is currently in progress.
 // (Handles tabs opened or refreshed mid-recording.)
-chrome.runtime
-  .sendMessage({ type: "loom-clone:get-state" })
-  .then((response) => {
-    if (response?.state) ensureIframe(response.state);
-  })
-  .catch(() => {
-    /* ignore — pages where the script can't reach the background */
-  });
+void safeSendMessage({ type: "loom-clone:get-state" }).then((response) => {
+  if (response?.state) ensureIframe(response.state);
+});
 
 // Listen for drag updates from the iframe and forward to background.
 window.addEventListener("message", (event) => {
@@ -104,11 +117,9 @@ window.addEventListener("message", (event) => {
     const cy = rect.top + rect.height / 2;
     const fracX = Math.min(1, Math.max(0, cx / viewportW));
     const fracY = Math.min(1, Math.max(0, cy / viewportH));
-    chrome.runtime
-      .sendMessage({
-        type: "loom-clone:bubble-drag",
-        position: { x: fracX, y: fracY },
-      })
-      .catch(() => {});
+    void safeSendMessage({
+      type: "loom-clone:bubble-drag",
+      position: { x: fracX, y: fracY },
+    });
   }
 });

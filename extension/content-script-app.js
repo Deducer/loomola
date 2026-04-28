@@ -24,6 +24,21 @@
   // isolated world and the page world).
   document.documentElement.dataset.loomCloneExtension = "1";
 
+  /**
+   * `chrome.runtime.sendMessage` throws synchronously with
+   * "Extension context invalidated" when an old content script keeps
+   * running after the extension is reloaded — the runtime is gone but
+   * the script is still alive in the page. Swallow it.
+   */
+  function safeSendMessage(msg) {
+    try {
+      if (!chrome.runtime?.id) return Promise.resolve(undefined);
+      return chrome.runtime.sendMessage(msg).catch(() => undefined);
+    } catch {
+      return Promise.resolve(undefined);
+    }
+  }
+
   // App → background
   window.addEventListener("message", (event) => {
     const data = event.data;
@@ -31,20 +46,14 @@
 
     if (data.type === "recording-started") {
       console.log("[loom-clone-ext] recording-started", data);
-      chrome.runtime
-        .sendMessage({
-          type: "loom-clone:recording-started",
-          bubbleShape: data.bubbleShape,
-          bubbleSize: data.bubbleSize,
-        })
-        .catch((err) =>
-          console.warn("[loom-clone-ext] recording-started send failed:", err)
-        );
+      void safeSendMessage({
+        type: "loom-clone:recording-started",
+        bubbleShape: data.bubbleShape,
+        bubbleSize: data.bubbleSize,
+      });
     } else if (data.type === "recording-stopped") {
       console.log("[loom-clone-ext] recording-stopped");
-      chrome.runtime
-        .sendMessage({ type: "loom-clone:recording-stopped" })
-        .catch(() => {});
+      void safeSendMessage({ type: "loom-clone:recording-stopped" });
     } else if (data.type === "ping-extension") {
       // App is asking whether we're installed — respond directly.
       window.postMessage(
