@@ -66,83 +66,55 @@ export function BubbleClient({
     };
   }, []);
 
-  // Drag is owned by the iframe. setPointerCapture on documentElement
-  // guarantees every pointermove/pointerup for this pointer id is
-  // delivered here regardless of where the cursor goes — including
-  // when the cursor stays inside the iframe (where the parent's
-  // document would never see the events) or escapes the viewport.
+  // Drag architecture: the iframe just signals start/end. The parent
+  // does ALL the cursor-tracking work because it sets the iframe's
+  // pointer-events to "none" on drag-start, which makes the iframe
+  // transparent to mouse events for its entire rectangle. From that
+  // point on the parent's document receives every mousemove and the
+  // mouseup that ends the drag — no cross-iframe weirdness, no pointer
+  // capture, no possibility of the drag outliving the held button.
   //
-  // We send screen-space deltas to the parent. clientX/Y would create a
-  // feedback loop: when the parent moves the iframe in response to a
-  // delta, the cursor's iframe-relative clientX/Y shifts even though
-  // the cursor didn't actually move, so the next event reports a stale
-  // delta. screenX/Y is global to the OS cursor and is unaffected by
-  // iframe motion.
+  // We still post a drag-end on pointerup here as a safety net for the
+  // race where the user clicks-and-releases faster than the parent can
+  // flip pointer-events to "none" (the postMessage is async). The
+  // parent treats this and document.mouseup as idempotent.
   useEffect(() => {
-    let dragging = false;
-    let lastScreenX = 0;
-    let lastScreenY = 0;
-    let activePointerId: number | null = null;
-    const captureTarget = document.documentElement;
+    let started = false;
 
     function onPointerDown(e: PointerEvent) {
       if (e.button !== 0) return;
       e.preventDefault();
-      try {
-        captureTarget.setPointerCapture(e.pointerId);
-      } catch {
-        /* capture is best-effort */
-      }
-      activePointerId = e.pointerId;
-      dragging = true;
-      lastScreenX = e.screenX;
-      lastScreenY = e.screenY;
+      started = true;
+      // offsetX/Y is the click's iframe-local position. The parent uses
+      // it to keep the click-point stuck to the cursor for the whole
+      // drag (newIframeLeft = cursorX - offsetX).
       window.parent.postMessage(
-        { source: "loom-clone-bubble", type: "drag-start" },
+        {
+          source: "loom-clone-bubble",
+          type: "drag-start",
+          offsetX: e.clientX,
+          offsetY: e.clientY,
+        },
         "*"
       );
     }
 
-    function onPointerMove(e: PointerEvent) {
-      if (!dragging || e.pointerId !== activePointerId) return;
-      const dx = e.screenX - lastScreenX;
-      const dy = e.screenY - lastScreenY;
-      if (dx === 0 && dy === 0) return;
-      lastScreenX = e.screenX;
-      lastScreenY = e.screenY;
+    function onPointerUp() {
+      if (!started) return;
+      started = false;
       window.parent.postMessage(
-        { source: "loom-clone-bubble", type: "drag-move", dx, dy },
+        { source: "loom-clone-bubble", type: "drag-end-from-iframe" },
         "*"
       );
     }
 
-    function endDrag(e: PointerEvent) {
-      if (!dragging) return;
-      if (activePointerId !== null && e.pointerId !== activePointerId) return;
-      dragging = false;
-      if (activePointerId !== null) {
-        try {
-          captureTarget.releasePointerCapture(activePointerId);
-        } catch {
-          /* already released */
-        }
-      }
-      activePointerId = null;
-      window.parent.postMessage(
-        { source: "loom-clone-bubble", type: "drag-end" },
-        "*"
-      );
-    }
-
-    captureTarget.addEventListener("pointerdown", onPointerDown);
-    captureTarget.addEventListener("pointermove", onPointerMove);
-    captureTarget.addEventListener("pointerup", endDrag);
-    captureTarget.addEventListener("pointercancel", endDrag);
+    window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
     return () => {
-      captureTarget.removeEventListener("pointerdown", onPointerDown);
-      captureTarget.removeEventListener("pointermove", onPointerMove);
-      captureTarget.removeEventListener("pointerup", endDrag);
-      captureTarget.removeEventListener("pointercancel", endDrag);
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
     };
   }, []);
 
