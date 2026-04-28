@@ -25,14 +25,21 @@
   document.documentElement.dataset.loomCloneExtension = "1";
 
   /**
-   * `chrome.runtime.sendMessage` throws synchronously with
-   * "Extension context invalidated" when an old content script keeps
-   * running after the extension is reloaded — the runtime is gone but
-   * the script is still alive in the page. Swallow it.
+   * After extension reload, the orphan content script's chrome.runtime is
+   * dead — any chrome.* call throws "Extension context invalidated"
+   * synchronously. Defensive helpers so we never let those escape.
    */
-  function safeSendMessage(msg) {
+  function isContextAlive() {
     try {
-      if (!chrome.runtime?.id) return Promise.resolve(undefined);
+      return !!chrome?.runtime?.id;
+    } catch {
+      return false;
+    }
+  }
+
+  function safeSendMessage(msg) {
+    if (!isContextAlive()) return Promise.resolve(undefined);
+    try {
       return chrome.runtime.sendMessage(msg).catch(() => undefined);
     } catch {
       return Promise.resolve(undefined);
@@ -65,18 +72,26 @@
 
   // Background → app (re-broadcast to the main window so the React tree
   // can listen via plain window.addEventListener("message", ...)).
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (msg?.type === "loom-clone:bubble-position") {
-      window.postMessage(
-        {
-          source: "loom-clone-extension",
-          type: "bubble-position",
-          position: msg.position,
-        },
-        "*"
-      );
-    }
-  });
+  try {
+    chrome.runtime.onMessage.addListener((msg) => {
+      try {
+        if (msg?.type === "loom-clone:bubble-position") {
+          window.postMessage(
+            {
+              source: "loom-clone-extension",
+              type: "bubble-position",
+              position: msg.position,
+            },
+            "*"
+          );
+        }
+      } catch {
+        /* orphan callback after reload — silent */
+      }
+    });
+  } catch {
+    /* runtime already dead at script init — nothing to do */
+  }
 
   // Broadcast "installed" on load — handles the case where the React app
   // is already listening when this script runs.

@@ -54,35 +54,54 @@ function removeIframe() {
 console.log("[loom-clone-ext] content-script-page loaded on", location.href);
 
 /**
- * `chrome.runtime.sendMessage` throws synchronously with
- * "Extension context invalidated" when an old content script keeps
- * running after the extension is reloaded — the runtime is gone but the
- * script is still alive in the page. Wrap every send so orphaned scripts
- * fail silently instead of bombing the console.
+ * After the extension is reloaded at chrome://extensions, Chrome stops the
+ * old content script's runtime but does NOT re-inject the new script into
+ * already-open tabs — the orphan script keeps running with a dead
+ * `chrome.runtime` and any chrome.* call throws "Extension context
+ * invalidated" synchronously. Wrap EVERY chrome.* access (sendMessage,
+ * onMessage.addListener, runtime.id check) in try/catch so the orphan
+ * fails silently instead of spamming the console.
  */
-function safeSendMessage(msg) {
+function isContextAlive() {
   try {
-    if (!chrome.runtime?.id) return Promise.resolve(undefined);
+    return !!chrome?.runtime?.id;
+  } catch {
+    return false;
+  }
+}
+
+function safeSendMessage(msg) {
+  if (!isContextAlive()) {
+    removeIframe();
+    return Promise.resolve(undefined);
+  }
+  try {
     return chrome.runtime.sendMessage(msg).catch(() => undefined);
   } catch {
-    // Old content script after extension reload — clean up our orphan UI.
     removeIframe();
     return Promise.resolve(undefined);
   }
 }
 
-chrome.runtime.onMessage.addListener((msg) => {
-  if (msg?.type === "loom-clone:show-bubble") {
-    console.log("[loom-clone-ext] show-bubble", msg.state);
-    ensureIframe(msg.state ?? {});
-  } else if (msg?.type === "loom-clone:hide-bubble") {
-    console.log("[loom-clone-ext] hide-bubble");
-    removeIframe();
-  }
-});
+try {
+  chrome.runtime.onMessage.addListener((msg) => {
+    try {
+      if (msg?.type === "loom-clone:show-bubble") {
+        console.log("[loom-clone-ext] show-bubble", msg.state);
+        ensureIframe(msg.state ?? {});
+      } else if (msg?.type === "loom-clone:hide-bubble") {
+        console.log("[loom-clone-ext] hide-bubble");
+        removeIframe();
+      }
+    } catch {
+      /* orphan callback after reload — silent */
+    }
+  });
+} catch {
+  /* runtime already dead at script init — nothing more to do */
+}
 
 // On script load, ask the background if a recording is currently in progress.
-// (Handles tabs opened or refreshed mid-recording.)
 void safeSendMessage({ type: "loom-clone:get-state" }).then((response) => {
   if (response?.state) ensureIframe(response.state);
 });
