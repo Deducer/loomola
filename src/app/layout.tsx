@@ -6,8 +6,30 @@ import { Toaster } from "sonner";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Loom Clone",
-  description: "Self-hosted screen recording",
+  title: "loomola",
+  applicationName: "loomola",
+  description: "Self-hosted screen recording by loomola",
+  icons: {
+    icon: [
+      {
+        url: "/branding/favicon-32.png",
+        sizes: "32x32",
+        type: "image/png",
+      },
+      {
+        url: "/branding/loomola-logo-mark-192.png",
+        sizes: "192x192",
+        type: "image/png",
+      },
+    ],
+    apple: [
+      {
+        url: "/branding/loomola-logo-mark.png",
+        sizes: "512x512",
+        type: "image/png",
+      },
+    ],
+  },
 };
 
 export default function RootLayout({

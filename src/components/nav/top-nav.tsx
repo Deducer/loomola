@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Video } from "lucide-react";
+import Image from "next/image";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
@@ -27,10 +27,17 @@ export function TopNav({ userEmail, activePath }: Props) {
       <div className="mx-auto flex h-14 max-w-5xl items-center gap-6 px-6">
         <Link
           href="/"
-          className="flex items-center gap-2 text-sm font-semibold text-text"
+          className="flex items-center"
+          aria-label="loomola home"
         >
-          <Video className="h-4 w-4 text-accent" />
-          <span>Loom Clone</span>
+          <Image
+            src="/branding/loomola-logo-inline.png"
+            alt="loomola"
+            width={120}
+            height={32}
+            priority
+            className="h-8 w-auto"
+          />
         </Link>
         <ul className="flex items-center gap-5">
           {items.map((item) => (
