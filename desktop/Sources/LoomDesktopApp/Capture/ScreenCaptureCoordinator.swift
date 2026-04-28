@@ -12,7 +12,15 @@ final class ScreenCaptureCoordinator: NSObject, SCStreamOutput, SCStreamDelegate
     private var recordingURL: URL?
     private var recordingStartDate: Date?
     private var recordingFinishContinuation: CheckedContinuation<RecordedScreenFile, Error>?
+    private var recordingFinishFallbackTask: Task<Void, Never>?
     private let sampleQueue = DispatchQueue(label: "cloud.dissonance.loom.desktop.screen-samples")
+
+    deinit {
+        recordingFinishFallbackTask?.cancel()
+        recordingFinishContinuation?.resume(
+            throwing: ScreenCaptureCoordinatorError.recordingStoppedBeforeFileWasReady
+        )
+    }
 
     func requestShareableContent() async throws {
         _ = try await SCShareableContent.current
@@ -118,13 +126,16 @@ final class ScreenCaptureCoordinator: NSObject, SCStreamOutput, SCStreamDelegate
         else {
             throw ScreenCaptureCoordinatorError.notRecording
         }
+        guard recordingFinishContinuation == nil else {
+            throw ScreenCaptureCoordinatorError.stopAlreadyInProgress
+        }
 
         let fallbackDuration = Date().timeIntervalSince(recordingStartDate)
         return try await withCheckedThrowingContinuation { continuation in
             recordingFinishContinuation = continuation
             do {
                 try stream.removeRecordingOutput(recordingOutput)
-                Task { @MainActor in
+                recordingFinishFallbackTask = Task { @MainActor in
                     try? await stream.stopCapture()
                     self.stream = nil
                     self.recordingOutput = nil
@@ -135,8 +146,7 @@ final class ScreenCaptureCoordinator: NSObject, SCStreamOutput, SCStreamDelegate
                     }
                 }
             } catch {
-                recordingFinishContinuation = nil
-                continuation.resume(throwing: error)
+                finishRecording(throwing: error)
             }
         }
     }
@@ -153,10 +163,27 @@ final class ScreenCaptureCoordinator: NSObject, SCStreamOutput, SCStreamDelegate
     }
 }
 
-enum ScreenCaptureCoordinatorError: Error {
+enum ScreenCaptureCoordinatorError: LocalizedError {
     case noDisplays
     case notRecording
     case recordingRequiresMacOS15
+    case recordingStoppedBeforeFileWasReady
+    case stopAlreadyInProgress
+
+    var errorDescription: String? {
+        switch self {
+        case .noDisplays:
+            return "No displays were available to record."
+        case .notRecording:
+            return "There is no active screen recording to stop."
+        case .recordingRequiresMacOS15:
+            return "Local MP4 recording requires macOS 15 or newer."
+        case .recordingStoppedBeforeFileWasReady:
+            return "Recording stopped before the MP4 file was ready."
+        case .stopAlreadyInProgress:
+            return "Recording stop is already in progress."
+        }
+    }
 }
 
 struct RecordedScreenFile: Equatable, Sendable {
@@ -171,23 +198,41 @@ extension ScreenCaptureCoordinator: SCRecordingOutputDelegate {
         didFailWithError error: Error
     ) {
         Task { @MainActor [weak self] in
-            self?.recordingFinishContinuation?.resume(throwing: error)
-            self?.recordingFinishContinuation = nil
+            self?.finishRecording(throwing: error)
         }
     }
 
     nonisolated func recordingOutputDidFinishRecording(_ recordingOutput: SCRecordingOutput) {
         let recordedDuration = CMTimeGetSeconds(recordingOutput.recordedDuration)
         Task { @MainActor [weak self] in
-            guard let self, let recordingURL else { return }
+            guard let self else { return }
+            guard let recordingURL else {
+                finishRecording(throwing: ScreenCaptureCoordinatorError.recordingStoppedBeforeFileWasReady)
+                return
+            }
             finishRecording(url: recordingURL, duration: recordedDuration.isFinite ? recordedDuration : 0)
         }
     }
 
     private func finishRecording(url: URL, duration: Double) {
-        recordingFinishContinuation?.resume(
+        guard let continuation = recordingFinishContinuation else {
+            return
+        }
+        recordingFinishFallbackTask?.cancel()
+        recordingFinishFallbackTask = nil
+        recordingFinishContinuation = nil
+        continuation.resume(
             returning: RecordedScreenFile(url: url, durationSeconds: duration)
         )
+    }
+
+    private func finishRecording(throwing error: Error) {
+        guard let continuation = recordingFinishContinuation else {
+            return
+        }
+        recordingFinishFallbackTask?.cancel()
+        recordingFinishFallbackTask = nil
         recordingFinishContinuation = nil
+        continuation.resume(throwing: error)
     }
 }

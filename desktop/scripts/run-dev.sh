@@ -3,6 +3,12 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+if pgrep -x LoomDesktop >/dev/null; then
+  echo "Loom Desktop is already running."
+  echo "Quit the existing Loom Desktop window before starting a new dev build."
+  exit 1
+fi
+
 if [[ -f .env.local ]]; then
   echo "Loading desktop/.env.local"
   set -a
