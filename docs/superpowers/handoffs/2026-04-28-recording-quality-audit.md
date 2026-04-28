@@ -19,11 +19,15 @@
   - MediaRecorder now falls back through supported WebM/Opus MIME types.
   - Composite/screen/camera tracks now request explicit resolution-aware video bitrates.
   - Audio tracks now request a 128kbps Opus bitrate.
+- Playback now has a browser-friendly MP4 path:
+  - New uploads enqueue a `transcode_playback` background job after the composite upload completes.
+  - The job keeps the original WebM, creates a fast-start H.264/AAC MP4 copy with ffmpeg, uploads it to R2, and stores the key on `media_objects.playback_mp4_key`.
+  - Share and edit pages prefer the MP4 when available, then fall back to the original composite while the job is still pending or for older recordings.
 
 ## Quality Risks Found
 
-1. **WebM-only playback is the largest quality/product risk.**
-   Chrome records WebM well, but Safari/iOS support is not where a premium Loom alternative should be. The app should keep accepting WebM uploads, then generate MP4/HLS playback assets with ffmpeg after upload.
+1. **Existing recordings do not have MP4 playback copies yet.**
+   New uploads will generate MP4 assets automatically, but older recordings need a small backfill job if we want the whole library to benefit.
 
 2. **No adaptive playback yet.**
    The dashboard/player serve one full-size composite file. This is simple and works, but mobile/cellular viewers download the same large bitrate as desktop viewers.
@@ -39,9 +43,8 @@
 
 ## Recommended Next Builds
 
-1. Add a post-upload `transcode_playback` queue job that creates an MP4 playback copy from the composite WebM.
-2. Add an optional HLS output (`.m3u8` + segments) for adaptive playback once MP4 is stable.
+1. Run a backfill for existing recordings that have `r2_composite_key` but no `playback_mp4_key`.
+2. Add optional HLS output (`.m3u8` + segments) for adaptive playback once MP4 is stable in production.
 3. Generate short hover-preview files instead of loading the full composite on dashboard hover.
 4. Add recording diagnostics to saved metadata: chosen MIME type, requested bitrate, actual dimensions, track count, and browser.
 5. Run a manual QA matrix on an M4 Pro Mac: 1080p/1440p/4k, with and without camera, with and without system audio, 30-second and 5-minute recordings.
-

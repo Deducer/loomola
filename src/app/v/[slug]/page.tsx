@@ -91,7 +91,8 @@ export default async function SharePage({
 
   const displayTitle = rec.title || rec.aiTitle || "Untitled recording";
   const isReady = rec.status === "ready" && !!rec.r2CompositeKey;
-  const signedVideoUrl = isReady ? await presignGet(rec.r2CompositeKey!) : null;
+  const playbackKey = rec.playbackMp4Key ?? rec.r2CompositeKey;
+  const signedVideoUrl = isReady && playbackKey ? await presignGet(playbackKey) : null;
   const playerAccent = accent ?? "#8b5cf6";
 
   return (

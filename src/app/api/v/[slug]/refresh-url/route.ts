@@ -13,7 +13,8 @@ export async function POST(
   if (!rec) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
-  if (rec.status !== "ready" || !rec.r2CompositeKey) {
+  const playbackKey = rec.playbackMp4Key ?? rec.r2CompositeKey;
+  if (rec.status !== "ready" || !playbackKey) {
     return NextResponse.json({ error: "not_ready" }, { status: 409 });
   }
   if (rec.passwordHash) {
@@ -23,6 +24,6 @@ export async function POST(
       return NextResponse.json({ error: "locked" }, { status: 403 });
     }
   }
-  const url = await presignGet(rec.r2CompositeKey);
+  const url = await presignGet(playbackKey);
   return NextResponse.json({ url });
 }

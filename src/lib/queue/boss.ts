@@ -25,6 +25,11 @@ import {
   runPreviewSpriteJob,
   type PreviewSpriteJobData,
 } from "./jobs/generate-preview-sprite";
+import {
+  TRANSCODE_PLAYBACK_JOB,
+  runTranscodePlaybackJob,
+  type TranscodePlaybackJobData,
+} from "./jobs/transcode-playback";
 
 let cached: PgBoss | null = null;
 let starting: Promise<PgBoss> | null = null;
@@ -52,6 +57,7 @@ async function init(): Promise<PgBoss> {
   await boss.createQueue(ACTION_ITEMS_JOB);
   await boss.createQueue(THUMBNAIL_JOB);
   await boss.createQueue(PREVIEW_SPRITE_JOB);
+  await boss.createQueue(TRANSCODE_PLAYBACK_JOB);
 
   await boss.work<TranscribeJobData>(TRANSCRIBE_JOB, async (jobs) => {
     for (const job of jobs) await runTranscribeJob(job.data);
@@ -71,8 +77,11 @@ async function init(): Promise<PgBoss> {
   await boss.work<PreviewSpriteJobData>(PREVIEW_SPRITE_JOB, async (jobs) => {
     for (const job of jobs) await runPreviewSpriteJob(job.data);
   });
+  await boss.work<TranscodePlaybackJobData>(TRANSCODE_PLAYBACK_JOB, async (jobs) => {
+    for (const job of jobs) await runTranscodePlaybackJob(job.data);
+  });
 
-  console.log("[pg-boss] started and workers registered (6 queues)");
+  console.log("[pg-boss] started and workers registered (7 queues)");
   return boss;
 }
 
@@ -98,5 +107,17 @@ export async function enqueueTranscription(
     retryDelay: 30,
     retryBackoff: true,
     expireInSeconds: 3600,
+  });
+}
+
+export async function enqueuePlaybackTranscode(
+  data: TranscodePlaybackJobData
+): Promise<void> {
+  const boss = await getBoss();
+  await boss.send(TRANSCODE_PLAYBACK_JOB, data, {
+    retryLimit: 2,
+    retryDelay: 60,
+    retryBackoff: true,
+    expireInSeconds: 7200,
   });
 }

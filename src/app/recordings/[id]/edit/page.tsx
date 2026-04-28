@@ -40,6 +40,7 @@ export default async function EditRecordingPage({
     rec.trimEndSec != null ? parseFloat(String(rec.trimEndSec)) : null;
 
   const downloadKinds: Array<{ kind: string; key: string | null; fileKind: string }> = [
+    { kind: "Playback MP4", key: rec.playbackMp4Key, fileKind: "playback" },
     { kind: "Composite", key: rec.r2CompositeKey, fileKind: "composite" },
     { kind: "Screen", key: rec.r2ScreenKey, fileKind: "screen" },
     { kind: "Camera", key: rec.r2CameraKey, fileKind: "camera" },
@@ -52,13 +53,14 @@ export default async function EditRecordingPage({
       .map(async (d) => ({
         kind: d.kind,
         href: await presignGet(d.key!, {
-          filename: `${rec.slug}-${d.fileKind}.webm`,
+          filename: `${rec.slug}-${d.fileKind}.${d.fileKind === "playback" ? "mp4" : "webm"}`,
         }),
       }))
   );
 
   const isReady = rec.status === "ready" && !!rec.r2CompositeKey;
-  const signedVideoUrl = isReady ? await presignGet(rec.r2CompositeKey!) : null;
+  const playbackKey = rec.playbackMp4Key ?? rec.r2CompositeKey;
+  const signedVideoUrl = isReady && playbackKey ? await presignGet(playbackKey) : null;
 
   let dropoffBuckets: number[] = [];
   if (isReady) {

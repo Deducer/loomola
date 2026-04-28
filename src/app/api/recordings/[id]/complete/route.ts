@@ -6,7 +6,7 @@ import { db } from "@/db";
 import { mediaObjects } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import type { TrackKind } from "@/lib/recording/types";
-import { enqueueTranscription } from "@/lib/queue/boss";
+import { enqueuePlaybackTranscode, enqueueTranscription } from "@/lib/queue/boss";
 
 type CompleteRequest = {
   tracks: Partial<
@@ -138,15 +138,21 @@ export async function POST(
     );
   }
 
-  // Enqueue transcription only if we have a composite to transcribe.
+  // Post-upload jobs need the finished composite object.
   if (keyUpdates.r2CompositeKey) {
     try {
-      await enqueueTranscription({
-        mediaObjectId: recording.id,
-        compositeKey: keyUpdates.r2CompositeKey,
-      });
+      await Promise.all([
+        enqueueTranscription({
+          mediaObjectId: recording.id,
+          compositeKey: keyUpdates.r2CompositeKey,
+        }),
+        enqueuePlaybackTranscode({
+          mediaObjectId: recording.id,
+          compositeKey: keyUpdates.r2CompositeKey,
+        }),
+      ]);
     } catch (err) {
-      console.error("[complete] failed to enqueue transcription:", err);
+      console.error("[complete] failed to enqueue post-upload jobs:", err);
       // Fall through — user still gets a slug; stuck row is visible via status.
     }
   }

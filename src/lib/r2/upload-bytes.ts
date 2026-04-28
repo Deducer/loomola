@@ -1,4 +1,5 @@
 import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { createReadStream } from "node:fs";
 import { getR2Client, r2BucketName } from "./client";
 
 /**
@@ -17,6 +18,23 @@ export async function uploadBytes(
       Bucket: r2BucketName(),
       Key: key,
       Body: bytes,
+      ContentType: contentType,
+    })
+  );
+}
+
+/** Uploads a local generated artifact, such as an ffmpeg-created playback MP4. */
+export async function uploadFile(
+  key: string,
+  filePath: string,
+  contentType: string
+): Promise<void> {
+  const client = getR2Client();
+  await client.send(
+    new PutObjectCommand({
+      Bucket: r2BucketName(),
+      Key: key,
+      Body: createReadStream(filePath),
       ContentType: contentType,
     })
   );

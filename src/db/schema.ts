@@ -93,6 +93,7 @@ export const mediaObjects = pgTable("media_objects", {
   }),
   durationSeconds: numeric("duration_seconds"),
   r2CompositeKey: text("r2_composite_key"),
+  playbackMp4Key: text("playback_mp4_key"),
   r2ScreenKey: text("r2_screen_key"),
   r2CameraKey: text("r2_camera_key"),
   r2MicKey: text("r2_mic_key"),
