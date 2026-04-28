@@ -24,9 +24,7 @@ import { Countdown } from "./countdown";
 import { RecordingHud } from "./recording-hud";
 import { FinishedView } from "./finished-view";
 import { UploadProgress } from "./upload-progress";
-import { isDocPiPAvailable } from "./pip-window";
-import { BubblePipWindow } from "./bubble-pip-window";
-import { ExtensionBridge, useExtensionInstalled } from "./extension-bridge";
+import { ExtensionBridge } from "./extension-bridge";
 
 type Action =
   | { type: "begin-preparing" }
@@ -62,7 +60,6 @@ function reducer(state: RecorderState, action: Action): RecorderState {
 }
 
 export function RecordFlow({ brands }: { brands: BrandProfile[] }) {
-  const extensionInstalled = useExtensionInstalled();
   const [state, dispatch] = useReducer(reducer, { kind: "idle" } as RecorderState);
   const handleRef = useRef<RecorderHandle | null>(null);
   const preparedRef = useRef<PreparedRecording | null>(null);
@@ -294,16 +291,8 @@ export function RecordFlow({ brands }: { brands: BrandProfile[] }) {
   if (state.kind === "recording") {
     const settings = pendingSettingsRef.current;
     const prepared = preparedRef.current;
-    // Prefer the Chrome extension's frameless bubble when available; fall
-    // back to the docPiP window otherwise. When the extension is installed
-    // we suppress the docPiP to avoid a double-bubble.
     const showExtensionBridge =
       !!settings?.cameraEnabled && !!prepared;
-    const showBubblePip =
-      !extensionInstalled &&
-      isDocPiPAvailable() &&
-      !!settings?.cameraEnabled &&
-      !!prepared?.cameraStream;
     return (
       <>
         <RecordingHud
@@ -316,15 +305,6 @@ export function RecordFlow({ brands }: { brands: BrandProfile[] }) {
             bubbleShape={settings.bubbleShape}
             bubbleSize={settings.bubbleSize}
             positionController={prepared.positionController}
-          />
-        )}
-        {showBubblePip && settings && prepared?.cameraStream && (
-          <BubblePipWindow
-            cameraStream={prepared.cameraStream}
-            bubbleShape={settings.bubbleShape}
-            bubbleSize={settings.bubbleSize}
-            positionController={prepared.positionController}
-            onStop={onStop}
           />
         )}
       </>
