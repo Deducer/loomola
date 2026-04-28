@@ -40,7 +40,7 @@
 - **Background jobs:** `pg-boss` on the same Postgres (no Redis). Lazy-init via `getBoss()` — first send creates the queues. 6 queues: `transcribe`, `title_summary`, `chapters`, `action_items`, `thumbnail`, `preview_sprite`.
 - **Object storage:** Cloudflare R2 (S3-compatible). Browser → R2 multipart upload via signed-URL-per-part flow (see `src/lib/r2/`). Zero egress (R2 free tier on reads).
 - **Player:** Plyr 3.x wrapping `<video>`. Custom `ChapterSegmentsOverlay` portaled to `document.body`. Hover-scrub previews via Plyr's `previewThumbnails` config + a server-served WebVTT.
-- **Recording:** Browser MediaRecorder x5 (composite + screen + camera + mic + system-audio raw tracks). Compositor canvas (`composite-canvas.ts`) draws screen + bubble for the composite. Bubble position is mutable mid-recording via a `BubblePositionController` ref.
+- **Recording:** Browser MediaRecorder x5 (composite + screen + camera + mic + system-audio raw tracks). Compositor runs in a Web Worker (`composite.worker.ts`) using `MediaStreamTrackProcessor` + `OffscreenCanvas` + `MediaStreamTrackGenerator` so it survives /record being a background tab. The worker only does screen aspect-fit + letterbox — the bubble is **not** drawn into the composite; the Chrome extension injects a `/bubble` iframe into every tab (including /record), and that iframe lives in the screen pixels `getDisplayMedia` already gives us. Single source of truth for the on-screen bubble.
 - **Testing:** Vitest (unit) under `tests/unit/`, Playwright (E2E) under `tests/e2e/` (skipped without `TEST_CREATOR_*` env vars).
 - **Container:** `node:22-alpine` multi-stage build, Next.js standalone output, system `ffmpeg` apk-installed for the thumbnail + sprite jobs.
 - **Secrets:** Doppler CLI injected at boot (`doppler run -- node ...`). Never put env vars directly in Coolify except `DOPPLER_TOKEN`.
@@ -60,7 +60,7 @@
 Stage 1 (M1–M11) + Stage 1.5a/b + Stage 1.6 + Stage 1.7 + Stage 1.8 all shipped. Big-picture surface area:
 
 - `/` — dashboard with folder sidebar, search, sort/filter, drag-and-drop card-to-folder, hover card menu (Edit / Move / Delete). Cards click into the **edit** page (creator-first), not the share page.
-- `/record` — recording flow: pre-record form → preparing (permissions) → 3-2-1 countdown → recording → uploading → finished. Bubble can be dragged anywhere on screen during recording (Chrome `documentPictureInPicture` window with the live camera).
+- `/record` — recording flow: pre-record form → preparing (permissions) → 3-2-1 countdown → recording → uploading → finished. The bubble is rendered by the Chrome extension companion (`extension/`), which injects a frameless `/bubble` iframe into every tab the user is on. Drag updates the iframe's `left/top` and posts a fractional position back to /record via the extension's message bridge; that position is also persisted in `chrome.storage.session` so the iframe respawns at the same spot when the user switches tabs.
 - `/v/:slug` — visitor share page. Watch-first: title → player (Loom-style chapter segments + hover-scrub thumbnails) → AI summary → action items → chapters list → tabs (Transcript · Comments). Brand-themed when a brand profile is assigned (logo + accent + tagline + custom Google Font + CTA pill + footer text).
 - `/recordings/[id]/edit` — creator console. Sticky preview on the left, settings + trim + downloads + analytics + danger-zone on the right (capped at 360px so the video gets the lion's share of the page).
 - `/brands` — brand profile CRUD with full Layer 2 theming fields.
@@ -77,15 +77,14 @@ Stage 1 (M1–M11) + Stage 1.5a/b + Stage 1.6 + Stage 1.7 + Stage 1.8 all shippe
 
 ## Known Issues / Quirks
 
-- **Chrome-only by design** — `getDisplayMedia` system-audio capture is Chrome-only; Document PiP is Chrome-only. Safari/Firefox would partially work (no system audio, no floating bubble).
-- **Recording the entire screen + bubble pip** — the bubble pip window is itself visible in a full-screen capture (along with Chrome's small window-chrome titlebar on the pip). For tab/window recordings it's invisible to the capture. The cleanest fix would be a Chrome extension that injects a true frameless circle bubble as a content-script DOM element in the captured tab — that's how Loom does it for the web.
+- **Chrome-only by design** — `getDisplayMedia` system-audio capture is Chrome-only; the worker compositor uses `MediaStreamTrackProcessor` / `MediaStreamTrackGenerator` (Chrome 94+). Safari/Firefox aren't supported. The bubble extension is also Chrome MV3 only.
+- **Extension reload protocol** — when iterating on `extension/`, after pushing the change reload the extension at `chrome://extensions` (manifest version is bumped on each set of changes specifically so this is visible) AND close any tabs that were open during the previous extension lifetime. Old "orphan" content scripts keep running in already-open tabs and they share the page with the freshly-injected new script — `safeSendMessage` is hardened to no-op when context is dead, but tabs are cleaner with the orphan gone entirely.
 - **No adaptive bitrate** — R2 serves one composite file; mobile/cellular viewers eat the full bitrate. Deferred.
 - **`ai-schemas.test.ts > rejects negative timestamps`** — fails (pre-existing); minor schema gap, not blocking.
 - **Mobile** — designed desktop-first. No focused mobile pass yet; share page renders OK below 768px but not battle-tested.
 
 ## Out-of-Stage-1 Scope (deferred, separate spec when picked up)
 
-- Chrome extension companion (frameless circle bubble — see "Known Issues")
 - macOS menubar / desktop app implementation (native, ScreenCaptureKit on macOS) — spec + scaffold exist under `docs/superpowers/specs/2026-04-27-macos-desktop-app-design.md`, `docs/superpowers/plans/2026-04-27-macos-desktop-app.md`, and `desktop/`.
 - iOS / Android apps
 - Multi-tenant / team invites
