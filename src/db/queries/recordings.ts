@@ -1,11 +1,20 @@
 import { db } from "@/db";
 import { mediaObjects, brandProfiles, aiOutputs, comments } from "@/db/schema";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { presignGet } from "@/lib/r2/presigned-get";
 
 export type Recording = typeof mediaObjects.$inferSelect;
 
+export type RecordingBrand = {
+  id: string;
+  name: string;
+  accentColor: string;
+  logoUrl: string | null;
+  logoUrlDark: string | null;
+};
+
 export type RecordingWithBrand = Recording & {
-  brand: { id: string; name: string; accentColor: string; logoUrl: string | null } | null;
+  brand: RecordingBrand | null;
   aiTitle: string | null;
   aiSummary: string | null;
   aiChapters: Array<{ start_sec: number; title: string }> | null;
@@ -14,16 +23,57 @@ export type RecordingWithBrand = Recording & {
   commentCount: number;
 };
 
+type BrandJoinFields = {
+  brandId: string | null;
+  brandName: string | null;
+  brandAccent: string | null;
+  brandLogoUrl: string | null;
+  brandLogoR2Key: string | null;
+  brandLogoR2KeyDark: string | null;
+};
+
+const BRAND_SELECT = {
+  brandId: brandProfiles.id,
+  brandName: brandProfiles.name,
+  brandAccent: brandProfiles.accentColor,
+  brandLogoUrl: brandProfiles.logoUrl,
+  brandLogoR2Key: brandProfiles.logoR2Key,
+  brandLogoR2KeyDark: brandProfiles.logoR2KeyDark,
+} as const;
+
+/**
+ * Resolves the joined brand columns into a render-ready brand shape:
+ * - logoUrl: presigned R2 URL when logo_r2_key is set, else legacy logo_url
+ * - logoUrlDark: presigned R2 URL when logo_r2_key_dark is set, else null
+ *
+ * Existing /branding/* paths in legacy logo_url keep working untouched.
+ */
+async function resolveBrand(row: BrandJoinFields): Promise<RecordingBrand | null> {
+  if (!row.brandId) return null;
+  const [logoUrl, logoUrlDark] = await Promise.all([
+    row.brandLogoR2Key
+      ? presignGet(row.brandLogoR2Key)
+      : Promise.resolve(row.brandLogoUrl),
+    row.brandLogoR2KeyDark
+      ? presignGet(row.brandLogoR2KeyDark)
+      : Promise.resolve(null),
+  ]);
+  return {
+    id: row.brandId,
+    name: row.brandName!,
+    accentColor: row.brandAccent!,
+    logoUrl,
+    logoUrlDark,
+  };
+}
+
 export async function listRecordings(
   ownerId: string
 ): Promise<RecordingWithBrand[]> {
   const rows = await db
     .select({
       rec: mediaObjects,
-      brandId: brandProfiles.id,
-      brandName: brandProfiles.name,
-      brandAccent: brandProfiles.accentColor,
-      brandLogoUrl: brandProfiles.logoUrl,
+      ...BRAND_SELECT,
       aiTitle: aiOutputs.titleSuggested,
       aiSummary: aiOutputs.summary,
       aiChapters: aiOutputs.chapters,
@@ -44,18 +94,18 @@ export async function listRecordings(
   const { listViewCounts } = await import("@/db/queries/views");
   const counts = await listViewCounts(rows.map((r) => r.rec.id));
 
-  return rows.map((r) => ({
-    ...r.rec,
-    brand: r.brandId
-      ? { id: r.brandId, name: r.brandName!, accentColor: r.brandAccent!, logoUrl: r.brandLogoUrl ?? null }
-      : null,
-    aiTitle: r.aiTitle,
-    aiSummary: r.aiSummary,
-    aiChapters: r.aiChapters as RecordingWithBrand["aiChapters"],
-    aiActionItems: r.aiActionItems as RecordingWithBrand["aiActionItems"],
-    viewCount: counts[r.rec.id] ?? 0,
-    commentCount: r.commentCount ?? 0,
-  }));
+  return Promise.all(
+    rows.map(async (r) => ({
+      ...r.rec,
+      brand: await resolveBrand(r),
+      aiTitle: r.aiTitle,
+      aiSummary: r.aiSummary,
+      aiChapters: r.aiChapters as RecordingWithBrand["aiChapters"],
+      aiActionItems: r.aiActionItems as RecordingWithBrand["aiActionItems"],
+      viewCount: counts[r.rec.id] ?? 0,
+      commentCount: r.commentCount ?? 0,
+    }))
+  );
 }
 
 export async function getRecordingBySlug(
@@ -64,10 +114,7 @@ export async function getRecordingBySlug(
   const [row] = await db
     .select({
       rec: mediaObjects,
-      brandId: brandProfiles.id,
-      brandName: brandProfiles.name,
-      brandAccent: brandProfiles.accentColor,
-      brandLogoUrl: brandProfiles.logoUrl,
+      ...BRAND_SELECT,
       aiTitle: aiOutputs.titleSuggested,
       aiSummary: aiOutputs.summary,
       aiChapters: aiOutputs.chapters,
@@ -88,9 +135,7 @@ export async function getRecordingBySlug(
   const viewCount = await countViews(row.rec.id);
   return {
     ...row.rec,
-    brand: row.brandId
-      ? { id: row.brandId, name: row.brandName!, accentColor: row.brandAccent!, logoUrl: row.brandLogoUrl ?? null }
-      : null,
+    brand: await resolveBrand(row),
     aiTitle: row.aiTitle,
     aiSummary: row.aiSummary,
     aiChapters: row.aiChapters as RecordingWithBrand["aiChapters"],
@@ -177,10 +222,7 @@ export async function getRecordingForEdit(
   const [row] = await db
     .select({
       rec: mediaObjects,
-      brandId: brandProfiles.id,
-      brandName: brandProfiles.name,
-      brandAccent: brandProfiles.accentColor,
-      brandLogoUrl: brandProfiles.logoUrl,
+      ...BRAND_SELECT,
       aiTitle: aiOutputs.titleSuggested,
       aiSummary: aiOutputs.summary,
       aiChapters: aiOutputs.chapters,
@@ -207,14 +249,7 @@ export async function getRecordingForEdit(
   const viewCount = await countViews(row.rec.id);
   return {
     ...row.rec,
-    brand: row.brandId
-      ? {
-          id: row.brandId,
-          name: row.brandName!,
-          accentColor: row.brandAccent!,
-          logoUrl: row.brandLogoUrl ?? null,
-        }
-      : null,
+    brand: await resolveBrand(row),
     aiTitle: row.aiTitle,
     aiSummary: row.aiSummary,
     aiChapters: row.aiChapters as RecordingWithBrand["aiChapters"],

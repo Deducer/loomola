@@ -57,9 +57,10 @@ function formatErrors(
  */
 async function uploadLogoIfPresent(
   formData: FormData,
-  ownerId: string
+  ownerId: string,
+  fieldName: string
 ): Promise<{ key: string } | { error: string } | undefined> {
-  const file = formData.get("logoFile");
+  const file = formData.get(fieldName);
   if (!(file instanceof File) || file.size === 0) return undefined;
 
   if (!LOGO_ALLOWED_MIME.has(file.type)) {
@@ -84,13 +85,18 @@ export async function createBrandProfileAction(
   if (!parsed.success) {
     return { ok: false, fieldErrors: formatErrors(parsed.error) };
   }
-  const logo = await uploadLogoIfPresent(formData, user.id);
-  if (logo && "error" in logo) {
-    return { ok: false, fieldErrors: { logo: logo.error } };
+  const light = await uploadLogoIfPresent(formData, user.id, "logoFile");
+  if (light && "error" in light) {
+    return { ok: false, fieldErrors: { logo: light.error } };
+  }
+  const dark = await uploadLogoIfPresent(formData, user.id, "logoFileDark");
+  if (dark && "error" in dark) {
+    return { ok: false, fieldErrors: { logo: dark.error } };
   }
   await createBrandProfile(user.id, {
     ...parsed.data,
-    logoR2Key: logo?.key,
+    logoR2Key: light?.key,
+    logoR2KeyDark: dark?.key,
   });
   revalidatePath("/brands");
   redirect("/brands");
@@ -106,14 +112,19 @@ export async function updateBrandProfileAction(
   if (!parsed.success) {
     return { ok: false, fieldErrors: formatErrors(parsed.error) };
   }
-  const logo = await uploadLogoIfPresent(formData, user.id);
-  if (logo && "error" in logo) {
-    return { ok: false, fieldErrors: { logo: logo.error } };
+  const light = await uploadLogoIfPresent(formData, user.id, "logoFile");
+  if (light && "error" in light) {
+    return { ok: false, fieldErrors: { logo: light.error } };
+  }
+  const dark = await uploadLogoIfPresent(formData, user.id, "logoFileDark");
+  if (dark && "error" in dark) {
+    return { ok: false, fieldErrors: { logo: dark.error } };
   }
   const updated = await updateBrandProfile(id, user.id, {
     ...parsed.data,
-    // undefined → preserve existing key; string → set; (null path unused for now).
-    logoR2Key: logo ? logo.key : undefined,
+    // undefined → preserve existing key on this column; string → set.
+    logoR2Key: light ? light.key : undefined,
+    logoR2KeyDark: dark ? dark.key : undefined,
   });
   if (!updated) {
     return {

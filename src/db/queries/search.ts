@@ -9,6 +9,7 @@ import {
 } from "@/db/schema";
 import { and, eq, isNull, sql, type SQL } from "drizzle-orm";
 import type { RecordingWithBrand } from "./recordings";
+import { presignGet } from "@/lib/r2/presigned-get";
 
 export type SearchSort =
   | "date_desc"
@@ -99,6 +100,8 @@ export async function searchRecordings(params: {
       brandName: brandProfiles.name,
       brandAccent: brandProfiles.accentColor,
       brandLogoUrl: brandProfiles.logoUrl,
+      brandLogoR2Key: brandProfiles.logoR2Key,
+      brandLogoR2KeyDark: brandProfiles.logoR2KeyDark,
       aiTitle: aiOutputs.titleSuggested,
       aiSummary: aiOutputs.summary,
       aiChapters: aiOutputs.chapters,
@@ -116,21 +119,31 @@ export async function searchRecordings(params: {
     .limit(limit)
     .offset(offset);
 
-  return rows.map((r) => ({
-    ...r.rec,
-    brand: r.brandId
-      ? {
-          id: r.brandId,
-          name: r.brandName!,
-          accentColor: r.brandAccent!,
-          logoUrl: r.brandLogoUrl ?? null,
-        }
-      : null,
-    aiTitle: r.aiTitle,
-    aiSummary: r.aiSummary,
-    aiChapters: r.aiChapters as RecordingWithBrand["aiChapters"],
-    aiActionItems: r.aiActionItems as RecordingWithBrand["aiActionItems"],
-    viewCount: r.viewCount ?? 0,
-    commentCount: r.commentCount ?? 0,
-  }));
+  return Promise.all(
+    rows.map(async (r) => {
+      const brand = r.brandId
+        ? {
+            id: r.brandId,
+            name: r.brandName!,
+            accentColor: r.brandAccent!,
+            logoUrl: r.brandLogoR2Key
+              ? await presignGet(r.brandLogoR2Key)
+              : (r.brandLogoUrl ?? null),
+            logoUrlDark: r.brandLogoR2KeyDark
+              ? await presignGet(r.brandLogoR2KeyDark)
+              : null,
+          }
+        : null;
+      return {
+        ...r.rec,
+        brand,
+        aiTitle: r.aiTitle,
+        aiSummary: r.aiSummary,
+        aiChapters: r.aiChapters as RecordingWithBrand["aiChapters"],
+        aiActionItems: r.aiActionItems as RecordingWithBrand["aiActionItems"],
+        viewCount: r.viewCount ?? 0,
+        commentCount: r.commentCount ?? 0,
+      };
+    })
+  );
 }

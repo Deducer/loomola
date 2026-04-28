@@ -1,4 +1,4 @@
-import { Video } from "lucide-react";
+import Image from "next/image";
 import { signIn } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,15 +10,20 @@ export default async function LoginPage({
 }) {
   const params = await searchParams;
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
+    <div className="flex min-h-screen flex-col items-center justify-center gap-6 p-4">
+      <Image
+        src="/branding/loomola-logo-inline.png"
+        alt="loomola"
+        width={180}
+        height={48}
+        priority
+        className="h-12 w-auto"
+      />
       <form
         action={signIn}
         className="w-full max-w-sm space-y-5 rounded-xl border border-border bg-bg-subtle p-8"
       >
-        <div className="flex items-center gap-2">
-          <Video className="h-5 w-5 text-accent" />
-          <h1 className="text-xl font-semibold text-text">Sign in</h1>
-        </div>
+        <h1 className="text-base font-semibold text-text">Sign in</h1>
         {params.error && (
           <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2.5 text-xs text-destructive">
             {params.error}

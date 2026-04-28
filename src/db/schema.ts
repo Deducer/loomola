@@ -42,6 +42,7 @@ export const brandProfiles = pgTable("brand_profiles", {
   accentColor: text("accent_color").notNull(),
   logoUrl: text("logo_url"),
   logoR2Key: text("logo_r2_key"),
+  logoR2KeyDark: text("logo_r2_key_dark"),
   // Layer 2 — full-page theming on share pages.
   tagline: text("tagline"),
   fontFamily: text("font_family"),

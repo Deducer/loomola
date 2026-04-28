@@ -1,5 +1,6 @@
 import type { BrandProfile } from "@/db/queries/brand-profiles";
 import Link from "next/link";
+import { BrandLogo } from "./brand-logo";
 
 export function BrandCard({ brand }: { brand: BrandProfile }) {
   return (
@@ -19,18 +20,12 @@ export function BrandCard({ brand }: { brand: BrandProfile }) {
           {brand.accentColor}
         </p>
       </div>
-      {brand.logoUrl && (
-        // Container is height-constrained; object-contain handles both
-        // inline wordmarks (renders at natural width up to max-width)
-        // and square icons (renders compact). Same approach we use in
-        // the share page header.
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={brand.logoUrl}
-          alt=""
-          className="h-8 max-w-[120px] shrink-0 object-contain"
-        />
-      )}
+      <BrandLogo
+        light={brand.logoUrl}
+        dark={brand.logoUrlDark}
+        alt=""
+        className="h-8 max-w-[120px] shrink-0 object-contain"
+      />
     </Link>
   );
 }

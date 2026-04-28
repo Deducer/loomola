@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useActionState } from "react";
 import Link from "next/link";
 import { ColorSwatch } from "./color-swatch";
+import { LogoPicker } from "./logo-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -25,33 +26,8 @@ export function BrandForm({ action, initialValues, submitLabel }: Props) {
   );
 
   const errors = state && !state.ok ? state.fieldErrors : {};
-
-  // The currently displayed logo preview: either the brand's existing
-  // logo (resolved by server queries to a presigned R2 URL or legacy
-  // direct URL) or an object URL for a freshly-selected file.
-  const initialLogo = initialValues?.logoUrl ?? null;
-  const [previewUrl, setPreviewUrl] = useState<string | null>(initialLogo);
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
-  const fileRef = useRef<HTMLInputElement | null>(null);
-
-  // Object URLs for selected files have to be revoked or they leak.
-  useEffect(() => {
-    if (!pendingFile) return;
-    const url = URL.createObjectURL(pendingFile);
-    setPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [pendingFile]);
-
-  function onLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0] ?? null;
-    setPendingFile(f);
-    if (!f) setPreviewUrl(initialLogo);
-  }
-  function clearPendingLogo() {
-    setPendingFile(null);
-    setPreviewUrl(initialLogo);
-    if (fileRef.current) fileRef.current.value = "";
-  }
+  const initialLight = initialValues?.logoUrl ?? null;
+  const initialDark = initialValues?.logoUrlDark ?? null;
 
   return (
     <form action={formAction} className="space-y-5">
@@ -83,60 +59,25 @@ export function BrandForm({ action, initialValues, submitLabel }: Props) {
         error={errors.accentColor}
       />
 
-      <div>
-        <label
-          htmlFor="logoFile"
-          className="block text-xs font-semibold uppercase tracking-wider text-text-muted"
-        >
-          Logo{" "}
-          <span className="font-normal normal-case tracking-normal text-text-subtle">
-            (optional)
-          </span>
-        </label>
-        <div className="mt-1.5 flex items-center gap-4">
-          <div className="flex h-16 w-32 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-bg-elevated p-2">
-            {previewUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={previewUrl}
-                alt="Logo preview"
-                className="max-h-full max-w-full object-contain"
-              />
-            ) : (
-              <span className="text-[10px] uppercase tracking-wider text-text-subtle">
-                No logo
-              </span>
-            )}
-          </div>
-          <div className="min-w-0 flex-1">
-            <input
-              ref={fileRef}
-              id="logoFile"
-              name="logoFile"
-              type="file"
-              accept="image/png,image/jpeg,image/webp,image/svg+xml"
-              onChange={onLogoChange}
-              className="block w-full text-xs text-text-muted file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-bg-elevated file:px-3 file:py-1.5 file:text-xs file:text-text hover:file:bg-bg-elevated/70"
-            />
-            <p className="mt-1.5 text-xs text-text-subtle">
-              PNG / JPG / WebP / SVG, up to 2 MB. Inline (horizontal)
-              wordmarks render best in the share-page header.
-            </p>
-            {pendingFile && (
-              <button
-                type="button"
-                onClick={clearPendingLogo}
-                className="mt-1 text-xs text-text-subtle underline-offset-2 hover:text-text-muted hover:underline"
-              >
-                Cancel new upload
-              </button>
-            )}
-          </div>
-        </div>
-        {errors.logo && (
-          <p className="mt-1 text-xs text-destructive">{errors.logo}</p>
-        )}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <LogoPicker
+          name="logoFile"
+          label="Logo (light mode)"
+          hint="Shown when the share page is in light mode. PNG / JPG / WebP / SVG, up to 2 MB."
+          initialPreviewUrl={initialLight}
+          variant="light"
+        />
+        <LogoPicker
+          name="logoFileDark"
+          label="Logo (dark mode)"
+          hint="Optional. Falls back to the light-mode logo when not set."
+          initialPreviewUrl={initialDark}
+          variant="dark"
+        />
       </div>
+      {errors.logo && (
+        <p className="text-xs text-destructive">{errors.logo}</p>
+      )}
 
       <div className="border-t border-border pt-5">
         <h2 className="text-sm font-semibold text-text">Page theming</h2>

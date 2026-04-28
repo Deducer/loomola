@@ -64,6 +64,13 @@
       "when": 1777748400000,
       "tag": "0008_brand_logo_r2_key",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1777752000000,
+      "tag": "0009_brand_logo_dark",
+      "breakpoints": true
     }
   ]
 }

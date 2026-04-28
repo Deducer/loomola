@@ -7,6 +7,7 @@ import { getRecordingBySlug } from "@/db/queries/recordings";
 import { getTranscriptByRecording } from "@/db/queries/transcripts";
 import { listCommentsForRecording } from "@/db/queries/comments";
 import { presignGet } from "@/lib/r2/presigned-get";
+import { BrandLogo } from "@/components/brand/brand-logo";
 import { ViewerShell } from "@/components/viewer/viewer-shell";
 import { PasswordGate } from "@/components/viewer/password-gate";
 import { cookieName, verifyUnlockToken } from "@/lib/viewer/unlock-cookie";
@@ -20,6 +21,7 @@ export const metadata: Metadata = {
 type BrandLike = {
   name?: string | null;
   logoUrl?: string | null;
+  logoUrlDark?: string | null;
   accentColor?: string | null;
   tagline?: string | null;
   fontFamily?: string | null;
@@ -258,14 +260,12 @@ function BrandHeader({
       <header className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-3">
         <div className="flex flex-col gap-0.5">
           <div className="flex items-center gap-3">
-            {brand?.logoUrl && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={brand.logoUrl}
-                alt={brand.name ?? ""}
-                className="h-6 w-auto"
-              />
-            )}
+            <BrandLogo
+              light={brand?.logoUrl ?? null}
+              dark={brand?.logoUrlDark ?? null}
+              alt={brand?.name ?? ""}
+              className="h-6 w-auto object-contain"
+            />
             {brand?.name && (
               <span className="text-sm font-semibold text-text">{brand.name}</span>
             )}

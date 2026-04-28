@@ -7,21 +7,28 @@ import { presignGet } from "@/lib/r2/presigned-get";
 type BrandProfileRow = typeof brandProfiles.$inferSelect;
 
 /**
- * Public-facing brand profile shape. `logoUrl` is what the UI renders —
- * either a presigned R2 URL (if the brand has an uploaded logo via
- * logo_r2_key) or the legacy logo_url column (used for direct URLs and
- * the static /branding/ paths we manually wired earlier).
+ * Public-facing brand profile shape. `logoUrl` is the light-mode logo
+ * (presigned R2 URL if the brand has logo_r2_key set, else the legacy
+ * logo_url column for /branding/* paths and direct URLs). `logoUrlDark`
+ * is the dark-mode counterpart, presigned from logo_r2_key_dark when
+ * present. UI components fall back to the other variant when one is
+ * missing.
  */
-export type BrandProfile = Omit<BrandProfileRow, "logoR2Key"> & {
+export type BrandProfile = Omit<
+  BrandProfileRow,
+  "logoR2Key" | "logoR2KeyDark"
+> & {
   logoR2Key: string | null;
+  logoR2KeyDark: string | null;
+  logoUrlDark: string | null;
 };
 
 async function resolveLogo(row: BrandProfileRow): Promise<BrandProfile> {
-  if (row.logoR2Key) {
-    const presigned = await presignGet(row.logoR2Key);
-    return { ...row, logoUrl: presigned };
-  }
-  return row;
+  const [logoUrl, logoUrlDark] = await Promise.all([
+    row.logoR2Key ? presignGet(row.logoR2Key) : Promise.resolve(row.logoUrl),
+    row.logoR2KeyDark ? presignGet(row.logoR2KeyDark) : Promise.resolve(null),
+  ]);
+  return { ...row, logoUrl, logoUrlDark };
 }
 
 export async function listBrandProfiles(ownerId: string): Promise<BrandProfile[]> {
@@ -47,8 +54,10 @@ export async function getBrandProfile(
 }
 
 export type BrandProfileWrite = BrandProfileInput & {
-  /** Set when the user uploaded a new logo. Stored as the R2 key, presigned at read time. */
+  /** Set when the user uploaded a new light-mode logo. */
   logoR2Key?: string | null;
+  /** Set when the user uploaded a new dark-mode logo. */
+  logoR2KeyDark?: string | null;
 };
 
 export async function createBrandProfile(
@@ -63,6 +72,7 @@ export async function createBrandProfile(
       accentColor: input.accentColor,
       logoUrl: input.logoUrl ?? null,
       logoR2Key: input.logoR2Key ?? null,
+      logoR2KeyDark: input.logoR2KeyDark ?? null,
       tagline: input.tagline ?? null,
       fontFamily: input.fontFamily ?? null,
       ctaLabel: input.ctaLabel ?? null,
@@ -78,8 +88,8 @@ export async function updateBrandProfile(
   ownerId: string,
   input: BrandProfileWrite
 ): Promise<BrandProfileRow | null> {
-  // Preserve logo_r2_key when the caller didn't supply one — saves the
-  // text fields without forcing the user to re-upload.
+  // Preserve any logo column the caller didn't supply (undefined) — saves
+  // the text fields without forcing the user to re-upload images.
   const set: Partial<typeof brandProfiles.$inferInsert> = {
     name: input.name,
     accentColor: input.accentColor,
@@ -94,6 +104,9 @@ export async function updateBrandProfile(
     set.logoR2Key = input.logoR2Key;
     // A new upload supersedes any legacy direct URL.
     if (input.logoR2Key) set.logoUrl = null;
+  }
+  if (input.logoR2KeyDark !== undefined) {
+    set.logoR2KeyDark = input.logoR2KeyDark;
   }
   const [row] = await db
     .update(brandProfiles)
