@@ -54,6 +54,14 @@ function removeIframe() {
 console.log("[loom-clone-ext] content-script-page loaded on", location.href);
 
 /**
+ * The manifest now matches every URL including loom.dissonance.cloud,
+ * which means this script also runs inside the /bubble iframe itself.
+ * Without this guard we'd recursively inject another bubble iframe
+ * inside the bubble document. Top-level frames only.
+ */
+const IS_TOP_FRAME = window.top === window;
+
+/**
  * After the extension is reloaded at chrome://extensions, Chrome stops the
  * old content script's runtime but does NOT re-inject the new script into
  * already-open tabs — the orphan script keeps running with a dead
@@ -83,28 +91,30 @@ function safeSendMessage(msg) {
   }
 }
 
-try {
-  chrome.runtime.onMessage.addListener((msg) => {
-    try {
-      if (msg?.type === "loom-clone:show-bubble") {
-        console.log("[loom-clone-ext] show-bubble", msg.state);
-        ensureIframe(msg.state ?? {});
-      } else if (msg?.type === "loom-clone:hide-bubble") {
-        console.log("[loom-clone-ext] hide-bubble");
-        removeIframe();
+if (IS_TOP_FRAME) {
+  try {
+    chrome.runtime.onMessage.addListener((msg) => {
+      try {
+        if (msg?.type === "loom-clone:show-bubble") {
+          console.log("[loom-clone-ext] show-bubble", msg.state);
+          ensureIframe(msg.state ?? {});
+        } else if (msg?.type === "loom-clone:hide-bubble") {
+          console.log("[loom-clone-ext] hide-bubble");
+          removeIframe();
+        }
+      } catch {
+        /* orphan callback after reload — silent */
       }
-    } catch {
-      /* orphan callback after reload — silent */
-    }
-  });
-} catch {
-  /* runtime already dead at script init — nothing more to do */
-}
+    });
+  } catch {
+    /* runtime already dead at script init — nothing more to do */
+  }
 
-// On script load, ask the background if a recording is currently in progress.
-void safeSendMessage({ type: "loom-clone:get-state" }).then((response) => {
-  if (response?.state) ensureIframe(response.state);
-});
+  // On script load, ask the background if a recording is currently in progress.
+  void safeSendMessage({ type: "loom-clone:get-state" }).then((response) => {
+    if (response?.state) ensureIframe(response.state);
+  });
+}
 
 /**
  * Drag architecture (third time's the charm):
@@ -166,7 +176,7 @@ function endDrag() {
   dragState = null;
 }
 
-window.addEventListener("message", (event) => {
+if (IS_TOP_FRAME) window.addEventListener("message", (event) => {
   if (event.origin !== "https://loom.dissonance.cloud") return;
   const data = event.data;
   if (!data || data.source !== "loom-clone-bubble") return;

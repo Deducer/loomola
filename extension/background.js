@@ -38,12 +38,15 @@ async function writeActiveBubbleTabId(tabId) {
 
 /**
  * Whether a tab is one we can or should inject the bubble into.
- * Excludes loom.dissonance.cloud (the recording UI itself) and chrome://-
- * style URLs that extensions can't touch.
+ * loom.dissonance.cloud is intentionally allowed: in entire-screen
+ * recording mode the user often stays on /record, and without the
+ * bubble injected there they'd see no bubble at all until they
+ * switched tabs. The /record HUD's own camera preview coexists with
+ * the floating bubble overlay. Excludes only the chrome://-style URLs
+ * that extensions can't touch.
  */
 function isInjectableTab(tab) {
   if (!tab?.id || !tab.url) return false;
-  if (tab.url.startsWith("https://loom.dissonance.cloud")) return false;
   if (
     tab.url.startsWith("chrome://") ||
     tab.url.startsWith("chrome-extension://") ||
@@ -208,7 +211,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
  */
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.status !== "complete") return;
-  if (tab.url && tab.url.startsWith("https://loom.dissonance.cloud")) return;
+  if (!isInjectableTab(tab)) return;
   const state = await readState();
   if (!state) return;
   try {

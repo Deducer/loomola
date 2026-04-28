@@ -21,7 +21,6 @@
     },
     {
       "matches": ["<all_urls>"],
-      "exclude_matches": ["https://loom.dissonance.cloud/*"],
       "js": ["content-script-page.js"],
       "run_at": "document_idle"
     }
