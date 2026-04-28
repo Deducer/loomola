@@ -66,17 +66,23 @@ export function BubbleClient({
     };
   }, []);
 
-  // Drag: just signal "drag started" to the parent. The parent (the
-  // content script in the captured tab) takes over from there, tracking
-  // mousemove/mouseup on its OWN document — which keeps firing events
-  // even when the cursor leaves the iframe area. Doing it here would
-  // mean the iframe's window stops receiving pointermoves the moment the
-  // cursor exits, leaving the drag stuck or jumping.
+  // Drag: signal "drag started" to the parent with the click's
+  // iframe-relative offset. The parent uses (offsetX, offsetY) to
+  // position the iframe so the user's click point stays exactly under
+  // the cursor for the entire drag — proper "stick to cursor" UX.
+  //
+  // Document-level mousemove/mouseup happens in the parent so events
+  // keep firing wherever the cursor goes on the host page.
   useEffect(() => {
     function onPointerDown(e: PointerEvent) {
       e.preventDefault();
       window.parent.postMessage(
-        { source: "loom-clone-bubble", type: "drag-start" },
+        {
+          source: "loom-clone-bubble",
+          type: "drag-start",
+          offsetX: e.clientX,
+          offsetY: e.clientY,
+        },
         "*"
       );
     }

@@ -110,8 +110,14 @@ void safeSendMessage({ type: "loom-clone:get-state" }).then((response) => {
  * Drag handling lives here in the parent because the iframe's own pointer
  * events stop firing the moment the cursor leaves the iframe — leading to
  * "drags from far away" feeling stuck or jumping. The iframe just signals
- * "drag-start" and we take over with document-level mousemove/mouseup,
- * which keep firing regardless of where the cursor moves.
+ * "drag-start" with the click's iframe-relative offset; we use that
+ * offset to keep the click-point glued to the cursor on every mousemove.
+ *
+ *   newIframeLeft = cursorX - clickOffsetX
+ *   newIframeTop  = cursorY - clickOffsetY
+ *
+ * That formula makes the bubble "stick to the cursor" — wherever the user
+ * clicked on the bubble stays directly under the cursor for the whole drag.
  */
 let dragState = null;
 
@@ -119,15 +125,8 @@ function onDragMove(e) {
   if (!dragState) return;
   const iframe = document.getElementById(IFRAME_ID);
   if (!iframe) return;
-  if (!dragState.anchored) {
-    dragState.startMouseX = e.clientX;
-    dragState.startMouseY = e.clientY;
-    dragState.anchored = true;
-  }
-  const dx = e.clientX - dragState.startMouseX;
-  const dy = e.clientY - dragState.startMouseY;
-  iframe.style.left = `${dragState.startIframeLeft + dx}px`;
-  iframe.style.top = `${dragState.startIframeTop + dy}px`;
+  iframe.style.left = `${e.clientX - dragState.offsetX}px`;
+  iframe.style.top = `${e.clientY - dragState.offsetY}px`;
   iframe.style.right = "auto";
   iframe.style.bottom = "auto";
 }
@@ -161,13 +160,12 @@ window.addEventListener("message", (event) => {
   if (data.type === "drag-start") {
     const iframe = document.getElementById(IFRAME_ID);
     if (!iframe) return;
-    const rect = iframe.getBoundingClientRect();
+    // offsetX/offsetY = where on the iframe the user clicked, relative to
+    // the iframe's top-left. We pin that point to the cursor for the
+    // whole drag.
     dragState = {
-      anchored: false,
-      startMouseX: 0,
-      startMouseY: 0,
-      startIframeLeft: rect.left,
-      startIframeTop: rect.top,
+      offsetX: data.offsetX ?? 0,
+      offsetY: data.offsetY ?? 0,
     };
     document.addEventListener("mousemove", onDragMove, true);
     document.addEventListener("mouseup", onDragEnd, true);
