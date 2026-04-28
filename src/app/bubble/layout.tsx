@@ -12,9 +12,12 @@ export default function BubbleLayout({ children }: { children: ReactNode }) {
   return (
     <>
       <style>{`
+        :root {
+          color-scheme: light !important;
+        }
         html, body, #__next, [data-nextjs-scroll-focus-boundary] {
           background: transparent !important;
-          background-color: transparent !important;
+          background-color: rgba(0, 0, 0, 0) !important;
           background-image: none !important;
           margin: 0 !important;
           padding: 0 !important;
