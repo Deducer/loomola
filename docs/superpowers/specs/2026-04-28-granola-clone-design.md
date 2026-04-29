@@ -7,7 +7,9 @@
 
 ## TL;DR
 
-A self-hosted, Granola-faithful AI meeting note-taker built **as a third surface on top of the existing Loom_Clone backend**, not a separate stack. Audio meetings flow through the same `media_objects` polymorphic schema, the same R2 storage, the same Deepgram → Claude → pg-boss pipeline that already powers the Loom side. Capture is desktop-only (macOS, extending the existing `desktop/` Swift app); the web app at `loom.dissonance.cloud` is the unified browse/manage surface for both audio and video.
+A self-hosted, Granola-faithful AI meeting note-taker built **as a second surface on top of the existing Loom_Clone backend**, not a separate stack. Audio meetings flow through the same `media_objects` polymorphic schema, the same R2 storage, the same Deepgram → Claude → pg-boss pipeline that already powers the Loom side. Capture is desktop-only (macOS, extending the existing `desktop/` Swift app); the web app at `loom.dissonance.cloud` is the unified browse/manage surface for both audio and video, presented as **two tabs (Recordings | Notes)** sharing one folder/search system.
+
+The `/notes/:id` UI faithfully copies Granola's actual layout: a **single-column notes canvas** with a metadata pill row (Date · Attendees · Folder), a persistent bottom strip with a clickable volume waveform that **expands a floating transcript card**, and an explicit "Generate notes" action that runs the AI enhancement inline (no two-pane layout, no auto-fire). Original notes and the AI-enhanced version coexist via a top-right toggle.
 
 The MVP is "Granola, faithfully" plus three differentiator hooks designed to compound over time:
 - **Shared word dictionary** (used by both audio and video transcripts).
@@ -40,8 +42,8 @@ A separate stack (e.g., a new `granola.dissonance.cloud` deployment with its own
 ### Goals
 
 - Capture meeting audio reliably from Zoom, Google Meet, and Microsoft Teams without joining as a bot and without triggering on non-meeting microphone activity.
-- Two-pane note-taking surface during the meeting (your notes left, transcript right post-meeting).
-- AI-generated summary that **incorporates your raw notes** as the spine, with the transcript filling in around them.
+- **Granola-faithful UI**: single-column notes canvas with a clickable bottom waveform that expands a floating transcript card. No two-pane. Persistent bottom strip with a contextual status indicator. Original / AI-enhanced toggle in the top-right (`✦⌄`).
+- AI-enhanced version that **preserves your raw notes verbatim where you wrote something specific**, and **integrates / expands sparse notes** into structure using transcript context. Both versions coexist; toggle anytime.
 - Speaker labeling that scales: manual rename for MVP, with the schema and data shape that make voice-print auto-recognition cheap to add later.
 - Easy file access — clean markdown export with YAML frontmatter, one-click Obsidian sync per project, downloadable audio + transcript.
 - LLM-friendly corpus: pgvector embeddings on transcripts and summaries, accumulating from day one.
@@ -51,13 +53,16 @@ A separate stack (e.g., a new `granola.dissonance.cloud` deployment with its own
 ### Non-goals (explicit, MVP)
 
 - Browser-based mic capture (cut from MVP per Q2 follow-up; trivially addable later).
-- Live transcript during the meeting (post-meeting only in MVP; live is a follow-up spec, the schema and Realtime publication are designed-for).
 - Voice-print speaker auto-recognition (manual labeling MVP; ML follow-up).
 - Calendar integration (manual attendee picker in MVP; Apple EventKit / Google Calendar follow-up).
-- AI Q&A chat against meetings or the cross-meeting corpus (NotebookLM via .md export is the interim).
-- Per-meeting-type prompt templates / automation pipeline (one default prompt per media type in MVP).
+- "Coming up" calendar block on dashboard (depends on calendar integration; cut from MVP).
+- In-app per-meeting AI chat surface ("Ask anything" input field, persistent in Granola's bottom strip). The user noted that **clean `.md` exports + Obsidian sync make in-app chat largely redundant** — you can chat against your notes in NotebookLM, Claude Code, Obsidian itself. Bottom strip in MVP shows volume waveform + audio controls only; "Ask anything" input is **not rendered** (vs. rendered-but-disabled).
+- Contextual suggested-action pill in the bottom strip ("Write follow up email", "What did I miss"). Templates-driven; bundled with the templates follow-up.
+- Per-meeting-type prompt templates / automation pipeline (one default prompt for audio in MVP).
+- Live transcript during the meeting (post-meeting only in MVP; live is a follow-up spec, the schema and Realtime publication are designed-for).
+- AI Q&A chat against the cross-meeting corpus (NotebookLM via `.md` export is the interim).
 - Periodic screenshots (Shadow-style).
-- Obsidian context-file referencing (pulling related vault notes into the AI summary).
+- Obsidian context-file referencing (pulling related vault notes into the AI enhancement).
 - Bidirectional Obsidian sync.
 - Multi-tenant / team sharing for meetings (single-user, like the rest of Loom Stage 1).
 - Mobile / Apple Watch capture.
@@ -69,20 +74,20 @@ A separate stack (e.g., a new `granola.dissonance.cloud` deployment with its own
 ### Eight feature areas
 
 1. **Desktop app extension** (`desktop/`) — meeting detection (Zoom/Meet/Teams), audio capture (system + mic), upload to existing R2 endpoints, pre-meeting picker (project + attendees), Obsidian sync writer.
-2. **Two-pane notes page** at `/notes/:id` — markdown editor (left), transcript + AI summary (right), audio playback, speaker labeling UI.
-3. **Unified dashboard** — type chip on cards, type filter, audio waveform thumbnails.
-4. **Speaker labeling** — `people` table, per-recording rename, candidate set bounded by pre-meeting attendees.
+2. **Granola-faithful notes page** at `/notes/:id` — single-column markdown canvas, metadata pill row, persistent bottom strip with clickable volume waveform that expands a floating transcript card, explicit "Generate notes" action, Original / Enhanced toggle.
+3. **Tabbed dashboard** — `/` becomes two tabs (**Recordings** | **Notes**) sharing one folder/search system. Recordings tab keeps existing Loom grid-of-cards UI unchanged. Notes tab is a chronological list grouped by date with simple row entries.
+4. **Speaker labeling** — `people` table, per-recording rename via the floating transcript card, candidate set bounded by pre-meeting attendees.
 5. **Shared word dictionary** — `dictionary_terms` table, fed to Deepgram on every transcribe (audio + video both benefit).
 6. **pgvector embedding-on-write** — `transcript_chunks` + `summary_embeddings`, no retrieval UI yet; corpus accumulation for future RAG.
-7. **Streaming AI summary UX** — Granola-style "generating notes" bar, real Claude streaming via Vercel AI SDK + Supabase Realtime publication on `ai_outputs`.
-8. **Per-project Obsidian sync** — manual-trigger from `/notes/:id`, vault path resolved via three-level fallback (per-meeting override → brand_profile path → global default).
+7. **Inline streaming AI enhancement** — Granola-style "Enhancing notes" pill spinner triggered by user clicking "Generate notes". Real Claude streaming via Vercel AI SDK + Supabase Realtime publication on `ai_outputs`. Polished version replaces canvas body inline; original is preserved and accessible via toggle.
+8. **Per-project Obsidian sync** — manual-trigger from `/notes/:id` kebab menu, vault path resolved via three-level fallback (per-meeting override → brand_profile path → global default).
 
 ### Rough effort estimate
 
 ~3 weeks of focused work, broken roughly:
 
 - Week 1: schema migrations, capture flow (desktop + backend ingest), processing pipeline extensions, dictionary infra.
-- Week 2: `/notes/:id` two-pane UI, speaker labeling UI, dashboard unification, streaming summary infrastructure (Realtime publication + Tiptap + bar UX).
+- Week 2: `/notes/:id` single-column notes canvas + floating transcript card + bottom strip, speaker labeling UI inside the card, tabbed dashboard wiring (Notes tab list view + shared sidebar), enhancement infrastructure (Realtime publication + Tiptap + "Enhancing notes" pill UX).
 - Week 3: Obsidian sync (desktop writer + path resolution), export endpoints, pre-meeting picker, end-to-end smoke testing, polish.
 
 This is an estimate, not a commitment. Brainstorming → spec → plan → execute via subagents is the working pattern; the plan phase will surface any milestones that need to be split.
@@ -110,7 +115,8 @@ This is an estimate, not a commitment. Brainstorming → spec → plan → execu
 │  │    meet.google.com / teams.microsoft.com / zoom.us/wc/   │   │
 │  │  - Web app at loom.dissonance.cloud                      │   │
 │  │    - / dashboard (audio + video unified)                 │   │
-│  │    - /notes/:id two-pane editor                          │   │
+│  │    - /notes/:id single-column notes canvas + floating    │   │
+│  │      transcript card                                     │   │
 │  │    - /recordings/:id/edit (Loom unchanged)               │   │
 │  │    - /brands (gets meetingNotesVaultPath field)          │   │
 │  │    - /people, /dictionary settings                       │   │
@@ -488,7 +494,13 @@ Mixing is done in the same container that runs the existing video transcribe job
 
 The mixed file is also what serves the audio playback on `/notes/:id` — so Plyr's `<audio>` element gets the mixed mono file, not separate tracks.
 
-### Streaming summary (the bar UX)
+### AI enhancement is user-triggered, not auto-fire
+
+Important pipeline distinction: when recording stops, `transcribe` and `embed_transcript` auto-fire (always needed; passive). **`title_summary`, `chapters`, `action_items`, `embed_summary` do NOT auto-fire** — they wait for the user to click "Generate notes" on `/notes/:id`. This matches Granola's behavior and gives the user a beat to finish their raw notes before the AI sees them.
+
+API: `POST /api/notes/:id/enhance` enqueues the four jobs and returns `202 Accepted`. Frontend optimistically renders the "Enhancing notes" pill while waiting for Realtime updates.
+
+### Streaming the enhancement (the "Enhancing notes" pill UX)
 
 The `title_summary` job uses Vercel AI SDK's `streamText` (instead of `generateText`). On the first token:
 1. `ai_outputs.generationStatus` is set to `'streaming'`.
@@ -512,75 +524,127 @@ supabase
     schema: 'public',
     table: 'ai_outputs',
     filter: `mediaObjectId=eq.${mediaObjectId}`
-  }, (payload) => setSummary(payload.new.summary))
+  }, (payload) => setEnhancedBody(payload.new.summary))
   .subscribe();
 ```
 
-Client-side bar animation: time-based, not token-count-based. Bar fills/recedes over ~12 seconds (cap at 30s with "almost done…" subtext), 200ms ease-out fade on completion. Token-count-based animation yo-yos when models stall briefly; time-based feels right and matches Granola's behavior.
+Client UX:
+- "**Enhancing notes**" pill (matching Granola's design — green accent, spinning circle icon, mid-screen) appears as soon as the user clicks Generate.
+- Below it, the polished version streams in token-by-token (the same canvas body, just being filled in by streamed content). Granola's pill sits about 30% down the canvas; we'll match.
+- On `generationStatus = 'complete'`, the pill fades out (200ms ease-out) and the polished version is the canvas body. The Original / Enhanced toggle (`✦⌄`) in the top-right activates if it wasn't already.
+
+No "horizontal bar at the bottom" — that was wrong. The streaming visual IS the inline-replace pattern with the spinner pill, exactly like Granola.
 
 ---
 
 ## UI surfaces
 
-### Dashboard unification
+The Granola product is intentionally **minimalist**. The user explicitly asked for the actual Granola UI to be reproduced — not a reinterpretation. The following sections describe the exact layout patterns to reproduce, referenced against Granola's current macOS app screenshots.
 
-Existing `/` already has folders, search, sort, brand filter. Three small additions:
+### Tabbed dashboard (`/`)
 
-1. **Type chip on cards**: small pill on each card with a waveform icon (audio) or play icon (video). 24×24 in the top-right of the card thumbnail area.
-2. **Type filter** in the top filter bar (alongside brand/status filters): All / Audio / Video.
-3. **Audio card art**: generated waveform PNG via `audio_waveform` pg-boss job. Stored as `media_objects.compositeThumbnailKey` (reusing the existing field, no schema change). Hover state shows duration + meeting app icon (Zoom/Meet/Teams glyph) in the corner.
+The root dashboard becomes **tabbed** rather than a single unified grid. Two tabs at the top:
 
-**Card click is type-aware**: `media_objects.type === 'audio'` → `/notes/:id`, otherwise → `/recordings/:id/edit`. Single dispatcher in the card component.
+- **Recordings** (default tab for now to preserve existing flow) — keeps the existing Loom UI as-is. Folder sidebar, grid of cards, hover menu, search, sort/filter. Zero changes from Stage 1.5b. Cards click into `/recordings/:id/edit`.
+- **Notes** — Granola-style chronological list. Rows grouped by date headers (Today, Yesterday, Mon Apr 27, etc.). Each row: small icon · title · "Me" or attendee names · timestamp · (right-aligned) folder chip if assigned. Click row → `/notes/:id`.
 
-### `/notes/:id` two-pane editor
+Both tabs share:
+- The **left sidebar with folders** (existing Loom folder UI; folders can hold both audio and video — `media_objects.folderId` already supports this since folders aren't typed).
+- The **search box** at the top (existing Postgres FTS over title + transcript + summary). Search results within the current tab — narrow scope is simpler than blending tabs in search.
+- The **brand/project assignment** (existing) and the **dictionary** + **people** settings pages.
 
-This is the heart of the product.
+There is **no top-level "All" tab** in MVP — type filtering is implicit (which tab you're on). If users actually want a unified view later, a third tab is easy.
 
-#### Layout
+The "Coming up" calendar block at the top of Granola's dashboard (image 5) is **deferred** to the calendar integration follow-up.
 
-- **Desktop** (≥768px): 60/40 horizontal split, notes left, transcript right.
-- **Mobile** (<768px): single column stacked, notes on top, transcript collapsed under a "Transcript" disclosure.
-- Header strip: inline-edit title, meeting date/time, detected app icon (Zoom/Meet/Teams), brand-profile picker, kebab menu (delete, export, save to Obsidian, copy share link).
+A **"+ Quick note"** button in the top-right (matching Granola's image 5) creates a new audio note without recording — useful for typing a thought / pasting context, then optionally starting recording later. Inserts a `media_objects` row with `type='audio'`, `status='ready'`, no audio tracks. Lands you on `/notes/:id` immediately.
 
-#### Left pane — notes
+### `/notes/:id` — single-column notes canvas
 
-- **Editor**: Tiptap with the markdown extension. Lightweight (vs Lexical's surface area), pastes from anywhere reasonably (Notion, Google Docs, plain text), bidirectional with markdown source.
-- **Autosave**: debounced 500ms after last keystroke. Persists to `notes.body` via `PUT /api/notes/:id`. Shows a small "Saved" indicator with timestamp on success.
-- **During recording state**: header shows "Recording — 12:34" with a pulsing red dot and a stop button. Notes are editable in real time. The right pane shows "Recording in progress" placeholder.
-- **After recording state**: if the AI summary has generated, the left pane shows a **divider** between the user's raw notes and the AI-enhanced section. Both editable; both saved to `notes.body` as a single markdown blob with a clear separator (`---\n## AI summary\n...`). The summary section is generated from the AI output but the user can edit it without losing it on regeneration (the divider boundary is sticky).
+This is the heart of the product. The layout intentionally mirrors Granola's app screen for screen.
 
-#### Right pane — transcript + AI
+#### Top of canvas (always)
 
-Three vertical sections, top to bottom:
+- **Top bar**: home/back icon (top-left, returns to dashboard), kebab menu and **`✦⌄` Original/Enhanced toggle** on the top-right. The toggle activates only after first AI generation — before that it's hidden.
+- **Title row**: serif-style placeholder "New note" (Granola's actual styling — italic, faded grey) until the user types or AI generates a title. Inline-editable.
+- **Metadata pill row** (just under the title):
+  - `📅 Today` — meeting date. Click to open a date picker (rarely changed — defaults to recording date).
+  - `👥 Me` — attendees. Click to open the attendee picker (multi-select against `people`, can add new). Shows "Me" when alone, switches to "Aman + 1 other" / "Aman, Sara" / etc. as attendees are set.
+  - `📂 Add to folder` — folder/project assignment. Click → folder picker (existing Loom folder UI). When assigned, pill shows the folder name.
 
-1. **Action items** + **Topics** (formerly "chapters" for video) — collapsed by default, click to expand. Inline checkboxes for action items.
-2. **Transcript** — paragraphs (Deepgram's paragraph segmentation), each prefixed with the speaker label (a chip that is itself the rename UI; see below) and a click-to-seek timestamp. Click any word in a paragraph → audio jumps to that timestamp. Same UX as the existing Loom transcript tab.
-3. **Audio playback bar** (sticky bottom of right pane) — Plyr `<audio>` variant: play/pause, scrub, speed (1.0x / 1.25x / 1.5x / 2.0x). Audio source is the mixed mono file at `r2MixedKey`, signed-URL refreshed on 403 (matches existing Loom video pattern).
+#### Canvas body (changes by state)
 
-#### Search-within-transcript
+The body is a **single-column markdown editor** (Tiptap with the markdown extension). Tiptap's bubble menu, slash commands, headings, bullets, numbered lists, code blocks all available. Autosaves debounced 500ms to `notes.body`.
 
-⌘F focuses an inline search input in the right pane. Typing highlights matches in the transcript and shows count. Up/down arrows navigate matches; click jumps audio to the match's timestamp.
+**State 1: Idle (no recording yet, or "Quick note")**
+- Empty body with placeholder "Write notes" in faded grey (matching Granola, image 1).
+- User can type manually before recording starts.
 
-#### Streaming summary placeholder + bar
+**State 2: Recording in progress**
+- Identical to State 1 visually. The user types notes; the bottom strip shows the live volume waveform.
 
-When `ai_outputs.generationStatus = 'pending'` or `'streaming'`:
+**State 3: Recording stopped, before "Generate notes"**
+- The user's raw notes are visible. They can keep editing.
+- A green "**✦ Generate notes**" pill button appears centered mid-canvas (image 4 — matches Granola's exact placement). Clicking fires the enhancement pipeline.
 
-- A horizontal bar at the bottom of the right pane (above the audio playback bar). The bar has subtle motion to indicate "in progress" and shrinks toward zero over the time-based animation window.
-- Above the bar, summary content streams in from top to bottom as tokens arrive.
-- On `generationStatus = 'complete'`, the bar fades out (200ms), final summary settles into the structured Summary / Action items / Topics sections.
+**State 4: Enhancing**
+- "**Enhancing notes**" pill with spinner appears about 30% down the canvas (image 3). Below it, the polished version streams in token-by-token via the Realtime mechanism described above.
+- The user's raw notes remain visible above the pill (faded slightly to indicate "the AI is working from these").
 
-#### Speaker chip popover
+**State 5: Post-enhancement**
+- Polished version is the canvas body by default.
+- The `✦⌄` toggle in the top-right is now active. Click → dropdown:
+  ```
+  ● Enhanced (default)
+  ○ Original
+  ─────
+  Regenerate enhanced notes
+  ```
+- Switching to Original shows the user's raw notes verbatim (from `notes.body`, the same field they wrote into).
+- "Regenerate enhanced notes" clears `ai_outputs.summary` and re-fires the enhancement pipeline.
 
-At the top of the right pane, above the transcript, a horizontal row of speaker chips:
+#### Persistent bottom strip (always visible)
+
+The bottom strip is a single horizontal row, rounded corners, sticky to the bottom of the viewport. Composed of two clusters:
+
+**Left cluster** (controls):
+- A small green volume waveform icon. **During recording**: animates with live audio level (real-time RMS over a 100ms window, rendered as 3-5 bars). **Click**: expands the floating transcript card (see below). **After recording, audio playback paused**: shows a pause/play affordance with a "Resume" label (image 4).
+- A small chevron `^` to toggle the audio control cluster expanded view (Granola's image 1 shows the dots/chevron/square cluster).
+- A stop/square button: stops recording (during) or stops playback (after).
+- A status label that updates by state: `"Recording 12:34"`, `"Resume"`, `"Generating..."`, etc.
+
+**Right cluster (DEFERRED to follow-up specs)**:
+- Granola has an "Ask anything" input field and a contextual action pill ("What did I miss" during recording, "Write follow up email" after enhancement). **MVP omits both entirely** — the bottom strip is left-aligned only with whitespace on the right.
+- This is per the user's call: clean `.md` exports + Obsidian sync are the substitute for in-app AI chat for now.
+- When the in-app AI Q&A follow-up lands, the input field returns. When templates land, the action pill returns.
+
+#### Floating transcript card (expanded from bottom strip)
+
+Click the volume waveform → a card slides up from the bottom strip, anchored above it (image 2 — the card occupies roughly the bottom half of the canvas, above the bottom strip).
+
+Card contents (top to bottom):
+- **Top bar** of the card:
+  - Left: `🔍` search icon (filters transcript by query).
+  - Right: `🎚` audio settings icon (mic input + system audio toggles), `📋` copy icon (copies all transcript text to clipboard), `–` minimize icon (collapses card back into the bottom-strip waveform).
+- **Header line**: "Always get consent when transcribing others. Learn more →" (privacy nudge, matches Granola).
+- **Timer**: large `00:00` running timer for the meeting (or playback position post-meeting).
+- **Transcript bubbles** body:
+  - Right-aligned chat-bubble layout, dark grey rounded rectangles (matches Granola exactly).
+  - Each bubble holds one Deepgram-segmented utterance.
+  - **Speaker label**: when the speaker changes between bubbles, show a small left-aligned caption above the next bubble cluster: `Aman` (or `Speaker 1` if unassigned). Click the caption → speaker assignment popover (see below).
+  - Click any word → audio jumps to that timestamp (post-meeting playback).
+- **Bottom of card**:
+  - Left: the same green volume waveform (live during recording, scrub bar post-meeting).
+  - Right: a `🌐 English ⌄` language picker (display only in MVP — selectable with one option, English; multi-language support is a future enhancement, the user explicitly said they don't care about it now but it's part of the visual fidelity).
+
+The card is the same visual element across recording-in-progress and post-meeting playback. During recording, bubbles append in real-time as Deepgram returns paragraphs. Post-meeting, the same bubbles persist as scrollable history.
+
+#### Speaker assignment popover (from the floating card)
+
+Click a speaker label/caption above a bubble cluster → popover:
 
 ```
-[Speaker 0 ⌄]  [Speaker 1 ⌄]  [Speaker 2 ⌄]
-```
-
-Click a chip → popover:
-
-```
-Assign Speaker 1
+Assign this speaker
 
 🔍 [type to filter people...]
    • Aman Patel       (in this meeting)
@@ -591,9 +655,23 @@ Assign Speaker 1
    • + Just label "John" (this meeting only)
 ```
 
-Top of the list: people pre-selected in the attendee picker (from `media_objects.attendees`). This is the bounded candidate set — the typeahead defaults to it before falling through to the broader `people` table. Once assigned, the chip displays the person's name and the transcript paragraphs under that speaker render with that name.
+Top of the list: people pre-selected in the attendee picker (from `media_objects.attendees`). This is the bounded candidate set. Once assigned, **all bubbles** under that `speakerIdx` re-render with the assigned name immediately (client-side; the `speaker_assignments` row is the source of truth).
 
-For the "just label 'John'" case, the entered text is written to `displayLabelOverride` instead of `personId`. No `people` row created.
+For "just label 'John'": writes `displayLabelOverride`, no `people` row created.
+
+#### Top-right kebab menu
+
+Items:
+- **Save to Obsidian** (with resolved path on hover, e.g., "→ ~/Vault/ProjectWin/Meeting Notes/")
+- **Download** submenu: audio (.m4a), transcript (.txt), transcript (.md), summary (.md), full meeting (.md)
+- **Copy to clipboard** submenu: full markdown / transcript text / summary text
+- **Regenerate enhanced notes** (also available from the `✦⌄` toggle dropdown)
+- **Delete** (with type-to-confirm)
+- (Future: **Share** — generates a public `/n/:slug` share page, matching Loom's `/v/:slug`. Out of MVP — multi-tenant sharing is a follow-up spec.)
+
+### Search-within-transcript
+
+`⌘F` focuses the search input in the floating transcript card (auto-expands the card if collapsed). Typing highlights matches in bubbles; up/down arrows navigate matches; click jumps audio.
 
 ### `/people` settings page
 
@@ -619,17 +697,66 @@ No other changes to the `/brands` page.
 
 ---
 
-## Streaming summary — the "generating notes" bar
+## AI enhancement — prompt design
 
-Already covered in Processing pipeline § Streaming summary. Restating the user-visible UX here for clarity:
+The AI enhancement is the heart of the value prop. The prompt must explicitly handle the "preserve vs. integrate" tension the user flagged.
 
-- After a meeting, when the user lands on `/notes/:id`, the right pane shows section headers (Action items, Topics, Transcript) with placeholder skeletons.
-- A subtle horizontal bar appears at the bottom of the right pane, just above the audio playback controls.
-- The bar animates: a slow leftward sweep, suggesting "work in progress." It progressively shrinks vertically as the summary fills in above.
-- Summary content streams in from top to bottom — sentence by sentence as Claude generates tokens.
-- When complete, the bar fades out and the summary settles into final layout.
+### Inputs to the enhancement job
 
-This is **real Claude streaming via Vercel AI SDK + Supabase Realtime**, not a fake animation. See the "Streaming summary" section under Processing pipeline.
+For audio-type meetings, `title_summary` receives:
+- `notes.body` — user's raw markdown notes.
+- `transcripts.fullText` + `transcripts.wordTimestamps` (with speaker assignments resolved to people names where labeled).
+- `media_objects.attendees` resolved → list of attendee names.
+- `media_objects.meetingDetectedApp`, `meetingStartedAtLocal`, `title` (if user typed one).
+
+### Prompt structure
+
+System prompt:
+
+> You are an AI meeting note-taker. The user has hand-typed raw notes during a meeting and you have the full transcript. Your job is to produce a polished, structured version of the notes that the user can use as their primary record of the meeting.
+>
+> **Critical rules:**
+>
+> 1. **Preserve verbatim** any phrase, sentence, or bullet the user wrote that is specific, opinionated, or stylistically distinctive. Do not paraphrase. Do not "improve" their wording. If they wrote "Aman: pissed about the Q2 numbers — we need to dig in by Friday", that exact line stays in the output exactly as written, character-for-character.
+>
+> 2. **Integrate and expand** sparse or shorthand notes. If they wrote "metrics" as a bullet, expand it into a paragraph or sub-bullets using the transcript context. If they wrote "test", expand it into "tested the new flow with X result based on the transcript discussion at 12:34."
+>
+> 3. **Structure** the output: a top-level title, then sections (Context / Discussion / Decisions / Action Items as appropriate). Use markdown headings and bullets.
+>
+> 4. **Cite the transcript** sparingly: when a key claim or decision is anchored in the transcript, you may include a parenthetical timestamp `(12:34)`. Don't overdo it — only when it materially helps.
+>
+> 5. **Do not invent** action items, decisions, or attendees not supported by the transcript or notes. If the user's notes are sparse and the transcript is thin, the output should be similarly thin. Don't pad.
+>
+> 6. **Tone**: match the user's apparent voice in their notes. If they're terse, be terse. If they wrote in full sentences, write in full sentences.
+
+User message:
+
+```
+# Raw notes
+<notes.body>
+
+# Transcript
+<transcripts.fullText with speaker labels>
+
+# Meeting metadata
+- Date: <meetingStartedAtLocal>
+- Detected app: <meetingDetectedApp>
+- Attendees: <resolved attendee names>
+- User-provided title: <title or "(none)">
+```
+
+### Action items + topics
+
+Run as separate jobs (`action_items`, `chapters`) with structured Zod schemas already in the Loom side. Audio-flavored prompts reuse those schemas; only the system prompt wording changes ("for this meeting, extract action items" vs "for this video, ..."). `chapters` for audio is renamed to "Topics" in the UI but uses the same schema and column.
+
+### Streaming and the "Enhancing notes" pill
+
+Already covered above in Processing pipeline § Streaming the enhancement. UX recap:
+
+- User clicks "Generate notes" → "Enhancing notes" spinner pill appears about 30% down the canvas.
+- Polished version streams in below the pill, token-by-token via Supabase Realtime push.
+- On completion: pill fades out, polished version is the body. The `✦⌄` toggle in the top-right activates.
+- Real Claude streaming via Vercel AI SDK + Supabase Realtime publication on `ai_outputs`. Not a fake animation.
 
 ---
 
@@ -853,27 +980,35 @@ Voice-print enrollment from labeled segments + closed-set classifier using per-m
 - **Google Calendar OAuth** — secondary path for users on Google Workspace. Server-side calendar polling, OAuth refresh tokens.
 - The pre-meeting picker auto-fills attendees from the matched event. User can still edit before starting.
 
-### 4. Live transcript stream (~3–5 days)
+### 4. Live transcript during recording (already partly delivered)
 
-Deepgram Live websocket (or local Whisper streaming via the same provider abstraction). Transcript paragraphs land progressively in the `transcripts` row; the right pane fills in during the meeting.
+The floating transcript card in MVP already shows live bubbles **post-meeting**. Adding live-during-meeting requires:
+- Switch from Deepgram Prerecorded API to Deepgram Live websocket (or local Whisper streaming via the same provider abstraction).
+- Stream paragraphs progressively into the `transcripts` row.
+- Subscribe `/notes/:id` to a Realtime publication on `transcripts` so bubbles append in real-time.
 
-Reuses the same Realtime publication pattern that MVP adds for streaming summaries (`transcripts` table publication addition is one SQL line).
+Reuses the same Realtime publication pattern that MVP adds for streaming AI enhancements (`transcripts` table publication addition is one SQL line). ~3–5 days.
 
-### 5. AI Q&A / cross-meeting chat (~1–2 weeks)
+### 5. In-app AI Q&A — bottom strip "Ask anything" + suggested-action pill (~1–2 weeks)
 
-RAG over the corpus (uses MVP's pgvector embeddings).
+Restores the right cluster of Granola's bottom strip:
+- "**Ask anything**" input field for per-meeting chat: "What did Aman commit to?", "Rewrite this in plain English", etc. RAG against `transcript_chunks` for the current meeting.
+- Cross-meeting chat at `/chat` (or as a sidebar drawer): RAG across the whole corpus using `transcript_chunks` + `summary_embeddings` (both already accumulated by MVP).
+- Suggested-action pill ("What did I miss" / "Write follow up email") — these are essentially **template-driven canned actions**, so this overlaps with the templates follow-up. Probably ships together.
 
-- Per-meeting chat: "What did Aman commit to in this meeting?" — RAG over `transcript_chunks` for that meeting.
-- Cross-corpus chat: "Show me every meeting where we discussed attribution." — RAG over `transcript_chunks` across all the user's meetings, grouped by meeting.
-- New chat surface: `/chat` page, with a meeting-context picker (current / all / project).
+The user noted that clean `.md` exports + Obsidian sync may make in-app chat largely redundant for them personally. This follow-up is sized around "if you decide you want it"; not a guaranteed build.
 
-NotebookLM via .md export is the interim while this is unbuilt.
+NotebookLM via `.md` export is the interim.
 
 ### 6. Periodic screenshots (Shadow-style) (~1 week)
 
 New pg-boss job `screenshot_capture` fires every N seconds during recording. Desktop app captures via ScreenCaptureKit (image, not video), uploads to R2. Stored as `screenshots` table linked to media_object + timestamp.
 
-UX: small thumbnail strip at the top of the transcript right pane, click to expand. Future: AI-generated captions per screenshot for searchability.
+UX: small thumbnail strip at the top of the floating transcript card, click to expand. Future: AI-generated captions per screenshot for searchability.
+
+### 6b. "Coming up" calendar block on dashboard (depends on calendar integration, ~1 day on top)
+
+Once calendar integration (#3) ships, add the **Coming up** calendar block at the top of the dashboard's Notes tab — Granola's image 5 layout. Lists the next 3-7 calendar events with date, title, time. Clicking a future event optionally pre-creates a stub `media_objects` row that auto-arms when the user joins that call.
 
 ### 7. Obsidian context-file referencing (~1 week)
 
@@ -926,14 +1061,18 @@ The existing `ANTHROPIC_API_KEY` stays for now (used as fallback if `LLM_PROVIDE
 
 ## Appendix C — Decisions log (brainstorming)
 
-- **Q1**: Merge model = **A (fully unified dashboard)**.
+- **Q1**: Merge model = **A (fully unified dashboard)** — later refined after the user shared Granola screenshots: dashboard becomes **tabbed (Recordings | Notes)** with shared folders/search, not a unified grid. Loom's existing grid stays for video; Notes tab is Granola's chronological list.
 - **Q2**: Capture surface = **B (desktop primary + web mic fallback)** — later refined to desktop-only after Group A discussion. Web mic flow cut from MVP.
 - **Q3**: MVP scope = "Granola, faithfully" + speaker labeling MVP + dictionary + pgvector embedding-on-write.
 - **Q4**: Confirmed updated MVP cut.
 - **Q5**: Storage = app stores transcripts (FTS + embeddings + cross-product search) + auto-syncs canonical `.md` to Obsidian via desktop app. Later refined to manual-trigger save (not auto), per-project path resolution.
 - **Q6**: Auto-start UX = **B (auto-arm + one-click confirm)**. Calendar = deferred to follow-up; window-title suggestion as a 1-hour kicker.
 - **Pre-meeting attendee picker** added to MVP (½–1 day) to bound the speaker recognition closed-set ML problem.
-- **Streaming summary bar** = real Claude streaming via Vercel AI SDK + Supabase Realtime publication on `ai_outputs`.
+- **Streaming AI enhancement** = real Claude streaming via Vercel AI SDK + Supabase Realtime publication on `ai_outputs`. UX refined from "horizontal bar at bottom of right pane" (initial wrong design based on bad two-pane assumption) to **inline "Enhancing notes" spinner pill** matching Granola's actual app.
+- **AI enhancement is user-triggered, not auto-fire**. After recording stops, only `transcribe` and `embed_transcript` auto-fire. The user clicks "Generate notes" to fire `title_summary`, `chapters`, `action_items`, `embed_summary`. Matches Granola's behavior; gives the user a beat to finish raw notes before the AI sees them.
+- **Original / Enhanced coexist** via top-right `✦⌄` toggle. `notes.body` holds raw verbatim notes; `ai_outputs.summary` holds polished version. Toggle is client-side state. Verbatim preservation rule lives in the AI prompt.
+- **Bottom strip in MVP excludes "Ask anything" and the contextual action pill.** User concluded that clean `.md` exports + Obsidian sync make in-app per-meeting chat largely redundant. Restoring the right cluster of Granola's bottom strip is a follow-up, sized but not committed.
 - **Per-project Obsidian sync paths** = three-level fallback (per-meeting override → brand profile path → global default), reusing `brand_profiles` as the project concept.
 - **NotebookLM** = via `.md` export, no programmatic integration.
 - **OpenRouter** for LLM (flexibility); direct OpenAI for embeddings (broader pgvector support); `transcripts.provider` field for transcribe abstraction.
+- **UI design pivot (2026-04-29)**: Initial spec assumed a two-pane editor (notes left, transcript right). User shared Granola screenshots showing the actual UI is **single-column notes-primary** with a **floating transcript card expanded from the bottom strip**. Spec rewritten to match. Dashboard merge also pivoted from "unified grid with type chip" to **tabbed (Recordings | Notes) with shared folders**. Calendar block and in-app AI chat both confirmed out-of-MVP.
