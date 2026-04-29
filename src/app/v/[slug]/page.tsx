@@ -107,22 +107,34 @@ export default async function SharePage({
       />
 
       <main className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-14">
-        <h1 className="truncate text-2xl font-semibold tracking-tight text-text sm:text-[28px]">
+        <h1 className="text-2xl font-semibold tracking-[-0.01em] text-text sm:text-[32px] sm:leading-[1.15]">
           {displayTitle}
         </h1>
-        <p className="mt-1.5 text-sm text-text-muted">
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-text-muted">
           {brand?.name && (
-            <span className="text-text">{brand.name}</span>
-          )}
-          {brand?.name && <span className="mx-2 text-text-subtle">·</span>}
-          <span className="text-text-muted">{formatRelativeTime(rec.createdAt)}</span>
-          {!isReady && (
             <>
-              <span className="mx-2 text-text-subtle">·</span>
-              <span className="text-text-muted">{rec.status}</span>
+              <span className="font-medium text-text">{brand.name}</span>
+              <span aria-hidden="true" className="text-text-subtle">
+                ·
+              </span>
             </>
           )}
-        </p>
+          <span>{formatRelativeTime(rec.createdAt)}</span>
+          {!isReady && (
+            <>
+              <span aria-hidden="true" className="text-text-subtle">
+                ·
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span
+                  aria-hidden="true"
+                  className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent"
+                />
+                {rec.status}
+              </span>
+            </>
+          )}
+        </div>
 
         {isReady && signedVideoUrl ? (
           <div className="mt-8">
@@ -152,8 +164,12 @@ export default async function SharePage({
             />
           </div>
         ) : (
-          <div className="mt-8 rounded-xl border border-border bg-bg-subtle p-10 text-center">
-            <p className="text-base font-medium text-text">
+          <div className="mt-8 rounded-xl border border-dashed border-border bg-bg-subtle/40 p-12 text-center">
+            <div className="inline-flex items-center gap-2 text-base font-medium text-text">
+              <span
+                aria-hidden="true"
+                className="h-2 w-2 animate-pulse rounded-full bg-accent"
+              />
               {rec.status === "transcribing"
                 ? "Transcription in progress"
                 : rec.status === "processing"
@@ -161,9 +177,9 @@ export default async function SharePage({
                   : rec.status === "uploading"
                     ? "Uploading"
                     : "Not ready"}
-            </p>
-            <p className="mt-2 text-sm text-text-subtle">
-              Refresh in ~15–30 seconds.
+            </div>
+            <p className="mt-3 text-sm text-text-subtle">
+              Refresh in ~15–30 seconds — this page will catch up automatically.
             </p>
           </div>
         )}

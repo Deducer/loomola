@@ -121,6 +121,7 @@ export function ViewerShell({
             getCurrentTime={getCurrentTime}
           />
         }
+        commentCount={comments.length}
       />
     </div>
   );

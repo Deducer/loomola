@@ -1,8 +1,22 @@
-export function SummaryBlock({ summary }: { summary: string | null | undefined }) {
+import { Sparkles } from "lucide-react";
+
+export function SummaryBlock({
+  summary,
+}: {
+  summary: string | null | undefined;
+}) {
   if (!summary) return null;
   return (
-    <p className="mt-8 max-w-[75ch] text-[15.5px] leading-[1.7] text-text-muted">
-      {summary}
-    </p>
+    <section className="mt-8">
+      <div className="rounded-xl border border-border bg-bg-subtle/60 p-5 sm:p-6">
+        <div className="mb-2.5 inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-text-muted">
+          <Sparkles className="h-3.5 w-3.5 text-accent" />
+          Summary
+        </div>
+        <p className="max-w-[75ch] text-[15px] leading-[1.65] text-text">
+          {summary}
+        </p>
+      </div>
+    </section>
   );
 }

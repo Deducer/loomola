@@ -1,5 +1,6 @@
 "use client";
 
+import { MessageSquare } from "lucide-react";
 import { CommentItem } from "./comment-item";
 
 type CommentRow = {
@@ -21,9 +22,12 @@ export function CommentList({
 }) {
   if (comments.length === 0) {
     return (
-      <p className="mt-3 text-sm text-text-subtle">
-        No comments yet. Be the first to leave one.
-      </p>
+      <div className="mt-3 rounded-xl border border-dashed border-border bg-bg-subtle/40 p-8 text-center">
+        <MessageSquare className="mx-auto h-5 w-5 text-text-subtle" />
+        <p className="mt-2 text-sm text-text-subtle">
+          No comments yet — be the first to leave one below.
+        </p>
+      </div>
     );
   }
   return (

@@ -44,25 +44,17 @@ export function TranscriptPanel({
 
   if (paragraphs.length === 0) {
     return (
-      <div className="mt-10">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-text-muted">
-          Transcript
-        </h2>
-        <p className="mt-3 rounded-xl border border-border bg-bg-subtle p-4 text-sm leading-7 text-text-muted">
-          {fullText || "(empty transcript)"}
-        </p>
-      </div>
+      <p className="rounded-xl border border-border bg-bg-subtle/60 p-4 text-sm leading-7 text-text-muted">
+        {fullText || "(empty transcript)"}
+      </p>
     );
   }
 
   return (
-    <div className="mt-10">
-      <h2 className="text-xs font-semibold uppercase tracking-wider text-text-muted">
-        Transcript
-      </h2>
+    <div>
       <div
         ref={containerRef}
-        className="mt-3 max-h-96 overflow-y-auto rounded-xl border border-border bg-bg-subtle p-2"
+        className="max-h-96 overflow-y-auto rounded-xl border border-border bg-bg-subtle/60 p-2"
       >
         {paragraphs.map((p, i) => (
           <button

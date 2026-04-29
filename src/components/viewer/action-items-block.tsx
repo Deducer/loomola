@@ -1,6 +1,6 @@
 "use client";
 
-import { Check } from "lucide-react";
+import { Check, ChevronRight, ListChecks } from "lucide-react";
 
 type ActionItem = { timestamp_sec: number; text: string };
 
@@ -19,23 +19,30 @@ export function ActionItemsBlock({
 }) {
   if (actionItems.length === 0) return null;
   return (
-    <section className="mt-8">
-      <h2 className="text-xs font-semibold uppercase tracking-wider text-text-subtle">
+    <section className="mt-10">
+      <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-text-muted">
+        <ListChecks className="h-3.5 w-3.5" />
         Action items
+        <span className="font-normal normal-case tracking-normal text-text-subtle">
+          ({actionItems.length})
+        </span>
       </h2>
-      <ul className="mt-3 space-y-1.5">
+      <ul className="mt-3 space-y-1">
         {actionItems.map((item, i) => (
           <li key={i}>
             <button
               type="button"
               onClick={() => onSeek(item.timestamp_sec)}
-              className="flex w-full items-baseline gap-3 rounded-md px-2 py-1.5 text-left text-[14px] text-text-muted transition-colors hover:bg-bg-subtle hover:text-text"
+              className="group flex w-full items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 text-left text-[14px] text-text-muted transition-all hover:border-border hover:bg-bg-subtle/70 hover:text-text"
             >
-              <Check className="h-3.5 w-3.5 shrink-0 translate-y-0.5 text-accent" />
-              <span className="flex-1">{item.text}</span>
-              <code className="shrink-0 rounded bg-bg-elevated px-1.5 py-0.5 font-mono text-[11px] text-text-subtle">
+              <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-border-strong text-accent transition-colors group-hover:border-accent group-hover:bg-accent/10">
+                <Check className="h-3 w-3" />
+              </span>
+              <span className="flex-1 leading-snug">{item.text}</span>
+              <span className="shrink-0 rounded bg-bg-elevated px-2 py-0.5 font-mono text-[11px] text-text-subtle transition-colors group-hover:bg-accent/15 group-hover:text-accent">
                 {formatTs(item.timestamp_sec)}
-              </code>
+              </span>
+              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-text-subtle opacity-0 transition-opacity group-hover:opacity-100" />
             </button>
           </li>
         ))}

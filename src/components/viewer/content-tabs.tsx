@@ -4,17 +4,14 @@ import { useEffect, useState, type ReactNode } from "react";
 
 type TabKey = "transcript" | "comments";
 
-const TABS: Array<{ key: TabKey; label: string }> = [
-  { key: "transcript", label: "Transcript" },
-  { key: "comments", label: "Comments" },
-];
-
 export function ContentTabs({
   transcript,
   comments,
+  commentCount = 0,
 }: {
   transcript: ReactNode;
   comments: ReactNode;
+  commentCount?: number;
 }) {
   const [active, setActive] = useState<TabKey>("transcript");
 
@@ -37,10 +34,15 @@ export function ContentTabs({
     }
   }
 
+  const tabs: Array<{ key: TabKey; label: string; badge?: number }> = [
+    { key: "transcript", label: "Transcript" },
+    { key: "comments", label: "Comments", badge: commentCount },
+  ];
+
   return (
     <div className="mt-8 sm:mt-12">
       <div role="tablist" className="flex gap-6 border-b border-border">
-        {TABS.map((t) => {
+        {tabs.map((t) => {
           const isActive = active === t.key;
           return (
             <button
@@ -50,15 +52,28 @@ export function ContentTabs({
               type="button"
               onClick={() => selectTab(t.key)}
               className={
-                "relative -mb-px py-3 text-sm transition-colors " +
-                (isActive
-                  ? "text-text"
-                  : "text-text-muted hover:text-text")
+                "relative -mb-px flex items-center gap-1.5 py-3 text-sm transition-colors " +
+                (isActive ? "text-text" : "text-text-muted hover:text-text")
               }
             >
               {t.label}
+              {t.badge !== undefined && t.badge > 0 && (
+                <span
+                  className={
+                    "rounded-full px-1.5 py-0.5 font-mono text-[10px] tabular-nums transition-colors " +
+                    (isActive
+                      ? "bg-accent/15 text-accent"
+                      : "bg-bg-elevated text-text-subtle")
+                  }
+                >
+                  {t.badge}
+                </span>
+              )}
               {isActive && (
-                <span className="absolute bottom-0 left-0 h-px w-full bg-text" />
+                <span
+                  className="absolute bottom-0 left-0 h-px w-full"
+                  style={{ background: "var(--accent)" }}
+                />
               )}
             </button>
           );

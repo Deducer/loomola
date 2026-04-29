@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
+import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 
 function formatTs(seconds: number): string {
@@ -61,22 +62,27 @@ export function CommentItem({
   }
 
   return (
-    <li className="group flex gap-3 rounded-lg border border-border bg-bg-subtle p-3 text-sm">
-      <button
-        type="button"
-        onClick={() => onSeek(timestampSec)}
-        className="shrink-0 self-start rounded bg-bg-elevated px-1.5 py-0.5 font-mono text-[11px] text-text-muted hover:text-text"
-      >
-        {formatTs(timestampSec)}
-      </button>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="font-medium text-text">{name}</span>
-          <span className="shrink-0 text-xs text-text-subtle">
+    <li className="group flex gap-3 rounded-xl border border-border bg-bg-subtle/60 p-3.5 text-sm">
+      <Avatar name={name} size={32} className="mt-0.5 shrink-0" />
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <span className="truncate font-medium text-text">{name}</span>
+          <span
+            className="text-xs text-text-subtle"
+            title={createdAt.toLocaleString()}
+          >
             {formatRelative(createdAt)}
           </span>
+          <button
+            type="button"
+            onClick={() => onSeek(timestampSec)}
+            className="ml-auto shrink-0 rounded bg-bg-elevated px-1.5 py-0.5 font-mono text-[11px] text-text-muted transition-colors hover:bg-accent/15 hover:text-accent"
+            aria-label={`Jump to ${formatTs(timestampSec)}`}
+          >
+            {formatTs(timestampSec)}
+          </button>
         </div>
-        <p className="mt-1 whitespace-pre-wrap break-words text-text-muted">
+        <p className="mt-1 whitespace-pre-wrap break-words leading-relaxed text-text-muted">
           {body}
         </p>
       </div>
