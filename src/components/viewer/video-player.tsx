@@ -3,6 +3,7 @@
 import "plyr/dist/plyr.css";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { ChapterSegmentsOverlay } from "./chapter-segments";
+import { IdleProgressBar } from "./idle-progress-bar";
 
 export type Chapter = { start_sec: number; title: string };
 
@@ -51,6 +52,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [progressEl, setProgressEl] = useState<HTMLElement | null>(null);
+  const [playerRoot, setPlayerRoot] = useState<HTMLElement | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [totalDuration, setTotalDuration] = useState(0);
 
@@ -122,9 +124,11 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
       plyrRef.current.on("ended", () => onPlayStateChange?.(false));
       plyrRef.current.on("ready", () => {
         onReady?.();
-        // Plyr exposes its DOM via player.elements.progress
+        // Plyr exposes its DOM via player.elements.{progress,container}
         const el = plyrRef.current?.elements?.progress as HTMLElement | undefined;
         if (el) setProgressEl(el);
+        const root = plyrRef.current?.elements?.container as HTMLElement | undefined;
+        if (root) setPlayerRoot(root);
         // Force-render the duration display when Chrome's
         // <video>.duration is Infinity (the well-known MediaRecorder webm
         // bug). Plyr's `duration` config option overrides player.duration,
@@ -235,6 +239,13 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
           video.currentTime = sec;
           if (plyrRef.current) plyrRef.current.currentTime = sec;
         }}
+      />
+      <IdleProgressBar
+        playerEl={playerRoot}
+        chapters={chapters}
+        totalDuration={totalDuration}
+        currentTime={currentTime}
+        accentColor={accentColor}
       />
       {error && (
         <div className="mt-2 flex items-center gap-3 rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm">
