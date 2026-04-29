@@ -36,6 +36,20 @@ export function computeSegments(
   return segs;
 }
 
+/** Fraction (0..100) of THIS segment that's been played. Used to draw a
+ *  gradient fill inside the segment so the currently-playing chapter
+ *  shows smooth progress instead of a hard half-color. */
+export function segmentFillPct(
+  seg: Segment,
+  totalDuration: number,
+  currentTime: number
+): number {
+  const segLength = (seg.widthPct / 100) * totalDuration;
+  if (segLength <= 0) return 0;
+  const elapsed = Math.max(0, Math.min(segLength, currentTime - seg.start_sec));
+  return (elapsed / segLength) * 100;
+}
+
 type OverlayProps = {
   progressEl: HTMLElement | null;
   chapters: Chapter[];
@@ -44,15 +58,24 @@ type OverlayProps = {
   onSeek: (sec: number) => void;
 };
 
+const BAR_HEIGHT = 4;
+const SEGMENT_GAP = 2;
+const TRACK_BG = "rgba(255, 255, 255, 0.18)";
+
 /**
- * Paints chapter segments on top of Plyr's `.plyr__progress` element.
+ * Paints chapter segments on top of Plyr's `.plyr__progress` element when
+ * the player's controls are visible. Renders thin pill-shaped segments
+ * (4 px tall, 2 px gaps, fully rounded ends) — Loom-style — instead of
+ * full-height filled chunks.
  *
- * The overlay is portaled to `document.body` so its `position: fixed`
- * coordinates align with the viewport regardless of any positioned or
- * sticky ancestor in the player tree (e.g. fullscreen, the edit page's
- * sticky preview column, etc.). We use viewport-relative `fixed` (not
- * page-absolute `absolute`) so scrolling doesn't drift the overlay off
- * the seekbar.
+ * Each segment shows a gradient from accent (played portion of *this*
+ * segment) to a subtle track color (unplayed portion). The currently-
+ * playing segment animates its fill smoothly as time advances.
+ *
+ * Portaled to `document.body` so its `position: fixed` coords align with
+ * the viewport regardless of any positioned ancestor (fullscreen, sticky
+ * preview columns, etc.). Hidden when controls are hidden — the
+ * IdleProgressBar component takes over for the idle state.
  */
 export function ChapterSegmentsOverlay({
   progressEl,
@@ -65,20 +88,15 @@ export function ChapterSegmentsOverlay({
   const [mounted, setMounted] = useState(false);
   const [controlsHidden, setControlsHidden] = useState(false);
 
-  // Wait for client-side mount before reading the DOM (Next.js may SSR
-  // this component even with "use client", and `document` is undefined
-  // server-side).
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  // Re-render whenever the progress bar's position or size could have
-  // changed: window resize, scroll, or the element itself resizes.
   useEffect(() => {
     if (!progressEl) return;
     const onChange = () => forceTick((n) => n + 1);
     window.addEventListener("resize", onChange);
-    window.addEventListener("scroll", onChange, true /* capture: catch nested scrollers */);
+    window.addEventListener("scroll", onChange, true);
     const ro = new ResizeObserver(onChange);
     ro.observe(progressEl);
     return () => {
@@ -88,12 +106,6 @@ export function ChapterSegmentsOverlay({
     };
   }, [progressEl]);
 
-  // Plyr auto-hides its controls on mouseleave by adding `.plyr--hide-controls`
-  // to the player root, which transforms the controls (incl. the progress bar)
-  // out of view. The overlay's getBoundingClientRect read keeps tracking the
-  // transformed element, so the overlay visibly drifts off the seekbar onto
-  // whatever sits below the player. Hide ourselves when that class is present —
-  // chapter segments belong with the controls.
   useEffect(() => {
     if (!progressEl) return;
     const playerRoot = progressEl.closest(".plyr");
@@ -111,27 +123,27 @@ export function ChapterSegmentsOverlay({
   if (segments.length === 0) return null;
 
   const rect = progressEl.getBoundingClientRect();
+  // Center the thin bar vertically inside whatever height Plyr's progress
+  // element happens to be — works in compact and full-ui modes.
+  const top = rect.top + (rect.height - BAR_HEIGHT) / 2;
 
   const overlay = (
     <div
       aria-hidden="true"
       style={{
         position: "fixed",
-        top: rect.top,
+        top,
         left: rect.left,
         width: rect.width,
-        height: rect.height,
+        height: BAR_HEIGHT,
         pointerEvents: "none",
         display: "flex",
-        gap: "1px",
+        gap: `${SEGMENT_GAP}px`,
         zIndex: 10,
       }}
     >
       {segments.map((seg, i) => {
-        const segEnd = seg.start_sec + (seg.widthPct / 100) * totalDuration;
-        const played = currentTime >= segEnd;
-        const current =
-          currentTime >= seg.start_sec && currentTime < segEnd;
+        const fillPct = segmentFillPct(seg, totalDuration, currentTime);
         return (
           <button
             key={i}
@@ -141,16 +153,13 @@ export function ChapterSegmentsOverlay({
             style={{
               flex: `${seg.widthPct} 0 0`,
               height: "100%",
-              background: played
-                ? "var(--accent)"
-                : current
-                ? "color-mix(in srgb, var(--accent) 70%, transparent)"
-                : "rgba(255,255,255,0.20)",
+              background: `linear-gradient(to right, var(--accent) ${fillPct}%, ${TRACK_BG} ${fillPct}%)`,
               border: "none",
               padding: 0,
               cursor: "pointer",
               pointerEvents: "auto",
-              borderRadius: "1px",
+              borderRadius: 9999,
+              transition: "background 80ms linear",
             }}
             aria-label={`Chapter: ${seg.title}`}
           />

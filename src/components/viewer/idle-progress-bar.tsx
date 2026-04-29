@@ -2,20 +2,31 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import {
+  computeSegments,
+  segmentFillPct,
+  type Chapter,
+} from "./chapter-segments";
 
-export type Chapter = { start_sec: number; title: string };
+const BAR_HEIGHT = 3;
+const SEGMENT_GAP = 1;
+const TRACK_BG = "rgba(255, 255, 255, 0.18)";
 
 /**
  * Loom-style idle progress strip. Always rendered as a thin bar at the
  * bottom edge of the Plyr root; fades out when Plyr's controls become
- * visible (so the full seekbar takes over) and fades back in when
- * controls hide. Shows the played portion in the brand accent and
- * chapter boundaries as 1 px dividers.
+ * visible (so the chapter overlay + full seekbar take over) and fades
+ * back in when controls hide.
  *
- * Pure visual / non-interactive — clicking lands on the underlying
- * `<video>` (which Plyr captures to play/pause). Seeking happens via
- * the full Plyr seekbar that appears on hover. Keeping this bar
- * pointer-events: none also avoids stealing Plyr's hover detection.
+ * Visually matches ChapterSegmentsOverlay (same per-segment gradient
+ * fill, same pill rounding) but at a thinner 3 px height so it reads
+ * as a peripheral indicator rather than an interactive seekbar.
+ *
+ * Falls back to a single full-width pill when the recording has no
+ * chapters — still draws progress, just no dividers.
+ *
+ * Pure visual / non-interactive (pointer-events: none) so it doesn't
+ * steal Plyr's hover detection that drives controls show/hide.
  */
 export function IdleProgressBar({
   playerEl,
@@ -49,16 +60,13 @@ export function IdleProgressBar({
 
   if (!mounted || !playerEl || totalDuration <= 0) return null;
 
-  const progressPct = Math.min(
-    100,
-    Math.max(0, (currentTime / totalDuration) * 100)
-  );
-
-  // Boundaries between chapters. Drop 0 (the start) and >=100 (would
-  // sit off the right edge); keep interior dividers.
-  const dividers = chapters
-    .map((c) => (c.start_sec / totalDuration) * 100)
-    .filter((p) => p > 0.1 && p < 99.9);
+  const computed = computeSegments(chapters, totalDuration);
+  // No-chapter fallback: render a single pill spanning the full duration
+  // so progress still draws. Same gradient logic, same pill rounding.
+  const segments =
+    computed.length > 0
+      ? computed
+      : [{ leftPct: 0, widthPct: 100, start_sec: 0, title: "" }];
 
   return createPortal(
     <div
@@ -68,38 +76,30 @@ export function IdleProgressBar({
         bottom: 0,
         left: 0,
         right: 0,
-        height: 3,
-        background: "rgba(255, 255, 255, 0.18)",
+        height: BAR_HEIGHT,
         opacity: controlsHidden ? 1 : 0,
         transition: "opacity 180ms ease",
         pointerEvents: "none",
+        display: "flex",
+        gap: `${SEGMENT_GAP}px`,
         zIndex: 5,
       }}
     >
-      <div
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          height: "100%",
-          width: `${progressPct}%`,
-          background: accentColor,
-          transition: "width 100ms linear",
-        }}
-      />
-      {dividers.map((pct, i) => (
-        <div
-          key={i}
-          style={{
-            position: "absolute",
-            top: 0,
-            height: "100%",
-            left: `calc(${pct}% - 0.5px)`,
-            width: 1,
-            background: "rgba(0, 0, 0, 0.55)",
-          }}
-        />
-      ))}
+      {segments.map((seg, i) => {
+        const fillPct = segmentFillPct(seg, totalDuration, currentTime);
+        return (
+          <div
+            key={i}
+            style={{
+              flex: `${seg.widthPct} 0 0`,
+              height: "100%",
+              background: `linear-gradient(to right, ${accentColor} ${fillPct}%, ${TRACK_BG} ${fillPct}%)`,
+              borderRadius: 9999,
+              transition: "background 80ms linear",
+            }}
+          />
+        );
+      })}
     </div>,
     playerEl
   );
