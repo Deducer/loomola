@@ -7,6 +7,7 @@ import { searchRecordings, type SearchSort } from "@/db/queries/search";
 import { presignGet } from "@/lib/r2/presigned-get";
 import { TopNav } from "@/components/nav/top-nav";
 import { FolderSidebar } from "@/components/dashboard/folder-sidebar";
+import { MobileFolderPicker } from "@/components/dashboard/mobile-folder-picker";
 import { SearchFilterBar } from "@/components/dashboard/search-filter-bar";
 import { Breadcrumbs } from "@/components/dashboard/breadcrumbs";
 import { RecordingsGrid } from "@/components/dashboard/recordings-grid";
@@ -113,6 +114,10 @@ export default async function HomePage({
           </div>
 
           <div className="mt-6">
+            <MobileFolderPicker folders={folders} currentFolderId={folderId} />
+          </div>
+
+          <div className="mt-4 md:mt-6">
             <SearchFilterBar brands={brands} />
           </div>
 

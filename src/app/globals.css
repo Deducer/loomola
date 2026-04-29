@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+/* Bind Tailwind's `dark:` variant to next-themes' .dark class instead
+   of the default prefers-color-scheme media query. Without this the
+   variant fired off the OS preference, so a user with OS=dark who
+   toggled the app to light still saw `dark:` styles applied (e.g.
+   the loomola logo's brightness-0/invert filter making it invisible
+   on the light theme). */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
