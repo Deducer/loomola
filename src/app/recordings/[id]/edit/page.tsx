@@ -75,7 +75,7 @@ export default async function EditRecordingPage({
 
   return (
     <div className="min-h-screen">
-      <header className="flex h-14 items-center border-b border-border px-6">
+      <header className="flex h-14 items-center border-b border-border px-4 sm:px-6">
         <Link
           href="/"
           className="inline-flex items-center gap-1.5 text-sm text-text-muted hover:text-text"
@@ -84,7 +84,7 @@ export default async function EditRecordingPage({
           Dashboard
         </Link>
       </header>
-      <main className="mx-auto max-w-7xl px-6 py-10">
+      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-10">
         <EditShell
           header={
             <EditHeader

@@ -90,7 +90,7 @@ export function FolderSidebar({
   const p = new URLSearchParams(params.toString());
 
   return (
-    <aside className="flex w-60 shrink-0 flex-col gap-1 border-r border-border px-3 py-4 text-sm">
+    <aside className="hidden w-60 shrink-0 flex-col gap-1 border-r border-border px-3 py-4 text-sm md:flex">
       <SidebarLink
         icon={<Layers className="h-4 w-4" />}
         label="All recordings"

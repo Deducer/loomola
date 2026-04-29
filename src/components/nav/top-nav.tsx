@@ -25,7 +25,7 @@ export function TopNav({ userEmail, activePath }: Props) {
 
   return (
     <nav className="sticky top-0 z-40 border-b border-border bg-bg/80 backdrop-blur">
-      <div className="mx-auto flex h-14 max-w-5xl items-center gap-6 px-6">
+      <div className="mx-auto flex h-14 max-w-5xl items-center gap-4 px-4 sm:gap-6 sm:px-6">
         <Link
           href="/"
           className="flex items-center"

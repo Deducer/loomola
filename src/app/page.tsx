@@ -85,7 +85,7 @@ export default async function HomePage({
       <TopNav userEmail={user.email ?? "unknown"} activePath="recordings" />
       <div className="mx-auto flex max-w-6xl">
         <FolderSidebar folders={folders} currentFolderId={folderId} />
-        <main className="min-w-0 flex-1 px-6 py-8">
+        <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 sm:py-8">
           <div className="flex items-end justify-between gap-4">
             <div className="min-w-0">
               {currentFolder && (

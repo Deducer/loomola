@@ -13,7 +13,7 @@ export default async function BrandsPage() {
   return (
     <>
       <TopNav userEmail={user.email ?? "unknown"} activePath="brands" />
-      <main className="mx-auto max-w-3xl px-6 py-10">
+      <main className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-10">
         <div className="flex items-end justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-text">
