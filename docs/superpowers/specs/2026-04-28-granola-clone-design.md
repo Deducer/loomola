@@ -1135,11 +1135,31 @@ Replace MVP's single `INTEGRATION_API_TOKEN` with a proper `api_keys` table:
 
 The `/notes/new` browser-side mic capture cut from MVP. Trivially addable using the existing Loom MediaRecorder code.
 
-### 12. Apple Watch / iOS capture (multi-week)
+### 12. Manual ad-hoc audio capture (~½–1 day)
+
+Desktop app menubar gains a "**Start recording (no meeting)**" item that captures system audio (and optionally mic) without requiring meeting-app detection. Bypasses the auto-arm flow entirely.
+
+Use cases:
+- **Recording while watching a "YouTube meeting"** — a recorded meeting, interview, panel, webinar, or podcast on YouTube that the user is consuming (often at 2x speed). Same full Granola flow — take notes alongside, get transcript + AI-enhanced summary after.
+- Capturing a webinar, podcast, or audiobook for later review.
+- In-person meetings recorded via laptop mic when no Zoom/Meet/Teams is involved.
+- Voice memos / dictation via mic only.
+
+Implementation:
+- Same ScreenCaptureKit + AVFoundation capture stack as meeting recording. No new audio plumbing.
+- `media_objects.meetingDetectedApp` is `null` for these captures. Optionally capture the active browser tab URL/title via the existing Chrome extension and persist as `sourceContextHint` (small new nullable field on `media_objects`).
+- Pre-meeting picker becomes optional / post-hoc — user can title and assign attendees after the recording starts (or skip both for personal captures).
+- Downstream pipeline is unchanged: `transcribe` → `embed_transcript` → user clicks "Generate notes" if they want AI enhancement.
+
+AI prompt nuance: a non-meeting capture (YouTube video, podcast) wants a "summarize the content I just listened to" prompt, not the "polish my meeting notes" prompt. This **folds cleanly into the templates follow-up (#1)**: when templates land, ad-hoc captures default to a "content summary" template instead of "meeting summary." Until templates ship, the meeting prompt runs and produces serviceable-but-not-ideal output for non-meetings.
+
+Deepgram and Whisper both handle 2x-speed audio without quality loss in any meaningful range — no transcription-side accommodation needed.
+
+### 13. Apple Watch / iOS capture (multi-week)
 
 Voice memo from anywhere, uploaded as `media_objects.type='audio'`.
 
-### 13. Multi-tenant / team sharing for meetings (~1 week)
+### 14. Multi-tenant / team sharing for meetings (~1 week)
 
 Share a meeting with a colleague (the way Loom recordings can be shared today). Reuses the existing `/v/:slug` share-page pattern with audio-shaped UI.
 
