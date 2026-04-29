@@ -104,7 +104,6 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
       });
       plyrRef.current.on("timeupdate", () => {
         const t = plyrRef.current?.currentTime ?? 0;
-        setCurrentTime(t);
         if (
           typeof trimEndSec === "number" &&
           trimEndSec > 0 &&
@@ -117,6 +116,10 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
           onTimeUpdate(trimEndSec);
           return;
         }
+        // Parent gets the ~4 Hz cadence (HTMLMediaElement's native
+        // timeupdate rate) so the transcript paragraph / chapters list
+        // don't re-render at 60 fps. Local visual currentTime is driven
+        // by the RAF loop below for a smooth playhead.
         onTimeUpdate(t);
       });
       plyrRef.current.on("play", () => onPlayStateChange?.(true));
@@ -159,6 +162,30 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
       plyrRef.current = null;
     };
   }, [chapters, onTimeUpdate, onPlayStateChange, onReady, trimStartSec, trimEndSec]);
+
+  // 60 fps polling of <video>.currentTime for the chapter bars. The
+  // browser's native `timeupdate` event fires roughly every 250 ms, which
+  // makes the playhead visibly chunk forward; reading the value directly
+  // off rAF (which is paint-aligned) is the same trick Loom/YouTube use.
+  // Cheap because setCurrentTime with the same value is a React no-op
+  // when paused. Stopped automatically on unmount.
+  useEffect(() => {
+    let rafId = 0;
+    let last = -1;
+    const tick = () => {
+      const player = plyrRef.current;
+      if (player) {
+        const t = player.currentTime ?? 0;
+        if (t !== last) {
+          last = t;
+          setCurrentTime(t);
+        }
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, []);
 
   useImperativeHandle(ref, () => ({
     seek: (sec: number) => {

@@ -159,7 +159,6 @@ export function ChapterSegmentsOverlay({
               cursor: "pointer",
               pointerEvents: "auto",
               borderRadius: 9999,
-              transition: "background 80ms linear",
             }}
             aria-label={`Chapter: ${seg.title}`}
           />

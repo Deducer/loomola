@@ -95,7 +95,6 @@ export function IdleProgressBar({
               height: "100%",
               background: `linear-gradient(to right, ${accentColor} ${fillPct}%, ${TRACK_BG} ${fillPct}%)`,
               borderRadius: 9999,
-              transition: "background 80ms linear",
             }}
           />
         );
