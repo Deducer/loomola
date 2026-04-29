@@ -49,6 +49,7 @@ A separate stack (e.g., a new `granola.dissonance.cloud` deployment with its own
 - LLM-friendly corpus: pgvector embeddings on transcripts and summaries, accumulating from day one.
 - Provider portability: transcription, LLM, and embedding layers are each swappable adapters.
 - Long-term durability: schema designed for multiple-hour meetings every week for years.
+- **LLM-accessible corpus from day one**: the data lives in clean normalized Postgres tables; per-meeting `.md` and `.json` export endpoints + a bulk `.zip` endpoint with bearer-token auth let any LLM tool (Claude Code, Claude Desktop, NotebookLM, scripts) read the entire corpus without ceremony. MCP server as a polished follow-up.
 
 ### Non-goals (explicit, MVP)
 
@@ -71,7 +72,7 @@ A separate stack (e.g., a new `granola.dissonance.cloud` deployment with its own
 
 ## MVP scope
 
-### Eight feature areas
+### Nine feature areas
 
 1. **Desktop app extension** (`desktop/`) — meeting detection (Zoom/Meet/Teams), audio capture (system + mic), upload to existing R2 endpoints, pre-meeting picker (project + attendees), Obsidian sync writer.
 2. **Granola-faithful notes page** at `/notes/:id` — single-column markdown canvas, metadata pill row, persistent bottom strip with clickable volume waveform that expands a floating transcript card, explicit "Generate notes" action, Original / Enhanced toggle.
@@ -81,6 +82,7 @@ A separate stack (e.g., a new `granola.dissonance.cloud` deployment with its own
 6. **pgvector embedding-on-write** — `transcript_chunks` + `summary_embeddings`, no retrieval UI yet; corpus accumulation for future RAG.
 7. **Inline streaming AI enhancement** — Granola-style "Enhancing notes" pill spinner triggered by user clicking "Generate notes". Real Claude streaming via Vercel AI SDK + Supabase Realtime publication on `ai_outputs`. Polished version replaces canvas body inline; original is preserved and accessible via toggle.
 8. **Per-project Obsidian sync** — manual-trigger from `/notes/:id` kebab menu, vault path resolved via three-level fallback (per-meeting override → brand_profile path → global default).
+9. **LLM-accessible API surface** — three light endpoints (`GET /api/notes/:id/export.json`, `GET /api/notes/:id/export.md`, `GET /api/export/bundle.zip`) gated by a single bearer token from a new `INTEGRATION_API_TOKEN` env var. Lets any HTTP-capable AI tool read the corpus without browser session auth.
 
 ### Rough effort estimate
 
@@ -871,6 +873,94 @@ Backend-light: signed URLs for audio, deterministic markdown rendering for every
 
 ---
 
+## LLM-accessible corpus
+
+The user's stated goal: a year from now, point an AI at the entire meeting + recording corpus and have it work as context. MVP delivers this through three layers of progressively richer access, each cheap to build because the data is already in normalized Postgres.
+
+### Layer 1: continuous Obsidian mirror (already in MVP)
+
+The Obsidian sync writes a canonical `.md` per meeting (frontmatter + notes + summary + action items + transcript) to a configured vault path. Once you've clicked "Save to Obsidian" on a meeting, that `.md` lives on your filesystem permanently. Pointing any LLM tool at the vault directory (or a subfolder of it) gives you instant cross-meeting context. NotebookLM, Claude Projects, Cursor, etc. all consume `.md` directories natively.
+
+This is the primary "LLM-accessible" path for the user's day-to-day workflow.
+
+### Layer 2: HTTP API surface (added to MVP)
+
+Three endpoints, all gated by a single bearer token (`INTEGRATION_API_TOKEN` env var in Doppler). Single-user MVP doesn't need API key management — one long-lived token is enough.
+
+#### `GET /api/notes/:id/export.md`
+
+The same canonical `.md` Obsidian sync writes. Already exists in MVP. Useful for: "fetch this one meeting as markdown" from a script.
+
+#### `GET /api/notes/:id/export.json` (new in MVP)
+
+Structured JSON of one meeting:
+
+```json
+{
+  "meeting_id": "8c7e2f4a-...",
+  "type": "audio",
+  "title": "Q2 review with Aman",
+  "date": "2026-04-28T15:32:00-07:00",
+  "duration_seconds": 2820,
+  "detected_app": "zoom",
+  "project": { "id": "...", "name": "Project Win" },
+  "attendees": [{"id": "...", "name": "Ian Cross"}, {"id": "...", "name": "Aman Patel"}],
+  "notes_raw": "...user's markdown notes...",
+  "summary_enhanced": "...AI-polished version...",
+  "action_items": [{"text": "...", "assignee": "Ian"}],
+  "topics": [{"start_sec": 0, "title": "Opening / context"}],
+  "transcript": {
+    "language": "en",
+    "provider": "deepgram",
+    "full_text": "...",
+    "paragraphs": [
+      {"speaker_label": "Ian", "start_sec": 12.4, "text": "Hey, ready to start?"},
+      ...
+    ]
+  },
+  "audio_url": "https://...signed-url...",
+  "app_url": "https://loom.dissonance.cloud/notes/8c7e2f4a-..."
+}
+```
+
+Embeddings are intentionally **not** included in the JSON (large, only useful inside vector queries). They're accessed differently (see Layer 3).
+
+#### `GET /api/export/bundle.zip` (new in MVP)
+
+Bulk export of every meeting (audio + video) as a `.zip` containing one `.md` per meeting in the same canonical Obsidian format. Optional query params: `?since=2026-01-01` (only meetings since), `?type=audio` (audio-only), `?folder_id=<id>` (one folder).
+
+Use cases: drop the zip into NotebookLM as sources; pipe through a script to feed Claude Code; back up the corpus offline.
+
+#### Auth
+
+```
+Authorization: Bearer <INTEGRATION_API_TOKEN>
+```
+
+The token is a long-lived secret stored in Doppler. Endpoints check it before any data access; if absent or wrong, fall back to standard Supabase session auth (so the existing browser flow still works for the same endpoints).
+
+Future: per-user scoped API keys in the multi-tenant follow-up. MVP's single-token model is simple and fits the single-user reality.
+
+### Layer 3: MCP server (follow-up spec, not in MVP)
+
+The most-Claude-native way to expose the corpus, sized as its own follow-up spec. A small Node package (`packages/mcp-server`) exposing structured tools:
+
+- `search_meetings(query, limit)` — Postgres FTS hybrid + pgvector cosine search across transcripts and summaries.
+- `get_meeting(id)` — same payload as `GET /api/notes/:id/export.json`.
+- `semantic_search_transcripts(query, limit)` — cosine search against `transcript_chunks.embedding`, returns chunks with timestamps + meeting context.
+- `list_recent_meetings(n, since)` — paginated.
+- `find_meetings_with(person_name)` — meetings where a given person was an attendee or speaker.
+
+Authenticates via the same `INTEGRATION_API_TOKEN` (or a future per-user key). Distributes via npm or self-hosted endpoint. Plugs into Claude Code, Claude Desktop, or any MCP-aware client.
+
+**Why follow-up, not MVP**: the JSON + zip endpoints already deliver 80% of the value (any HTTP-capable AI tool can use them); the MCP server is the polished, ergonomic version for serious daily AI use. Ship the substance, then the polish.
+
+### Why this layering matters for the early build
+
+The thing that would actually be expensive to retrofit later is **schema sloppiness** — opaque blob columns, missing relationships, encoded transcripts that can't be queried directly. None of those exist in the design: every transcript word, every speaker assignment, every attendee link, every embedding lives in a queryable column. So whether you reach Layer 3 in three months or three years, the data layer is ready.
+
+---
+
 ## Provider abstraction
 
 Three swappable adapter layers, each with a default and a registry. Configured via env (Doppler) for MVP; per-user settings UI is a follow-up.
@@ -1022,15 +1112,34 @@ Built once templates are in place — depends on follow-up #1.
 
 File watcher on the vault path, parse frontmatter changes back into the app DB. Genuine distributed-systems problem (conflict resolution, identity tracking). Most users won't actually need it.
 
-### 9. Browser-based mic memo flow (~1 day)
+### 9. MCP server for the meeting corpus (~3–5 days)
+
+A small Node package (`packages/mcp-server`) that exposes the corpus as MCP tools to Claude Code, Claude Desktop, and any MCP-aware client. See "LLM-accessible corpus § Layer 3" for the tool list and rationale.
+
+Why follow-up, not MVP: the JSON + zip endpoints in MVP already let any HTTP-capable AI tool read the corpus. MCP is the polished, ergonomic version for daily use.
+
+Implementation notes:
+- Reuse the existing Drizzle queries from `src/db/queries/`. The MCP server is a thin shell over them.
+- Authenticate via `INTEGRATION_API_TOKEN` for MVP single-user; switch to per-user keys when the multi-tenant API follow-up lands.
+- Distribute via npm + GitHub release. Users install with `npm install -g @dissonance/loom-mcp` and configure their MCP client to point at it.
+
+### 10. Multi-user API with scoped keys (~1 week)
+
+Replace MVP's single `INTEGRATION_API_TOKEN` with a proper `api_keys` table:
+- Per-user, optionally per-scope (read-only / read-write).
+- Rate limits per key.
+- UI for generating, listing, revoking keys at `/settings/api-keys`.
+- Comes with the multi-tenant work (when team sharing of meetings ships).
+
+### 11. Browser-based mic memo flow (~1 day)
 
 The `/notes/new` browser-side mic capture cut from MVP. Trivially addable using the existing Loom MediaRecorder code.
 
-### 10. Apple Watch / iOS capture (multi-week)
+### 12. Apple Watch / iOS capture (multi-week)
 
 Voice memo from anywhere, uploaded as `media_objects.type='audio'`.
 
-### 11. Multi-tenant / team sharing for meetings (~1 week)
+### 13. Multi-tenant / team sharing for meetings (~1 week)
 
 Share a meeting with a colleague (the way Loom recordings can be shared today). Reuses the existing `/v/:slug` share-page pattern with audio-shaped UI.
 
@@ -1056,6 +1165,7 @@ To add to Doppler `prd_loom`:
 - `LLM_PROVIDER` — defaults to `openrouter`. Override per-deployment.
 - `LLM_MODEL` — defaults to `anthropic/claude-sonnet-4.6` via OpenRouter.
 - `TRANSCRIBE_PROVIDER` — defaults to `deepgram` (existing). Override for testing local Whisper.
+- `INTEGRATION_API_TOKEN` — long-lived bearer token for the LLM-accessible export endpoints (`/api/notes/:id/export.json`, `/api/notes/:id/export.md`, `/api/export/bundle.zip`). Single-user MVP; replaced by per-user scoped keys in the multi-user API follow-up.
 
 The existing `ANTHROPIC_API_KEY` stays for now (used as fallback if `LLM_PROVIDER=anthropic`).
 
@@ -1076,3 +1186,4 @@ The existing `ANTHROPIC_API_KEY` stays for now (used as fallback if `LLM_PROVIDE
 - **NotebookLM** = via `.md` export, no programmatic integration.
 - **OpenRouter** for LLM (flexibility); direct OpenAI for embeddings (broader pgvector support); `transcripts.provider` field for transcribe abstraction.
 - **UI design pivot (2026-04-29)**: Initial spec assumed a two-pane editor (notes left, transcript right). User shared Granola screenshots showing the actual UI is **single-column notes-primary** with a **floating transcript card expanded from the bottom strip**. Spec rewritten to match. Dashboard merge also pivoted from "unified grid with type chip" to **tabbed (Recordings | Notes) with shared folders**. Calendar block and in-app AI chat both confirmed out-of-MVP.
+- **LLM-accessible corpus (2026-04-29)**: Added three light HTTP endpoints to MVP — per-meeting `.md` and `.json` exports + bulk `.zip` of all meetings — gated by a single `INTEGRATION_API_TOKEN` bearer token. Lets any HTTP-capable AI tool read the corpus from day one. **MCP server** sized as its own follow-up spec for the polished version. The schema decisions throughout MVP (normalized tables, queryable transcripts, embeddings as first-class) mean nothing here is retrofit-expensive — adding richer access surfaces in the future is purely additive.
