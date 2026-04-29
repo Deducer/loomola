@@ -1,13 +1,19 @@
 /**
- * Content script that runs on every URL except loom.dissonance.cloud.
+ * Content script that runs on every URL.
  *
  * Receives "show-bubble" / "hide-bubble" messages from the background
- * service worker and injects an iframe pointing at
- * https://loom.dissonance.cloud/bubble. The iframe (loom-clone origin) has
- * camera permission and renders the live frameless circle.
+ * service worker and injects an iframe pointing at the extension's
+ * own bubble.html (chrome-extension://<id>/bubble.html). Loading the
+ * bubble from the extension origin (rather than loom.dissonance.cloud)
+ * means camera permission is granted ONCE for the extension and
+ * persists across every captured page — Loom-style, no per-tab
+ * "Allow camera?" prompt.
  *
- * Drag events bubble up from the iframe via cross-origin postMessage; we
- * forward them to the background so they reach the recording app's tab.
+ * Drag events bubble up from the iframe via postMessage and we forward
+ * them to the background so they reach the recording app's tab. The
+ * iframe also posts "size-change" when the user clicks one of the
+ * built-in size dots; we resize the iframe element + persist the new
+ * size in chrome.storage.session via the background.
  */
 
 const IFRAME_ID = "__loom_clone_bubble_iframe__";
@@ -17,15 +23,28 @@ const IFRAME_SIZE_PX = {
   large: 280,
 };
 
+// chrome.runtime.getURL("") returns "chrome-extension://<id>/" on most
+// platforms; the bubble's postMessages will arrive with this as the
+// `event.origin`.
+const BUBBLE_ORIGIN = (() => {
+  try {
+    return new URL(chrome.runtime.getURL("")).origin;
+  } catch {
+    return null;
+  }
+})();
+
 function ensureIframe(state) {
   let iframe = document.getElementById(IFRAME_ID);
   if (iframe) return iframe;
 
   iframe = document.createElement("iframe");
   iframe.id = IFRAME_ID;
-  iframe.src = `https://loom.dissonance.cloud/bubble?shape=${encodeURIComponent(
-    state.bubbleShape ?? "circle"
-  )}&size=${encodeURIComponent(state.bubbleSize ?? "medium")}`;
+  const params = new URLSearchParams({
+    shape: state.bubbleShape ?? "circle",
+    size: state.bubbleSize ?? "medium",
+  });
+  iframe.src = chrome.runtime.getURL("bubble.html") + "?" + params.toString();
   iframe.allow = "camera; microphone";
 
   const sizePx = IFRAME_SIZE_PX[state.bubbleSize ?? "medium"];
@@ -80,7 +99,7 @@ function removeIframe() {
 }
 
 console.log(
-  "[loom-clone-ext v0.3.0] content-script-page loaded on",
+  "[loom-clone-ext v0.4.0] content-script-page loaded on",
   location.href
 );
 
@@ -211,8 +230,24 @@ function endDrag() {
   dragState = null;
 }
 
+function applyBubbleSize(iframe, size) {
+  const sizePx = IFRAME_SIZE_PX[size];
+  if (!sizePx) return;
+  // Anchor the resize at the iframe's center so the bubble grows /
+  // shrinks symmetrically rather than from its top-left corner.
+  const rect = iframe.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  iframe.style.width = `${sizePx}px`;
+  iframe.style.height = `${sizePx}px`;
+  iframe.style.left = `${Math.round(cx - sizePx / 2)}px`;
+  iframe.style.top = `${Math.round(cy - sizePx / 2)}px`;
+  iframe.style.right = "auto";
+  iframe.style.bottom = "auto";
+}
+
 if (IS_TOP_FRAME) window.addEventListener("message", (event) => {
-  if (event.origin !== "https://loom.dissonance.cloud") return;
+  if (BUBBLE_ORIGIN && event.origin !== BUBBLE_ORIGIN) return;
   const data = event.data;
   if (!data || data.source !== "loom-clone-bubble") return;
 
@@ -231,5 +266,14 @@ if (IS_TOP_FRAME) window.addEventListener("message", (event) => {
     // Race-safety: iframe's own pointerup arrived. Idempotent with the
     // document mouseup listener — whichever fires first wins.
     endDrag();
+  } else if (data.type === "size-change" && typeof data.size === "string") {
+    const iframe = document.getElementById(IFRAME_ID);
+    if (iframe) applyBubbleSize(iframe, data.size);
+    // Persist so tab switches and re-injects in other tabs use the
+    // newly-picked size.
+    void safeSendMessage({
+      type: "loom-clone:bubble-size",
+      size: data.size,
+    });
   }
 });

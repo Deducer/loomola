@@ -202,6 +202,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         }
         await forwardPositionToApp(msg.position);
         sendResponse({ ok: true });
+      } else if (msg?.type === "loom-clone:bubble-size") {
+        // User picked a new size from the in-bubble toolbar — persist
+        // it so subsequent ensureIframe calls (tab switches, fresh
+        // injects) honor the choice.
+        const cur = await readState();
+        if (cur && typeof msg.size === "string") {
+          cur.bubbleSize = msg.size;
+          await writeState(cur);
+        }
+        sendResponse({ ok: true });
       } else if (msg?.type === "loom-clone:get-state") {
         const state = await readState();
         sendResponse({ ok: true, state });

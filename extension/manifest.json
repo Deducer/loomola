@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Loom Clone — Frameless Bubble",
   "short_name": "Loom Clone",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Companion extension for loom.dissonance.cloud. Injects a frameless, draggable camera bubble into the tab being recorded — true Loom-parity polish that the browser's documentPictureInPicture window can't deliver alone.",
   "permissions": ["activeTab", "tabs", "storage", "scripting"],
   "host_permissions": [
@@ -40,5 +40,11 @@
     "32": "icons/icon-32.png",
     "48": "icons/icon-48.png",
     "128": "icons/icon-128.png"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["bubble.html", "bubble.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }
