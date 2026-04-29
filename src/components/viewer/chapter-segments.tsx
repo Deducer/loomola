@@ -63,6 +63,7 @@ export function ChapterSegmentsOverlay({
 }: OverlayProps) {
   const [, forceTick] = useState(0);
   const [mounted, setMounted] = useState(false);
+  const [controlsHidden, setControlsHidden] = useState(false);
 
   // Wait for client-side mount before reading the DOM (Next.js may SSR
   // this component even with "use client", and `document` is undefined
@@ -87,7 +88,25 @@ export function ChapterSegmentsOverlay({
     };
   }, [progressEl]);
 
-  if (!mounted || !progressEl || totalDuration <= 0) return null;
+  // Plyr auto-hides its controls on mouseleave by adding `.plyr--hide-controls`
+  // to the player root, which transforms the controls (incl. the progress bar)
+  // out of view. The overlay's getBoundingClientRect read keeps tracking the
+  // transformed element, so the overlay visibly drifts off the seekbar onto
+  // whatever sits below the player. Hide ourselves when that class is present —
+  // chapter segments belong with the controls.
+  useEffect(() => {
+    if (!progressEl) return;
+    const playerRoot = progressEl.closest(".plyr");
+    if (!playerRoot) return;
+    const update = () =>
+      setControlsHidden(playerRoot.classList.contains("plyr--hide-controls"));
+    update();
+    const mo = new MutationObserver(update);
+    mo.observe(playerRoot, { attributes: true, attributeFilter: ["class"] });
+    return () => mo.disconnect();
+  }, [progressEl]);
+
+  if (!mounted || !progressEl || totalDuration <= 0 || controlsHidden) return null;
   const segments = computeSegments(chapters, totalDuration);
   if (segments.length === 0) return null;
 
