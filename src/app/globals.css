@@ -117,3 +117,18 @@ html, body {
   width: 32px;
   height: 32px;
 }
+
+/*
+ * Soften Plyr's default controls gradient. The library defaults to
+ *   linear-gradient(transparent, #000000bf)  (≈75% black at the floor)
+ * plus 35 px of padding-top, which together produce a heavy "shadow"
+ * across the bottom quarter of the player whenever controls are
+ * visible (paused state, hover during playback). Trim to a barely-
+ * there gradient that still keeps icons readable on light videos.
+ */
+.plyr-rounded {
+  --plyr-video-controls-background: linear-gradient(transparent 50%, rgba(0, 0, 0, 0.45));
+}
+.plyr-rounded .plyr__controls {
+  padding-top: 14px;
+}
