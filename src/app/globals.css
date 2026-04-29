@@ -101,3 +101,19 @@ html, body {
   border-radius: 16px;
   overflow: hidden;
 }
+
+/*
+ * Bigger center "play" overlay button, Loom-style. Plyr's default is a
+ * ~60 px circle with an 18 px icon — feels small relative to the player.
+ * Scale to a ~92 px circle with a 32 px icon. Padding is 30 px (15 px
+ * default × 2) so the icon sits centered with breathing room. Kept
+ * scoped to .plyr-rounded so any other Plyr instance (none today, but
+ * future-proofing) keeps the default sizing.
+ */
+.plyr-rounded .plyr__control--overlaid {
+  padding: 30px;
+}
+.plyr-rounded .plyr__control--overlaid svg {
+  width: 32px;
+  height: 32px;
+}
