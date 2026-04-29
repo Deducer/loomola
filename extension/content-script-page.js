@@ -52,12 +52,20 @@ function ensureIframe(state) {
     position: "fixed",
     width: `${sizePx}px`,
     height: `${sizePx}px`,
-    border: "none",
-    background: "transparent",
-    zIndex: "2147483647", // top of stacking context
     pointerEvents: "auto",
-    colorScheme: "normal",
   });
+  // Use setProperty with !important for the visual properties that
+  // host pages sometimes override via global iframe styling
+  // (Coolify's dashboard had `iframe { background: ... }` that beat
+  // our inline-style background, leaving a visible square around the
+  // circle). Inline styles without !important lose to !important
+  // declarations in stylesheets, so we explicitly assert priority
+  // for anything that affects whether the iframe reads as transparent.
+  iframe.style.setProperty("background", "transparent", "important");
+  iframe.style.setProperty("background-color", "rgba(0,0,0,0)", "important");
+  iframe.style.setProperty("border", "none", "important");
+  iframe.style.setProperty("color-scheme", "normal", "important");
+  iframe.style.setProperty("z-index", "2147483647", "important");
 
   // If background gave us a remembered fractional position (set on the
   // previous drag-end, persisted in chrome.storage.session), spawn the
@@ -99,7 +107,7 @@ function removeIframe() {
 }
 
 console.log(
-  "[loom-clone-ext v0.4.0] content-script-page loaded on",
+  "[loom-clone-ext v0.4.1] content-script-page loaded on",
   location.href
 );
 

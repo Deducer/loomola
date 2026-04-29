@@ -7,7 +7,15 @@
   <style>
     /* Hard-resetting everything because anything that paints behind the
        transparent body becomes a visible square around the camera circle
-       on the captured page. Same gotcha we hit with the Next.js /bubble. */
+       on the captured page.
+
+       color-scheme: normal — without an explicit value the browser
+       picks a canvas color (light → white, dark → near-black) and
+       paints it under our transparent body. Coolify (and presumably
+       any other heavily-themed dashboard) showed this as a *white*
+       square because we previously had `color-scheme: light`. `normal`
+       tells Chrome we have no opinion, which results in no canvas
+       paint at all — fully transparent through to the parent. */
     html, body {
       margin: 0;
       padding: 0;
@@ -17,7 +25,7 @@
       height: 100%;
       width: 100%;
       user-select: none;
-      color-scheme: light;
+      color-scheme: normal;
     }
     .bubble {
       position: absolute;
