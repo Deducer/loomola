@@ -202,10 +202,21 @@ export function RecordFlow({ brands }: { brands: BrandProfile[] }) {
     // Prevent duplicate work if the user mashes the stop button.
     handleRef.current = null;
 
+    // Transition to the upload screen IMMEDIATELY so the click feels
+    // responsive. handle.stop() takes 500ms–2s to flush final chunks
+    // from the five MediaRecorders; without this the HUD stays
+    // visible and the user assumes the click didn't register and
+    // hammers the button.
+    dispatch({ type: "begin-upload" });
+    const unsubscribe = coordinator.onProgress((progress) => {
+      dispatch({ type: "upload-progress", progress });
+    });
+
     let result;
     try {
       result = await handle.stop();
     } catch (err) {
+      unsubscribe();
       await fetch(`/api/recordings/${recordingId}/abort`, { method: "POST" })
         .catch(() => {});
       dispatch({
@@ -214,11 +225,6 @@ export function RecordFlow({ brands }: { brands: BrandProfile[] }) {
       });
       return;
     }
-
-    dispatch({ type: "begin-upload" });
-    const unsubscribe = coordinator.onProgress((progress) => {
-      dispatch({ type: "upload-progress", progress });
-    });
 
     try {
       const completed = coordinator.getCompletedParts();
