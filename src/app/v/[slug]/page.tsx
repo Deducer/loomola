@@ -224,13 +224,14 @@ function BrandFrame({
   children: React.ReactNode;
 }) {
   const fontFamily = brand?.fontFamily?.trim();
+  const accent = brand?.accentColor ?? null;
   // Apply the brand font as the page's primary font when set; otherwise the
   // `text-text`/etc tokens cascade naturally from globals.css.
   const style = fontFamily
     ? { fontFamily: `"${fontFamily}", var(--font-sans, ui-sans-serif, system-ui, sans-serif)` }
     : undefined;
   return (
-    <div className="min-h-screen" style={style}>
+    <div className="relative min-h-screen overflow-hidden" style={style}>
       {fontFamily && (
         <>
           {/* eslint-disable-next-line @next/next/no-page-custom-font */}
@@ -251,7 +252,19 @@ function BrandFrame({
           />
         </>
       )}
-      {children}
+      {/* Subtle accent-tinted radial glow at the top of branded share
+          pages — gives the page a hint of the brand's color without
+          overwhelming. Unbranded recordings get the flat dark theme. */}
+      {accent && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-0 z-0 h-[520px]"
+          style={{
+            background: `radial-gradient(ellipse 75% 65% at 50% 0%, color-mix(in srgb, ${accent} 18%, transparent), transparent 65%)`,
+          }}
+        />
+      )}
+      <div className="relative z-10">{children}</div>
     </div>
   );
 }
@@ -273,17 +286,19 @@ function BrandHeader({
 
   return (
     <>
-      <header className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-6">
-        <div className="flex flex-col gap-0.5">
+      <header className="relative flex min-h-16 flex-wrap items-center justify-between gap-3 border-b border-border/60 px-4 py-4 sm:px-6">
+        <div className="flex flex-col gap-1">
           <div className="flex items-center gap-3">
             <BrandLogo
               light={brand?.logoUrl ?? null}
               dark={brand?.logoUrlDark ?? null}
               alt={brand?.name ?? ""}
-              className="h-6 w-auto object-contain"
+              className="h-8 w-auto object-contain"
             />
             {brand?.name && (
-              <span className="text-sm font-semibold text-text">{brand.name}</span>
+              <span className="text-base font-semibold tracking-tight text-text">
+                {brand.name}
+              </span>
             )}
           </div>
           {brand?.tagline && (
@@ -329,7 +344,17 @@ function BrandHeader({
         </div>
       </header>
       {accent && (
-        <div className="h-[2px] w-full" style={{ backgroundColor: accent }} />
+        // Soft accent fade replaces the old hard 2px line. Reads as a
+        // brand presence rather than a flat divider — pairs with the
+        // radial glow at the top of the page.
+        <div
+          aria-hidden
+          className="h-[10px] w-full"
+          style={{
+            background: `linear-gradient(to bottom, ${accent}, transparent)`,
+            opacity: 0.55,
+          }}
+        />
       )}
     </>
   );
