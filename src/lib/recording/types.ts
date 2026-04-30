@@ -14,6 +14,7 @@ export type BubblePosition = {
 export type RecordingSettings = {
   resolution: Resolution;
   cameraEnabled: boolean;
+  micEnabled: boolean;
   bubbleShape: BubbleShape;
   bubbleSize: BubbleSize;
   bubblePosition: BubblePosition;
@@ -57,6 +58,7 @@ export type RecordingResult = {
 export const DEFAULT_SETTINGS: RecordingSettings = {
   resolution: "1080p",
   cameraEnabled: true,
+  micEnabled: true,
   bubbleShape: "circle",
   bubbleSize: "medium",
   bubblePosition: { x: 0.92, y: 0.88 },

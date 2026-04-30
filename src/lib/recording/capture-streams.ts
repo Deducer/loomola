@@ -60,6 +60,27 @@ export async function captureCameraAndMic(
 }
 
 /**
+ * Requests only the camera (no mic) — used when the user has the bubble on
+ * but has muted their mic.
+ */
+export async function captureCameraOnly(
+  cameraDeviceId: string | null
+): Promise<MediaStream> {
+  try {
+    return await navigator.mediaDevices.getUserMedia({
+      video: {
+        ...(cameraDeviceId ? { deviceId: { exact: cameraDeviceId } } : {}),
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        frameRate: { ideal: 30 },
+      },
+    });
+  } catch (err) {
+    throw mapError(err, "camera");
+  }
+}
+
+/**
  * Requests only the microphone (used when camera is disabled but audio
  * is still needed for the composite).
  */

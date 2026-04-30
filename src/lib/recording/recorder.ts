@@ -7,6 +7,7 @@ import type {
 import {
   captureScreen,
   captureCameraAndMic,
+  captureCameraOnly,
   captureMicOnly,
   stopStream,
   extractTracks,
@@ -91,22 +92,33 @@ export async function prepareRecording(
     settings.resolution,
     settings.systemAudioEnabled
   );
+  // Camera + mic are independently togglable. The four combinations:
+  //   - both on:  one getUserMedia call for video+audio
+  //   - cam only: getUserMedia video-only
+  //   - mic only: getUserMedia audio-only (camera bubble disabled)
+  //   - both off: skip getUserMedia entirely
   let camStream: MediaStream | null = null;
-  if (settings.cameraEnabled) {
+  if (settings.cameraEnabled && settings.micEnabled) {
     camStream = await captureCameraAndMic(
       settings.cameraDeviceId,
       settings.micDeviceId
     );
-  } else {
+  } else if (settings.cameraEnabled) {
+    camStream = await captureCameraOnly(settings.cameraDeviceId);
+  } else if (settings.micEnabled) {
     camStream = await captureMicOnly(settings.micDeviceId);
   }
 
   const screenVideoOnly = extractTracks(screenStream, "video");
   const screenAudioOnly = extractTracks(screenStream, "audio");
-  const cameraVideoOnly = settings.cameraEnabled
-    ? extractTracks(camStream, "video")
-    : null;
-  const micOnly = extractTracks(camStream, "audio");
+  const cameraVideoOnly =
+    settings.cameraEnabled && camStream
+      ? extractTracks(camStream, "video")
+      : null;
+  const micOnly =
+    settings.micEnabled && camStream
+      ? extractTracks(camStream, "audio")
+      : null;
 
   const compositor = startCompositor(screenStream, camStream, settings);
 

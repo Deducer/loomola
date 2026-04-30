@@ -90,8 +90,13 @@ export function RecordFlow({ brands }: { brands: BrandProfile[] }) {
       const tracksRequested: Array<{ kind: TrackKind; mimeType: string }> = [
         { kind: "composite", mimeType: "video/webm;codecs=vp9,opus" },
         { kind: "screen", mimeType: "video/webm;codecs=vp9,opus" },
-        { kind: "mic", mimeType: "audio/webm;codecs=opus" },
       ];
+      if (settings.micEnabled) {
+        tracksRequested.push({
+          kind: "mic",
+          mimeType: "audio/webm;codecs=opus",
+        });
+      }
       if (settings.cameraEnabled) {
         tracksRequested.push({
           kind: "camera",

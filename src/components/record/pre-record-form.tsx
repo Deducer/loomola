@@ -1,6 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import {
+  Camera,
+  CameraOff,
+  ChevronDown,
+  Mic,
+  MicOff,
+  Settings as SettingsIcon,
+  Volume2,
+  VolumeX,
+  Circle as CircleIcon,
+  Square as SquareIcon,
+  RectangleHorizontal,
+  Hexagon,
+} from "lucide-react";
 import type {
   RecordingSettings,
   Resolution,
@@ -12,6 +26,7 @@ import { BubblePreview } from "./bubble-preview";
 import { DevicePickers } from "./device-pickers";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
+import { cn } from "@/lib/cn";
 import type { BrandProfile } from "@/db/queries/brand-profiles";
 
 type Props = {
@@ -20,12 +35,18 @@ type Props = {
 };
 
 const RESOLUTIONS: Resolution[] = ["1080p", "1440p", "4k"];
-const SHAPES: BubbleShape[] = ["circle", "rounded-square", "rectangle", "hexagon"];
+const SHAPES: { value: BubbleShape; label: string; Icon: typeof CircleIcon }[] = [
+  { value: "circle", label: "Circle", Icon: CircleIcon },
+  { value: "rounded-square", label: "Square", Icon: SquareIcon },
+  { value: "rectangle", label: "Rect", Icon: RectangleHorizontal },
+  { value: "hexagon", label: "Hex", Icon: Hexagon },
+];
 const SIZES: BubbleSize[] = ["small", "medium", "large"];
 
 export function PreRecordForm({ brands, onStart }: Props) {
   const [settings, setSettings] = useState<RecordingSettings>(DEFAULT_SETTINGS);
   const [supported, setSupported] = useState<boolean | null>(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   useEffect(() => {
     const ok =
@@ -64,122 +85,226 @@ export function PreRecordForm({ brands, onStart }: Props) {
   }
 
   return (
-    <div className="grid gap-6 md:grid-cols-[1fr_1fr]">
-      <div className="space-y-5">
-        <Group label="Resolution">
-          <Segmented
-            options={RESOLUTIONS.map((r) => ({ value: r, label: r.toUpperCase() }))}
-            value={settings.resolution}
-            onChange={(v) => update("resolution", v as Resolution)}
-          />
-          {settings.resolution === "4k" && (
-            <p className="mt-1.5 text-xs text-text-subtle">
-              4K uses significant CPU — if you see dropped frames, drop to 1440p.
-            </p>
-          )}
-        </Group>
+    <div className="mx-auto max-w-md space-y-5">
+      {settings.cameraEnabled && <BubblePreview settings={settings} />}
 
-        <Group label="Camera">
-          <label className="flex items-center gap-2 text-sm text-text-muted">
-            <input
-              type="checkbox"
-              checked={settings.cameraEnabled}
-              onChange={(e) => update("cameraEnabled", e.target.checked)}
-              className="h-4 w-4 rounded border-border-strong bg-bg-subtle"
-              style={{ accentColor: "var(--accent)" }}
-            />
-            Include camera bubble
-          </label>
-        </Group>
-
-        {settings.cameraEnabled && (
-          <>
-            <Group label="Bubble shape">
-              <Segmented
-                options={SHAPES.map((s) => ({
-                  value: s,
-                  label: s === "rounded-square" ? "R-square" : s,
-                }))}
-                value={settings.bubbleShape}
-                onChange={(v) => update("bubbleShape", v as BubbleShape)}
-              />
-            </Group>
-
-            <Group label="Bubble size">
-              <Segmented
-                options={SIZES.map((s) => ({ value: s, label: s }))}
-                value={settings.bubbleSize}
-                onChange={(v) => update("bubbleSize", v as BubbleSize)}
-              />
-            </Group>
-
-            <p className="-mt-1 text-xs text-text-subtle">
-              Drag the bubble anywhere on your screen during recording — its
-              position updates live.
-            </p>
-          </>
-        )}
-
-        <Group label="System audio">
-          <label className="flex items-start gap-2 text-sm text-text-muted">
-            <input
-              type="checkbox"
-              checked={settings.systemAudioEnabled}
-              onChange={(e) => update("systemAudioEnabled", e.target.checked)}
-              className="mt-0.5 h-4 w-4 rounded border-border-strong bg-bg-subtle"
-              style={{ accentColor: "var(--accent)" }}
-            />
-            <span>
-              Capture audio from apps (Chrome only; you&apos;ll be asked to
-              share a tab or the whole screen with audio)
-            </span>
-          </label>
-        </Group>
-
-        <Group label="Devices">
-          <DevicePickers
-            micDeviceId={settings.micDeviceId}
-            cameraDeviceId={settings.cameraDeviceId}
-            cameraEnabled={settings.cameraEnabled}
-            onMicChange={(id) => update("micDeviceId", id)}
-            onCameraChange={(id) => update("cameraDeviceId", id)}
-          />
-        </Group>
-
-        <Group label="Brand profile (optional)">
-          <Select
-            value={settings.brandProfileId ?? ""}
-            onChange={(e) => update("brandProfileId", e.target.value || null)}
-          >
-            <option value="">None</option>
-            {brands.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </Select>
-        </Group>
+      <div className="grid grid-cols-3 gap-2">
+        <Toggle
+          on={settings.cameraEnabled}
+          OnIcon={Camera}
+          OffIcon={CameraOff}
+          label={settings.cameraEnabled ? "Camera" : "No camera"}
+          onClick={() => update("cameraEnabled", !settings.cameraEnabled)}
+        />
+        <Toggle
+          on={settings.micEnabled}
+          OnIcon={Mic}
+          OffIcon={MicOff}
+          label={settings.micEnabled ? "Mic" : "No mic"}
+          onClick={() => update("micEnabled", !settings.micEnabled)}
+        />
+        <Toggle
+          on={settings.systemAudioEnabled}
+          OnIcon={Volume2}
+          OffIcon={VolumeX}
+          label="App audio"
+          onClick={() =>
+            update("systemAudioEnabled", !settings.systemAudioEnabled)
+          }
+        />
       </div>
 
-      <div className="space-y-4">
-        <Group label="Preview">
-          <BubblePreview settings={settings} />
-        </Group>
+      <Button
+        onClick={() => onStart(settings)}
+        variant="destructive"
+        size="lg"
+        className="w-full"
+      >
+        <span className="inline-block h-2 w-2 rounded-full bg-white" aria-hidden />
+        Start recording
+      </Button>
 
-        <Button
-          onClick={() => onStart(settings)}
-          variant="destructive"
-          size="lg"
-          className="w-full"
-        >
-          Start recording
-        </Button>
+      <p className="text-center text-xs text-text-subtle">
+        You&apos;ll pick which window or screen to share next.
+      </p>
+
+      <p className="text-center text-[11px] leading-relaxed text-text-subtle/80">
+        Tip: capturing the entire screen opens the bubble in a small floating
+        window so it follows you across apps. The macOS desktop app (coming
+        soon) replaces it with a seamless system overlay.
+      </p>
+
+      <AdvancedSettings
+        open={advancedOpen}
+        onToggle={() => setAdvancedOpen((o) => !o)}
+        settings={settings}
+        update={update}
+        brands={brands}
+      />
+    </div>
+  );
+}
+
+function Toggle({
+  on,
+  OnIcon,
+  OffIcon,
+  label,
+  onClick,
+}: {
+  on: boolean;
+  OnIcon: typeof Camera;
+  OffIcon: typeof Camera;
+  label: string;
+  onClick: () => void;
+}) {
+  const Icon = on ? OnIcon : OffIcon;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={on}
+      className={cn(
+        "group flex flex-col items-center justify-center gap-1.5 rounded-lg border px-3 py-3 text-xs font-medium transition-all duration-150 active:scale-[0.98]",
+        on
+          ? "border-accent/50 bg-accent/10 text-text"
+          : "border-border bg-bg-subtle text-text-subtle hover:text-text-muted"
+      )}
+    >
+      <Icon className={cn("h-5 w-5", on ? "text-accent" : "text-text-subtle")} />
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function AdvancedSettings({
+  open,
+  onToggle,
+  settings,
+  update,
+  brands,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  settings: RecordingSettings;
+  update: <K extends keyof RecordingSettings>(
+    key: K,
+    value: RecordingSettings[K]
+  ) => void;
+  brands: BrandProfile[];
+}) {
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  // Animate height open/close. We measure scrollHeight on the inner div
+  // and apply it as a CSS height — gives a smooth reveal without
+  // resorting to grid-template-rows tricks.
+  const [maxHeight, setMaxHeight] = useState<string>("0px");
+  useEffect(() => {
+    if (!contentRef.current) return;
+    if (open) {
+      const h = contentRef.current.scrollHeight;
+      setMaxHeight(`${h}px`);
+    } else {
+      setMaxHeight("0px");
+    }
+  }, [open, settings.cameraEnabled, settings.micEnabled]);
+
+  return (
+    <div className="rounded-lg border border-border bg-bg-subtle/40">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center justify-between px-4 py-3 text-xs font-medium text-text-muted hover:text-text"
+        aria-expanded={open}
+      >
+        <span className="inline-flex items-center gap-2">
+          <SettingsIcon className="h-3.5 w-3.5" />
+          Advanced settings
+        </span>
+        <ChevronDown
+          className={cn(
+            "h-4 w-4 transition-transform duration-200",
+            open && "rotate-180"
+          )}
+        />
+      </button>
+      <div
+        style={{ maxHeight }}
+        className="overflow-hidden transition-[max-height] duration-200 ease-out"
+      >
+        <div ref={contentRef} className="space-y-4 px-4 pb-4">
+          <Field label="Resolution">
+            <Segmented
+              options={RESOLUTIONS.map((r) => ({
+                value: r,
+                label: r.toUpperCase(),
+              }))}
+              value={settings.resolution}
+              onChange={(v) => update("resolution", v as Resolution)}
+            />
+            {settings.resolution === "4k" && (
+              <p className="mt-1.5 text-[11px] text-text-subtle">
+                4K uses significant CPU — drop to 1440p if you see dropped frames.
+              </p>
+            )}
+          </Field>
+
+          {settings.cameraEnabled && (
+            <>
+              <Field label="Bubble shape">
+                <Segmented
+                  options={SHAPES.map((s) => ({
+                    value: s.value,
+                    label: s.label,
+                  }))}
+                  value={settings.bubbleShape}
+                  onChange={(v) => update("bubbleShape", v as BubbleShape)}
+                />
+              </Field>
+
+              <Field label="Bubble size">
+                <Segmented
+                  options={SIZES.map((s) => ({ value: s, label: s }))}
+                  value={settings.bubbleSize}
+                  onChange={(v) => update("bubbleSize", v as BubbleSize)}
+                />
+              </Field>
+            </>
+          )}
+
+          {(settings.micEnabled || settings.cameraEnabled) && (
+            <Field label="Devices">
+              <DevicePickers
+                micDeviceId={settings.micDeviceId}
+                cameraDeviceId={settings.cameraDeviceId}
+                cameraEnabled={settings.cameraEnabled}
+                onMicChange={(id) => update("micDeviceId", id)}
+                onCameraChange={(id) => update("cameraDeviceId", id)}
+              />
+            </Field>
+          )}
+
+          <Field label="Brand profile (optional)">
+            <Select
+              value={settings.brandProfileId ?? ""}
+              onChange={(e) =>
+                update("brandProfileId", e.target.value || null)
+              }
+            >
+              <option value="">None</option>
+              {brands.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
       </div>
     </div>
   );
 }
 
-function Group({
+function Field({
   label,
   children,
 }: {
@@ -188,7 +313,7 @@ function Group({
 }) {
   return (
     <div>
-      <div className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-text-muted">
+      <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-muted">
         {label}
       </div>
       {children}
@@ -212,11 +337,12 @@ function Segmented<T extends string>({
           key={o.value}
           type="button"
           onClick={() => onChange(o.value)}
-          className={
+          className={cn(
+            "rounded-sm px-2.5 py-1 text-xs capitalize transition-colors",
             o.value === value
-              ? "rounded-sm bg-bg-elevated px-3 py-1.5 text-xs capitalize text-text"
-              : "rounded-sm px-3 py-1.5 text-xs capitalize text-text-subtle hover:text-text-muted"
-          }
+              ? "bg-bg-elevated text-text"
+              : "text-text-subtle hover:text-text-muted"
+          )}
         >
           {o.label}
         </button>
