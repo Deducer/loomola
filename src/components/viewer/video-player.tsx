@@ -56,7 +56,13 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
   const [refreshing, setRefreshing] = useState(false);
   const [playerRoot, setPlayerRoot] = useState<HTMLElement | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
-  const [totalDuration, setTotalDuration] = useState(0);
+  // Seed from the durationSec prop (server-known value) so the seekbar
+  // can paint immediately. `loadedmetadata` will overwrite this once
+  // the browser parses the media — but for MediaRecorder webms with
+  // Infinity duration, the seed stays as the source of truth.
+  const [totalDuration, setTotalDuration] = useState(
+    durationSec && isFinite(durationSec) && durationSec > 0 ? durationSec : 0
+  );
   // The seekbar element renders inside playerRoot via a portal once
   // the Seekbar component mounts. We re-render after that mount so
   // the comment markers can pick up the new anchor element.

@@ -13,6 +13,19 @@ const BUFFERED_BG = "rgba(255, 255, 255, 0.32)";
 const HIT_HEIGHT = 16; // larger than the visible bar so the click target is forgiving
 const HEIGHT_IDLE = 3;
 const HEIGHT_HOVER = 6;
+// When controls expand, the bar lifts up to sit just above Plyr's
+// button row — Loom-style. Plyr's button row sits at ~5–33px from the
+// player bottom (5px padding + 28px buttons). Lifting the bar to 48px
+// gives the 12px scrubber thumb (which extends ~3px below the bar) a
+// 12px clearance above the icons so the thumb never overlaps them as
+// the playhead passes by.
+const BOTTOM_IDLE = 0;
+const BOTTOM_HOVER = 48;
+// Match Plyr's controls-strip transition exactly (`opacity .4s
+// ease-in-out, transform .4s ease-in-out` in plyr.css). Anything
+// faster makes the bar appear to detach from the controls — Loom's
+// effect is one rigid stack moving together.
+const LIFT_TRANSITION = "bottom 400ms ease-in-out";
 
 /**
  * Loom-style unified seekbar.
@@ -59,7 +72,6 @@ export function Seekbar({
   const [mounted, setMounted] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [dragging, setDragging] = useState(false);
-  const [hovering, setHovering] = useState(false);
   const [bufferedEnd, setBufferedEnd] = useState(0);
 
   // Callback ref so parent learns when the bar actually mounts (the
@@ -128,9 +140,15 @@ export function Seekbar({
       ? computed
       : [{ leftPct: 0, widthPct: 100, start_sec: 0, title: "" }];
 
-  const expanded = controlsVisible || dragging || hovering;
+  // Driven solely by Plyr's controls show/hide state (plus active drag).
+  // We deliberately do NOT include cursor-hover here: once the bar lifts
+  // up on expand, the cursor would be left below the bar and we'd
+  // immediately collapse — flicker loop. Plyr already shows controls on
+  // hover over the player, so `controlsVisible` covers that case.
+  const expanded = controlsVisible || dragging;
   const barHeight = expanded ? HEIGHT_HOVER : HEIGHT_IDLE;
   const gap = expanded ? 2 : 1;
+  const bottom = expanded ? BOTTOM_HOVER : BOTTOM_IDLE;
 
   const playheadPct =
     Math.min(100, Math.max(0, (currentTime / totalDuration) * 100));
@@ -177,16 +195,15 @@ export function Seekbar({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
-      onMouseEnter={() => setHovering(true)}
-      onMouseLeave={() => setHovering(false)}
       style={{
         position: "absolute",
-        bottom: 0,
+        bottom,
         left: 0,
         right: 0,
         height: HIT_HEIGHT,
         cursor: "pointer",
         zIndex: 5,
+        transition: LIFT_TRANSITION,
       }}
     >
       {/* Visible bar — chapter-segment pills with per-segment gradient

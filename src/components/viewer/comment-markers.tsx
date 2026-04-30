@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 export type CommentMarker = {
@@ -41,75 +41,64 @@ export function CommentMarkersOverlay({
   onSeek: (sec: number) => void;
 }) {
   const [mounted, setMounted] = useState(false);
-  // Last bounding rect of the seekbar captured while Plyr's controls
-  // were VISIBLE. We deliberately ignore updates while controls are
-  // hidden because Plyr fades them out via translateY(100%) — the
-  // transformed rect would shift the markers off-screen, and the
-  // unmount/remount that triggered (when we previously gated on
-  // controlsHidden) caused the popup to flicker as the user moved the
-  // mouse during playback. Markers now stay mounted at the cached
-  // visible position regardless of controls state.
-  const [visibleRect, setVisibleRect] = useState<DOMRect | null>(null);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
+  // Track the seekbar's bounding rect by writing directly to the
+  // overlay's style on every animation frame. React state updates
+  // would lag a frame behind scroll / lift, which appeared as the
+  // markers "drifting" relative to the bar. Reading getBoundingClientRect
+  // on rAF lets the browser settle layout for the frame, then we paint
+  // the markers on the same frame — true lock-step tracking.
   useEffect(() => {
     if (!progressEl) return;
-    const playerRoot = progressEl.closest(".plyr");
-    const update = () => {
-      const hidden =
-        !!playerRoot && playerRoot.classList.contains("plyr--hide-controls");
-      if (hidden) return; // keep last visible rect
-      const r = progressEl.getBoundingClientRect();
-      // Skip zero-size reads (controls just unmounted/transformed away).
-      if (r.width <= 0 || r.height <= 0) return;
-      setVisibleRect(r);
+    let rafId = 0;
+    let lastTop = NaN;
+    let lastLeft = NaN;
+    let lastWidth = NaN;
+    const tick = () => {
+      const el = overlayRef.current;
+      if (el) {
+        const r = progressEl.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) {
+          const top = r.top + r.height / 2 - MARKER_SIZE / 2;
+          if (top !== lastTop || r.left !== lastLeft || r.width !== lastWidth) {
+            lastTop = top;
+            lastLeft = r.left;
+            lastWidth = r.width;
+            el.style.top = `${top}px`;
+            el.style.left = `${r.left}px`;
+            el.style.width = `${r.width}px`;
+          }
+        }
+      }
+      rafId = requestAnimationFrame(tick);
     };
-    update();
-    window.addEventListener("resize", update);
-    window.addEventListener("scroll", update, true);
-    const ro = new ResizeObserver(update);
-    ro.observe(progressEl);
-    // React to controls show/hide so we update the cached rect the
-    // moment they become visible after a hide cycle (the seekbar can
-    // shift on responsive layouts).
-    const mo = playerRoot ? new MutationObserver(update) : null;
-    if (playerRoot && mo) {
-      mo.observe(playerRoot, {
-        attributes: true,
-        attributeFilter: ["class"],
-      });
-    }
-    return () => {
-      window.removeEventListener("resize", update);
-      window.removeEventListener("scroll", update, true);
-      ro.disconnect();
-      mo?.disconnect();
-    };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
   }, [progressEl]);
 
   if (
     !mounted ||
     !progressEl ||
-    !visibleRect ||
     totalDuration <= 0 ||
     comments.length === 0
   ) {
     return null;
   }
 
-  const rect = visibleRect;
-  const top = rect.top + rect.height / 2 - MARKER_SIZE / 2;
-
   const overlay = (
     <div
+      ref={overlayRef}
       style={{
         position: "fixed",
-        top,
-        left: rect.left,
-        width: rect.width,
+        // top/left/width are written by the rAF loop above.
+        top: 0,
+        left: 0,
+        width: 0,
         height: MARKER_SIZE,
         pointerEvents: "none",
         // Above ChapterSegmentsOverlay (z 10) so markers don't get
