@@ -156,13 +156,27 @@ html, body {
 }
 
 /*
- * Hover-only scrubber thumb (Loom-style). Plyr's thumb is the small
- * white circle on the `<input type="range">` slider. By default it
- * sits permanently on the seekbar; hide it at scale(0) and only
- * reveal on hover/focus/active so the bar reads as a clean filled
- * line at rest. Keyboard users still see it via :focus-visible.
+ * Hide Plyr's built-in progress bar entirely — we render our own
+ * Seekbar component (src/components/viewer/seekbar.tsx) that lives
+ * pinned to the bottom of the player and grows on hover, Loom-style.
+ * The new bar handles click-to-seek, drag-to-scrub, chapter dividers,
+ * buffered indicator, and a hover-only thumb in one place.
  *
- * The 0.4-shadow ring on hover mimics Loom's subtle accent halo.
+ * Trade-off: lose Plyr's preview-thumbnail tooltip on hover (the
+ * VTT-driven hover-scrub previews). The infrastructure is still wired
+ * (previewThumbnailsVttUrl prop, sprite job, /api/v/[slug]/preview-thumbnails.vtt)
+ * so we can reimplement the tooltip on the custom bar later when we
+ * miss it. Buffered indicator is reproduced by reading <video>.buffered.
+ */
+.plyr-rounded .plyr__progress__container {
+  display: none !important;
+}
+
+/*
+ * The thumb-on-hover rules below target Plyr's seekbar input which is
+ * now hidden — they have no effect on the visible UI but kept in
+ * place so reverting the seekbar hide above (e.g. for debugging)
+ * gives back the previous styling without further edits.
  */
 .plyr-rounded .plyr__progress input[type="range"]::-webkit-slider-thumb {
   transform: scale(0);

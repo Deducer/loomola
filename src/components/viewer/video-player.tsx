@@ -2,9 +2,8 @@
 
 import "plyr/dist/plyr.css";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { ChapterSegmentsOverlay } from "./chapter-segments";
 import { CommentMarkersOverlay, type CommentMarker } from "./comment-markers";
-import { IdleProgressBar } from "./idle-progress-bar";
+import { Seekbar } from "./seekbar";
 
 export type Chapter = { start_sec: number; title: string };
 
@@ -55,10 +54,13 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
   const plyrRef = useRef<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [progressEl, setProgressEl] = useState<HTMLElement | null>(null);
   const [playerRoot, setPlayerRoot] = useState<HTMLElement | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [totalDuration, setTotalDuration] = useState(0);
+  // The seekbar element renders inside playerRoot via a portal once
+  // the Seekbar component mounts. We re-render after that mount so
+  // the comment markers can pick up the new anchor element.
+  const [seekbarEl, setSeekbarEl] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
     if (!videoRef.current) return;
@@ -131,9 +133,10 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
       plyrRef.current.on("ended", () => onPlayStateChange?.(false));
       plyrRef.current.on("ready", () => {
         onReady?.();
-        // Plyr exposes its DOM via player.elements.{progress,container}
-        const el = plyrRef.current?.elements?.progress as HTMLElement | undefined;
-        if (el) setProgressEl(el);
+        // Plyr exposes its DOM via player.elements.container — that's
+        // where our custom Seekbar portals into. Plyr's own
+        // .plyr__progress is hidden via globals.css since we render
+        // our own bar; no need to grab a ref to it anymore.
         const root = plyrRef.current?.elements?.container as HTMLElement | undefined;
         if (root) setPlayerRoot(root);
         // Force-render the duration display when Chrome's
@@ -259,27 +262,23 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
         onError={handleError}
         className="w-full bg-black"
       />
-      <ChapterSegmentsOverlay
-        progressEl={progressEl}
+      <Seekbar
+        playerEl={playerRoot}
+        videoEl={videoRef.current}
         chapters={chapters}
         totalDuration={totalDuration}
         currentTime={currentTime}
+        accentColor={accentColor}
         onSeek={(sec) => {
           const video = videoRef.current;
           if (!video) return;
           video.currentTime = sec;
           if (plyrRef.current) plyrRef.current.currentTime = sec;
         }}
-      />
-      <IdleProgressBar
-        playerEl={playerRoot}
-        chapters={chapters}
-        totalDuration={totalDuration}
-        currentTime={currentTime}
-        accentColor={accentColor}
+        onBarElementChange={setSeekbarEl}
       />
       <CommentMarkersOverlay
-        progressEl={progressEl}
+        progressEl={seekbarEl}
         comments={comments ?? []}
         totalDuration={totalDuration}
         onSeek={(sec) => {
