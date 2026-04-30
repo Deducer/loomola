@@ -107,7 +107,7 @@ function removeIframe() {
 }
 
 console.log(
-  "[loom-clone-ext v0.4.1] content-script-page loaded on",
+  "[loom-clone-ext v0.5.0] content-script-page loaded on",
   location.href
 );
 

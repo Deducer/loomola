@@ -18,6 +18,12 @@ import {
   type UploadCoordinator,
   type TrackUploadInit,
 } from "@/lib/recording/upload-coordinator";
+import {
+  openDocPipBubble,
+  type DocPipBubbleHandle,
+} from "@/lib/recording/doc-pip-bubble";
+
+type BubbleMode = "iframe" | "docpip";
 import type { BrandProfile } from "@/db/queries/brand-profiles";
 import { PreRecordForm } from "./pre-record-form";
 import { Countdown } from "./countdown";
@@ -66,6 +72,12 @@ export function RecordFlow({ brands }: { brands: BrandProfile[] }) {
   const coordinatorRef = useRef<UploadCoordinator | null>(null);
   const recordingIdRef = useRef<string | null>(null);
   const pendingSettingsRef = useRef<RecordingSettings | null>(null);
+  // docPiP companion: opened when the user shares a Window or Entire
+  // Screen (anything that isn't a single Chrome tab). Persistent
+  // across non-Chrome apps; complements the extension iframe which
+  // can only inject inside Chrome contexts.
+  const docPipRef = useRef<DocPipBubbleHandle | null>(null);
+  const bubbleModeRef = useRef<BubbleMode>("iframe");
 
   // 1. PREPARE: provision the server-side row + multipart uploads, build the
   // coordinator, then acquire streams (Chrome permission prompts). After
@@ -143,6 +155,46 @@ export function RecordFlow({ brands }: { brands: BrandProfile[] }) {
       const prepared = await prepareRecording({ settings, coordinator });
       preparedRef.current = prepared;
 
+      // Decide bubble mode based on what the user shared. Browser-tab
+      // captures stay on the extension iframe (better in-tab UX, no
+      // titlebar). Window or entire-screen captures additionally open
+      // a docPiP window so the bubble follows the user across apps —
+      // and the extension is told to suppress its iframe so we don't
+      // render two bubbles.
+      const surface = prepared.screenStream
+        .getVideoTracks()[0]
+        ?.getSettings().displaySurface;
+      const wantDocPip =
+        settings.cameraEnabled &&
+        prepared.cameraStream &&
+        (surface === "window" || surface === "monitor");
+      if (wantDocPip) {
+        try {
+          const camStream = prepared.cameraStream!;
+          const handle = await openDocPipBubble({
+            cameraStream: camStream,
+            initialSize: settings.bubbleSize,
+            initialShape: settings.bubbleShape,
+          });
+          docPipRef.current = handle;
+          bubbleModeRef.current = "docpip";
+          // If the user closes the docPiP window mid-recording, stop
+          // tracking it but don't tear down the recording — they may
+          // intentionally want the bubble gone.
+          void handle.closed.then(() => {
+            if (docPipRef.current === handle) docPipRef.current = null;
+          });
+        } catch (err) {
+          // docPiP unsupported, blocked, or user activation lapsed.
+          // Fall back to the extension iframe (same behavior as before
+          // this feature shipped).
+          console.warn("[record] docPiP unavailable, using iframe-only:", err);
+          bubbleModeRef.current = "iframe";
+        }
+      } else {
+        bubbleModeRef.current = "iframe";
+      }
+
       dispatch({ type: "start-countdown", settings });
     } catch (err) {
       const message =
@@ -208,6 +260,15 @@ export function RecordFlow({ brands }: { brands: BrandProfile[] }) {
     // visible and the user assumes the click didn't register and
     // hammers the button.
     dispatch({ type: "begin-upload" });
+
+    // Tear down the docPiP companion (if open). MediaRecorders + the
+    // extension iframe handle their own teardown via the
+    // recording-stopped message ExtensionBridge fires on unmount.
+    if (docPipRef.current) {
+      docPipRef.current.close();
+      docPipRef.current = null;
+    }
+    bubbleModeRef.current = "iframe";
     const unsubscribe = coordinator.onProgress((progress) => {
       dispatch({ type: "upload-progress", progress });
     });
@@ -275,6 +336,11 @@ export function RecordFlow({ brands }: { brands: BrandProfile[] }) {
     coordinatorRef.current = null;
     recordingIdRef.current = null;
     pendingSettingsRef.current = null;
+    if (docPipRef.current) {
+      docPipRef.current.close();
+      docPipRef.current = null;
+    }
+    bubbleModeRef.current = "iframe";
     dispatch({ type: "reset" });
   }, []);
 
@@ -295,6 +361,7 @@ export function RecordFlow({ brands }: { brands: BrandProfile[] }) {
     <ExtensionBridge
       bubbleShape={settings.bubbleShape}
       bubbleSize={settings.bubbleSize}
+      bubbleMode={bubbleModeRef.current}
       positionController={prepared.positionController}
     />
   );

@@ -22,10 +22,15 @@ import type { BubblePositionController } from "@/lib/recording/composite-canvas"
 export function ExtensionBridge({
   bubbleShape,
   bubbleSize,
+  bubbleMode,
   positionController,
 }: {
   bubbleShape: BubbleShape;
   bubbleSize: BubbleSize;
+  /** "iframe": let the extension inject its in-tab bubble (default).
+   *  "docpip": /record opened a docPiP window itself, so the extension
+   *  should suppress its iframe to avoid two bubbles on Chrome tabs. */
+  bubbleMode?: "iframe" | "docpip";
   positionController: BubblePositionController;
 }) {
   useEffect(() => {
@@ -38,6 +43,7 @@ export function ExtensionBridge({
         type: "recording-started",
         bubbleShape,
         bubbleSize,
+        bubbleMode: bubbleMode ?? "iframe",
         bubblePosition: positionController.current,
       },
       window.location.origin
@@ -69,7 +75,7 @@ export function ExtensionBridge({
         window.location.origin
       );
     };
-  }, [bubbleShape, bubbleSize, positionController]);
+  }, [bubbleShape, bubbleSize, bubbleMode, positionController]);
 
   return null;
 }

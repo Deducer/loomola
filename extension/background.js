@@ -134,6 +134,10 @@ async function broadcastHideBubble() {
 chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   const state = await readState();
   if (!state) return;
+  // docPiP mode: /record owns the bubble in a system-level window,
+  // so don't shuttle iframes between tabs — that would show a
+  // second bubble in Chrome contexts.
+  if (state.bubbleMode === "docpip") return;
   const previous = await readActiveBubbleTabId();
   if (previous !== null && previous !== tabId) {
     await hideBubbleInTab(previous);
@@ -184,9 +188,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           // switches so the iframe re-injected on a new tab spawns at
           // the user's last-dragged position instead of bottom-right.
           position: msg.bubblePosition ?? null,
+          // "iframe" (default): inject the in-tab bubble on every
+          // captured Chrome tab. "docpip": /record is rendering its
+          // own Document-Picture-in-Picture window, so DON'T inject
+          // — otherwise the user sees two bubbles on Chrome tabs
+          // (one in the iframe, one in the docPiP overlay).
+          bubbleMode: msg.bubbleMode === "docpip" ? "docpip" : "iframe",
         };
         await writeState(state);
-        await broadcastShowBubble(state);
+        if (state.bubbleMode !== "docpip") {
+          await broadcastShowBubble(state);
+        }
         sendResponse({ ok: true });
       } else if (msg?.type === "loom-clone:recording-stopped") {
         await writeState(null);
@@ -235,6 +247,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (!isInjectableTab(tab)) return;
   const state = await readState();
   if (!state) return;
+  if (state.bubbleMode === "docpip") return;
   try {
     await chrome.tabs.sendMessage(tabId, {
       type: "loom-clone:show-bubble",
