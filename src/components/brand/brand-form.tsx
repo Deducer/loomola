@@ -59,25 +59,29 @@ export function BrandForm({ action, initialValues, submitLabel }: Props) {
         error={errors.accentColor}
       />
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <LogoPicker
-          name="logoFile"
-          label="Logo (light mode)"
-          hint="Shown when the share page is in light mode. PNG / JPG / WebP / SVG, up to 2 MB."
-          initialPreviewUrl={initialLight}
-          variant="light"
-        />
-        <LogoPicker
-          name="logoFileDark"
-          label="Logo (dark mode)"
-          hint="Optional. Falls back to the light-mode logo when not set."
-          initialPreviewUrl={initialDark}
-          variant="dark"
-        />
+      <div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <LogoPicker
+            name="logoFile"
+            label="Logo (light mode)"
+            initialPreviewUrl={initialLight}
+            variant="light"
+          />
+          <LogoPicker
+            name="logoFileDark"
+            label="Logo (dark mode)"
+            sublabel="(falls back to light)"
+            initialPreviewUrl={initialDark}
+            variant="dark"
+          />
+        </div>
+        <p className="mt-2 text-xs text-text-subtle">
+          PNG, JPG, WebP, or SVG · up to 2 MB
+        </p>
+        {errors.logo && (
+          <p className="mt-1 text-xs text-destructive">{errors.logo}</p>
+        )}
       </div>
-      {errors.logo && (
-        <p className="text-xs text-destructive">{errors.logo}</p>
-      )}
 
       <div className="border-t border-border pt-5">
         <h2 className="text-sm font-semibold text-text">Page theming</h2>

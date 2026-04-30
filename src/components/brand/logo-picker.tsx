@@ -11,8 +11,8 @@ type Props = {
   name: string;
   /** Label rendered above the picker. */
   label: string;
-  /** Helper text rendered below the file input. */
-  hint: string;
+  /** Optional secondary label, shown next to the main label in lighter text. */
+  sublabel?: string;
   /** Existing logo URL to render in the preview when no new file is selected. */
   initialPreviewUrl: string | null;
   /** Background variant for the preview tile (so dark logos read on dark and vice versa). */
@@ -38,13 +38,16 @@ function formatBytes(n: number): string {
  *      a rendering glitch.
  *   2. Lets us validate size + MIME on selection and show a clear
  *      error inline — Next.js server-action body limit (4 MB) bounces
- *      oversized uploads before our server validation runs, so the
- *      previous behavior was a silent failure on save.
+ *      oversized uploads before our server validation runs.
+ *
+ * Layout uses `items-start` so the two pickers in the grid align by
+ * their top edges regardless of whether one has a pending filename
+ * or an error displayed.
  */
 export function LogoPicker({
   name,
   label,
-  hint,
+  sublabel,
   initialPreviewUrl,
   variant,
 }: Props) {
@@ -76,9 +79,7 @@ export function LogoPicker({
       return;
     }
     if (f.size > LOGO_MAX_BYTES) {
-      setError(
-        `Image is ${formatBytes(f.size)} — max is ${MAX_MB} MB. Try resizing or compressing it.`
-      );
+      setError(`Image is ${formatBytes(f.size)} — max is ${MAX_MB} MB.`);
       setPendingFile(null);
       setPreviewUrl(initialPreviewUrl);
       if (fileRef.current) fileRef.current.value = "";
@@ -93,12 +94,13 @@ export function LogoPicker({
     if (fileRef.current) fileRef.current.value = "";
   }
 
-  // Light variant uses the light/elevated background tile so a dark
-  // logo reads against it (and vice versa for the dark slot).
   const tileBg =
     variant === "dark"
       ? "bg-[#0a0a0a] text-zinc-400"
       : "bg-zinc-100 text-zinc-500";
+
+  const hasPending = !!pendingFile;
+  const hasExisting = !!initialPreviewUrl;
 
   return (
     <div>
@@ -106,12 +108,17 @@ export function LogoPicker({
         htmlFor={name}
         className="block text-xs font-semibold uppercase tracking-wider text-text-muted"
       >
-        {label}{" "}
-        <span className="font-normal normal-case tracking-normal text-text-subtle">
-          (optional)
-        </span>
+        {label}
+        {sublabel && (
+          <>
+            {" "}
+            <span className="font-normal normal-case tracking-normal text-text-subtle">
+              {sublabel}
+            </span>
+          </>
+        )}
       </label>
-      <div className="mt-1.5 flex items-center gap-4">
+      <div className="mt-1.5 flex items-start gap-3">
         <div
           className={`flex h-16 w-32 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border p-2 ${tileBg}`}
         >
@@ -128,7 +135,7 @@ export function LogoPicker({
             </span>
           )}
         </div>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 pt-0.5">
           <input
             ref={fileRef}
             id={name}
@@ -138,35 +145,31 @@ export function LogoPicker({
             onChange={onChange}
             className="sr-only"
           />
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              className="inline-flex items-center rounded-md border border-border bg-bg-elevated px-3 py-1.5 text-xs font-medium text-text transition-colors hover:bg-bg-elevated/70"
-            >
-              {pendingFile || initialPreviewUrl ? "Replace logo" : "Choose file"}
-            </button>
-            {pendingFile && (
-              <span className="min-w-0 truncate text-xs text-text-muted">
-                {pendingFile.name}{" "}
-                <span className="text-text-subtle">
-                  ({formatBytes(pendingFile.size)})
-                </span>
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            className="inline-flex items-center rounded-md border border-border bg-bg-elevated px-3 py-1.5 text-xs font-medium text-text transition-colors hover:bg-bg-elevated/70"
+          >
+            {hasPending || hasExisting ? "Replace" : "Choose file"}
+          </button>
+          {hasPending && (
+            <div className="mt-1.5 truncate text-xs text-text-muted">
+              {pendingFile!.name}{" "}
+              <span className="text-text-subtle">
+                ({formatBytes(pendingFile!.size)})
               </span>
-            )}
-          </div>
-          {error ? (
-            <p className="mt-1.5 text-xs text-destructive">{error}</p>
-          ) : (
-            <p className="mt-1.5 text-xs text-text-subtle">{hint}</p>
+            </div>
           )}
-          {pendingFile && !error && (
+          {error && (
+            <p className="mt-1.5 text-xs text-destructive">{error}</p>
+          )}
+          {hasPending && !error && (
             <button
               type="button"
               onClick={clearPending}
               className="mt-1 text-xs text-text-subtle underline-offset-2 hover:text-text-muted hover:underline"
             >
-              Cancel new upload
+              Cancel
             </button>
           )}
         </div>
