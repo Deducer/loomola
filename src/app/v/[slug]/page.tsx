@@ -299,7 +299,7 @@ function BrandHeader({
               href={brand!.ctaUrl!}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-accent-fg transition-opacity hover:opacity-90"
+              className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-accent-fg shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:opacity-95 hover:shadow-md active:scale-[0.98]"
               style={{
                 backgroundColor: accent ?? "var(--accent)",
               }}

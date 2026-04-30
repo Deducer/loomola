@@ -6,7 +6,7 @@ export function BrandCard({ brand }: { brand: BrandProfile }) {
   return (
     <Link
       href={`/brands/${brand.id}`}
-      className="group flex items-center gap-3 rounded-lg border border-border bg-bg-subtle p-4 transition-colors hover:border-border-strong"
+      className="group flex items-center gap-3 rounded-lg border border-border bg-bg-subtle p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-border-strong hover:shadow-md hover:shadow-black/15"
       style={{ borderLeftColor: brand.accentColor, borderLeftWidth: 4 }}
     >
       <div

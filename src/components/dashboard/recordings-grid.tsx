@@ -115,7 +115,7 @@ export function RecordingsGrid({
 
   return (
     <>
-      <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {recordings.map((r) => (
           <li key={r.id}>
             <RecordingCard

@@ -107,7 +107,7 @@ export function RecordingCard({
           }
         }}
         className={cn(
-          "flex flex-col overflow-hidden rounded-xl border bg-bg-subtle transition-colors hover:border-border-strong",
+          "flex flex-col overflow-hidden rounded-xl border bg-bg-subtle transition-all duration-200 hover:-translate-y-0.5 hover:border-border-strong hover:shadow-lg hover:shadow-black/20",
           selected ? "border-accent ring-2 ring-accent/20" : "border-border"
         )}
       >
@@ -118,14 +118,14 @@ export function RecordingCard({
               src={thumbnailUrl}
               alt=""
               className={cn(
-                "h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]",
+                "h-full w-full object-cover transition-all duration-300 group-hover:scale-[1.02]",
                 previewing && previewUrl ? "opacity-0" : "opacity-100"
               )}
             />
           ) : (
             <div
               className={cn(
-                "flex h-full w-full items-center justify-center text-text-subtle",
+                "flex h-full w-full items-center justify-center text-text-subtle transition-opacity duration-300",
                 previewing && previewUrl ? "opacity-0" : "opacity-100"
               )}
             >
