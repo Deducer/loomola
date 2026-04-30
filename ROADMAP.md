@@ -119,14 +119,24 @@ Testing is not required between every commit — just at milestone boundaries.
 
 **Spec:** `docs/superpowers/specs/2026-04-26-chrome-extension-design.md`
 
+## Stage 1.10 — Share-page + brand-form polish
+
+| What it ships |
+|---|
+| **Share-page premium pass.** Watch-first surface gets a Loom-feel polish: title band sits flush-left to the page edge as a compact "page header" tag (cut from `py-8/12` to `py-4/5`, `28px` size), centered video below at `max-w-5xl`, accent-colored playhead + scrubber + chapter fills, accent fade strip below the brand header, top radial brand-color glow, off-white Plyr controls, smaller scrubber thumbs without rings, hover-scrub thumbnails preserved, `Sparkles` icon dropped from the Summary block. Brand-name text now hides automatically when a logo is present (logos almost always already contain the wordmark). |
+| **Brand form polish.** Logo pickers replaced the native file-input chrome (which was rendering "**N**o file chosen" truncated to "N." in the narrow grid column) with a custom button + filename label. Client-side validation (size + MIME) runs on selection — Next.js `serverActions.bodySizeLimit` was bouncing oversized uploads at the request body before our server validation ran, so the previous behavior was a silent failure on save. Both pickers align by top with a single shared format/size note ("PNG, JPG, WebP, or SVG · up to 2 MB") below the grid. Page-theming intro paragraph clarifies that each field actually renders on the share page (tagline, font family, CTA pill, footer text). |
+| **Mobile responsive pass.** Each surface (dashboard, record, share, edit) audited at ≤ 768px; flex/grid breakpoints tightened, top nav logo collapse fixed, share page stacks cleanly. |
+
+**Status:** ✅ shipped 2026-04-30.
+
 ## Open follow-ups (next milestones to spec)
 
 | Topic | Why | Rough effort |
 |---|---|---|
 | **Chrome extension companion** | Frameless circle bubble (true Loom parity for web). Loom's own web product is also a Chrome extension; document Picture-in-Picture is the closest pure-web gets, and it always shows a titlebar (browser security requirement). | ~1 day for MVP |
-| **Mobile responsive pass** | Designed desktop-first. Each surface (dashboard, record, share, edit) needs a focused audit + fixes for ≤ 768px. | ~0.5–1 day |
 | **macOS desktop / menubar app** | **Early dev app, ready for first manual test.** Native Swift/ScreenCaptureKit app in [`desktop/`](desktop/) can sign in, list capture sources, show a live camera bubble, and upload a first-display MP4 as the composite track. Still missing exported bubble compositing + raw tracks. Spec: [`docs/superpowers/specs/2026-04-27-macos-desktop-app-design.md`](docs/superpowers/specs/2026-04-27-macos-desktop-app-design.md). Plan: [`docs/superpowers/plans/2026-04-27-macos-desktop-app.md`](docs/superpowers/plans/2026-04-27-macos-desktop-app.md). | ~1–2 weeks to Loom-like v1 |
 | **Custom domains per brand** | `videos.acme.com` CNAME → VPS, served as the brand's share-page surface. Pairs with Brand Layer 2. | ~1 day infra + DNS setup |
+| **Custom-font upload for brand profiles** | Today's `fontFamily` field is Google Fonts only — typing a foundry name (Söhne, TT Norms, "Test the Future", etc.) silently 404s and falls back to system sans. Add `.woff2` upload slots (regular + bold + italic) on the brand form, store under `brand-fonts/<owner>/<id>/`, inject `@font-face` rules in the share-page `BrandFrame`. | ~1–2 hours |
 | **Reactions on share page** | Emoji reactions on `/v/:slug`. Spec'd as out of Stage 1; engagement booster. | ~1 day |
 | **Re-encoded trim downloads** | Currently trim is JS-side playback clamp only — raw downloads include the trimmed regions. ffmpeg-side re-encode would honor trim. | ~1 day |
 | **AI Q&A chat** | Ask questions about a recording (transcript-grounded RAG). | ~2–3 days |
