@@ -81,8 +81,12 @@ export function BrandForm({ action, initialValues, submitLabel }: Props) {
 
       <div className="border-t border-border pt-5">
         <h2 className="text-sm font-semibold text-text">Page theming</h2>
-        <p className="mt-1 text-xs text-text-muted">
-          Customizes the share page when this brand is assigned to a recording.
+        <p className="mt-1 text-xs leading-relaxed text-text-muted">
+          Applied automatically on every share page assigned to this brand.
+          Tagline appears under the logo, font family is loaded from Google
+          Fonts and applied page-wide, the CTA renders as a pill in the
+          header (visible to viewers, hidden for you as the owner), and
+          footer text shows at the bottom of the page.
         </p>
       </div>
 

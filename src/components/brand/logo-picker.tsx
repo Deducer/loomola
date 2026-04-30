@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import {
+  LOGO_ALLOWED_MIME,
+  LOGO_MAX_BYTES,
+} from "@/lib/validation/brand-profile";
 
 type Props = {
   /** Form-data field name. */
@@ -15,9 +19,27 @@ type Props = {
   variant: "light" | "dark";
 };
 
+const MAX_MB = LOGO_MAX_BYTES / (1024 * 1024);
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 /**
  * One file-upload slot with a live preview. Used twice in the brand
  * form — once for the light-mode logo, once for the dark-mode variant.
+ *
+ * The native file input is visually hidden and replaced with a custom
+ * button + filename label. Reasons:
+ *   1. The native renderer shows "No file chosen" next to the button;
+ *      in our narrow grid column it truncated to "N." which read as
+ *      a rendering glitch.
+ *   2. Lets us validate size + MIME on selection and show a clear
+ *      error inline — Next.js server-action body limit (4 MB) bounces
+ *      oversized uploads before our server validation runs, so the
+ *      previous behavior was a silent failure on save.
  */
 export function LogoPicker({
   name,
@@ -28,6 +50,7 @@ export function LogoPicker({
 }: Props) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(initialPreviewUrl);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -39,12 +62,34 @@ export function LogoPicker({
 
   function onChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0] ?? null;
+    setError(null);
+    if (!f) {
+      setPendingFile(null);
+      setPreviewUrl(initialPreviewUrl);
+      return;
+    }
+    if (!LOGO_ALLOWED_MIME.has(f.type)) {
+      setError("Use PNG, JPG, WebP, or SVG.");
+      setPendingFile(null);
+      setPreviewUrl(initialPreviewUrl);
+      if (fileRef.current) fileRef.current.value = "";
+      return;
+    }
+    if (f.size > LOGO_MAX_BYTES) {
+      setError(
+        `Image is ${formatBytes(f.size)} — max is ${MAX_MB} MB. Try resizing or compressing it.`
+      );
+      setPendingFile(null);
+      setPreviewUrl(initialPreviewUrl);
+      if (fileRef.current) fileRef.current.value = "";
+      return;
+    }
     setPendingFile(f);
-    if (!f) setPreviewUrl(initialPreviewUrl);
   }
   function clearPending() {
     setPendingFile(null);
     setPreviewUrl(initialPreviewUrl);
+    setError(null);
     if (fileRef.current) fileRef.current.value = "";
   }
 
@@ -91,10 +136,31 @@ export function LogoPicker({
             type="file"
             accept="image/png,image/jpeg,image/webp,image/svg+xml"
             onChange={onChange}
-            className="block w-full text-xs text-text-muted file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-bg-elevated file:px-3 file:py-1.5 file:text-xs file:text-text hover:file:bg-bg-elevated/70"
+            className="sr-only"
           />
-          <p className="mt-1.5 text-xs text-text-subtle">{hint}</p>
-          {pendingFile && (
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="inline-flex items-center rounded-md border border-border bg-bg-elevated px-3 py-1.5 text-xs font-medium text-text transition-colors hover:bg-bg-elevated/70"
+            >
+              {pendingFile || initialPreviewUrl ? "Replace logo" : "Choose file"}
+            </button>
+            {pendingFile && (
+              <span className="min-w-0 truncate text-xs text-text-muted">
+                {pendingFile.name}{" "}
+                <span className="text-text-subtle">
+                  ({formatBytes(pendingFile.size)})
+                </span>
+              </span>
+            )}
+          </div>
+          {error ? (
+            <p className="mt-1.5 text-xs text-destructive">{error}</p>
+          ) : (
+            <p className="mt-1.5 text-xs text-text-subtle">{hint}</p>
+          )}
+          {pendingFile && !error && (
             <button
               type="button"
               onClick={clearPending}
