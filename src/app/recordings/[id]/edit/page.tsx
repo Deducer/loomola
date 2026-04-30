@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, BarChart3, Download, Scissors } from "lucide-react";
 import { requireAuth } from "@/lib/require-auth";
 import { getRecordingForEdit } from "@/db/queries/recordings";
 import { listMaxWatched } from "@/db/queries/views";
@@ -126,7 +126,10 @@ export default async function EditRecordingPage({
           }
           trim={
             <section>
-              <h2 className="mb-3 text-sm font-semibold text-text">Trim</h2>
+              <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-text-muted">
+                <Scissors className="h-3.5 w-3.5" />
+                Trim
+              </h2>
               <TrimEditor
                 recordingId={rec.id}
                 durationSec={
@@ -142,7 +145,10 @@ export default async function EditRecordingPage({
           downloads={
             downloads.length > 0 ? (
               <section>
-                <h2 className="mb-3 text-sm font-semibold text-text">Downloads</h2>
+                <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-text-muted">
+                  <Download className="h-3.5 w-3.5" />
+                  Downloads
+                </h2>
                 <DownloadsList links={downloads} />
               </section>
             ) : null
@@ -150,7 +156,10 @@ export default async function EditRecordingPage({
           analytics={
             isReady ? (
               <section>
-                <h2 className="mb-3 text-sm font-semibold text-text">Analytics</h2>
+                <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-text-muted">
+                  <BarChart3 className="h-3.5 w-3.5" />
+                  Analytics
+                </h2>
                 <DropoffChart buckets={dropoffBuckets} />
               </section>
             ) : null

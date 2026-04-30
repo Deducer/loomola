@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Lock, LockOpen, Trash2 } from "lucide-react";
+import { Lock, LockOpen, Settings, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -92,9 +92,12 @@ export function SettingsSection({
 
   return (
     <section>
-      <h2 className="text-sm font-semibold text-text">Settings</h2>
+      <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-text-muted">
+        <Settings className="h-3.5 w-3.5" />
+        Settings
+      </h2>
 
-      <div className="mt-4 space-y-3">
+      <div className="mt-3 space-y-3">
         <div className="rounded-xl border border-border bg-bg-subtle p-3 text-sm">
           <div className="flex items-center gap-3">
             <span className="text-text-muted">Brand</span>

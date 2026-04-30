@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Trash2 } from "lucide-react";
+import { AlertTriangle, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -42,7 +42,10 @@ export function DangerZone({
 
   return (
     <section className="rounded-xl border border-destructive/40 bg-destructive/5 p-4">
-      <h2 className="text-sm font-semibold text-destructive">Danger zone</h2>
+      <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-destructive">
+        <AlertTriangle className="h-3.5 w-3.5" />
+        Danger zone
+      </h2>
       <p className="mt-1 text-xs text-text-muted">
         Deleting moves this recording to the trash bin (soft delete). The video
         files in R2 are kept until a future cleanup job.
