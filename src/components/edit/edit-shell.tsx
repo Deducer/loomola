@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 
 export function EditShell({
   preview,
@@ -19,6 +19,18 @@ export function EditShell({
   analytics: ReactNode;
   danger: ReactNode;
 }) {
+  // Keyed slot list — `downloads` and `analytics` are conditionally
+  // null, which makes React 19's positional key inference ambiguous
+  // and warn under StrictMode. Stable keys per slot make the
+  // reconciler happy without changing rendered DOM.
+  const slots: Array<{ key: string; node: ReactNode }> = [
+    { key: "settings", node: settings },
+    { key: "trim", node: trim },
+    { key: "downloads", node: downloads },
+    { key: "analytics", node: analytics },
+    { key: "danger", node: danger },
+  ];
+
   return (
     <div>
       <div className="mb-8">{header}</div>
@@ -30,11 +42,9 @@ export function EditShell({
           {preview}
         </aside>
         <div className="space-y-10">
-          {settings}
-          {trim}
-          {downloads}
-          {analytics}
-          {danger}
+          {slots.map(({ key, node }) => (
+            <Fragment key={key}>{node}</Fragment>
+          ))}
         </div>
       </div>
     </div>

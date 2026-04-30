@@ -225,6 +225,11 @@ export function Seekbar({
       >
         {segments.map((seg, i) => {
           const fillPct = segmentFillPct(seg, totalDuration, currentTime);
+          // Flat outer corners (Loom-style edge-to-edge bar) but keep
+          // chapter-internal corners pill-shaped so the dividers between
+          // chapters still read as separate segments.
+          const isFirst = i === 0;
+          const isLast = i === segments.length - 1;
           return (
             <div
               key={i}
@@ -233,7 +238,10 @@ export function Seekbar({
                 position: "relative",
                 height: "100%",
                 background: `linear-gradient(to right, ${accentColor} ${fillPct}%, ${TRACK_BG} ${fillPct}%)`,
-                borderRadius: 9999,
+                borderTopLeftRadius: isFirst ? 0 : 9999,
+                borderBottomLeftRadius: isFirst ? 0 : 9999,
+                borderTopRightRadius: isLast ? 0 : 9999,
+                borderBottomRightRadius: isLast ? 0 : 9999,
                 overflow: "hidden",
               }}
             />
