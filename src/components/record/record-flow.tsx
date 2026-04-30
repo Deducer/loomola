@@ -160,19 +160,24 @@ export function RecordFlow({ brands }: { brands: BrandProfile[] }) {
       const prepared = await prepareRecording({ settings, coordinator });
       preparedRef.current = prepared;
 
-      // Decide bubble mode based on what the user shared. Browser-tab
-      // captures stay on the extension iframe (better in-tab UX, no
-      // titlebar). Window or entire-screen captures additionally open
-      // a docPiP window so the bubble follows the user across apps —
-      // and the extension is told to suppress its iframe so we don't
-      // render two bubbles.
+      // Decide bubble mode based on what the user shared.
+      //   - Browser-tab capture: extension iframe (in-tab DOM bubble).
+      //   - Chrome-window capture: extension iframe — the bubble follows
+      //     the user as they switch tabs inside that window, which is
+      //     what Loom does. The previous behavior opened docPiP here
+      //     and surfaced the rectangular OS-chrome'd bubble even though
+      //     the extension could have rendered its frameless bubble.
+      //   - Entire-screen capture: docPiP fallback so the bubble
+      //     follows across apps. The extension can't inject into other
+      //     apps' windows so this is the only case where docPiP is
+      //     actually necessary.
       const surface = prepared.screenStream
         .getVideoTracks()[0]
         ?.getSettings().displaySurface;
       const wantDocPip =
         settings.cameraEnabled &&
         prepared.cameraStream &&
-        (surface === "window" || surface === "monitor");
+        surface === "monitor";
       if (wantDocPip) {
         try {
           const camStream = prepared.cameraStream!;

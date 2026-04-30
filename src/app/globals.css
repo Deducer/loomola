@@ -150,10 +150,11 @@ html, body {
 .plyr-rounded {
   --plyr-video-controls-background: linear-gradient(transparent 50%, rgba(0, 0, 0, 0.45));
   --plyr-video-progress-buffered-background: rgba(255, 255, 255, 0.18);
-  /* Volume slider thumb in the brand accent color (was Plyr's default
-     white). Pairs with the seekbar's accent-colored thumb so both
-     playheads read as part of the same brand identity. */
-  --plyr-range-thumb-background: var(--plyr-color-main, var(--accent));
+  /* Volume slider thumb in neutral off-white instead of the brand
+     accent color. Bright accents (e.g. saturated greens) competed
+     visually with the seekbar's accent-colored playhead and read as
+     "two playheads" in the controls strip. */
+  --plyr-range-thumb-background: rgba(255, 255, 255, 0.85);
   --plyr-range-thumb-height: 11px;
   --plyr-range-thumb-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
   /* Soften Plyr's pure-white control icons + timestamps to a slightly
@@ -165,6 +166,41 @@ html, body {
 }
 .plyr-rounded .plyr__controls {
   padding-top: 14px;
+}
+
+/*
+ * Volume control: hide the slider until the user hovers (or focuses
+ * via keyboard) the volume button — Loom-style. Keeps the controls
+ * strip tighter when paused and removes a visual element that competes
+ * with the seekbar for attention.
+ *
+ * Plyr renders `.plyr__volume` as a flex container with a mute button
+ * + a range input. We collapse the input's width and fade it out by
+ * default; on `:hover`/`:focus-within` we expand it back to its
+ * original width.
+ *
+ * The track's filled portion uses `currentColor` (which Plyr ties to
+ * --plyr-color-main = brand accent). Override with a neutral white so
+ * the volume slider doesn't pick up bright brand colors that compete
+ * with the seekbar playhead.
+ */
+.plyr-rounded .plyr__volume {
+  min-width: 0;
+}
+.plyr-rounded .plyr__volume input[type="range"] {
+  width: 0;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+  color: rgba(255, 255, 255, 0.85);
+  transition: width 200ms ease, opacity 150ms ease, margin 200ms ease;
+}
+.plyr-rounded .plyr__volume:hover input[type="range"],
+.plyr-rounded .plyr__volume:focus-within input[type="range"] {
+  width: 80px;
+  margin-left: 5px;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /*
