@@ -40,9 +40,16 @@ export function CommentMarkersOverlay({
   totalDuration: number;
   onSeek: (sec: number) => void;
 }) {
-  const [, forceTick] = useState(0);
   const [mounted, setMounted] = useState(false);
-  const [controlsHidden, setControlsHidden] = useState(false);
+  // Last bounding rect of the seekbar captured while Plyr's controls
+  // were VISIBLE. We deliberately ignore updates while controls are
+  // hidden because Plyr fades them out via translateY(100%) — the
+  // transformed rect would shift the markers off-screen, and the
+  // unmount/remount that triggered (when we previously gated on
+  // controlsHidden) caused the popup to flicker as the user moved the
+  // mouse during playback. Markers now stay mounted at the cached
+  // visible position regardless of controls state.
+  const [visibleRect, setVisibleRect] = useState<DOMRect | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -50,41 +57,50 @@ export function CommentMarkersOverlay({
 
   useEffect(() => {
     if (!progressEl) return;
-    const onChange = () => forceTick((n) => n + 1);
-    window.addEventListener("resize", onChange);
-    window.addEventListener("scroll", onChange, true);
-    const ro = new ResizeObserver(onChange);
-    ro.observe(progressEl);
-    return () => {
-      window.removeEventListener("resize", onChange);
-      window.removeEventListener("scroll", onChange, true);
-      ro.disconnect();
-    };
-  }, [progressEl]);
-
-  useEffect(() => {
-    if (!progressEl) return;
     const playerRoot = progressEl.closest(".plyr");
-    if (!playerRoot) return;
-    const update = () =>
-      setControlsHidden(playerRoot.classList.contains("plyr--hide-controls"));
+    const update = () => {
+      const hidden =
+        !!playerRoot && playerRoot.classList.contains("plyr--hide-controls");
+      if (hidden) return; // keep last visible rect
+      const r = progressEl.getBoundingClientRect();
+      // Skip zero-size reads (controls just unmounted/transformed away).
+      if (r.width <= 0 || r.height <= 0) return;
+      setVisibleRect(r);
+    };
     update();
-    const mo = new MutationObserver(update);
-    mo.observe(playerRoot, { attributes: true, attributeFilter: ["class"] });
-    return () => mo.disconnect();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    const ro = new ResizeObserver(update);
+    ro.observe(progressEl);
+    // React to controls show/hide so we update the cached rect the
+    // moment they become visible after a hide cycle (the seekbar can
+    // shift on responsive layouts).
+    const mo = playerRoot ? new MutationObserver(update) : null;
+    if (playerRoot && mo) {
+      mo.observe(playerRoot, {
+        attributes: true,
+        attributeFilter: ["class"],
+      });
+    }
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+      ro.disconnect();
+      mo?.disconnect();
+    };
   }, [progressEl]);
 
   if (
     !mounted ||
     !progressEl ||
+    !visibleRect ||
     totalDuration <= 0 ||
-    comments.length === 0 ||
-    controlsHidden
+    comments.length === 0
   ) {
     return null;
   }
 
-  const rect = progressEl.getBoundingClientRect();
+  const rect = visibleRect;
   const top = rect.top + rect.height / 2 - MARKER_SIZE / 2;
 
   const overlay = (

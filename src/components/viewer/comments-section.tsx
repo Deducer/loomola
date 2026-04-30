@@ -17,17 +17,23 @@ export function CommentsSection({
   isOwner,
   onSeek,
   getCurrentTime,
+  onCommentAdded,
 }: {
   comments: CommentRow[];
   slug: string;
   isOwner: boolean;
   onSeek: (sec: number) => void;
   getCurrentTime: () => number;
+  onCommentAdded?: (comment: CommentRow) => void;
 }) {
   return (
     <div>
       <CommentList comments={comments} isOwner={isOwner} onSeek={onSeek} />
-      <CommentForm slug={slug} getCurrentTime={getCurrentTime} />
+      <CommentForm
+        slug={slug}
+        getCurrentTime={getCurrentTime}
+        onCommentAdded={onCommentAdded}
+      />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { VideoPlayer, type VideoPlayerHandle } from "./video-player";
 import { TranscriptPanel } from "./transcript-panel";
 import { ChaptersList } from "./chapters-list";
@@ -46,7 +46,7 @@ export function ViewerShell({
   words,
   fullText,
   isOwner,
-  comments,
+  comments: serverComments,
   trimStartSec,
   trimEndSec,
   durationSec,
@@ -55,6 +55,28 @@ export function ViewerShell({
   const playerRef = useRef<VideoPlayerHandle | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+
+  // Local comments state seeded from the server-rendered comments.
+  // CommentForm submits then calls addOptimisticComment which prepends
+  // the new row immediately, so the seekbar marker + comment list both
+  // update without waiting for router.refresh's round-trip.
+  // useEffect re-syncs when the server comments change (post-refresh),
+  // overwriting any optimistic dupes — safe because the API returns
+  // the SAME id/createdAt that the next server fetch will produce.
+  const [comments, setComments] = useState(serverComments);
+  useEffect(() => {
+    setComments(serverComments);
+  }, [serverComments]);
+
+  const addOptimisticComment = useCallback((c: CommentRow) => {
+    setComments((prev) => {
+      // Guard against duplicates if the server fetch races us.
+      if (prev.some((p) => p.id === c.id)) return prev;
+      const next = [...prev, c];
+      next.sort((a, b) => a.timestampSec - b.timestampSec);
+      return next;
+    });
+  }, []);
 
   const handleSeek = useCallback((sec: number) => {
     playerRef.current?.seek(sec);
@@ -120,6 +142,7 @@ export function ViewerShell({
             isOwner={isOwner}
             onSeek={handleSeek}
             getCurrentTime={getCurrentTime}
+            onCommentAdded={addOptimisticComment}
           />
         }
         commentCount={comments.length}

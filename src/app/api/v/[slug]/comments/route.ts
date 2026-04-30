@@ -75,6 +75,17 @@ export async function POST(
     body: content,
   });
 
+  // Shape for the client's optimistic update — same fields as the
+  // share page's server-fetched commentRows so the UI can prepend
+  // the new comment immediately without waiting for router.refresh.
+  const created = {
+    id: row.id,
+    commenterName: row.commenterName,
+    body: row.body,
+    timestampSec: parseFloat(String(row.timestampSec)),
+    createdAt: row.createdAt.toISOString(),
+  };
+
   // Fire Mailgun in the background — never awaited, never blocks the
   // response. Errors caught and logged; comment is still persisted.
   void (async () => {
@@ -109,5 +120,5 @@ export async function POST(
     }
   })();
 
-  return NextResponse.json({ id: row.id }, { status: 201 });
+  return NextResponse.json({ id: row.id, comment: created }, { status: 201 });
 }

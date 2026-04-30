@@ -6,12 +6,25 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
+type CommentRow = {
+  id: string;
+  commenterName: string;
+  body: string;
+  timestampSec: number;
+  createdAt: string;
+};
+
 type Props = {
   slug: string;
   getCurrentTime: () => number;
+  /** Called with the freshly-created comment so the parent can prepend
+   *  it to local state immediately — the server-render refresh that
+   *  router.refresh() triggers is async and the marker / list shouldn't
+   *  wait for that round-trip to acknowledge the click. */
+  onCommentAdded?: (comment: CommentRow) => void;
 };
 
-export function CommentForm({ slug, getCurrentTime }: Props) {
+export function CommentForm({ slug, getCurrentTime, onCommentAdded }: Props) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -57,6 +70,12 @@ export function CommentForm({ slug, getCurrentTime }: Props) {
       if (!res.ok) {
         setError(`Unexpected error (${res.status}).`);
         return;
+      }
+      const data = (await res.json().catch(() => null)) as
+        | { id: string; comment?: CommentRow }
+        | null;
+      if (data?.comment && onCommentAdded) {
+        onCommentAdded(data.comment);
       }
       setName("");
       setEmail("");
