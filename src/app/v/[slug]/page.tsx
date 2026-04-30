@@ -106,65 +106,72 @@ export default async function SharePage({
         showCta={!isOwner}
       />
 
-      <main className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-14">
-        <h1 className="text-2xl font-semibold tracking-[-0.01em] text-text sm:text-[32px] sm:leading-[1.15]">
-          {displayTitle}
-        </h1>
-        <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-text-muted">
-          {brand?.name && (
-            <>
-              <span className="font-medium text-text">{brand.name}</span>
-              <span aria-hidden="true" className="text-text-subtle">
-                ·
-              </span>
-            </>
-          )}
-          <span>{formatRelativeTime(rec.createdAt)}</span>
-          {!isReady && (
-            <>
-              <span aria-hidden="true" className="text-text-subtle">
-                ·
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span
-                  aria-hidden="true"
-                  className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent"
-                />
-                {rec.status}
-              </span>
-            </>
-          )}
-        </div>
-
-        {isReady && signedVideoUrl ? (
-          <div className="mt-8">
-            <ViewerShell
-              slug={slug}
-              signedVideoUrl={signedVideoUrl}
-              accentColor={playerAccent}
-              summary={rec.aiSummary}
-              chapters={rec.aiChapters ?? []}
-              actionItems={rec.aiActionItems ?? []}
-              words={words}
-              fullText={transcript?.fullText ?? ""}
-              isOwner={isOwner}
-              comments={commentRows}
-              trimStartSec={trimStartSec}
-              trimEndSec={trimEndSec}
-              durationSec={
-                rec.durationSeconds != null
-                  ? parseFloat(String(rec.durationSeconds))
-                  : null
-              }
-              previewThumbnailsVttUrl={
-                rec.previewSpriteKey
-                  ? `/api/v/${slug}/preview-thumbnails.vtt`
-                  : null
-              }
-            />
+      {/* Title band — left-aligned title + brand/time meta on a slightly
+          tinted full-width strip. Reads as its own section so the player
+          below feels like a distinct, immersive surface (Loom-style).
+          The radial brand glow above shines through the bg-subtle/40
+          tint, so branded recordings still get color presence here. */}
+      <section className="border-b border-border/40 bg-bg-subtle/40 px-4 py-8 sm:px-6 sm:py-12">
+        <div className="mx-auto max-w-4xl">
+          <h1 className="text-2xl font-semibold tracking-[-0.01em] text-text sm:text-[32px] sm:leading-[1.15]">
+            {displayTitle}
+          </h1>
+          <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-text-muted">
+            {brand?.name && (
+              <>
+                <span className="font-medium text-text">{brand.name}</span>
+                <span aria-hidden="true" className="text-text-subtle">
+                  ·
+                </span>
+              </>
+            )}
+            <span>{formatRelativeTime(rec.createdAt)}</span>
+            {!isReady && (
+              <>
+                <span aria-hidden="true" className="text-text-subtle">
+                  ·
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span
+                    aria-hidden="true"
+                    className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent"
+                  />
+                  {rec.status}
+                </span>
+              </>
+            )}
           </div>
+        </div>
+      </section>
+
+      <main className="mx-auto max-w-4xl px-4 py-10 sm:px-6 sm:py-14">
+        {isReady && signedVideoUrl ? (
+          <ViewerShell
+            slug={slug}
+            signedVideoUrl={signedVideoUrl}
+            accentColor={playerAccent}
+            summary={rec.aiSummary}
+            chapters={rec.aiChapters ?? []}
+            actionItems={rec.aiActionItems ?? []}
+            words={words}
+            fullText={transcript?.fullText ?? ""}
+            isOwner={isOwner}
+            comments={commentRows}
+            trimStartSec={trimStartSec}
+            trimEndSec={trimEndSec}
+            durationSec={
+              rec.durationSeconds != null
+                ? parseFloat(String(rec.durationSeconds))
+                : null
+            }
+            previewThumbnailsVttUrl={
+              rec.previewSpriteKey
+                ? `/api/v/${slug}/preview-thumbnails.vtt`
+                : null
+            }
+          />
         ) : (
-          <div className="mt-8 rounded-xl border border-dashed border-border bg-bg-subtle/40 p-12 text-center">
+          <div className="rounded-xl border border-dashed border-border bg-bg-subtle/40 p-12 text-center">
             <div className="inline-flex items-center gap-2 text-base font-medium text-text">
               <span
                 aria-hidden="true"
@@ -183,7 +190,6 @@ export default async function SharePage({
             </p>
           </div>
         )}
-
       </main>
 
       <BrandFooter brand={brand} />

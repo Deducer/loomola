@@ -150,6 +150,14 @@ html, body {
 .plyr-rounded {
   --plyr-video-controls-background: linear-gradient(transparent 50%, rgba(0, 0, 0, 0.45));
   --plyr-video-progress-buffered-background: rgba(255, 255, 255, 0.18);
+  /* Volume slider thumb in the brand accent color (was Plyr's default
+     white). Pairs with the seekbar's accent-colored thumb so both
+     playheads read as part of the same brand. The shadow is a soft
+     accent ring to keep contrast against the dark controls strip. */
+  --plyr-range-thumb-background: var(--plyr-color-main, var(--accent));
+  --plyr-range-thumb-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.5),
+    0 0 0 1.5px color-mix(in srgb, var(--plyr-color-main, var(--accent)) 40%, white);
 }
 .plyr-rounded .plyr__controls {
   padding-top: 14px;

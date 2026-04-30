@@ -280,10 +280,10 @@ export function Seekbar({
           left: `calc(${playheadPct}% - 6px)`,
           width: 12,
           height: 12,
-          background: "white",
+          background: accentColor,
           borderRadius: "50%",
           boxShadow: expanded
-            ? `0 0 0 4px color-mix(in srgb, ${accentColor} 25%, transparent), 0 1px 3px rgba(0,0,0,0.4)`
+            ? `0 0 0 4px color-mix(in srgb, ${accentColor} 30%, transparent), 0 0 0 1.5px color-mix(in srgb, ${accentColor} 40%, white), 0 1px 3px rgba(0,0,0,0.4)`
             : "none",
           opacity: expanded ? 1 : 0,
           transform: expanded ? "scale(1)" : "scale(0)",
