@@ -3,6 +3,7 @@
 import "plyr/dist/plyr.css";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { ChapterSegmentsOverlay } from "./chapter-segments";
+import { CommentMarkersOverlay, type CommentMarker } from "./comment-markers";
 import { IdleProgressBar } from "./idle-progress-bar";
 
 export type Chapter = { start_sec: number; title: string };
@@ -29,6 +30,8 @@ type Props = {
   // VTT URL for hover-scrub thumbnails (Plyr's previewThumbnails feature).
   // When null, hover-scrub is silently disabled.
   previewThumbnailsVttUrl?: string | null;
+  // Comments to render as markers on the seekbar (frame.io style).
+  comments?: CommentMarker[];
 };
 
 export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
@@ -44,6 +47,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
     trimEndSec,
     durationSec,
     previewThumbnailsVttUrl,
+    comments,
   },
   ref
 ) {
@@ -273,6 +277,17 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
         totalDuration={totalDuration}
         currentTime={currentTime}
         accentColor={accentColor}
+      />
+      <CommentMarkersOverlay
+        progressEl={progressEl}
+        comments={comments ?? []}
+        totalDuration={totalDuration}
+        onSeek={(sec) => {
+          const video = videoRef.current;
+          if (!video) return;
+          video.currentTime = sec;
+          if (plyrRef.current) plyrRef.current.currentTime = sec;
+        }}
       />
       {error && (
         <div className="mt-2 flex items-center gap-3 rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm">

@@ -90,6 +90,7 @@ export function ViewerShell({
         trimEndSec={trimEndSec}
         durationSec={durationSec}
         previewThumbnailsVttUrl={previewThumbnailsVttUrl}
+        comments={comments}
       />
       {!isOwner && (
         <Tracking
