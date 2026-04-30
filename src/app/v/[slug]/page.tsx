@@ -106,20 +106,18 @@ export default async function SharePage({
         showCta={!isOwner}
       />
 
-      {/* Title band — left-anchored title + brand/time meta on a
-          slightly tinted full-width strip. The title block sits at the
-          LEFT of the page-centered max-w-5xl column (capped at
-          max-w-3xl), creating a "tag" feel rather than a centered
-          headline. The player below takes the full max-w-5xl width
-          and reads as the focal point. The radial brand glow shines
-          through the bg-subtle/40 tint. */}
-      <section className="border-b border-border/40 bg-bg-subtle/40 px-4 py-8 sm:px-6 sm:py-12">
-        <div className="mx-auto max-w-5xl">
-          <div className="max-w-3xl">
-          <h1 className="text-2xl font-semibold tracking-[-0.01em] text-text sm:text-[32px] sm:leading-[1.15]">
+      {/* Title band — title + meta sit flush-left to the page edge
+          (just inside the standard px-4/sm:px-6 gutter), not within
+          the centered video column. Reads as a "page header" tag
+          rather than a centered headline, while the player below
+          stays centered as the visual focal point. The radial brand
+          glow shines through the bg-subtle/40 tint. */}
+      <section className="border-b border-border/40 bg-bg-subtle/40 px-4 py-4 sm:px-6 sm:py-5">
+        <div className="max-w-3xl">
+          <h1 className="text-2xl font-semibold tracking-[-0.01em] text-text sm:text-[28px] sm:leading-[1.2]">
             {displayTitle}
           </h1>
-          <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-text-muted">
+          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-text-muted">
             {brand?.name && (
               <>
                 <span className="font-medium text-text">{brand.name}</span>
@@ -144,11 +142,10 @@ export default async function SharePage({
               </>
             )}
           </div>
-          </div>
         </div>
       </section>
 
-      <main className="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
+      <main className="mx-auto max-w-5xl px-4 pb-10 pt-6 sm:px-6 sm:pb-14 sm:pt-8">
         {isReady && signedVideoUrl ? (
           <ViewerShell
             slug={slug}

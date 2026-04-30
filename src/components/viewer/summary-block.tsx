@@ -1,5 +1,3 @@
-import { Sparkles } from "lucide-react";
-
 export function SummaryBlock({
   summary,
 }: {
@@ -9,8 +7,7 @@ export function SummaryBlock({
   return (
     <section className="mt-8">
       <div className="rounded-xl border border-border bg-bg-subtle/60 p-5 sm:p-6">
-        <div className="mb-2.5 inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-text-muted">
-          <Sparkles className="h-3.5 w-3.5 text-accent" />
+        <div className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-text-muted">
           Summary
         </div>
         <p className="max-w-[75ch] text-[15px] leading-[1.65] text-text">
