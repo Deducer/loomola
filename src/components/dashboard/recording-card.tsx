@@ -147,7 +147,16 @@ export function RecordingCard({
           <div
             className={cn(
               "absolute left-2 top-2 transition-opacity",
-              selectionActive || selected ? "opacity-0" : "opacity-100 group-hover:opacity-0"
+              selectionActive || selected
+                ? "opacity-0"
+                : rec.status === "ready"
+                  ? // ready cards: hide the badge on hover so the selection
+                    // checkbox can take its place. The 'ready' state is the
+                    // default and not particularly useful once visible.
+                    "opacity-100 group-hover:opacity-0"
+                  : // non-ready cards: keep the badge visible always so the
+                    // user always knows if a recording is still processing.
+                    "opacity-100"
             )}
           >
             <Badge variant={statusVariant}>{rec.status}</Badge>
