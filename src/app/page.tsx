@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Plus, Search, Video } from "lucide-react";
 import { requireAuth } from "@/lib/require-auth";
 import { listBrandProfiles } from "@/db/queries/brand-profiles";
 import { listFoldersForOwner } from "@/db/queries/folders";
@@ -123,13 +123,34 @@ export default async function HomePage({
 
           <div className="mt-8">
             {recordings.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-border bg-bg-subtle/40 p-12 text-center">
-                <p className="text-sm text-text-muted">
-                  {query
-                    ? `No recordings match “${query}”.`
-                    : "Drop recordings here or hit New recording to get started."}
-                </p>
-              </div>
+              query ? (
+                <div className="rounded-xl border border-dashed border-border bg-bg-subtle/40 p-12 text-center">
+                  <Search className="mx-auto h-6 w-6 text-text-subtle" />
+                  <p className="mt-3 text-sm font-medium text-text">
+                    No recordings match “{query}”.
+                  </p>
+                  <p className="mt-1 text-xs text-text-subtle">
+                    Try a different keyword or clear the search to see everything.
+                  </p>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-border bg-bg-subtle/40 p-12 text-center">
+                  <Video className="mx-auto h-7 w-7 text-text-subtle" />
+                  <p className="mt-3 text-base font-medium text-text">
+                    No recordings yet
+                  </p>
+                  <p className="mx-auto mt-1.5 max-w-[42ch] text-sm text-text-muted">
+                    Capture your screen, camera, and audio in a single click —
+                    your first recording lives here.
+                  </p>
+                  <Link href="/record" className="mt-5 inline-block">
+                    <Button>
+                      <Plus className="h-4 w-4" />
+                      New recording
+                    </Button>
+                  </Link>
+                </div>
+              )
             ) : (
               <RecordingsGrid
                 recordings={recordings}

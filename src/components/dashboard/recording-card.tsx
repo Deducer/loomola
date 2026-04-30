@@ -197,7 +197,9 @@ export function RecordingCard({
         }}
         className={cn(
           "absolute left-2 top-2 z-20 flex h-6 w-6 items-center justify-center rounded-md border border-white/80 !bg-white !text-neutral-950 shadow-sm transition-opacity hover:!bg-white/90",
-          selectionActive || selected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+          selectionActive || selected
+            ? "opacity-100"
+            : "opacity-0 group-hover:opacity-100",
           selected && "border-accent !bg-accent !text-accent-fg"
         )}
         aria-label={selected ? "Deselect recording" : "Select recording"}
@@ -210,7 +212,7 @@ export function RecordingCard({
         className={cn(
           "absolute right-2 top-2 flex flex-col gap-2 opacity-0 transition-opacity",
           (selectionActive || selected) && "opacity-100",
-          !selectionActive && "group-hover:opacity-100"
+          !selectionActive && "group-hover:opacity-100 touch:opacity-100"
         )}
       >
         <Tooltip label={copied ? "Copied" : "Copy link"} side="left">

@@ -8,6 +8,14 @@
    on the light theme). */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Touch-only variant — fires when the device has no hover capability
+   (`@media (hover: none)`). Use to keep hover-revealed UI visible on
+   phones / tablets / Windows touch laptops where there's no cursor to
+   trigger group-hover. Pair with the existing `group-hover:*` classes:
+     class="opacity-0 group-hover:opacity-100 touch:opacity-100"
+*/
+@custom-variant touch (@media (hover: none));
+
 @theme {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
