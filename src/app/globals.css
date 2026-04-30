@@ -142,10 +142,49 @@ html, body {
  * across the bottom quarter of the player whenever controls are
  * visible (paused state, hover during playback). Trim to a barely-
  * there gradient that still keeps icons readable on light videos.
+ *
+ * --plyr-video-progress-buffered-background: matches the chunk-bar's
+ *   track color so the buffered indicator and the chapter idle bar
+ *   share a visual language.
  */
 .plyr-rounded {
   --plyr-video-controls-background: linear-gradient(transparent 50%, rgba(0, 0, 0, 0.45));
+  --plyr-video-progress-buffered-background: rgba(255, 255, 255, 0.18);
 }
 .plyr-rounded .plyr__controls {
   padding-top: 14px;
+}
+
+/*
+ * Hover-only scrubber thumb (Loom-style). Plyr's thumb is the small
+ * white circle on the `<input type="range">` slider. By default it
+ * sits permanently on the seekbar; hide it at scale(0) and only
+ * reveal on hover/focus/active so the bar reads as a clean filled
+ * line at rest. Keyboard users still see it via :focus-visible.
+ *
+ * The 0.4-shadow ring on hover mimics Loom's subtle accent halo.
+ */
+.plyr-rounded .plyr__progress input[type="range"]::-webkit-slider-thumb {
+  transform: scale(0);
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+.plyr-rounded .plyr__progress input[type="range"]::-moz-range-thumb {
+  transform: scale(0);
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+.plyr-rounded .plyr__progress:hover input[type="range"]::-webkit-slider-thumb,
+.plyr-rounded .plyr__progress input[type="range"]:focus-visible::-webkit-slider-thumb,
+.plyr-rounded .plyr__progress input[type="range"]:active::-webkit-slider-thumb {
+  transform: scale(1);
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--plyr-color-main, var(--accent)) 25%, transparent),
+    0 1px 3px rgba(0, 0, 0, 0.4);
+}
+.plyr-rounded .plyr__progress:hover input[type="range"]::-moz-range-thumb,
+.plyr-rounded .plyr__progress input[type="range"]:focus-visible::-moz-range-thumb,
+.plyr-rounded .plyr__progress input[type="range"]:active::-moz-range-thumb {
+  transform: scale(1);
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--plyr-color-main, var(--accent)) 25%, transparent),
+    0 1px 3px rgba(0, 0, 0, 0.4);
 }
