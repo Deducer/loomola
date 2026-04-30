@@ -276,15 +276,13 @@ export function Seekbar({
         aria-hidden="true"
         style={{
           position: "absolute",
-          bottom: barHeight / 2 - 6,
-          left: `calc(${playheadPct}% - 6px)`,
-          width: 12,
-          height: 12,
+          bottom: barHeight / 2 - 5,
+          left: `calc(${playheadPct}% - 5px)`,
+          width: 10,
+          height: 10,
           background: accentColor,
           borderRadius: "50%",
-          boxShadow: expanded
-            ? `0 0 0 4px color-mix(in srgb, ${accentColor} 30%, transparent), 0 0 0 1.5px color-mix(in srgb, ${accentColor} 40%, white), 0 1px 3px rgba(0,0,0,0.4)`
-            : "none",
+          boxShadow: expanded ? "0 1px 3px rgba(0,0,0,0.45)" : "none",
           opacity: expanded ? 1 : 0,
           transform: expanded ? "scale(1)" : "scale(0)",
           transition:

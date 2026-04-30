@@ -106,13 +106,16 @@ export default async function SharePage({
         showCta={!isOwner}
       />
 
-      {/* Title band — left-aligned title + brand/time meta on a slightly
-          tinted full-width strip. Reads as its own section so the player
-          below feels like a distinct, immersive surface (Loom-style).
-          The radial brand glow above shines through the bg-subtle/40
-          tint, so branded recordings still get color presence here. */}
+      {/* Title band — left-anchored title + brand/time meta on a
+          slightly tinted full-width strip. The title block sits at the
+          LEFT of the page-centered max-w-5xl column (capped at
+          max-w-3xl), creating a "tag" feel rather than a centered
+          headline. The player below takes the full max-w-5xl width
+          and reads as the focal point. The radial brand glow shines
+          through the bg-subtle/40 tint. */}
       <section className="border-b border-border/40 bg-bg-subtle/40 px-4 py-8 sm:px-6 sm:py-12">
-        <div className="mx-auto max-w-4xl">
+        <div className="mx-auto max-w-5xl">
+          <div className="max-w-3xl">
           <h1 className="text-2xl font-semibold tracking-[-0.01em] text-text sm:text-[32px] sm:leading-[1.15]">
             {displayTitle}
           </h1>
@@ -141,10 +144,11 @@ export default async function SharePage({
               </>
             )}
           </div>
+          </div>
         </div>
       </section>
 
-      <main className="mx-auto max-w-4xl px-4 py-10 sm:px-6 sm:py-14">
+      <main className="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
         {isReady && signedVideoUrl ? (
           <ViewerShell
             slug={slug}
@@ -301,7 +305,11 @@ function BrandHeader({
               alt={brand?.name ?? ""}
               className="h-8 w-auto object-contain"
             />
-            {brand?.name && (
+            {/* Brand-name text only renders when the brand has NO logo.
+                When a logo exists it almost always already contains the
+                brand name in its asset, so showing both reads as
+                duplicated wordmark. */}
+            {brand?.name && !brand.logoUrl && !brand.logoUrlDark && (
               <span className="text-base font-semibold tracking-tight text-text">
                 {brand.name}
               </span>
@@ -355,10 +363,10 @@ function BrandHeader({
         // radial glow at the top of the page.
         <div
           aria-hidden
-          className="h-[10px] w-full"
+          className="h-[5px] w-full"
           style={{
             background: `linear-gradient(to bottom, ${accent}, transparent)`,
-            opacity: 0.55,
+            opacity: 0.45,
           }}
         />
       )}
@@ -371,7 +379,7 @@ function BrandFooter({ brand }: { brand: BrandLike }) {
   if (!text) return null;
   return (
     <footer className="mt-12 border-t border-border px-4 py-8 sm:px-6">
-      <div className="mx-auto max-w-4xl text-xs leading-relaxed text-text-muted">
+      <div className="mx-auto max-w-5xl text-xs leading-relaxed text-text-muted">
         {text}
       </div>
     </footer>
