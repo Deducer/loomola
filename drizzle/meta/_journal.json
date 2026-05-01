@@ -78,6 +78,13 @@
       "when": 1777960000000,
       "tag": "0010_brand_default_theme",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1777963600000,
+      "tag": "0011_pgvector_extension",
+      "breakpoints": true
     }
   ]
 }
