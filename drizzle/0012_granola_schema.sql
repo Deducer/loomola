@@ -87,8 +87,6 @@ ALTER TABLE "speaker_assignments" ADD CONSTRAINT "speaker_assignments_media_obje
 --> statement-breakpoint
 ALTER TABLE "speaker_assignments" ADD CONSTRAINT "speaker_assignments_person_id_people_id_fk" FOREIGN KEY ("person_id") REFERENCES "public"."people"("id") ON DELETE set null ON UPDATE no action;
 --> statement-breakpoint
-ALTER TABLE "speaker_assignments" ADD CONSTRAINT "speaker_assignments_person_or_label_check" CHECK ("person_id" IS NOT NULL OR "display_label_override" IS NOT NULL);
---> statement-breakpoint
 ALTER TABLE "summary_embeddings" ADD CONSTRAINT "summary_embeddings_media_object_id_media_objects_id_fk" FOREIGN KEY ("media_object_id") REFERENCES "public"."media_objects"("id") ON DELETE cascade ON UPDATE no action;
 --> statement-breakpoint
 ALTER TABLE "transcript_chunks" ADD CONSTRAINT "transcript_chunks_media_object_id_media_objects_id_fk" FOREIGN KEY ("media_object_id") REFERENCES "public"."media_objects"("id") ON DELETE cascade ON UPDATE no action;
