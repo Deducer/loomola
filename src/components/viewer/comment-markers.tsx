@@ -33,11 +33,15 @@ export function CommentMarkersOverlay({
   progressEl,
   comments,
   totalDuration,
+  accentColor,
   onSeek,
 }: {
   progressEl: HTMLElement | null;
   comments: CommentMarker[];
   totalDuration: number;
+  /** Brand accent — drives the marker fill so comments read as part of
+   *  the same visual identity as the seekbar playhead and chapter fill. */
+  accentColor: string;
   onSeek: (sec: number) => void;
 }) {
   const [mounted, setMounted] = useState(false);
@@ -122,6 +126,7 @@ export function CommentMarkersOverlay({
             comment={c}
             leftPct={pct}
             popupAlignment={popupAlignment}
+            accentColor={accentColor}
             onSeek={onSeek}
           />
         );
@@ -136,11 +141,13 @@ function Marker({
   comment,
   leftPct,
   popupAlignment,
+  accentColor,
   onSeek,
 }: {
   comment: CommentMarker;
   leftPct: number;
   popupAlignment: "left" | "center" | "right";
+  accentColor: string;
   onSeek: (sec: number) => void;
 }) {
   const [hover, setHover] = useState(false);
@@ -171,16 +178,16 @@ function Marker({
         width: MARKER_SIZE,
         height: MARKER_SIZE,
         padding: 0,
-        border: "2px solid white",
+        border: "1.5px solid white",
         borderRadius: "50%",
-        background: hover ? "white" : "var(--accent)",
-        color: hover ? "var(--accent)" : "white",
+        background: hover ? "white" : accentColor,
+        color: hover ? accentColor : "white",
         cursor: "pointer",
         pointerEvents: "auto",
         transition: "transform 120ms ease, background 120ms ease, color 120ms ease",
         transform: hover ? "scale(1.15)" : "scale(1)",
         boxShadow: "0 1px 4px rgba(0, 0, 0, 0.5)",
-        fontSize: 9,
+        fontSize: 10,
         fontWeight: 700,
         display: "flex",
         alignItems: "center",
@@ -190,7 +197,7 @@ function Marker({
       title={`${comment.commenterName} at ${formatTs(comment.timestampSec)}`}
       aria-label={`Comment by ${comment.commenterName} at ${formatTs(comment.timestampSec)}`}
     >
-      <span aria-hidden="true">{initialsOf(comment.commenterName)}</span>
+      <span aria-hidden="true">{initialOf(comment.commenterName)}</span>
       {hover && (
         <div
           aria-hidden="true"
@@ -256,11 +263,9 @@ function Marker({
   );
 }
 
-function initialsOf(name: string): string {
-  const parts = name.split(/[\s@.]+/).filter(Boolean);
-  return (
-    (parts[0]?.[0] ?? "?").toUpperCase() + (parts[1]?.[0] ?? "").toUpperCase()
-  );
+function initialOf(name: string): string {
+  const first = name.split(/[\s@.]+/).filter(Boolean)[0];
+  return (first?.[0] ?? "?").toUpperCase();
 }
 
 function formatTs(seconds: number): string {

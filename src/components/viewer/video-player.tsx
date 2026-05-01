@@ -287,6 +287,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
         progressEl={seekbarEl}
         comments={comments ?? []}
         totalDuration={totalDuration}
+        accentColor={accentColor}
         onSeek={(sec) => {
           const video = videoRef.current;
           if (!video) return;
