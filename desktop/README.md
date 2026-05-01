@@ -24,6 +24,7 @@ This directory is a development app, not a finished recorder. It includes:
 - Keychain-backed session storage.
 - Backend start/abort handshake against the existing `/api/recordings/*` routes.
 - Granola `type='audio'` start/abort handshake against the same backend when `ENABLE_GRANOLA=true`.
+- Granola audio capture foundation: session model, AAC `.m4a` writer, mic capture coordinator, and system-audio capture coordinator.
 - ScreenCaptureKit source listing for displays/windows.
 - ScreenCaptureKit first-display MP4 recording path on macOS 15+.
 - Upload of that local MP4 as the `composite` track through the existing backend.
@@ -32,7 +33,7 @@ This directory is a development app, not a finished recorder. It includes:
 - API model types matching the existing `/api/recordings/*` routes.
 - Xcode signing/notarization placeholders.
 
-It does **not** yet composite the camera bubble into the exported video or write separate raw camera/mic/system-audio tracks. The current desktop recording path is first-display screen + ScreenCaptureKit audio to a local MP4, uploaded as the `composite` track. The next major implementation slice is `AVAssetWriter` compositing for screen + bubble + raw tracks.
+It does **not** yet composite the camera bubble into the exported video or wire the Granola manual audio recorder end to end. The current Loom desktop recording path is first-display screen + ScreenCaptureKit audio to a local MP4, uploaded as the `composite` track. The next major Loom implementation slice is `AVAssetWriter` compositing for screen + bubble + raw tracks; the next Granola slice is `AudioNoteRecorder` orchestration from backend row creation through capture, upload, and complete.
 
 The implementation spec lives at:
 

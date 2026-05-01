@@ -28,10 +28,10 @@
 - [x] Add Swift unit tests for audio start-request JSON and response decoding.
 - [x] Add a desktop "Test Audio Backend" handshake that starts `type='audio'` with mic/system tracks, then aborts.
 - [x] Refactor `MultipartUploadCoordinator` to stream 8MB file chunks instead of `Data(contentsOf:)` on the full file.
-- [ ] Add `AudioRecordingSession` state model for selected tracks, local file URLs, start time, duration, and backend recording ID.
-- [ ] Add reusable `AudioAssetWriter` for AAC `.m4a` output from `CMSampleBuffer`, normalizing first sample time to zero.
-- [ ] Add `MicrophoneCaptureCoordinator` using `AVCaptureSession` + `AVCaptureAudioDataOutput` into `AudioAssetWriter`.
-- [ ] Add `SystemAudioCaptureCoordinator` using `SCStream` audio output into `AudioAssetWriter`.
+- [x] Add `AudioRecordingSession` state model for selected tracks, local file URLs, start time, duration, and backend recording ID.
+- [x] Add reusable `AudioAssetWriter` for AAC `.m4a` output from `CMSampleBuffer`, normalizing first sample time to zero.
+- [x] Add `MicrophoneCaptureCoordinator` using `AVCaptureSession` + `AVCaptureAudioDataOutput` into `AudioAssetWriter`.
+- [x] Add `SystemAudioCaptureCoordinator` using `SCStream` audio output into `AudioAssetWriter`.
 - [ ] Add `AudioNoteRecorder` orchestration: start backend row, start selected capture sources, stop writers, upload completed files, call complete, cleanup.
 - [ ] Update `RecorderViewModel` and `MainRecorderView` with manual audio controls and status/progress messages.
 - [ ] Add cancellation path: stop capture, call `/abort`, delete local files.
@@ -41,7 +41,7 @@
 
 ## Completed Verification
 
-- `swift test` in `desktop/` passed after the API-model slice.
+- `swift test` in `desktop/` passed after the API-model and capture-foundation slices.
 
 ## Design Notes
 
