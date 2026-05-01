@@ -1,9 +1,10 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
-import { and, eq, like, sql } from "drizzle-orm";
+import { and, eq, inArray, like, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { mediaObjects, notes } from "@/db/schema";
 import {
+  createQuickAudioNote,
   deleteNotes,
   getNotesByMediaObject,
   upsertNotesBody,
@@ -13,6 +14,7 @@ const describeDb = process.env.DATABASE_URL ? describe : describe.skip;
 const OWNER_B = randomUUID();
 const TEST_SLUG_PREFIX = "granola-test-notes-";
 let OWNER_A = "";
+let createdQuickNoteIds: string[] = [];
 
 async function findTestOwnerId() {
   const email = process.env.TEST_CREATOR_EMAIL ?? "theiancross@gmail.com";
@@ -53,9 +55,35 @@ afterEach(async () => {
         like(mediaObjects.slug, `${TEST_SLUG_PREFIX}%`)
       )
     );
+  if (createdQuickNoteIds.length > 0) {
+    await db
+      .delete(mediaObjects)
+      .where(
+        and(
+          eq(mediaObjects.ownerId, OWNER_A),
+          inArray(mediaObjects.id, createdQuickNoteIds)
+        )
+      );
+    createdQuickNoteIds = [];
+  }
 });
 
 describeDb("notes queries", () => {
+  it("createQuickAudioNote creates a ready audio note shell", async () => {
+    const quickNote = await createQuickAudioNote(OWNER_A);
+    createdQuickNoteIds.push(quickNote.id);
+
+    const [media] = await db
+      .select()
+      .from(mediaObjects)
+      .where(eq(mediaObjects.id, quickNote.id))
+      .limit(1);
+
+    expect(media.type).toBe("audio");
+    expect(media.status).toBe("ready");
+    expect(media.slug).toBe(quickNote.slug);
+  });
+
   it("upsertNotesBody creates a row when none exists", async () => {
     const media = await createMediaObject(OWNER_A);
     const result = await upsertNotesBody(media.id, OWNER_A, "Hello world");

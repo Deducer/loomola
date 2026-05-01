@@ -21,6 +21,7 @@ export type SearchSort =
 
 export async function searchRecordings(params: {
   ownerId: string;
+  type?: "video" | "audio";
   query?: string;
   folderId?: string | null; // undefined = all folders; null = unfiled
   status?: string[];
@@ -37,6 +38,7 @@ export async function searchRecordings(params: {
 
   const conditions: SQL[] = [
     eq(mediaObjects.ownerId, params.ownerId),
+    eq(mediaObjects.type, params.type ?? "video"),
     isNull(mediaObjects.deletedAt),
   ];
   if (params.folderId === null) {

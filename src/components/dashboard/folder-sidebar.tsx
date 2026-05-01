@@ -54,9 +54,11 @@ function goto(
 export function FolderSidebar({
   folders,
   currentFolderId,
+  allLabel = "All recordings",
 }: {
   folders: DbFolder[];
   currentFolderId: string | null | undefined;
+  allLabel?: string;
 }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -93,7 +95,7 @@ export function FolderSidebar({
     <aside className="hidden w-60 shrink-0 flex-col gap-1 border-r border-border px-3 py-4 text-sm md:flex">
       <SidebarLink
         icon={<Layers className="h-4 w-4" />}
-        label="All recordings"
+        label={allLabel}
         active={currentFolderId === undefined}
         onClick={() => goto(router, p, { folder: null })}
       />

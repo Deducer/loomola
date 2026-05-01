@@ -25,7 +25,15 @@ const SORTS = [
   { value: "title_asc", label: "Title A-Z" },
 ];
 
-export function SearchFilterBar({ brands }: { brands: BrandProfile[] }) {
+export function SearchFilterBar({
+  brands,
+  showFilters = true,
+  placeholder = "Search titles + transcripts…",
+}: {
+  brands: BrandProfile[];
+  showFilters?: boolean;
+  placeholder?: string;
+}) {
   const router = useRouter();
   const params = useSearchParams();
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -39,7 +47,8 @@ export function SearchFilterBar({ brands }: { brands: BrandProfile[] }) {
       const next = new URLSearchParams(params.toString());
       if (q) next.set("q", q);
       else next.delete("q");
-      router.push("/?" + next.toString());
+      const qs = next.toString();
+      router.push(qs ? "/?" + qs : "/");
     }, 300);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -60,7 +69,8 @@ export function SearchFilterBar({ brands }: { brands: BrandProfile[] }) {
     const next = new URLSearchParams(params.toString());
     if (value === null || value === "") next.delete(key);
     else next.set(key, value);
-    router.push("/?" + next.toString());
+    const qs = next.toString();
+    router.push(qs ? "/?" + qs : "/");
   }
 
   return (
@@ -71,36 +81,40 @@ export function SearchFilterBar({ brands }: { brands: BrandProfile[] }) {
           ref={inputRef}
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search titles + transcripts…"
+          placeholder={placeholder}
           className="pl-9"
         />
         <kbd className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded border border-border-strong bg-bg-elevated px-1.5 font-mono text-[10px] text-text-subtle sm:inline-flex">
           ⌘K
         </kbd>
       </div>
-      <Select
-        className="sm:w-44"
-        value={params.get("sort") ?? "date_desc"}
-        onChange={(e) => patchParam("sort", e.target.value)}
-      >
-        {SORTS.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </Select>
-      <Select
-        className="sm:w-40"
-        value={params.get("status") ?? ""}
-        onChange={(e) => patchParam("status", e.target.value)}
-      >
-        {STATUSES.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </Select>
-      {brands.length > 0 && (
+      {showFilters && (
+        <>
+          <Select
+            className="sm:w-44"
+            value={params.get("sort") ?? "date_desc"}
+            onChange={(e) => patchParam("sort", e.target.value)}
+          >
+            {SORTS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+          <Select
+            className="sm:w-40"
+            value={params.get("status") ?? ""}
+            onChange={(e) => patchParam("status", e.target.value)}
+          >
+            {STATUSES.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+        </>
+      )}
+      {showFilters && brands.length > 0 && (
         <Select
           className="sm:w-44"
           value={params.get("brand") ?? ""}

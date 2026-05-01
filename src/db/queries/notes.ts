@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { mediaObjects, notes, transcripts } from "@/db/schema";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
+import { generateSlug } from "@/lib/slug";
 
 export type Note = typeof notes.$inferSelect;
 
@@ -16,6 +17,23 @@ export type AudioNotePageData = {
   note: Note | null;
   transcript: typeof transcripts.$inferSelect | null;
 };
+
+export async function createQuickAudioNote(ownerId: string): Promise<{
+  id: string;
+  slug: string;
+}> {
+  const [row] = await db
+    .insert(mediaObjects)
+    .values({
+      ownerId,
+      type: "audio",
+      slug: generateSlug(),
+      status: "ready",
+    })
+    .returning({ id: mediaObjects.id, slug: mediaObjects.slug });
+
+  return row;
+}
 
 export async function upsertNotesBody(
   mediaObjectId: string,

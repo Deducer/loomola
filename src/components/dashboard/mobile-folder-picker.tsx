@@ -15,9 +15,11 @@ type Node = DbFolder & { children: Node[]; depth: number };
 export function MobileFolderPicker({
   folders,
   currentFolderId,
+  allLabel = "All recordings",
 }: {
   folders: DbFolder[];
   currentFolderId: string | null | undefined;
+  allLabel?: string;
 }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -52,7 +54,7 @@ export function MobileFolderPicker({
         onChange={(e) => navigate(e.target.value)}
         className="mt-1.5 block w-full rounded-md border border-border bg-bg-subtle px-3 py-2 text-sm text-text"
       >
-        <option value="">All recordings</option>
+        <option value="">{allLabel}</option>
         <option value="__unfiled">Unfiled</option>
         {flat.map((f) => (
           <option key={f.id} value={f.id}>
