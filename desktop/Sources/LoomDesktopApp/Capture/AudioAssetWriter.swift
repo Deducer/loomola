@@ -51,13 +51,20 @@ final class AudioAssetWriter: @unchecked Sendable {
         finished = true
         input.markAsFinished()
 
+        let writer = AssetWriterBox(writer)
+        let outputURL = outputURL
         return try await withCheckedThrowingContinuation { continuation in
+            let box = ContinuationBox(continuation)
             writer.finishWriting {
-                if let error = self.writer.error {
-                    continuation.resume(throwing: error)
+                if let error = writer.error {
+                    box.resume(throwing: error)
                     return
                 }
-                continuation.resume(returning: self.outputURL)
+                box.resume(returning: outputURL)
+            }
+            Task {
+                try? await Task.sleep(for: .seconds(5))
+                box.resume(throwing: AudioAssetWriterError.finishTimedOut)
             }
         }
     }
@@ -67,4 +74,48 @@ enum AudioAssetWriterError: Error {
     case cannotAddInput
     case couldNotStart
     case appendFailed
+    case finishTimedOut
+}
+
+private final class ContinuationBox<Value: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Value, Error>?
+
+    init(_ continuation: CheckedContinuation<Value, Error>) {
+        self.continuation = continuation
+    }
+
+    func resume(returning value: Value) {
+        let continuation = take()
+        continuation?.resume(returning: value)
+    }
+
+    func resume(throwing error: Error) {
+        let continuation = take()
+        continuation?.resume(throwing: error)
+    }
+
+    private func take() -> CheckedContinuation<Value, Error>? {
+        lock.lock()
+        defer { lock.unlock() }
+        let continuation = continuation
+        self.continuation = nil
+        return continuation
+    }
+}
+
+private final class AssetWriterBox: @unchecked Sendable {
+    private let writer: AVAssetWriter
+
+    init(_ writer: AVAssetWriter) {
+        self.writer = writer
+    }
+
+    var error: Error? {
+        writer.error
+    }
+
+    func finishWriting(_ completionHandler: @escaping @Sendable () -> Void) {
+        writer.finishWriting(completionHandler: completionHandler)
+    }
 }

@@ -135,14 +135,15 @@ final class ScreenCaptureCoordinator: NSObject, SCStreamOutput, SCStreamDelegate
             recordingFinishContinuation = continuation
             do {
                 try stream.removeRecordingOutput(recordingOutput)
-                recordingFinishFallbackTask = Task { @MainActor in
-                    try? await stream.stopCapture()
+                recordingFinishFallbackTask = Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: .seconds(5))
+                    guard let self, self.recordingFinishContinuation != nil else { return }
                     self.stream = nil
                     self.recordingOutput = nil
                     self.isCapturing = false
-                    try? await Task.sleep(for: .seconds(5))
-                    if self.recordingFinishContinuation != nil {
-                        self.finishRecording(url: recordingURL, duration: fallbackDuration)
+                    self.finishRecording(url: recordingURL, duration: fallbackDuration)
+                    Task {
+                        try? await stream.stopCapture()
                     }
                 }
             } catch {
