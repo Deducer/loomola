@@ -39,8 +39,15 @@ export default async function EditRecordingPage({
   const trimEndSec =
     rec.trimEndSec != null ? parseFloat(String(rec.trimEndSec)) : null;
 
+  const trimActive = trimStartSec != null && trimEndSec != null;
+  // Hide the Playback MP4 download when a trim is set — the underlying
+  // R2 object is the full recording, so the file would mislead users
+  // who expect "download what I see in the player." Raw tracks stay
+  // visible since they're per-track sources, unrelated to trim.
   const downloadKinds: Array<{ kind: string; key: string | null; fileKind: string }> = [
-    { kind: "Playback MP4", key: rec.playbackMp4Key, fileKind: "playback" },
+    ...(trimActive
+      ? []
+      : [{ kind: "Playback MP4", key: rec.playbackMp4Key, fileKind: "playback" }]),
     { kind: "Composite", key: rec.r2CompositeKey, fileKind: "composite" },
     { kind: "Screen", key: rec.r2ScreenKey, fileKind: "screen" },
     { kind: "Camera", key: rec.r2CameraKey, fileKind: "camera" },
@@ -98,7 +105,11 @@ export default async function EditRecordingPage({
           preview={
             signedVideoUrl ? (
               <>
-                <PreviewPlayer signedUrl={signedVideoUrl} />
+                <PreviewPlayer
+                  signedUrl={signedVideoUrl}
+                  trimStartSec={trimStartSec}
+                  trimEndSec={trimEndSec}
+                />
                 <div className="mt-4 rounded-lg border border-border bg-bg-subtle p-3 text-xs text-text-muted">
                   <div>Views: <span className="text-text">{viewCount}</span></div>
                   <div className="mt-1">
@@ -150,6 +161,11 @@ export default async function EditRecordingPage({
                   Downloads
                 </h2>
                 <DownloadsList links={downloads} />
+                {trimActive && (
+                  <p className="mt-2 text-[11px] leading-relaxed text-text-subtle">
+                    Trim is active — viewers see the trimmed range on the share page. Raw tracks below are full-length source files.
+                  </p>
+                )}
               </section>
             ) : null
           }
