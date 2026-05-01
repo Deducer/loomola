@@ -8,13 +8,17 @@ import { cn } from "@/lib/cn";
 
 type Props = {
   userEmail: string;
-  activePath: "recordings" | "brands" | "record";
+  activePath: "recordings" | "brands" | "record" | "people";
+  granolaEnabled?: boolean;
 };
 
-export function TopNav({ userEmail, activePath }: Props) {
+export function TopNav({ userEmail, activePath, granolaEnabled = false }: Props) {
   const items = [
     { href: "/", label: "Recordings", key: "recordings" as const },
     { href: "/brands", label: "Brands", key: "brands" as const },
+    ...(granolaEnabled
+      ? [{ href: "/people", label: "People", key: "people" as const }]
+      : []),
   ];
 
   const linkClass = (active: boolean) =>

@@ -21,6 +21,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { TranscriptPanel } from "@/components/viewer/transcript-panel";
+import type {
+  TranscriptPerson,
+  TranscriptSpeakerAssignment,
+} from "@/components/viewer/transcript-panel";
 import type { Word } from "@/lib/viewer/paragraphs";
 import { cn } from "@/lib/cn";
 
@@ -37,6 +41,8 @@ type NotePageClientProps = {
   waveformUrl: string | null;
   transcriptText: string;
   transcriptWords: Word[];
+  people: TranscriptPerson[];
+  speakerAssignments: TranscriptSpeakerAssignment[];
 };
 
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -54,6 +60,8 @@ export function NotePageClient({
   waveformUrl,
   transcriptText,
   transcriptWords,
+  people,
+  speakerAssignments,
 }: NotePageClientProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [body, setBody] = useState(initialBody);
@@ -63,6 +71,8 @@ export function NotePageClient({
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [titleState, setTitleState] = useState<SaveState>("idle");
   const [transcriptOpen, setTranscriptOpen] = useState(false);
+  const [speakerAssignmentsState, setSpeakerAssignmentsState] =
+    useState(speakerAssignments);
   const [currentTime, setCurrentTime] = useState(0);
   const [playing, setPlaying] = useState(false);
 
@@ -220,10 +230,14 @@ export function NotePageClient({
               </Button>
             </div>
             <TranscriptPanel
+              mediaId={mediaId}
               words={transcriptWords}
               fullText={transcriptText}
               currentTime={currentTime}
               onSeek={seekTo}
+              people={people}
+              speakerAssignments={speakerAssignmentsState}
+              onSpeakerAssignmentsChange={setSpeakerAssignmentsState}
             />
           </section>
         )}

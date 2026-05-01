@@ -110,7 +110,11 @@ export default async function HomePage({
 
   return (
     <>
-      <TopNav userEmail={user.email ?? "unknown"} activePath="recordings" />
+      <TopNav
+        userEmail={user.email ?? "unknown"}
+        activePath="recordings"
+        granolaEnabled={granolaEnabled}
+      />
       <div className="mx-auto flex max-w-6xl">
         <FolderSidebar
           folders={folders}

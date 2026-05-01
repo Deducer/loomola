@@ -3,12 +3,14 @@ export type Word = {
   start: number;
   end: number;
   punctuated_word?: string;
+  speaker?: number;
 };
 
 export type Paragraph = {
   startSec: number;
   endSec: number;
   text: string;
+  speaker?: number;
 };
 
 type GroupOpts = {
@@ -43,6 +45,7 @@ export function groupWordsIntoParagraphs(
       startSec: bufStart,
       endSec: buffer[buffer.length - 1].end,
       text: buffer.map((b) => b.punctuated_word ?? b.word).join(" "),
+      speaker: buffer[0].speaker,
     });
     buffer = [];
   };
@@ -57,7 +60,11 @@ export function groupWordsIntoParagraphs(
     const prev = buffer[buffer.length - 1];
     const gap = cur.start - prev.end;
     const runLen = cur.end - bufStart;
-    if (gap > maxGapSec || runLen > maxParagraphSec) {
+    if (
+      gap > maxGapSec ||
+      runLen > maxParagraphSec ||
+      cur.speaker !== prev.speaker
+    ) {
       flush();
       bufStart = cur.start;
     }

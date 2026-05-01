@@ -56,6 +56,20 @@ describe("groupWordsIntoParagraphs", () => {
     ];
     expect(groupWordsIntoParagraphs(words)[0].text).toBe("Hello, world.");
   });
+
+  it("splits when the speaker changes", () => {
+    const words: Word[] = [
+      { word: "hello", start: 0, end: 0.5, speaker: 0 },
+      { word: "there", start: 0.6, end: 1.2, speaker: 0 },
+      { word: "hi", start: 1.3, end: 1.8, speaker: 1 },
+    ];
+
+    const result = groupWordsIntoParagraphs(words);
+
+    expect(result).toHaveLength(2);
+    expect(result[0].speaker).toBe(0);
+    expect(result[1].speaker).toBe(1);
+  });
 });
 
 describe("findActiveParagraphIndex", () => {

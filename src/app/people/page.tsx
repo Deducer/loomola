@@ -1,0 +1,32 @@
+import { notFound } from "next/navigation";
+import { enableGranola } from "@/lib/feature-flags";
+import { requireAuth } from "@/lib/require-auth";
+import { listPeople } from "@/db/queries/people";
+import { TopNav } from "@/components/nav/top-nav";
+import { PeopleManager } from "@/components/people/people-manager";
+
+export default async function PeoplePage() {
+  if (!enableGranola()) notFound();
+
+  const user = await requireAuth();
+  const people = await listPeople(user.id);
+
+  return (
+    <>
+      <TopNav
+        userEmail={user.email ?? "unknown"}
+        activePath="people"
+        granolaEnabled
+      />
+      <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
+        <div className="mb-6">
+          <h1 className="text-2xl font-semibold tracking-tight text-text">People</h1>
+          <p className="mt-1 text-sm text-text-muted">
+            Known meeting participants for speaker labeling.
+          </p>
+        </div>
+        <PeopleManager initialPeople={people} />
+      </main>
+    </>
+  );
+}

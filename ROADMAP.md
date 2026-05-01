@@ -152,6 +152,7 @@ Self-hosted Granola-faithful AI meeting note-taker built on top of the existing 
 - **M2 plan (audio ingest pipeline):** [`docs/superpowers/plans/2026-05-01-granola-clone-m2-audio-ingest-pipeline.md`](docs/superpowers/plans/2026-05-01-granola-clone-m2-audio-ingest-pipeline.md)
 - **M4 plan (notes page):** [`docs/superpowers/plans/2026-05-01-granola-clone-m4-notes-page.md`](docs/superpowers/plans/2026-05-01-granola-clone-m4-notes-page.md)
 - **M5 plan (tabbed dashboard):** [`docs/superpowers/plans/2026-05-01-granola-clone-m5-tabbed-dashboard.md`](docs/superpowers/plans/2026-05-01-granola-clone-m5-tabbed-dashboard.md)
+- **M6 plan (speaker labeling):** [`docs/superpowers/plans/2026-05-01-granola-clone-m6-speaker-labeling.md`](docs/superpowers/plans/2026-05-01-granola-clone-m6-speaker-labeling.md)
 - **Migration numbering note:** the M1 plan was authored before Stage 1.10 shipped, and references migrations starting at `0010`. The next available number is `0011` — bump every M1 migration filename + journal entry by one (e.g. `0010_pgvector_extension` → `0011_pgvector_extension`, `0011_granola_schema` → `0012_granola_schema`, etc.).
 - **Reference repo (worth skimming):** [Zackriya-Solutions/meetily](https://github.com/Zackriya-Solutions/meetily) — Tauri + Rust + Whisper.cpp + Ollama (100% local), MIT-licensed. Architecturally different from us (cloud pipeline vs local) but their `frontend/src-tauri/src/audio_v2/` has solid macOS system+mic capture patterns, and `summary/` has multi-provider prompt structures. Don't port code — borrow patterns.
 
@@ -164,8 +165,8 @@ Self-hosted Granola-faithful AI meeting note-taker built on top of the existing 
 | G-M3 | Desktop app — manual recording trigger | ✅ shipped | Desktop dev flow can manually record a Granola audio note with mic + system audio, upload both tracks, complete as `type='audio'`, and hand off to backend mixing, waveform, and Deepgram. Verified by Ian hardware smoke: `ZTrwDqeOop`. |
 | G-M4 | `/notes/:id` Granola UI | ✅ shipped | Auth-gated note page for audio media UUIDs/slugs with editable title/body, metadata pills, mixed-audio playback, waveform, and floating transcript card. Verified locally with Ian's `ZTrwDqeOop` audio note. |
 | G-M5 | Tabbed dashboard | ✅ shipped | `/` is now Recordings \| Notes behind `ENABLE_GRANOLA=true`; Recordings filters video, Notes filters audio, both share folder/search state, and Notes has a Quick note action. |
-| G-M6 | Speaker labeling MVP | 🔜 next | `/people` page, attendee picker, speaker chip popover, persistence. |
-| G-M7 | Shared dictionary | 📋 spec'd | `/dictionary` page and Deepgram keyterms wiring. |
+| G-M6 | Speaker labeling MVP | ✅ shipped | Deepgram diarization for new transcripts, persisted word-level speaker indexes, `/people` CRUD, and speaker caption assignment popover in the floating transcript card. |
+| G-M7 | Shared dictionary | 🔜 next | `/dictionary` page and Deepgram keyterms wiring. |
 | G-M8 | pgvector embedding-on-write | 📋 spec'd | `embed_transcript` and `embed_summary` jobs. |
 | G-M9 | AI enhancement (user-triggered, streaming) | 📋 spec'd | "Generate notes" trigger, `streamText` + Realtime, "Enhancing notes" pill UX. |
 | G-M10 | Per-project Obsidian sync | 📋 spec'd | Brand profile vault path, manual save flow, desktop writer. |
