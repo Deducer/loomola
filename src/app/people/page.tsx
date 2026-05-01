@@ -5,10 +5,12 @@ import { listPeople } from "@/db/queries/people";
 import { TopNav } from "@/components/nav/top-nav";
 import { PeopleManager } from "@/components/people/people-manager";
 
+export const dynamic = "force-dynamic";
+
 export default async function PeoplePage() {
+  const user = await requireAuth();
   if (!enableGranola()) notFound();
 
-  const user = await requireAuth();
   const people = await listPeople(user.id);
 
   return (
