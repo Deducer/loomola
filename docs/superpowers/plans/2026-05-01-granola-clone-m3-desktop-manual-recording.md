@@ -36,12 +36,13 @@
 - [x] Update `RecorderViewModel` and `MainRecorderView` with manual audio controls and status/progress messages.
 - [x] Add cancellation path: stop capture, call `/abort`, delete local files.
 - [x] Run `swift test` in `desktop/`.
-- [ ] Run a local/prod backend audio handshake with `ENABLE_GRANOLA=true`.
+- [x] Run a local/prod backend audio handshake with `ENABLE_GRANOLA=true`.
 - [ ] Manual hardware smoke on Ian's Mac: record 20-30 seconds with mic + system audio, upload, confirm backend starts transcription.
 
 ## Completed Verification
 
 - `swift test` in `desktop/` passed after the API-model, capture-foundation, upload-streaming, and `AudioNoteRecorder` orchestration slices.
+- Production audio API smoke passed: authenticated bearer-token start created `type='audio'` with mic + system-audio uploads, abort succeeded, and the test row was deleted.
 
 ## Design Notes
 
