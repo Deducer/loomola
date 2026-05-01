@@ -42,6 +42,17 @@ struct MainRecorderView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Granola audio note")
+                        .font(.headline)
+                    TextField("Optional title", text: $viewModel.audioTitle)
+                        .textFieldStyle(.roundedBorder)
+                    HStack {
+                        Toggle("Mic", isOn: $viewModel.includeMicInAudioNote)
+                        Toggle("System audio", isOn: $viewModel.includeSystemAudioInAudioNote)
+                    }
+                }
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -61,12 +72,31 @@ struct MainRecorderView: View {
                     viewModel.startLocalRecording()
                 }
                 .keyboardShortcut("r", modifiers: [.command])
-                .disabled(viewModel.state == .signedOut)
+                .disabled(viewModel.state == .signedOut || viewModel.activeRecordingKind != nil)
 
                 Button("Stop") {
                     viewModel.stopLocalRecordingAndUpload()
                 }
-                .disabled(!viewModel.state.isRecordingLike)
+                .disabled(viewModel.activeRecordingKind != .video)
+
+                Button("Start Audio Note") {
+                    viewModel.startAudioNoteRecording()
+                }
+                .disabled(
+                    viewModel.state == .signedOut ||
+                    viewModel.activeRecordingKind != nil ||
+                    (!viewModel.includeMicInAudioNote && !viewModel.includeSystemAudioInAudioNote)
+                )
+
+                Button("Stop Audio") {
+                    viewModel.stopAudioNoteRecordingAndUpload()
+                }
+                .disabled(viewModel.activeRecordingKind != .audio)
+
+                Button("Discard Audio") {
+                    viewModel.cancelAudioNoteRecording()
+                }
+                .disabled(viewModel.activeRecordingKind != .audio)
 
                 Button("Test Backend") {
                     viewModel.startAndAbortBackendHandshake()

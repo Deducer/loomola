@@ -24,7 +24,7 @@ This directory is a development app, not a finished recorder. It includes:
 - Keychain-backed session storage.
 - Backend start/abort handshake against the existing `/api/recordings/*` routes.
 - Granola `type='audio'` start/abort handshake against the same backend when `ENABLE_GRANOLA=true`.
-- Granola audio capture foundation: session model, AAC `.m4a` writer, mic capture coordinator, and system-audio capture coordinator.
+- Granola manual audio note dev flow: session model, AAC `.m4a` writer, mic capture, system-audio capture, multipart upload, complete, and discard.
 - ScreenCaptureKit source listing for displays/windows.
 - ScreenCaptureKit first-display MP4 recording path on macOS 15+.
 - Upload of that local MP4 as the `composite` track through the existing backend.
@@ -33,7 +33,7 @@ This directory is a development app, not a finished recorder. It includes:
 - API model types matching the existing `/api/recordings/*` routes.
 - Xcode signing/notarization placeholders.
 
-It does **not** yet composite the camera bubble into the exported video or wire the Granola manual audio recorder end to end. The current Loom desktop recording path is first-display screen + ScreenCaptureKit audio to a local MP4, uploaded as the `composite` track. The next major Loom implementation slice is `AVAssetWriter` compositing for screen + bubble + raw tracks; the next Granola slice is `AudioNoteRecorder` orchestration from backend row creation through capture, upload, and complete.
+It does **not** yet composite the camera bubble into the exported video, and the Granola manual audio recorder still needs Ian's hardware smoke test on a real signed-in app session. The current Loom desktop recording path is first-display screen + ScreenCaptureKit audio to a local MP4, uploaded as the `composite` track. The next major Loom implementation slice is `AVAssetWriter` compositing for screen + bubble + raw tracks; the next Granola slice is manual verification plus hardening around permissions, retry, and recovery.
 
 The implementation spec lives at:
 
@@ -74,6 +74,8 @@ The runnable dev app can currently test:
 - `Test Audio Backend`: creates a Granola audio upload row with mic + system-audio tracks, then aborts it.
 - `Refresh Sources`: lists displays, windows, cameras, and microphones.
 - `Start Recording`: records the first display to a local MP4 on macOS 15+, then `Stop` uploads it through the existing backend as the composite track.
+- `Start Audio Note`: records selected mic/system audio to `.m4a`, then `Stop Audio` uploads it through the Granola audio backend.
+- `Discard Audio`: stops the active audio note, aborts the backend row, and deletes local temp files.
 - Menu bar `Show Bubble Overlay`: shows a draggable circular camera bubble.
 
 For serious ScreenCaptureKit work, create an Xcode macOS App target from this scaffold so `Info.plist`, entitlements, signing, and privacy prompts behave like a real app bundle.

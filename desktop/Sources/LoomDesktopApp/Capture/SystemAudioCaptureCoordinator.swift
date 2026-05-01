@@ -4,7 +4,7 @@ import Foundation
 import ScreenCaptureKit
 
 @available(macOS 14.0, *)
-final class SystemAudioCaptureCoordinator: NSObject, SCStreamOutput, SCStreamDelegate {
+final class SystemAudioCaptureCoordinator: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     private var stream: SCStream?
     private var writer: AudioAssetWriter?
     private let sampleQueue = DispatchQueue(label: "cloud.dissonance.loom.desktop.system-audio-samples")

@@ -32,16 +32,16 @@
 - [x] Add reusable `AudioAssetWriter` for AAC `.m4a` output from `CMSampleBuffer`, normalizing first sample time to zero.
 - [x] Add `MicrophoneCaptureCoordinator` using `AVCaptureSession` + `AVCaptureAudioDataOutput` into `AudioAssetWriter`.
 - [x] Add `SystemAudioCaptureCoordinator` using `SCStream` audio output into `AudioAssetWriter`.
-- [ ] Add `AudioNoteRecorder` orchestration: start backend row, start selected capture sources, stop writers, upload completed files, call complete, cleanup.
-- [ ] Update `RecorderViewModel` and `MainRecorderView` with manual audio controls and status/progress messages.
-- [ ] Add cancellation path: stop capture, call `/abort`, delete local files.
-- [ ] Run `swift test` in `desktop/`.
+- [x] Add `AudioNoteRecorder` orchestration: start backend row, start selected capture sources, stop writers, upload completed files, call complete, cleanup.
+- [x] Update `RecorderViewModel` and `MainRecorderView` with manual audio controls and status/progress messages.
+- [x] Add cancellation path: stop capture, call `/abort`, delete local files.
+- [x] Run `swift test` in `desktop/`.
 - [ ] Run a local/prod backend audio handshake with `ENABLE_GRANOLA=true`.
 - [ ] Manual hardware smoke on Ian's Mac: record 20-30 seconds with mic + system audio, upload, confirm backend starts transcription.
 
 ## Completed Verification
 
-- `swift test` in `desktop/` passed after the API-model and capture-foundation slices.
+- `swift test` in `desktop/` passed after the API-model, capture-foundation, upload-streaming, and `AudioNoteRecorder` orchestration slices.
 
 ## Design Notes
 

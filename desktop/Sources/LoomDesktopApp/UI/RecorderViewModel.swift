@@ -6,8 +6,12 @@ final class RecorderViewModel: ObservableObject {
     @Published private(set) var state: RecorderState = .signedOut
     @Published var email = ""
     @Published var password = ""
+    @Published var audioTitle = ""
+    @Published var includeMicInAudioNote = true
+    @Published var includeSystemAudioInAudioNote = true
     @Published private(set) var statusMessage = "Set LOOM_SUPABASE_URL and LOOM_SUPABASE_ANON_KEY, then sign in."
     @Published private(set) var configuration: DesktopAuthConfiguration?
+    @Published private(set) var activeRecordingKind: DesktopRecordingKind?
     @Published private(set) var captureSources = CaptureSourceSnapshot(
         displays: [],
         windows: [],
@@ -18,6 +22,7 @@ final class RecorderViewModel: ObservableObject {
     private var authService: DesktopAuthService?
     private var accessToken: String?
     private var backendClient: BackendClient?
+    private var audioNoteRecorder: AudioNoteRecorder?
     private let captureSourceProvider: CaptureSourceProvider?
     private let screenCaptureCoordinator: ScreenCaptureCoordinator?
     private var activeRecordingURL: URL?
@@ -42,6 +47,7 @@ final class RecorderViewModel: ObservableObject {
                 }
                 return token
             }
+            audioNoteRecorder = backendClient.map { AudioNoteRecorder(backend: $0) }
             statusMessage = "Ready to sign in. Saved sessions are not auto-restored in this dev build."
         } catch {
             state = .failed(message: error.localizedDescription)
@@ -82,8 +88,10 @@ final class RecorderViewModel: ObservableObject {
     func signOut() {
         guard let authService else { return }
         Task {
+            await audioNoteRecorder?.cancel()
             try? await authService.signOut()
             accessToken = nil
+            activeRecordingKind = nil
             state = .signedOut
             statusMessage = "Signed out."
         }
@@ -210,6 +218,7 @@ final class RecorderViewModel: ObservableObject {
         let outputURL = FileManager.default.temporaryDirectory
             .appending(path: "loom-desktop-\(UUID().uuidString).mp4")
         activeRecordingURL = outputURL
+        activeRecordingKind = .video
         state = .recording
         statusMessage = "Starting local MP4 recording..."
         Task {
@@ -217,6 +226,7 @@ final class RecorderViewModel: ObservableObject {
                 let display = try await screenCaptureCoordinator.startFirstDisplayRecording(outputURL: outputURL)
                 statusMessage = "Recording \(display.name) to a local MP4."
             } catch {
+                activeRecordingKind = nil
                 state = .failed(message: error.localizedDescription)
                 statusMessage = "Local recording failed: \(error.localizedDescription)"
             }
@@ -254,12 +264,70 @@ final class RecorderViewModel: ObservableObject {
                         durationSeconds: max(file.durationSeconds, 1)
                     )
                 )
+                activeRecordingKind = nil
                 state = .complete(slug: complete.slug)
                 statusMessage = "Uploaded. Recording slug: \(complete.slug)"
             } catch {
+                activeRecordingKind = nil
                 state = .failed(message: error.localizedDescription)
                 statusMessage = "Recording upload failed: \(error.localizedDescription)"
             }
+        }
+    }
+
+    func startAudioNoteRecording() {
+        guard let audioNoteRecorder else { return }
+        state = .preparingPermissions
+        statusMessage = "Starting Granola audio note..."
+        let title = audioTitle
+        let includeMic = includeMicInAudioNote
+        let includeSystemAudio = includeSystemAudioInAudioNote
+        Task {
+            do {
+                let session = try await audioNoteRecorder.start(
+                    title: title,
+                    includeMic: includeMic,
+                    includeSystemAudio: includeSystemAudio
+                )
+                activeRecordingKind = .audio
+                state = .recording
+                statusMessage = "Recording audio note with \(session.tracks.count) track(s)."
+            } catch {
+                activeRecordingKind = nil
+                state = .failed(message: error.localizedDescription)
+                statusMessage = "Audio note failed to start: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func stopAudioNoteRecordingAndUpload() {
+        guard let audioNoteRecorder else { return }
+        state = .finalizing
+        statusMessage = "Finalizing audio note..."
+        Task {
+            do {
+                state = .uploading(progress: 0.2)
+                let complete = try await audioNoteRecorder.stopAndUpload()
+                activeRecordingKind = nil
+                state = .complete(slug: complete.slug)
+                statusMessage = "Uploaded audio note. Slug: \(complete.slug)"
+            } catch {
+                activeRecordingKind = nil
+                state = .failed(message: error.localizedDescription)
+                statusMessage = "Audio note upload failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func cancelAudioNoteRecording() {
+        guard let audioNoteRecorder else { return }
+        state = .finalizing
+        statusMessage = "Discarding audio note..."
+        Task {
+            await audioNoteRecorder.cancel()
+            activeRecordingKind = nil
+            state = .signedInIdle
+            statusMessage = "Audio note discarded."
         }
     }
 
@@ -306,6 +374,11 @@ enum RecorderState: Equatable {
     var isRecordingLike: Bool {
         self == .recording || self == .paused
     }
+}
+
+enum DesktopRecordingKind: Equatable {
+    case video
+    case audio
 }
 
 enum RecorderViewModelError: Error {

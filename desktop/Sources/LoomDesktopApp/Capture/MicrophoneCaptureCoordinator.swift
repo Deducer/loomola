@@ -1,7 +1,7 @@
 import AVFoundation
 import Foundation
 
-final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
+final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, @unchecked Sendable {
     private var session: AVCaptureSession?
     private var writer: AudioAssetWriter?
     private let sampleQueue = DispatchQueue(label: "cloud.dissonance.loom.desktop.mic-samples")
