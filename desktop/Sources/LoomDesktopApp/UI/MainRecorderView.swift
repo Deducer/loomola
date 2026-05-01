@@ -94,13 +94,13 @@ struct MainRecorderView: View {
             Spacer()
 
             HStack {
-                Button("Start Recording") {
+                Button("Start Video Recording") {
                     viewModel.startLocalRecording()
                 }
                 .keyboardShortcut("r", modifiers: [.command])
                 .disabled(viewModel.state == .signedOut || viewModel.activeRecordingKind != nil)
 
-                Button("Stop") {
+                Button("Stop Video") {
                     viewModel.stopLocalRecordingAndUpload()
                 }
                 .disabled(viewModel.activeRecordingKind != .video)

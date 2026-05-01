@@ -337,6 +337,7 @@ final class RecorderViewModel: ObservableObject {
         if email.isEmpty {
             email = session.user.email ?? ""
         }
+        refreshCaptureSources()
     }
 
     private func currentAccessToken() -> String? {
