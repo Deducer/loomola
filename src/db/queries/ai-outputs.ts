@@ -3,6 +3,7 @@ import { aiOutputs, mediaObjects } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import type {
   TitleSummary,
+  EnhancedNotes,
   Chapters,
   ActionItems,
 } from "@/lib/ai/schemas";
@@ -28,6 +29,39 @@ export async function insertBlankAiOutput(
   return row;
 }
 
+export async function resetAiOutputForEnhancement(
+  mediaObjectId: string,
+  llmModel: string
+): Promise<AiOutput> {
+  const existing = await getAiOutputByMedia(mediaObjectId);
+  if (existing) {
+    const [row] = await db
+      .update(aiOutputs)
+      .set({
+        titleSuggested: null,
+        summary: null,
+        chapters: null,
+        actionItems: null,
+        llmModel,
+        generationStatusValue: "pending",
+        generatedAt: new Date(),
+      })
+      .where(eq(aiOutputs.mediaObjectId, mediaObjectId))
+      .returning();
+    return row;
+  }
+
+  const [row] = await db
+    .insert(aiOutputs)
+    .values({
+      mediaObjectId,
+      llmModel,
+      generationStatusValue: "pending",
+    })
+    .returning();
+  return row;
+}
+
 export async function getAiOutputByMedia(
   mediaObjectId: string
 ): Promise<AiOutput | null> {
@@ -41,13 +75,15 @@ export async function getAiOutputByMedia(
 
 export async function updateTitleSummary(
   mediaObjectId: string,
-  data: TitleSummary
+  data: TitleSummary | EnhancedNotes
 ): Promise<void> {
   await db
     .update(aiOutputs)
     .set({
       titleSuggested: data.title,
       summary: data.summary,
+      generationStatusValue: "complete",
+      generatedAt: new Date(),
     })
     .where(eq(aiOutputs.mediaObjectId, mediaObjectId));
 }

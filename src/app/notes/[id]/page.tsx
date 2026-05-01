@@ -32,7 +32,7 @@ export default async function NotesPage({
   return (
     <NotePageClient
       mediaId={data.media.id}
-      initialTitle={data.media.title}
+      initialTitle={data.media.title ?? data.aiOutput?.titleSuggested ?? null}
       createdAt={data.media.createdAt.toISOString()}
       status={data.media.status}
       durationSeconds={data.media.durationSeconds}
@@ -43,6 +43,8 @@ export default async function NotesPage({
       waveformUrl={waveformUrl}
       transcriptText={data.transcript?.fullText ?? ""}
       transcriptWords={normalizeWords(data.transcript?.wordTimestamps)}
+      initialEnhancedSummary={data.aiOutput?.summary ?? null}
+      initialGenerationStatus={data.aiOutput?.generationStatusValue ?? "idle"}
       people={people.map((person) => ({
         id: person.id,
         displayName: person.displayName,

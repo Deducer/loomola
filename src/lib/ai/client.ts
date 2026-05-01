@@ -13,13 +13,22 @@ let cachedFallback: LanguageModel | null = null;
 export function getLlm(): LanguageModel {
   if (cachedPrimary) return cachedPrimary;
   const provider = process.env.LLM_PROVIDER ?? "anthropic";
-  const modelId = process.env.LLM_MODEL_ID ?? "claude-sonnet-4-6";
+  const modelId =
+    process.env.LLM_MODEL ?? process.env.LLM_MODEL_ID ?? "claude-sonnet-4-6";
 
   if (provider === "anthropic") {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set");
     const anthropic = createAnthropic({ apiKey });
     cachedPrimary = anthropic(modelId);
+    return cachedPrimary;
+  }
+
+  if (provider === "openrouter") {
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    if (!apiKey) throw new Error("OPENROUTER_API_KEY is not set");
+    const openrouter = createOpenRouter({ apiKey });
+    cachedPrimary = openrouter(modelId);
     return cachedPrimary;
   }
 

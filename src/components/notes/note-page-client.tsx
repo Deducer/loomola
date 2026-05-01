@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -10,10 +10,12 @@ import {
   CircleAlert,
   FileText,
   Folder,
+  LoaderCircle,
   MoreHorizontal,
   Pause,
   Play,
   RefreshCcw,
+  Sparkles,
   Users,
   Volume2,
 } from "lucide-react";
@@ -41,11 +43,15 @@ type NotePageClientProps = {
   waveformUrl: string | null;
   transcriptText: string;
   transcriptWords: Word[];
+  initialEnhancedSummary: string | null;
+  initialGenerationStatus: GenerationStatus;
   people: TranscriptPerson[];
   speakerAssignments: TranscriptSpeakerAssignment[];
 };
 
 type SaveState = "idle" | "saving" | "saved" | "error";
+type GenerationStatus = "idle" | "pending" | "streaming" | "complete" | "failed";
+type NoteViewMode = "original" | "enhanced";
 
 export function NotePageClient({
   mediaId,
@@ -60,6 +66,8 @@ export function NotePageClient({
   waveformUrl,
   transcriptText,
   transcriptWords,
+  initialEnhancedSummary,
+  initialGenerationStatus,
   people,
   speakerAssignments,
 }: NotePageClientProps) {
@@ -73,6 +81,14 @@ export function NotePageClient({
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [speakerAssignmentsState, setSpeakerAssignmentsState] =
     useState(speakerAssignments);
+  const [enhancedSummary, setEnhancedSummary] = useState(initialEnhancedSummary);
+  const [generationStatus, setGenerationStatus] = useState<GenerationStatus>(
+    initialGenerationStatus
+  );
+  const [enhanceError, setEnhanceError] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<NoteViewMode>(
+    initialEnhancedSummary ? "enhanced" : "original"
+  );
   const [currentTime, setCurrentTime] = useState(0);
   const [playing, setPlaying] = useState(false);
 
@@ -117,6 +133,49 @@ export function NotePageClient({
     return () => window.clearTimeout(timer);
   }, [body, lastSavedBody, mediaId]);
 
+  const refreshEnhancement = useCallback(async () => {
+    const response = await fetch(`/api/notes/${mediaId}/enhance`);
+    if (!response.ok) throw new Error("enhance_status_failed");
+    const data = (await response.json()) as {
+      titleSuggested: string | null;
+      summary: string | null;
+      generationStatus: GenerationStatus;
+    };
+
+    setGenerationStatus(data.generationStatus);
+    if (data.summary) {
+      setEnhancedSummary(data.summary);
+      setViewMode("enhanced");
+      setEnhanceError(null);
+    }
+    if (data.titleSuggested && !title.trim() && !lastSavedTitle.trim()) {
+      setTitle(data.titleSuggested);
+      setLastSavedTitle(data.titleSuggested);
+    }
+  }, [lastSavedTitle, mediaId, title]);
+
+  useEffect(() => {
+    if (generationStatus !== "pending" && generationStatus !== "streaming") {
+      return;
+    }
+
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        await refreshEnhancement();
+      } catch {
+        if (!cancelled) setEnhanceError("Could not refresh generated notes.");
+      }
+    };
+
+    void tick();
+    const timer = window.setInterval(tick, 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [generationStatus, refreshEnhancement]);
+
   async function saveTitle() {
     const trimmed = title.trim();
     if (!trimmed || trimmed === lastSavedTitle) return;
@@ -132,6 +191,47 @@ export function NotePageClient({
       setTitleState("saved");
     } catch {
       setTitleState("error");
+    }
+  }
+
+  async function saveBodyNow() {
+    if (body === lastSavedBody) return;
+    setSaveState("saving");
+    const response = await fetch(`/api/notes/${mediaId}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ body }),
+    });
+    if (!response.ok) throw new Error("save_failed");
+    setLastSavedBody(body);
+    setSaveState("saved");
+  }
+
+  async function generateNotes() {
+    if (!transcriptText.trim()) return;
+    setGenerationStatus("pending");
+    setEnhanceError(null);
+    setEnhancedSummary(null);
+    setViewMode("original");
+    try {
+      await saveBodyNow();
+      const response = await fetch(`/api/notes/${mediaId}/enhance`, {
+        method: "POST",
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(
+          typeof data.error === "string" ? data.error : "enhance_failed"
+        );
+      }
+      await refreshEnhancement();
+    } catch (err) {
+      setGenerationStatus("failed");
+      setEnhanceError(
+        err instanceof Error && err.message === "transcript_not_ready"
+          ? "Transcript is still processing."
+          : "Could not generate notes."
+      );
     }
   }
 
@@ -161,6 +261,34 @@ export function NotePageClient({
             </Button>
           </Link>
           <div className="flex items-center gap-2">
+            {enhancedSummary && (
+              <div className="flex rounded-md border border-border bg-bg-subtle p-1">
+                <button
+                  type="button"
+                  onClick={() => setViewMode("enhanced")}
+                  className={cn(
+                    "rounded px-2.5 py-1 text-xs font-medium transition-colors",
+                    viewMode === "enhanced"
+                      ? "bg-bg-elevated text-text"
+                      : "text-text-muted hover:text-text"
+                  )}
+                >
+                  Enhanced
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("original")}
+                  className={cn(
+                    "rounded px-2.5 py-1 text-xs font-medium transition-colors",
+                    viewMode === "original"
+                      ? "bg-bg-elevated text-text"
+                      : "text-text-muted hover:text-text"
+                  )}
+                >
+                  Original
+                </button>
+              </div>
+            )}
             <Badge variant={status}>{status}</Badge>
             <Button variant="ghost" size="icon" aria-label="More note actions">
               <MoreHorizontal className="h-4 w-4" />
@@ -202,15 +330,28 @@ export function NotePageClient({
         </section>
 
         <section className="mt-10 flex-1">
-          <Textarea
-            value={body}
-            onChange={(event) => setBody(event.target.value)}
-            placeholder="Write notes"
-            className="min-h-[42vh] resize-none border-0 bg-transparent px-0 py-0 text-base leading-8 shadow-none placeholder:text-text-subtle focus-visible:ring-0 focus-visible:ring-offset-0"
-          />
+          {viewMode === "enhanced" && enhancedSummary ? (
+            <article className="min-h-[42vh] whitespace-pre-wrap text-base leading-8 text-text">
+              {enhancedSummary}
+            </article>
+          ) : (
+            <Textarea
+              value={body}
+              onChange={(event) => setBody(event.target.value)}
+              placeholder="Write notes"
+              className="min-h-[42vh] resize-none border-0 bg-transparent px-0 py-0 text-base leading-8 shadow-none placeholder:text-text-subtle focus-visible:ring-0 focus-visible:ring-offset-0"
+            />
+          )}
           <div className="mt-4 flex items-center gap-2 text-xs text-text-subtle">
             <SaveIndicator state={saveState} />
           </div>
+          <EnhancementControls
+            generationStatus={generationStatus}
+            hasTranscript={!!transcriptText.trim()}
+            hasEnhancedSummary={!!enhancedSummary}
+            error={enhanceError}
+            onGenerate={generateNotes}
+          />
         </section>
 
         {transcriptOpen && (
@@ -323,5 +464,51 @@ function SaveIndicator({ state }: { state: SaveState }) {
       <Check className="h-3 w-3" />
       Saved
     </span>
+  );
+}
+
+function EnhancementControls({
+  generationStatus,
+  hasTranscript,
+  hasEnhancedSummary,
+  error,
+  onGenerate,
+}: {
+  generationStatus: GenerationStatus;
+  hasTranscript: boolean;
+  hasEnhancedSummary: boolean;
+  error: string | null;
+  onGenerate: () => void;
+}) {
+  const generating =
+    generationStatus === "pending" || generationStatus === "streaming";
+
+  if (generating) {
+    return (
+      <div className="mt-10 flex justify-center">
+        <span className="inline-flex items-center gap-2 rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-emerald-500/20">
+          <LoaderCircle className="h-4 w-4 animate-spin" />
+          Enhancing notes
+        </span>
+      </div>
+    );
+  }
+
+  if (!hasTranscript) {
+    return null;
+  }
+
+  if (hasEnhancedSummary && generationStatus !== "failed") {
+    return null;
+  }
+
+  return (
+    <div className="mt-10 flex flex-col items-center gap-3">
+      <Button onClick={onGenerate} className="rounded-full px-5">
+        <Sparkles className="h-4 w-4" />
+        {generationStatus === "failed" ? "Try again" : "Generate notes"}
+      </Button>
+      {error && <p className="text-xs text-red-400">{error}</p>}
+    </div>
   );
 }

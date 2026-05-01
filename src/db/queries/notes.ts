@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { mediaObjects, notes, transcripts } from "@/db/schema";
+import { aiOutputs, mediaObjects, notes, transcripts } from "@/db/schema";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { generateSlug } from "@/lib/slug";
 
@@ -16,6 +16,7 @@ export type AudioNotePageData = {
   media: typeof mediaObjects.$inferSelect;
   note: Note | null;
   transcript: typeof transcripts.$inferSelect | null;
+  aiOutput: typeof aiOutputs.$inferSelect | null;
 };
 
 export async function createQuickAudioNote(ownerId: string): Promise<{
@@ -77,6 +78,18 @@ export async function getNotesByMediaObject(
   return row ?? null;
 }
 
+export async function getNotesByMediaObjectForJob(
+  mediaObjectId: string
+): Promise<Note | null> {
+  const [row] = await db
+    .select()
+    .from(notes)
+    .where(eq(notes.mediaObjectId, mediaObjectId))
+    .limit(1);
+
+  return row ?? null;
+}
+
 export async function getAudioNotePageData(
   identifier: string,
   ownerId: string
@@ -90,10 +103,12 @@ export async function getAudioNotePageData(
       media: mediaObjects,
       note: notes,
       transcript: transcripts,
+      aiOutput: aiOutputs,
     })
     .from(mediaObjects)
     .leftJoin(notes, eq(notes.mediaObjectId, mediaObjects.id))
     .leftJoin(transcripts, eq(transcripts.mediaObjectId, mediaObjects.id))
+    .leftJoin(aiOutputs, eq(aiOutputs.mediaObjectId, mediaObjects.id))
     .where(
       and(
         mediaWhere,

@@ -15,6 +15,21 @@ export const titleSummarySchema = z.object({
 
 export type TitleSummary = z.infer<typeof titleSummarySchema>;
 
+export const enhancedNotesSchema = z.object({
+  title: z
+    .string()
+    .min(3)
+    .max(120)
+    .describe("A concise meeting-note title — 3 to 12 words, sentence case, no trailing period."),
+  summary: z
+    .string()
+    .min(10)
+    .max(6000)
+    .describe("Polished markdown meeting notes generated from raw notes and transcript context."),
+});
+
+export type EnhancedNotes = z.infer<typeof enhancedNotesSchema>;
+
 export const chaptersSchema = z.object({
   chapters: z
     .array(
