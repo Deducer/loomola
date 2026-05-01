@@ -21,16 +21,16 @@ export function NotesList({
           <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-text-subtle">
             {group.label}
           </h2>
-          <div className="divide-y divide-border rounded-lg border border-border bg-bg-subtle">
+          <div className="overflow-hidden rounded-lg border border-border bg-bg-subtle/70">
             {group.notes.map((note) => {
               const folderName = note.folderId ? folderNames.get(note.folderId) : null;
               return (
                 <Link
                   key={note.id}
                   href={`/notes/${note.slug}`}
-                  className="flex items-center gap-3 px-3 py-3 transition-colors hover:bg-bg-elevated sm:px-4"
+                  className="group flex items-center gap-3 border-b border-border px-3 py-3 transition-colors last:border-b-0 hover:bg-bg-elevated/70 sm:px-4"
                 >
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-bg-elevated text-accent">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-bg-elevated text-emerald-400 transition-colors group-hover:bg-emerald-500/10">
                     <FileAudio className="h-4 w-4" />
                   </span>
                   <span className="min-w-0 flex-1">
@@ -39,11 +39,11 @@ export function NotesList({
                     </span>
                     <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-subtle">
                       <span className="inline-flex items-center gap-1">
-                        <UserRound className="h-3.5 w-3.5" />
+                        <UserRound className="h-3.5 w-3.5 opacity-80" />
                         {attendeeLabel(note.attendees)}
                       </span>
                       <span className="inline-flex items-center gap-1">
-                        <CalendarClock className="h-3.5 w-3.5" />
+                        <CalendarClock className="h-3.5 w-3.5 opacity-80" />
                         {timeLabel(new Date(note.createdAt))}
                       </span>
                     </span>

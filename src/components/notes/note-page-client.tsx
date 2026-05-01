@@ -254,22 +254,26 @@ export function NotePageClient({
   }
 
   return (
-    <div className="min-h-screen bg-bg pb-28 text-text">
-      <main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col px-4 py-5 sm:px-6 sm:py-8">
-        <div className="flex items-center justify-between">
+    <div className="min-h-screen bg-bg pb-32 text-text">
+      <main className="mx-auto flex min-h-screen w-full max-w-2xl flex-col px-4 py-5 sm:px-6 sm:py-9">
+        <div className="flex items-center justify-between text-text-subtle">
           <Link href="/" aria-label="Back to dashboard">
-            <Button variant="ghost" size="icon">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-full hover:bg-bg-subtle"
+            >
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
           <div className="flex items-center gap-2">
             {enhancedSummary && (
-              <div className="flex rounded-md border border-border bg-bg-subtle p-1">
+              <div className="flex rounded-lg border border-border bg-bg-subtle/80 p-0.5">
                 <button
                   type="button"
                   onClick={() => setViewMode("enhanced")}
                   className={cn(
-                    "rounded px-2.5 py-1 text-xs font-medium transition-colors",
+                    "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
                     viewMode === "enhanced"
                       ? "bg-bg-elevated text-text"
                       : "text-text-muted hover:text-text"
@@ -281,7 +285,7 @@ export function NotePageClient({
                   type="button"
                   onClick={() => setViewMode("original")}
                   className={cn(
-                    "rounded px-2.5 py-1 text-xs font-medium transition-colors",
+                    "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
                     viewMode === "original"
                       ? "bg-bg-elevated text-text"
                       : "text-text-muted hover:text-text"
@@ -292,38 +296,43 @@ export function NotePageClient({
               </div>
             )}
             <Badge variant={status}>{status}</Badge>
-            <Button variant="ghost" size="icon" aria-label="More note actions">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-full hover:bg-bg-subtle"
+              aria-label="More note actions"
+            >
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </div>
         </div>
 
-        <section className="mt-9">
+        <section className="mt-10">
           <input
             value={title}
             onChange={(event) => setTitle(event.target.value)}
             onBlur={saveTitle}
             placeholder="New note"
             className={cn(
-              "w-full border-none bg-transparent px-0 text-4xl font-semibold tracking-normal text-text outline-none placeholder:italic placeholder:text-text-subtle",
+              "w-full border-none bg-transparent px-0 text-[2.35rem] font-semibold leading-tight tracking-normal text-text outline-none placeholder:italic placeholder:text-text-subtle sm:text-[2.65rem]",
               !title.trim() && "italic text-text-subtle"
             )}
           />
-          <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-text-muted">
-            <span className="inline-flex h-8 items-center gap-1.5 rounded-full bg-bg-elevated px-3">
+          <div className="mt-5 flex flex-wrap items-center gap-2 text-sm text-text-muted">
+            <span className="inline-flex h-8 items-center gap-1.5 rounded-full bg-bg-subtle px-3">
               <Calendar className="h-3.5 w-3.5" />
               {meetingDate}
             </span>
-            <span className="inline-flex h-8 items-center gap-1.5 rounded-full bg-bg-elevated px-3">
+            <span className="inline-flex h-8 items-center gap-1.5 rounded-full bg-bg-subtle px-3">
               <Users className="h-3.5 w-3.5" />
               {attendeeLabel}
             </span>
-            <span className="inline-flex h-8 items-center gap-1.5 rounded-full bg-bg-elevated px-3">
+            <span className="inline-flex h-8 items-center gap-1.5 rounded-full bg-bg-subtle px-3">
               <Folder className="h-3.5 w-3.5" />
               {folderLabel ?? "Add to folder"}
             </span>
             {durationLabel && (
-              <span className="inline-flex h-8 items-center rounded-full bg-bg-elevated px-3">
+              <span className="inline-flex h-8 items-center rounded-full bg-bg-subtle px-3">
                 {durationLabel}
               </span>
             )}
@@ -331,7 +340,7 @@ export function NotePageClient({
           </div>
         </section>
 
-        <section className="mt-10 flex-1">
+        <section className="mt-12 flex-1">
           {viewMode === "enhanced" && enhancedSummary ? (
             <EnhancedMarkdown markdown={enhancedSummary} />
           ) : (
@@ -355,7 +364,7 @@ export function NotePageClient({
         </section>
 
         {transcriptOpen && (
-          <section className="fixed inset-x-4 bottom-24 z-30 mx-auto max-w-3xl rounded-lg border border-border bg-bg-elevated p-3 shadow-2xl shadow-black/30">
+          <section className="fixed inset-x-4 bottom-28 z-30 mx-auto max-w-2xl rounded-lg border border-border bg-bg-elevated p-3 shadow-2xl shadow-black/30">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 text-sm font-medium">
                 <FileText className="h-4 w-4 text-accent" />
@@ -384,13 +393,14 @@ export function NotePageClient({
         )}
       </main>
 
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-bg/90 px-4 py-3 backdrop-blur">
-        <div className="mx-auto flex max-w-3xl items-center gap-3">
+      <div className="fixed inset-x-0 bottom-0 z-40 px-4 pb-4 pt-3">
+        <div className="mx-auto flex max-w-2xl items-center gap-2 rounded-lg border border-border bg-bg-subtle/95 p-2 shadow-2xl shadow-black/30 backdrop-blur">
           <Button
             variant="secondary"
             size="icon"
             onClick={togglePlay}
             disabled={!audioUrl}
+            className="h-10 w-10 shrink-0 rounded-md bg-bg-elevated hover:bg-border-strong"
             aria-label={playing ? "Pause audio" : "Play audio"}
           >
             {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
@@ -398,15 +408,15 @@ export function NotePageClient({
           <button
             type="button"
             onClick={() => setTranscriptOpen((open) => !open)}
-            className="flex min-w-0 flex-1 items-center gap-3 rounded-md border border-border bg-bg-subtle px-3 py-2 text-left transition-colors hover:bg-bg-elevated"
+            className="flex min-w-0 flex-1 items-center gap-3 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-bg-elevated"
           >
-            <Volume2 className="h-4 w-4 shrink-0 text-accent" />
+            <Volume2 className="h-4 w-4 shrink-0 text-emerald-400" />
             {waveformUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={waveformUrl}
                 alt=""
-                className="h-8 min-w-0 flex-1 rounded object-cover opacity-80"
+                className="h-8 min-w-0 flex-1 rounded object-cover opacity-90"
               />
             ) : (
               <span className="min-w-0 flex-1 text-sm text-text-muted">
@@ -418,6 +428,7 @@ export function NotePageClient({
             variant="ghost"
             size="icon"
             onClick={() => setTranscriptOpen((open) => !open)}
+            className="h-9 w-9 shrink-0 rounded-md"
             aria-label="Toggle transcript"
           >
             <ChevronUp
@@ -486,7 +497,7 @@ function EnhancementControls({
   if (generating) {
     return (
       <div className="mt-10 flex justify-center">
-        <span className="inline-flex items-center gap-2 rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-emerald-500/20">
+        <span className="inline-flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-300 shadow-lg shadow-black/20">
           <LoaderCircle className="h-4 w-4 animate-spin" />
           Enhancing notes
         </span>
@@ -504,7 +515,11 @@ function EnhancementControls({
 
   return (
     <div className="mt-10 flex flex-col items-center gap-3">
-      <Button variant="outline" onClick={onGenerate} className="rounded-full px-5">
+      <Button
+        variant="outline"
+        onClick={onGenerate}
+        className="rounded-full border-emerald-500/30 bg-emerald-500/5 px-5 text-emerald-300 hover:bg-emerald-500/10"
+      >
         <Sparkles className="h-4 w-4" />
         {generationStatus === "failed" ? "Try again" : "Generate notes"}
       </Button>
@@ -515,18 +530,21 @@ function EnhancementControls({
 
 function EnhancedMarkdown({ markdown }: { markdown: string }) {
   return (
-    <article className="min-h-[42vh] text-base leading-8 text-text">
+    <article className="min-h-[42vh] text-[0.97rem] leading-8 text-text">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
           h1: ({ node, ...props }) => (
-            <h1 className="mb-5 mt-8 text-3xl font-semibold leading-tight text-text" {...props} />
+            <h1
+              className="mb-5 mt-9 text-3xl font-semibold leading-tight text-text first:mt-0"
+              {...props}
+            />
           ),
           h2: ({ node, ...props }) => (
-            <h2 className="mb-3 mt-8 text-xl font-semibold leading-snug text-text" {...props} />
+            <h2 className="mb-3 mt-9 text-xl font-semibold leading-snug text-text first:mt-0" {...props} />
           ),
           h3: ({ node, ...props }) => (
-            <h3 className="mb-2 mt-6 text-base font-semibold leading-snug text-text" {...props} />
+            <h3 className="mb-2 mt-7 text-base font-semibold leading-snug text-text first:mt-0" {...props} />
           ),
           p: ({ node, ...props }) => (
             <p className="my-4 text-text-muted" {...props} />
