@@ -149,6 +149,22 @@ struct PartURLResponse: Decodable, Equatable, Sendable {
 struct CompleteRecordingRequest: Encodable, Sendable {
     let tracks: [TrackKind: [CompletedPart]]
     let durationSeconds: Double
+
+    enum CodingKeys: String, CodingKey {
+        case tracks
+        case durationSeconds
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        let stringTracks = Dictionary(
+            uniqueKeysWithValues: tracks.map { track, parts in
+                (track.rawValue, parts)
+            }
+        )
+        try container.encode(stringTracks, forKey: .tracks)
+        try container.encode(durationSeconds, forKey: .durationSeconds)
+    }
 }
 
 struct CompleteRecordingResponse: Decodable, Equatable, Sendable {

@@ -86,11 +86,17 @@ final class AudioNoteRecorder {
         var completedTracks: [TrackKind: [CompletedPart]] = [:]
         for track in [TrackKind.mic, .systemAudio] {
             guard let fileURL = localFiles[track] else { continue }
-            completedTracks[track] = try await uploader.uploadFile(
+            let parts = try await uploader.uploadFile(
                 url: fileURL,
                 recordingId: recordingId,
                 track: track
             )
+            if !parts.isEmpty {
+                completedTracks[track] = parts
+            }
+        }
+        guard !completedTracks.isEmpty else {
+            throw AudioNoteRecorderError.noCompletedAudioTracks
         }
 
         let response = try await backend.complete(
@@ -135,6 +141,7 @@ enum AudioNoteRecorderError: LocalizedError {
     case missingBackendRecordingId
     case missingLocalFileURL
     case systemAudioUnavailable
+    case noCompletedAudioTracks
 
     var errorDescription: String? {
         switch self {
@@ -150,6 +157,8 @@ enum AudioNoteRecorderError: LocalizedError {
             return "The audio note is missing a local file path."
         case .systemAudioUnavailable:
             return "System audio capture requires macOS 14 or newer."
+        case .noCompletedAudioTracks:
+            return "No audio was captured. Check microphone and Screen & System Audio permissions, then try again."
         }
     }
 }

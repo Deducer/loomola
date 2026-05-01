@@ -30,6 +30,23 @@ final class BackendClientModelsTests: XCTestCase {
         XCTAssertEqual(object?["ETag"] as? String, "\"etag\"")
     }
 
+    func testCompleteRecordingRequestUsesTrackNamesAsObjectKeys() throws {
+        let request = CompleteRecordingRequest(
+            tracks: [
+                .mic: [CompletedPart(partNumber: 1, eTag: "\"mic\"")],
+                .systemAudio: [CompletedPart(partNumber: 1, eTag: "\"system\"")]
+            ],
+            durationSeconds: 12
+        )
+        let data = try JSONEncoder().encode(request)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let tracks = try XCTUnwrap(object["tracks"] as? [String: Any])
+
+        XCTAssertNotNil(tracks["mic"])
+        XCTAssertNotNil(tracks["system-audio"])
+        XCTAssertNil(tracks["0"])
+    }
+
     func testAudioStartRequestUsesGranolaShape() throws {
         let request = StartRecordingRequest(
             type: .audio,
