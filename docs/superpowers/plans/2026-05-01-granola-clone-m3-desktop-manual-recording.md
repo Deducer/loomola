@@ -27,7 +27,7 @@
 - [x] Extend desktop API models with `type`, `title`, `meetingDetectedApp`, `meetingStartedAtLocal`, `attendees`, and `sourceContextHint`.
 - [x] Add Swift unit tests for audio start-request JSON and response decoding.
 - [x] Add a desktop "Test Audio Backend" handshake that starts `type='audio'` with mic/system tracks, then aborts.
-- [ ] Refactor `MultipartUploadCoordinator` to stream 8MB file chunks instead of `Data(contentsOf:)` on the full file.
+- [x] Refactor `MultipartUploadCoordinator` to stream 8MB file chunks instead of `Data(contentsOf:)` on the full file.
 - [ ] Add `AudioRecordingSession` state model for selected tracks, local file URLs, start time, duration, and backend recording ID.
 - [ ] Add reusable `AudioAssetWriter` for AAC `.m4a` output from `CMSampleBuffer`, normalizing first sample time to zero.
 - [ ] Add `MicrophoneCaptureCoordinator` using `AVCaptureSession` + `AVCaptureAudioDataOutput` into `AudioAssetWriter`.
