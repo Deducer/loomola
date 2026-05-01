@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   ArrowLeft,
   Calendar,
@@ -331,9 +333,7 @@ export function NotePageClient({
 
         <section className="mt-10 flex-1">
           {viewMode === "enhanced" && enhancedSummary ? (
-            <article className="min-h-[42vh] whitespace-pre-wrap text-base leading-8 text-text">
-              {enhancedSummary}
-            </article>
+            <EnhancedMarkdown markdown={enhancedSummary} />
           ) : (
             <Textarea
               value={body}
@@ -504,11 +504,58 @@ function EnhancementControls({
 
   return (
     <div className="mt-10 flex flex-col items-center gap-3">
-      <Button onClick={onGenerate} className="rounded-full px-5">
+      <Button variant="outline" onClick={onGenerate} className="rounded-full px-5">
         <Sparkles className="h-4 w-4" />
         {generationStatus === "failed" ? "Try again" : "Generate notes"}
       </Button>
       {error && <p className="text-xs text-red-400">{error}</p>}
     </div>
+  );
+}
+
+function EnhancedMarkdown({ markdown }: { markdown: string }) {
+  return (
+    <article className="min-h-[42vh] text-base leading-8 text-text">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          h1: ({ node, ...props }) => (
+            <h1 className="mb-5 mt-8 text-3xl font-semibold leading-tight text-text" {...props} />
+          ),
+          h2: ({ node, ...props }) => (
+            <h2 className="mb-3 mt-8 text-xl font-semibold leading-snug text-text" {...props} />
+          ),
+          h3: ({ node, ...props }) => (
+            <h3 className="mb-2 mt-6 text-base font-semibold leading-snug text-text" {...props} />
+          ),
+          p: ({ node, ...props }) => (
+            <p className="my-4 text-text-muted" {...props} />
+          ),
+          ul: ({ node, ...props }) => (
+            <ul className="my-4 list-disc space-y-2 pl-5 text-text-muted" {...props} />
+          ),
+          ol: ({ node, ...props }) => (
+            <ol className="my-4 list-decimal space-y-2 pl-5 text-text-muted" {...props} />
+          ),
+          li: ({ node, ...props }) => (
+            <li className="pl-1 marker:text-text-subtle" {...props} />
+          ),
+          strong: ({ node, ...props }) => (
+            <strong className="font-semibold text-text" {...props} />
+          ),
+          em: ({ node, ...props }) => (
+            <em className="text-text" {...props} />
+          ),
+          code: ({ node, ...props }) => (
+            <code className="rounded bg-bg-elevated px-1 py-0.5 font-mono text-sm text-text" {...props} />
+          ),
+          input: ({ node, ...props }) => (
+            <input className="mr-2 align-middle accent-emerald-500" {...props} />
+          ),
+        }}
+      >
+        {markdown}
+      </ReactMarkdown>
+    </article>
   );
 }
