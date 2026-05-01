@@ -40,6 +40,16 @@ import {
   runAudioWaveformJob,
   type AudioWaveformJobData,
 } from "./jobs/audio-waveform";
+import {
+  EMBED_TRANSCRIPT_JOB,
+  runEmbedTranscriptJob,
+  type EmbedTranscriptJobData,
+} from "./jobs/embed-transcript";
+import {
+  EMBED_SUMMARY_JOB,
+  runEmbedSummaryJob,
+  type EmbedSummaryJobData,
+} from "./jobs/embed-summary";
 import { enableGranola } from "@/lib/feature-flags";
 
 let cached: PgBoss | null = null;
@@ -73,13 +83,31 @@ async function init(): Promise<PgBoss> {
   if (granolaEnabled) {
     await boss.createQueue(MIX_AUDIO_JOB);
     await boss.createQueue(AUDIO_WAVEFORM_JOB);
+    await boss.createQueue(EMBED_TRANSCRIPT_JOB);
+    await boss.createQueue(EMBED_SUMMARY_JOB);
   }
 
   await boss.work<TranscribeJobData>(TRANSCRIBE_JOB, async (jobs) => {
     for (const job of jobs) await runTranscribeJob(job.data);
   });
   await boss.work<TitleSummaryJobData>(TITLE_SUMMARY_JOB, async (jobs) => {
-    for (const job of jobs) await runTitleSummaryJob(job.data);
+    for (const job of jobs) {
+      await runTitleSummaryJob(job.data);
+      if (granolaEnabled) {
+        try {
+          await boss.send(
+            EMBED_SUMMARY_JOB,
+            { mediaObjectId: job.data.mediaObjectId },
+            EMBEDDING_JOB_OPTIONS
+          );
+        } catch (err) {
+          console.error(
+            `[pg-boss] failed to enqueue summary embedding for ${job.data.mediaObjectId}:`,
+            err
+          );
+        }
+      }
+    }
   });
   await boss.work<ChaptersJobData>(CHAPTERS_JOB, async (jobs) => {
     for (const job of jobs) await runChaptersJob(job.data);
@@ -117,10 +145,16 @@ async function init(): Promise<PgBoss> {
     await boss.work<AudioWaveformJobData>(AUDIO_WAVEFORM_JOB, async (jobs) => {
       for (const job of jobs) await runAudioWaveformJob(job.data);
     });
+    await boss.work<EmbedTranscriptJobData>(EMBED_TRANSCRIPT_JOB, async (jobs) => {
+      for (const job of jobs) await runEmbedTranscriptJob(job.data);
+    });
+    await boss.work<EmbedSummaryJobData>(EMBED_SUMMARY_JOB, async (jobs) => {
+      for (const job of jobs) await runEmbedSummaryJob(job.data);
+    });
   }
 
   console.log(
-    `[pg-boss] started and workers registered (${granolaEnabled ? 9 : 7} queues)`
+    `[pg-boss] started and workers registered (${granolaEnabled ? 11 : 7} queues)`
   );
   return boss;
 }
@@ -195,6 +229,13 @@ const AUDIO_JOB_OPTIONS = {
   expireInSeconds: 3600,
 };
 
+const EMBEDDING_JOB_OPTIONS = {
+  retryLimit: 3,
+  retryDelay: 60,
+  retryBackoff: true,
+  expireInSeconds: 3600,
+};
+
 export async function enqueueMixAudio(data: MixAudioJobData): Promise<void> {
   if (!enableGranola()) throw new Error("Granola is disabled");
   const boss = await getBoss();
@@ -207,4 +248,20 @@ export async function enqueueAudioWaveform(
   if (!enableGranola()) throw new Error("Granola is disabled");
   const boss = await getBoss();
   await boss.send(AUDIO_WAVEFORM_JOB, data, AUDIO_JOB_OPTIONS);
+}
+
+export async function enqueueTranscriptEmbedding(
+  data: EmbedTranscriptJobData
+): Promise<void> {
+  if (!enableGranola()) throw new Error("Granola is disabled");
+  const boss = await getBoss();
+  await boss.send(EMBED_TRANSCRIPT_JOB, data, EMBEDDING_JOB_OPTIONS);
+}
+
+export async function enqueueSummaryEmbedding(
+  data: EmbedSummaryJobData
+): Promise<void> {
+  if (!enableGranola()) throw new Error("Granola is disabled");
+  const boss = await getBoss();
+  await boss.send(EMBED_SUMMARY_JOB, data, EMBEDDING_JOB_OPTIONS);
 }

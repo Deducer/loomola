@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { insertTranscript, type WordTimestamp } from "@/db/queries/transcripts";
 import { insertBlankAiOutput } from "@/db/queries/ai-outputs";
 import { enqueueAiJobs } from "@/lib/queue/enqueue-processing";
+import { enqueueTranscriptEmbedding } from "@/lib/queue/boss";
 import { enableGranola } from "@/lib/feature-flags";
 import { listDictionaryTerms } from "@/db/queries/dictionary-terms";
 import {
@@ -99,6 +100,17 @@ export async function POST(
     fullText: rewritten.fullText,
     wordTimestamps: rewritten.words,
   });
+
+  if (enableGranola()) {
+    try {
+      await enqueueTranscriptEmbedding({ mediaObjectId: recordingId });
+    } catch (err) {
+      console.error(
+        `[webhook/deepgram] failed to enqueue transcript embedding for ${recordingId}:`,
+        err
+      );
+    }
+  }
 
   if (media.type === "audio") {
     await db

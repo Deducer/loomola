@@ -565,6 +565,10 @@ A **"+ Quick note"** button in the top-right (matching Granola's image 5) create
 
 This is the heart of the product. The layout intentionally mirrors Granola's app screen for screen.
 
+Granola also treats dragged images as first-class visual context for a note. Dropping an image over the canvas should attach it to the current note, show an image thumbnail as the attachment icon instead of the generic file icon, and make that image available to the later AI enhancement prompt as visual context. This is not required for the first notes canvas milestone, but it must be preserved in the product shape so screenshots, whiteboards, slide captures, and UI bugs can enrich the generated notes later.
+
+Visual direction: stay close to Granola's restrained grey/white interface. The notes list and canvas should feel quiet, compact, and editorial: subtle borders, dark neutral surfaces, small icon tiles, high-contrast white text in dark mode, and no decorative gradients.
+
 #### Top of canvas (always)
 
 - **Top bar**: home/back icon (top-left, returns to dashboard), kebab menu and **`✦⌄` Original/Enhanced toggle** on the top-right. The toggle activates only after first AI generation — before that it's hidden.
