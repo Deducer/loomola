@@ -4,6 +4,17 @@
 
 **Live:** https://loom.dissonance.cloud
 
+## Multi-product strategy
+
+This repo hosts **two products on one codebase**, gated by a single env flag:
+
+- **Loom** — always built. The screen-recording product covered by this AGENTS.md.
+- **Granola** — built into the same `main` branch behind `ENABLE_GRANOLA=true`. When the flag is `false` (default), Notes routes return 404, the Notes dashboard tab is hidden, and audio-only `media_objects` rows are inert. When `true`, both products run on the same Postgres / R2 / Mailgun / Auth.
+
+**Why one repo, one branch?** Schema is already polymorphic (`media_objects.type = 'video' | 'audio'`); the pipeline (Deepgram → Claude → pg-boss) doesn't care about media type; folders / search / brand profiles / comments / sharing / view tracking are polymorphic-by-construction. A long-lived branch would diverge on migrations; a fork forces every Loom fix to be cherry-picked forever.
+
+**For shipping pure Loom**: deploy from the `loom-v1.0` git tag (or any later commit) with `ENABLE_GRANOLA=false`. No Granola UI or routes are reachable.
+
 ## Session Start Checklist
 
 1. Read [`ROADMAP.md`](ROADMAP.md) for what's shipped + what's open.
@@ -25,7 +36,8 @@
 | Cloudflare R2 | bucket configured via `R2_BUCKET` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_ACCOUNT_ID` / `R2_ENDPOINT` | All five are in Doppler |
 | Deepgram | `DEEPGRAM_API_KEY` (Doppler) | Async prerecorded API + HMAC-signed webhook back to `/api/webhooks/deepgram/[recordingId]/[sig]` |
 | Anthropic (Claude) | `ANTHROPIC_API_KEY` (Doppler) | Sonnet 4.6 via Vercel AI SDK; provider-agnostic (swappable) |
-| Mailgun | `MAILGUN_API_KEY`, `MAILGUN_DOMAIN=mg.dissonance.cloud`, `MAIL_FROM_ADDRESS` (Doppler) | Used for new-comment notifications to recording owner |
+| Mailgun | `MAILGUN_API_KEY`, `MAILGUN_DOMAIN=mg.dissonance.cloud`, `MAIL_FROM_ADDRESS` (Doppler) | Used for new-comment + first-view-per-visitor notifications to recording owner |
+| Feature flag: `ENABLE_GRANOLA` | Doppler (`prd_loom`) | `'true'` enables the Granola product (audio meeting notes) on top of Loom. `'false'` / unset = Loom-only. Read by every server-side gate; client UI hides Notes-tab when false. Set per-deploy. |
 
 ## Creator User (single-user auth today)
 

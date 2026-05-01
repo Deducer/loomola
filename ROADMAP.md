@@ -119,15 +119,38 @@ Testing is not required between every commit — just at milestone boundaries.
 
 **Spec:** `docs/superpowers/specs/2026-04-26-chrome-extension-design.md`
 
-## Stage 1.10 — Share-page + brand-form polish
+## Stage 1.10 — Share-page + brand-form polish + first-view emails + theme work
 
 | What it ships |
 |---|
-| **Share-page premium pass.** Watch-first surface gets a Loom-feel polish: title band sits flush-left to the page edge as a compact "page header" tag (cut from `py-8/12` to `py-4/5`, `28px` size), centered video below at `max-w-5xl`, accent-colored playhead + scrubber + chapter fills, accent fade strip below the brand header, top radial brand-color glow, off-white Plyr controls, smaller scrubber thumbs without rings, hover-scrub thumbnails preserved, `Sparkles` icon dropped from the Summary block. Brand-name text now hides automatically when a logo is present (logos almost always already contain the wordmark). |
-| **Brand form polish.** Logo pickers replaced the native file-input chrome (which was rendering "**N**o file chosen" truncated to "N." in the narrow grid column) with a custom button + filename label. Client-side validation (size + MIME) runs on selection — Next.js `serverActions.bodySizeLimit` was bouncing oversized uploads at the request body before our server validation ran, so the previous behavior was a silent failure on save. Both pickers align by top with a single shared format/size note ("PNG, JPG, WebP, or SVG · up to 2 MB") below the grid. Page-theming intro paragraph clarifies that each field actually renders on the share page (tagline, font family, CTA pill, footer text). |
-| **Mobile responsive pass.** Each surface (dashboard, record, share, edit) audited at ≤ 768px; flex/grid breakpoints tightened, top nav logo collapse fixed, share page stacks cleanly. |
+| **Share-page premium pass.** Watch-first surface gets a Loom-feel polish: title band sits flush-left to the page edge as a compact "page header" tag (cut from `py-8/12` to `py-4/5`, `28px` size), centered video below at `max-w-5xl`, accent-colored playhead + scrubber + chapter fills, accent fade strip below the brand header, top radial brand-color glow, off-white Plyr controls, smaller scrubber thumbs without rings, hover-scrub thumbnails preserved, `Sparkles` icon dropped from the Summary block. Brand-name text now hides automatically when a logo is present. Comment markers on the seekbar now use the brand accent (was hard-coded `var(--accent)`), 1.5px stroke instead of 2px, single initial instead of two. Volume slider switched to neutral off-white (instead of brand accent) and hides until hover. |
+| **Brand form polish.** Logo pickers replaced the native file-input chrome (which was rendering "**N**o file chosen" truncated to "N.") with a custom button + filename label. Client-side validation (size + MIME) runs on selection — Next.js `serverActions.bodySizeLimit` was bouncing oversized uploads at the request body before our server validation ran. Both pickers align by top with a single shared format/size note. |
+| **Mobile responsive pass.** Each surface (dashboard, record, share, edit) audited at ≤ 768px. |
+| **First-view-per-visitor email notifications.** When a new hashed `(IP + UA)` visitor opens a share page, the owner gets a Mailgun email with a UA summary, a link to the share page, and a link to the analytics tab. Subsequent views by that visitor stay silent. Owner views (signed-in same browser) skipped entirely — no analytics row, no email. Insert-vs-update detection uses the `created_at = updated_at` invariant on the views table. |
+| **Trim fixes.** Edit-page preview was using a stripped-down Plyr without trim clamp logic — owner saw the full video and assumed trim wasn't working. Same clamp that VideoPlayer uses (`loadedmetadata` seek to `trimStartSec`, `timeupdate` pause+rewind at `trimEndSec`) ported to PreviewPlayer. The "Playback MP4" download is hidden when trim is active (raw R2 object is full-length, would mislead); raw track downloads stay because they're per-track sources unrelated to trim. |
+| **Bubble fix.** Window-surface captures (a Chrome window, where the user wants to switch tabs while recording) were triggering the docPiP fallback even though the extension can inject its frameless bubble. docPiP now only fires for `displaySurface === "monitor"` (entire screen). |
+| **Brand default theme + viewer toggle.** Brand profile gets `default_theme: 'light' \| 'dark' \| null`. Share pages inject a tiny inline bootstrap script that applies the brand's theme on the visitor's first load (no flash, runs before paint). New `ViewerThemeToggle` (sun/moon icon) in the brand header lets viewers flip; choice persists in their localStorage and wins thereafter. Latent bug fixed in passing: the Layer 2 brand fields (tagline, fontFamily, ctaLabel, ctaUrl, footerText) were saved to DB but never selected back into `RecordingBrand`, so they silently rendered as undefined on share pages — extended `BRAND_SELECT` / `resolveBrand` in both `recordings.ts` and `search.ts` to pull all six fields. |
 
 **Status:** ✅ shipped 2026-04-30.
+
+## Stage 1.99 — Loom v1.0 freeze + multi-product readiness
+
+| What it ships |
+|---|
+| **`loom-v1.0` git tag.** Reference snapshot of pure Loom for any deploy that wants the screen-recording product alone. Future Granola work lands on `main` behind `ENABLE_GRANOLA=true`; deploys with the flag false (default) see only Loom. |
+| **`ENABLE_GRANOLA` feature flag convention.** Documented in CLAUDE.md / AGENTS.md. Set in Doppler per-deploy. Read by every server-side gate the Granola work introduces; client UI hides Notes-tab when false. Single env knob = single switch between products. |
+| **No Granola code yet.** Schema, routes, UI all out-of-scope for this stage. M1 onward of Stage 2 lands the actual implementation. |
+
+**Status:** ✅ shipped 2026-04-30.
+
+## Stage 2 — Granola-alt (audio meeting notes)
+
+Self-hosted Granola-faithful AI meeting note-taker built on top of the existing Loom backend. Polymorphic with the existing `media_objects` schema; same R2 / Deepgram / Claude / pg-boss pipeline; same auth / folders / search / brand profiles. Gated by `ENABLE_GRANOLA=true`; pure-Loom deploys don't see any of it.
+
+- **Spec:** [`docs/superpowers/specs/2026-04-28-granola-clone-design.md`](docs/superpowers/specs/2026-04-28-granola-clone-design.md)
+- **M1 plan (schema foundations):** [`docs/superpowers/plans/2026-04-29-granola-clone-m1-schema-foundations.md`](docs/superpowers/plans/2026-04-29-granola-clone-m1-schema-foundations.md)
+- **Migration numbering note:** the M1 plan was authored before Stage 1.10 shipped, and references migrations starting at `0010`. The next available number is `0011` — bump every M1 migration filename + journal entry by one (e.g. `0010_pgvector_extension` → `0011_pgvector_extension`, `0011_granola_schema` → `0012_granola_schema`, etc.).
+- **Reference repo (worth skimming):** [Zackriya-Solutions/meetily](https://github.com/Zackriya-Solutions/meetily) — Tauri + Rust + Whisper.cpp + Ollama (100% local), MIT-licensed. Architecturally different from us (cloud pipeline vs local) but their `frontend/src-tauri/src/audio_v2/` has solid macOS system+mic capture patterns, and `summary/` has multi-provider prompt structures. Don't port code — borrow patterns.
 
 ## Open follow-ups (next milestones to spec)
 
