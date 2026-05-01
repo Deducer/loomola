@@ -152,6 +152,22 @@ Self-hosted Granola-faithful AI meeting note-taker built on top of the existing 
 - **Migration numbering note:** the M1 plan was authored before Stage 1.10 shipped, and references migrations starting at `0010`. The next available number is `0011` — bump every M1 migration filename + journal entry by one (e.g. `0010_pgvector_extension` → `0011_pgvector_extension`, `0011_granola_schema` → `0012_granola_schema`, etc.).
 - **Reference repo (worth skimming):** [Zackriya-Solutions/meetily](https://github.com/Zackriya-Solutions/meetily) — Tauri + Rust + Whisper.cpp + Ollama (100% local), MIT-licensed. Architecturally different from us (cloud pipeline vs local) but their `frontend/src-tauri/src/audio_v2/` has solid macOS system+mic capture patterns, and `summary/` has multi-provider prompt structures. Don't port code — borrow patterns.
 
+### Stage 2 status
+
+| # | Milestone | Status | What it ships |
+|---|---|---|---|
+| G-M1 | Schema foundations + notes API | ✅ shipped | pgvector extension, six new tables (`notes`, `people`, `speaker_assignments`, `dictionary_terms`, `transcript_chunks`, `summary_embeddings`), four extended tables (`media_objects`, `transcripts`, `ai_outputs`, `brand_profiles`), RLS policies, HNSW vector indexes, Supabase Realtime publication on `ai_outputs`, and authenticated CRUD API routes for notes, people, dictionary terms, and speaker assignments. |
+| G-M2 | Audio ingest pipeline | 🔜 next | Backend changes for audio-only `media_objects`, ffmpeg mic+system mixing, and audio waveform generation. |
+| G-M3 | Desktop app — manual recording trigger | 📋 spec'd | Swift menubar item to manually start recording, ScreenCaptureKit + AVFoundation capture, multipart upload as `type='audio'`. |
+| G-M4 | `/notes/:id` Granola UI | 📋 spec'd | Single-column markdown canvas, metadata pill row, persistent bottom strip, floating transcript card. |
+| G-M5 | Tabbed dashboard | 📋 spec'd | `/` becomes Recordings \| Notes tabs with shared folders and search. |
+| G-M6 | Speaker labeling MVP | 📋 spec'd | `/people` page, attendee picker, speaker chip popover, persistence. |
+| G-M7 | Shared dictionary | 📋 spec'd | `/dictionary` page and Deepgram keyterms wiring. |
+| G-M8 | pgvector embedding-on-write | 📋 spec'd | `embed_transcript` and `embed_summary` jobs. |
+| G-M9 | AI enhancement (user-triggered, streaming) | 📋 spec'd | "Generate notes" trigger, `streamText` + Realtime, "Enhancing notes" pill UX. |
+| G-M10 | Per-project Obsidian sync | 📋 spec'd | Brand profile vault path, manual save flow, desktop writer. |
+| G-M11 | LLM-accessible API + meeting detection | 📋 spec'd | `INTEGRATION_API_TOKEN`, JSON/zip export endpoints, NSWorkspace meeting detection, Chrome extension content scripts, auto-arm UX. |
+
 ## Open follow-ups (next milestones to spec)
 
 | Topic | Why | Rough effort |

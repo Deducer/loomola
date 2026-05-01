@@ -96,6 +96,17 @@ Stage 1 (M1–M11) + Stage 1.5a/b + Stage 1.6 + Stage 1.7 + Stage 1.8 all shippe
 - **Mobile** — designed desktop-first. No focused mobile pass yet; share page renders OK below 768px but not battle-tested.
 - **Brand `fontFamily` is Google Fonts only** — the share page injects `<link href="https://fonts.googleapis.com/css2?family=<name>:wght@400;500;600;700">` and applies the family page-wide. Foundry/commercial fonts (Söhne, TT Norms, Pangram Pangram "Test ..." trial fonts, etc.) silently 404 and fall back to the system sans. Custom-font upload (R2 + `@font-face`) is the right next step but not built yet.
 
+## Granola-alt (in progress)
+
+A second product (audio meeting notes) built on top of this same backend. Spec: [`docs/superpowers/specs/2026-04-28-granola-clone-design.md`](docs/superpowers/specs/2026-04-28-granola-clone-design.md).
+
+- **G-M1 shipped:** six new Postgres tables (`notes`, `people`, `speaker_assignments`, `dictionary_terms`, `transcript_chunks`, `summary_embeddings`), four extended tables (`media_objects`, `transcripts`, `ai_outputs`, `brand_profiles`), pgvector extension, HNSW vector indexes, RLS policies, Supabase Realtime publication on `ai_outputs`, and thin CRUD API routes for the new entities.
+- **Schema additions you'll see:** `media_objects.attendees` (jsonb of person UUIDs), `media_objects.r2MixedKey` (mic+system mixed mono audio), `media_objects.meetingDetectedApp`, `media_objects.sourceContextHint`, `media_objects.obsidianSyncedAt`, `transcripts.provider` (default `deepgram`), `ai_outputs.generationStatusValue` (`pending|streaming|complete|failed`), `brand_profiles.meetingNotesVaultPath`.
+- **No UI yet** — that lands in G-M4 (`/notes/:id`) and G-M5 (tabbed dashboard).
+- **Feature flag:** every Granola API route checks `ENABLE_GRANOLA === 'true'`. When false / unset, the routes return 404 and Loom-only deploys stay dark.
+- **Provider abstraction:** env vars `LLM_PROVIDER`, `LLM_MODEL`, `EMBEDDING_PROVIDER`, `TRANSCRIBE_PROVIDER` allow swapping providers without code changes.
+- **`INTEGRATION_API_TOKEN`:** bearer token for upcoming LLM-accessible export endpoints (lands in G-M11). Do NOT expose this in client code; server-only.
+
 ## Out-of-Stage-1 Scope (deferred, separate spec when picked up)
 
 - macOS menubar / desktop app implementation (native, ScreenCaptureKit on macOS) — spec + scaffold exist under `docs/superpowers/specs/2026-04-27-macos-desktop-app-design.md`, `docs/superpowers/plans/2026-04-27-macos-desktop-app.md`, and `desktop/`.
