@@ -52,6 +52,32 @@ struct MainRecorderView: View {
                         Toggle("Mic", isOn: $viewModel.includeMicInAudioNote)
                         Toggle("System audio", isOn: $viewModel.includeSystemAudioInAudioNote)
                     }
+                    HStack {
+                        Button("Start Audio Note") {
+                            viewModel.startAudioNoteRecording()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(
+                            viewModel.state == .signedOut ||
+                            viewModel.activeRecordingKind != nil ||
+                            (!viewModel.includeMicInAudioNote && !viewModel.includeSystemAudioInAudioNote)
+                        )
+
+                        Button("Stop Audio") {
+                            viewModel.stopAudioNoteRecordingAndUpload()
+                        }
+                        .disabled(viewModel.activeRecordingKind != .audio)
+
+                        Button("Discard Audio") {
+                            viewModel.cancelAudioNoteRecording()
+                        }
+                        .disabled(viewModel.activeRecordingKind != .audio)
+
+                        Button("Test Audio Backend") {
+                            viewModel.startAndAbortAudioBackendHandshake()
+                        }
+                        .disabled(viewModel.state == .signedOut)
+                    }
                 }
             }
 
@@ -79,32 +105,8 @@ struct MainRecorderView: View {
                 }
                 .disabled(viewModel.activeRecordingKind != .video)
 
-                Button("Start Audio Note") {
-                    viewModel.startAudioNoteRecording()
-                }
-                .disabled(
-                    viewModel.state == .signedOut ||
-                    viewModel.activeRecordingKind != nil ||
-                    (!viewModel.includeMicInAudioNote && !viewModel.includeSystemAudioInAudioNote)
-                )
-
-                Button("Stop Audio") {
-                    viewModel.stopAudioNoteRecordingAndUpload()
-                }
-                .disabled(viewModel.activeRecordingKind != .audio)
-
-                Button("Discard Audio") {
-                    viewModel.cancelAudioNoteRecording()
-                }
-                .disabled(viewModel.activeRecordingKind != .audio)
-
                 Button("Test Backend") {
                     viewModel.startAndAbortBackendHandshake()
-                }
-                .disabled(viewModel.state == .signedOut)
-
-                Button("Test Audio Backend") {
-                    viewModel.startAndAbortAudioBackendHandshake()
                 }
                 .disabled(viewModel.state == .signedOut)
 
