@@ -11,6 +11,13 @@ export type RecordingBrand = {
   accentColor: string;
   logoUrl: string | null;
   logoUrlDark: string | null;
+  // Layer 2 — full-page theming on share pages.
+  tagline: string | null;
+  fontFamily: string | null;
+  ctaLabel: string | null;
+  ctaUrl: string | null;
+  footerText: string | null;
+  defaultTheme: "light" | "dark" | null;
 };
 
 export type RecordingWithBrand = Recording & {
@@ -30,6 +37,12 @@ type BrandJoinFields = {
   brandLogoUrl: string | null;
   brandLogoR2Key: string | null;
   brandLogoR2KeyDark: string | null;
+  brandTagline: string | null;
+  brandFontFamily: string | null;
+  brandCtaLabel: string | null;
+  brandCtaUrl: string | null;
+  brandFooterText: string | null;
+  brandDefaultTheme: string | null;
 };
 
 const BRAND_SELECT = {
@@ -39,6 +52,12 @@ const BRAND_SELECT = {
   brandLogoUrl: brandProfiles.logoUrl,
   brandLogoR2Key: brandProfiles.logoR2Key,
   brandLogoR2KeyDark: brandProfiles.logoR2KeyDark,
+  brandTagline: brandProfiles.tagline,
+  brandFontFamily: brandProfiles.fontFamily,
+  brandCtaLabel: brandProfiles.ctaLabel,
+  brandCtaUrl: brandProfiles.ctaUrl,
+  brandFooterText: brandProfiles.footerText,
+  brandDefaultTheme: brandProfiles.defaultTheme,
 } as const;
 
 /**
@@ -58,12 +77,19 @@ async function resolveBrand(row: BrandJoinFields): Promise<RecordingBrand | null
       ? presignGet(row.brandLogoR2KeyDark)
       : Promise.resolve(null),
   ]);
+  const dt = row.brandDefaultTheme;
   return {
     id: row.brandId,
     name: row.brandName!,
     accentColor: row.brandAccent!,
     logoUrl,
     logoUrlDark,
+    tagline: row.brandTagline,
+    fontFamily: row.brandFontFamily,
+    ctaLabel: row.brandCtaLabel,
+    ctaUrl: row.brandCtaUrl,
+    footerText: row.brandFooterText,
+    defaultTheme: dt === "light" || dt === "dark" ? dt : null,
   };
 }
 

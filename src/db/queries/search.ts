@@ -102,6 +102,12 @@ export async function searchRecordings(params: {
       brandLogoUrl: brandProfiles.logoUrl,
       brandLogoR2Key: brandProfiles.logoR2Key,
       brandLogoR2KeyDark: brandProfiles.logoR2KeyDark,
+      brandTagline: brandProfiles.tagline,
+      brandFontFamily: brandProfiles.fontFamily,
+      brandCtaLabel: brandProfiles.ctaLabel,
+      brandCtaUrl: brandProfiles.ctaUrl,
+      brandFooterText: brandProfiles.footerText,
+      brandDefaultTheme: brandProfiles.defaultTheme,
       aiTitle: aiOutputs.titleSuggested,
       aiSummary: aiOutputs.summary,
       aiChapters: aiOutputs.chapters,
@@ -121,6 +127,7 @@ export async function searchRecordings(params: {
 
   return Promise.all(
     rows.map(async (r) => {
+      const dt = r.brandDefaultTheme;
       const brand = r.brandId
         ? {
             id: r.brandId,
@@ -132,6 +139,16 @@ export async function searchRecordings(params: {
             logoUrlDark: r.brandLogoR2KeyDark
               ? await presignGet(r.brandLogoR2KeyDark)
               : null,
+            tagline: r.brandTagline,
+            fontFamily: r.brandFontFamily,
+            ctaLabel: r.brandCtaLabel,
+            ctaUrl: r.brandCtaUrl,
+            footerText: r.brandFooterText,
+            defaultTheme:
+              (dt === "light" || dt === "dark" ? dt : null) as
+                | "light"
+                | "dark"
+                | null,
           }
         : null;
       return {

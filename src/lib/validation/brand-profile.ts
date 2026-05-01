@@ -33,6 +33,13 @@ export const brandProfileInputSchema = z.object({
   ctaLabel: optionalText(40, "CTA label"),
   ctaUrl: optionalUrl,
   footerText: optionalText(280, "Footer"),
+  // null = visitor's OS / their last toggle wins. 'light' / 'dark' =
+  // applied on first visit when the visitor has no stored preference.
+  defaultTheme: z
+    .enum(["light", "dark"])
+    .nullable()
+    .optional()
+    .or(z.literal("").transform(() => null)),
 });
 
 export type BrandProfileInput = z.infer<typeof brandProfileInputSchema>;

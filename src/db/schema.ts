@@ -49,6 +49,11 @@ export const brandProfiles = pgTable("brand_profiles", {
   ctaLabel: text("cta_label"),
   ctaUrl: text("cta_url"),
   footerText: text("footer_text"),
+  // 'light' | 'dark' | null. When set, the share page applies that
+  // theme on a visitor's first load (no prior localStorage preference).
+  // Visitor toggle on /v/<slug> still wins thereafter. CHECK
+  // constraint enforces enum at the DB layer (see 0010 migration).
+  defaultTheme: text("default_theme"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),

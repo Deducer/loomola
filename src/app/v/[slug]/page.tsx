@@ -10,6 +10,7 @@ import { presignGet } from "@/lib/r2/presigned-get";
 import { BrandLogo } from "@/components/brand/brand-logo";
 import { ViewerShell } from "@/components/viewer/viewer-shell";
 import { PasswordGate } from "@/components/viewer/password-gate";
+import { ViewerThemeToggle } from "@/components/viewer/viewer-theme-toggle";
 import { cookieName, verifyUnlockToken } from "@/lib/viewer/unlock-cookie";
 import type { Word } from "@/lib/viewer/paragraphs";
 import type { Metadata } from "next";
@@ -28,6 +29,7 @@ type BrandLike = {
   ctaLabel?: string | null;
   ctaUrl?: string | null;
   footerText?: string | null;
+  defaultTheme?: "light" | "dark" | null;
 } | null;
 
 export default async function SharePage({
@@ -232,13 +234,26 @@ function BrandFrame({
 }) {
   const fontFamily = brand?.fontFamily?.trim();
   const accent = brand?.accentColor ?? null;
+  const brandDefaultTheme = brand?.defaultTheme ?? null;
   // Apply the brand font as the page's primary font when set; otherwise the
   // `text-text`/etc tokens cascade naturally from globals.css.
   const style = fontFamily
     ? { fontFamily: `"${fontFamily}", var(--font-sans, ui-sans-serif, system-ui, sans-serif)` }
     : undefined;
+  // Bootstrap script: when the brand has a defaultTheme set AND the
+  // visitor has no stored next-themes preference yet, force-apply the
+  // brand's theme before paint. Once the visitor toggles via
+  // <ViewerThemeToggle>, their explicit choice goes into localStorage
+  // and wins on subsequent visits. Wrapped in try/catch so a hostile
+  // localStorage (private mode in some browsers) doesn't break render.
+  const themeBootstrap = brandDefaultTheme
+    ? `try{var s=localStorage.getItem('theme');if(!s){var t='${brandDefaultTheme}';document.documentElement.classList.remove('light','dark');document.documentElement.classList.add(t);}}catch(e){}`
+    : null;
   return (
     <div className="relative min-h-screen overflow-hidden" style={style}>
+      {themeBootstrap && (
+        <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
+      )}
       {fontFamily && (
         <>
           {/* eslint-disable-next-line @next/next/no-page-custom-font */}
@@ -320,6 +335,7 @@ function BrandHeader({
         </div>
 
         <div className="flex items-center gap-3">
+          <ViewerThemeToggle />
           {ctaActive && (
             <a
               href={brand!.ctaUrl!}

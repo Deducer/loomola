@@ -78,6 +78,7 @@ export async function createBrandProfile(
       ctaLabel: input.ctaLabel ?? null,
       ctaUrl: input.ctaUrl ?? null,
       footerText: input.footerText ?? null,
+      defaultTheme: input.defaultTheme ?? null,
     })
     .returning();
   return row;
@@ -99,6 +100,7 @@ export async function updateBrandProfile(
     ctaLabel: input.ctaLabel ?? null,
     ctaUrl: input.ctaUrl ?? null,
     footerText: input.footerText ?? null,
+    defaultTheme: input.defaultTheme ?? null,
   };
   if (input.logoR2Key !== undefined) {
     set.logoR2Key = input.logoR2Key;

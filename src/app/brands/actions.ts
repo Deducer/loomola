@@ -24,6 +24,7 @@ type ActionResult =
   | { ok: false; fieldErrors: Partial<Record<keyof BrandProfileInput | "logo", string>> };
 
 function parseFormData(formData: FormData) {
+  const dt = formData.get("defaultTheme");
   return brandProfileInputSchema.safeParse({
     name: formData.get("name"),
     accentColor: formData.get("accentColor"),
@@ -35,6 +36,7 @@ function parseFormData(formData: FormData) {
     ctaLabel: formData.get("ctaLabel") ?? "",
     ctaUrl: formData.get("ctaUrl") ?? "",
     footerText: formData.get("footerText") ?? "",
+    defaultTheme: dt === "light" || dt === "dark" ? dt : null,
   });
 }
 

@@ -1,12 +1,14 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import Link from "next/link";
+import { Monitor, Moon, Sun } from "lucide-react";
 import { ColorSwatch } from "./color-swatch";
 import { LogoPicker } from "./logo-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/cn";
 import type { BrandProfile } from "@/db/queries/brand-profiles";
 
 type ActionResult =
@@ -214,6 +216,28 @@ export function BrandForm({ action, initialValues, submitLabel }: Props) {
         )}
       </div>
 
+      <div>
+        <label className="block text-xs font-semibold uppercase tracking-wider text-text-muted">
+          Default theme{" "}
+          <span className="font-normal normal-case tracking-normal text-text-subtle">
+            (optional)
+          </span>
+        </label>
+        <div className="mt-1.5">
+          <DefaultThemePicker
+            initial={
+              initialValues?.defaultTheme === "light" ||
+              initialValues?.defaultTheme === "dark"
+                ? initialValues.defaultTheme
+                : null
+            }
+          />
+        </div>
+        <p className="mt-1.5 text-xs text-text-subtle">
+          Applied to share pages on a visitor&apos;s first load. They can still toggle to their preferred theme; the choice persists for that visitor.
+        </p>
+      </div>
+
       <div className="flex items-center gap-3 pt-2">
         <Button type="submit" disabled={pending}>
           {pending ? "Saving…" : submitLabel}
@@ -225,5 +249,48 @@ export function BrandForm({ action, initialValues, submitLabel }: Props) {
         </Link>
       </div>
     </form>
+  );
+}
+
+function DefaultThemePicker({ initial }: { initial: "light" | "dark" | null }) {
+  const [value, setValue] = useState<"auto" | "light" | "dark">(
+    initial ?? "auto"
+  );
+  const options: Array<{
+    v: "auto" | "light" | "dark";
+    label: string;
+    Icon: typeof Sun;
+  }> = [
+    { v: "auto", label: "Auto", Icon: Monitor },
+    { v: "light", label: "Light", Icon: Sun },
+    { v: "dark", label: "Dark", Icon: Moon },
+  ];
+  return (
+    <>
+      <input
+        type="hidden"
+        name="defaultTheme"
+        value={value === "auto" ? "" : value}
+      />
+      <div className="inline-flex rounded-md border border-border p-0.5">
+        {options.map(({ v, label, Icon }) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setValue(v)}
+            aria-pressed={value === v}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-xs transition-colors",
+              value === v
+                ? "bg-bg-elevated text-text"
+                : "text-text-subtle hover:text-text-muted"
+            )}
+          >
+            <Icon className="h-3.5 w-3.5" />
+            {label}
+          </button>
+        ))}
+      </div>
+    </>
   );
 }

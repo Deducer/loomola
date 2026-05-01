@@ -71,6 +71,13 @@
       "when": 1777752000000,
       "tag": "0009_brand_logo_dark",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1777960000000,
+      "tag": "0010_brand_default_theme",
+      "breakpoints": true
     }
   ]
 }
