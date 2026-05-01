@@ -14,6 +14,7 @@ type DeepgramWord = {
   end: number;
   confidence?: number;
   punctuated_word?: string;
+  speaker?: number;
 };
 
 type DeepgramAlternative = {
@@ -60,6 +61,7 @@ export async function POST(
     start: w.start,
     end: w.end,
     confidence: w.confidence,
+    speaker: w.speaker,
   }));
 
   const [media] = await db

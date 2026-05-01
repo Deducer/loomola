@@ -40,6 +40,7 @@ export async function runTranscribeJob(data: TranscribeJobData): Promise<void> {
     callback: callbackUrl,
     model: "nova-2",
     smart_format: true,
+    diarize: true,
     language: "en",
   });
 

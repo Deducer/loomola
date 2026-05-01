@@ -9,6 +9,7 @@ export type WordTimestamp = {
   start: number;
   end: number;
   confidence?: number;
+  speaker?: number;
 };
 
 export async function insertTranscript(params: {
