@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { insertTranscript, type WordTimestamp } from "@/db/queries/transcripts";
 import { insertBlankAiOutput } from "@/db/queries/ai-outputs";
 import { enqueueAiJobs } from "@/lib/queue/enqueue-processing";
+import { enableGranola } from "@/lib/feature-flags";
 
 type DeepgramWord = {
   word: string;
@@ -61,16 +62,43 @@ export async function POST(
     confidence: w.confidence,
   }));
 
+  const [media] = await db
+    .select({ type: mediaObjects.type })
+    .from(mediaObjects)
+    .where(eq(mediaObjects.id, recordingId))
+    .limit(1);
+  if (!media) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  if (media.type === "audio" && !enableGranola()) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   await insertTranscript({
     mediaObjectId: recordingId,
     deepgramRequestId: requestId,
+    provider: "deepgram",
+    providerRequestId: requestId,
     language,
     fullText,
     wordTimestamps,
   });
 
+  if (media.type === "audio") {
+    await db
+      .update(mediaObjects)
+      .set({ status: "ready" })
+      .where(eq(mediaObjects.id, recordingId));
+
+    console.log(
+      `[webhook/deepgram] audio transcript saved for ${recordingId} (${wordTimestamps.length} words)`
+    );
+
+    return NextResponse.json({ ok: true });
+  }
+
   // Pre-create the ai_outputs row so the 3 UPDATE-based jobs have a target.
-  const llmModel = process.env.LLM_MODEL_ID ?? "claude-sonnet-4-6";
+  const llmModel = process.env.LLM_MODEL ?? process.env.LLM_MODEL_ID ?? "claude-sonnet-4-6";
   await insertBlankAiOutput(recordingId, llmModel);
 
   // Flip to 'processing' and fan out the 3 transcript-dependent AI jobs.

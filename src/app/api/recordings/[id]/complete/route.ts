@@ -11,7 +11,10 @@ import {
   enqueuePreviewSprite,
   enqueueThumbnail,
   enqueueTranscription,
+  enqueueMixAudio,
+  enqueueAudioWaveform,
 } from "@/lib/queue/boss";
+import { enableGranola } from "@/lib/feature-flags";
 
 type CompleteRequest = {
   tracks: Partial<
@@ -36,6 +39,9 @@ export async function POST(
   if (!recording) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  if (recording.type === "audio" && !enableGranola()) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 
   const meta = recording.uploadMetadata as UploadMeta | null;
   if (!meta) {
@@ -48,6 +54,7 @@ export async function POST(
     r2CameraKey?: string;
     r2MicKey?: string;
     r2SystemaudioKey?: string;
+    r2MixedKey?: string;
   } = {};
 
   // Track which kinds we've enqueued so the error message can name the failing one.
@@ -120,6 +127,23 @@ export async function POST(
   }
 
   try {
+    const audioKey =
+      recording.type === "audio"
+        ? keyUpdates.r2MicKey ?? keyUpdates.r2SystemaudioKey
+        : undefined;
+    if (recording.type === "audio" && !audioKey) {
+      return NextResponse.json(
+        { error: "audio_track_required" },
+        { status: 400 }
+      );
+    }
+    if (
+      recording.type === "audio" &&
+      !(keyUpdates.r2MicKey && keyUpdates.r2SystemaudioKey)
+    ) {
+      keyUpdates.r2MixedKey = audioKey;
+    }
+
     // Flip to 'transcribing' (was 'ready' pre-M5). Webhook moves to 'ready'.
     await db
       .update(mediaObjects)
@@ -143,17 +167,17 @@ export async function POST(
     );
   }
 
-  // Post-upload jobs need the finished composite object. Thumbnail and
+  // Post-upload video jobs need the finished composite object. Thumbnail and
   // preview-sprite don't depend on the transcript, so kick them off here
   // in parallel with Deepgram instead of fanning out from the webhook —
   // saves the Deepgram round-trip on the dashboard thumbnail's critical
   // path. The transcript-dependent AI jobs still fire from the webhook.
-  if (keyUpdates.r2CompositeKey) {
+  if (recording.type === "video" && keyUpdates.r2CompositeKey) {
     try {
       await Promise.all([
         enqueueTranscription({
           mediaObjectId: recording.id,
-          compositeKey: keyUpdates.r2CompositeKey,
+          audioKey: keyUpdates.r2CompositeKey,
         }),
         enqueuePlaybackTranscode({
           mediaObjectId: recording.id,
@@ -171,6 +195,28 @@ export async function POST(
     } catch (err) {
       console.error("[complete] failed to enqueue post-upload jobs:", err);
       // Fall through — user still gets a slug; stuck row is visible via status.
+    }
+  }
+
+  if (recording.type === "audio") {
+    try {
+      if (keyUpdates.r2MicKey && keyUpdates.r2SystemaudioKey) {
+        await enqueueMixAudio({
+          mediaObjectId: recording.id,
+          micKey: keyUpdates.r2MicKey,
+          systemAudioKey: keyUpdates.r2SystemaudioKey,
+        });
+      } else {
+        const audioKey = keyUpdates.r2MicKey ?? keyUpdates.r2SystemaudioKey;
+        if (audioKey) {
+          await Promise.all([
+            enqueueTranscription({ mediaObjectId: recording.id, audioKey }),
+            enqueueAudioWaveform({ mediaObjectId: recording.id, audioKey }),
+          ]);
+        }
+      }
+    } catch (err) {
+      console.error("[complete] failed to enqueue audio jobs:", err);
     }
   }
 

@@ -14,6 +14,8 @@ export type WordTimestamp = {
 export async function insertTranscript(params: {
   mediaObjectId: string;
   deepgramRequestId: string | null;
+  providerRequestId?: string | null;
+  provider?: string;
   language: string;
   fullText: string;
   wordTimestamps: WordTimestamp[];
@@ -23,6 +25,8 @@ export async function insertTranscript(params: {
     .values({
       mediaObjectId: params.mediaObjectId,
       deepgramRequestId: params.deepgramRequestId,
+      provider: params.provider ?? "deepgram",
+      providerRequestId: params.providerRequestId ?? params.deepgramRequestId,
       language: params.language,
       fullText: params.fullText,
       wordTimestamps: params.wordTimestamps,

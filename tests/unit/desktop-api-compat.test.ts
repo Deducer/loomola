@@ -38,4 +38,13 @@ describe("desktop API compatibility", () => {
       "abc123/raw/system-audio.m4a"
     );
   });
+
+  it("uses audio-only track keys for Granola uploads", () => {
+    expect(keyForTrack("note123", "mic", "audio/mp4")).toBe(
+      "note123/raw/mic.m4a"
+    );
+    expect(keyForTrack("note123", "system-audio", "audio/webm")).toBe(
+      "note123/raw/system-audio.webm"
+    );
+  });
 });
