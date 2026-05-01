@@ -92,6 +92,13 @@
       "when": 1777967200000,
       "tag": "0012_granola_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1777970800000,
+      "tag": "0013_granola_rls",
+      "breakpoints": true
     }
   ]
 }
