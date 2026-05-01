@@ -73,6 +73,11 @@ struct MainRecorderView: View {
                 }
                 .disabled(viewModel.state == .signedOut)
 
+                Button("Test Audio Backend") {
+                    viewModel.startAndAbortAudioBackendHandshake()
+                }
+                .disabled(viewModel.state == .signedOut)
+
                 Button("Refresh Sources") {
                     viewModel.refreshCaptureSources()
                 }

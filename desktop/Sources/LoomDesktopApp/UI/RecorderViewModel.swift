@@ -123,6 +123,37 @@ final class RecorderViewModel: ObservableObject {
         }
     }
 
+    func startAndAbortAudioBackendHandshake() {
+        guard let backendClient else { return }
+        state = .uploading(progress: 0)
+        statusMessage = "Creating a Granola audio recording row..."
+        Task {
+            do {
+                let response = try await backendClient.startRecording(
+                    StartRecordingRequest(
+                        type: .audio,
+                        tracks: [
+                            .init(kind: .mic, mimeType: "audio/mp4"),
+                            .init(kind: .systemAudio, mimeType: "audio/mp4")
+                        ],
+                        resolution: "audio-only",
+                        brandProfileId: nil,
+                        title: "Desktop audio test",
+                        meetingStartedAtLocal: ISO8601DateFormatter().string(from: Date()),
+                        attendees: [],
+                        sourceContextHint: "manual desktop audio backend handshake"
+                    )
+                )
+                try await backendClient.abort(recordingId: response.recordingId)
+                state = .signedInIdle
+                statusMessage = "Audio backend handshake passed and test row was aborted. Slug: \(response.slug)"
+            } catch {
+                state = .failed(message: error.localizedDescription)
+                statusMessage = "Audio backend handshake failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
     func refreshCaptureSources() {
         guard let captureSourceProvider else {
             statusMessage = "ScreenCaptureKit source listing requires macOS 14 or newer."

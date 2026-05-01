@@ -66,10 +66,38 @@ struct StartRecordingRequest: Encodable, Sendable {
         let mimeType: String
     }
 
+    let type: MediaObjectType?
     let tracks: [Track]
     let resolution: String
     let brandProfileId: String?
+    let title: String?
+    let meetingDetectedApp: String?
+    let meetingStartedAtLocal: String?
+    let attendees: [String]?
+    let sourceContextHint: String?
     let client = "macos"
+
+    init(
+        type: MediaObjectType? = nil,
+        tracks: [Track],
+        resolution: String,
+        brandProfileId: String?,
+        title: String? = nil,
+        meetingDetectedApp: String? = nil,
+        meetingStartedAtLocal: String? = nil,
+        attendees: [String]? = nil,
+        sourceContextHint: String? = nil
+    ) {
+        self.type = type
+        self.tracks = tracks
+        self.resolution = resolution
+        self.brandProfileId = brandProfileId
+        self.title = title
+        self.meetingDetectedApp = meetingDetectedApp
+        self.meetingStartedAtLocal = meetingStartedAtLocal
+        self.attendees = attendees
+        self.sourceContextHint = sourceContextHint
+    }
 }
 
 struct StartRecordingResponse: Decodable, Equatable, Sendable {

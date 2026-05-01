@@ -8,6 +8,11 @@ enum TrackKind: String, Codable, CaseIterable, Sendable {
     case systemAudio = "system-audio"
 }
 
+enum MediaObjectType: String, Codable, Sendable {
+    case video
+    case audio
+}
+
 struct RecordingSettings: Equatable, Sendable {
     var resolution: String = "screen-native"
     var brandProfileId: String?

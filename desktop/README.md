@@ -23,6 +23,7 @@ This directory is a development app, not a finished recorder. It includes:
 - SwiftUI main window with Supabase email/password sign-in.
 - Keychain-backed session storage.
 - Backend start/abort handshake against the existing `/api/recordings/*` routes.
+- Granola `type='audio'` start/abort handshake against the same backend when `ENABLE_GRANOLA=true`.
 - ScreenCaptureKit source listing for displays/windows.
 - ScreenCaptureKit first-display MP4 recording path on macOS 15+.
 - Upload of that local MP4 as the `composite` track through the existing backend.
@@ -69,6 +70,7 @@ The runnable dev app can currently test:
 - Email/password sign-in to Supabase.
 - Saved session restore from Keychain.
 - `Test Backend`: creates a desktop-shaped `media_objects` upload row, then aborts it.
+- `Test Audio Backend`: creates a Granola audio upload row with mic + system-audio tracks, then aborts it.
 - `Refresh Sources`: lists displays, windows, cameras, and microphones.
 - `Start Recording`: records the first display to a local MP4 on macOS 15+, then `Stop` uploads it through the existing backend as the composite track.
 - Menu bar `Show Bubble Overlay`: shows a draggable circular camera bubble.
