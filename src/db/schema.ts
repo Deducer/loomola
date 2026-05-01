@@ -6,6 +6,7 @@ import {
   timestamp,
   numeric,
   jsonb,
+  integer,
   uniqueIndex,
   index,
   customType,
@@ -14,6 +15,18 @@ import {
 const tsvector = customType<{ data: string; driverData: string }>({
   dataType() {
     return "tsvector";
+  },
+});
+
+const vector1536 = customType<{ data: number[]; driverData: string }>({
+  dataType() {
+    return "vector(1536)";
+  },
+  toDriver(value: number[]): string {
+    return `[${value.join(",")}]`;
+  },
+  fromDriver(value: string): number[] {
+    return JSON.parse(value);
   },
 });
 
@@ -28,6 +41,13 @@ export const mediaObjectStatus = pgEnum("media_object_status", [
   "transcribing",
   "processing",
   "ready",
+  "failed",
+]);
+
+export const generationStatus = pgEnum("generation_status", [
+  "pending",
+  "streaming",
+  "complete",
   "failed",
 ]);
 
@@ -54,6 +74,7 @@ export const brandProfiles = pgTable("brand_profiles", {
   // Visitor toggle on /v/<slug> still wins thereafter. CHECK
   // constraint enforces enum at the DB layer (see 0010 migration).
   defaultTheme: text("default_theme"),
+  meetingNotesVaultPath: text("meeting_notes_vault_path"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -113,6 +134,17 @@ export const mediaObjects = pgTable("media_objects", {
   uploadMetadata: jsonb("upload_metadata"),
   folderId: uuid("folder_id"),
   searchTsv: tsvector("search_tsv"),
+  meetingDetectedApp: text("meeting_detected_app"),
+  meetingStartedAtLocal: timestamp("meeting_started_at_local", {
+    withTimezone: true,
+  }),
+  attendees: jsonb("attendees"),
+  r2MixedKey: text("r2_mixed_key"),
+  obsidianSaveRequestedAt: timestamp("obsidian_save_requested_at", {
+    withTimezone: true,
+  }),
+  obsidianSyncedAt: timestamp("obsidian_synced_at", { withTimezone: true }),
+  sourceContextHint: text("source_context_hint"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -136,6 +168,8 @@ export const transcripts = pgTable("transcripts", {
   fullText: text("full_text").notNull(),
   wordTimestamps: jsonb("word_timestamps").notNull(),
   searchTsv: tsvector("search_tsv"),
+  provider: text("provider").notNull().default("deepgram"),
+  providerRequestId: text("provider_request_id"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -156,6 +190,10 @@ export const aiOutputs = pgTable("ai_outputs", {
   actionItems: jsonb("action_items"),
   llmModel: text("llm_model").notNull(),
   searchTsv: tsvector("search_tsv"),
+  templateId: text("template_id").notNull().default("default"),
+  generationStatusValue: generationStatus("generation_status")
+    .notNull()
+    .default("complete"),
   generatedAt: timestamp("generated_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -207,6 +245,154 @@ export const comments = pgTable("comments", {
   body: text("body").notNull(),
   readByCreatorAt: timestamp("read_by_creator_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+// ---------------------------------------------------------------------------
+// notes — user's hand-typed markdown notes per audio meeting
+// ---------------------------------------------------------------------------
+
+export const notes = pgTable(
+  "notes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    mediaObjectId: uuid("media_object_id")
+      .notNull()
+      .references(() => mediaObjects.id, { onDelete: "cascade" }),
+    ownerId: uuid("owner_id").notNull(),
+    body: text("body").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    mediaObjectIdx: uniqueIndex("notes_media_object_idx").on(t.mediaObjectId),
+    ownerIdx: index("notes_owner_idx").on(t.ownerId),
+  })
+);
+
+// ---------------------------------------------------------------------------
+// people — known meeting participants
+// ---------------------------------------------------------------------------
+
+export const people = pgTable(
+  "people",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: uuid("owner_id").notNull(),
+    displayName: text("display_name").notNull(),
+    email: text("email"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    ownerIdx: index("people_owner_idx").on(t.ownerId),
+  })
+);
+
+// ---------------------------------------------------------------------------
+// speaker_assignments — per-recording speaker_idx to person mapping
+// ---------------------------------------------------------------------------
+
+export const speakerAssignments = pgTable(
+  "speaker_assignments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    mediaObjectId: uuid("media_object_id")
+      .notNull()
+      .references(() => mediaObjects.id, { onDelete: "cascade" }),
+    speakerIdx: integer("speaker_idx").notNull(),
+    personId: uuid("person_id").references(() => people.id, {
+      onDelete: "set null",
+    }),
+    displayLabelOverride: text("display_label_override"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    mediaSpeakerIdx: uniqueIndex(
+      "speaker_assignments_media_speaker_idx"
+    ).on(t.mediaObjectId, t.speakerIdx),
+  })
+);
+
+// ---------------------------------------------------------------------------
+// dictionary_terms — shared vocabulary for transcription
+// ---------------------------------------------------------------------------
+
+export const dictionaryTerms = pgTable(
+  "dictionary_terms",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: uuid("owner_id").notNull(),
+    term: text("term").notNull(),
+    variantOf: uuid("variant_of"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    ownerIdx: index("dictionary_terms_owner_idx").on(t.ownerId),
+    ownerTermIdx: uniqueIndex("dictionary_terms_owner_term_idx").on(
+      t.ownerId,
+      t.term
+    ),
+  })
+);
+
+// ---------------------------------------------------------------------------
+// transcript_chunks — chunked transcript with embeddings
+// ---------------------------------------------------------------------------
+
+export const transcriptChunks = pgTable(
+  "transcript_chunks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    mediaObjectId: uuid("media_object_id")
+      .notNull()
+      .references(() => mediaObjects.id, { onDelete: "cascade" }),
+    chunkIdx: integer("chunk_idx").notNull(),
+    text: text("text").notNull(),
+    startMs: integer("start_ms").notNull(),
+    endMs: integer("end_ms").notNull(),
+    embedding: vector1536("embedding").notNull(),
+    modelVersion: text("model_version")
+      .notNull()
+      .default("openai/text-embedding-3-small"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    mediaIdx: index("transcript_chunks_media_idx").on(t.mediaObjectId),
+  })
+);
+
+// ---------------------------------------------------------------------------
+// summary_embeddings — one embedding per meeting summary
+// ---------------------------------------------------------------------------
+
+export const summaryEmbeddings = pgTable("summary_embeddings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  mediaObjectId: uuid("media_object_id")
+    .notNull()
+    .references(() => mediaObjects.id, { onDelete: "cascade" })
+    .unique(),
+  embedding: vector1536("embedding").notNull(),
+  modelVersion: text("model_version")
+    .notNull()
+    .default("openai/text-embedding-3-small"),
+  generatedAt: timestamp("generated_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
 });
