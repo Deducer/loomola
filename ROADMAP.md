@@ -159,7 +159,7 @@ Self-hosted Granola-faithful AI meeting note-taker built on top of the existing 
 |---|---|---|---|
 | G-M1 | Schema foundations + notes API | ✅ shipped | pgvector extension, six new tables (`notes`, `people`, `speaker_assignments`, `dictionary_terms`, `transcript_chunks`, `summary_embeddings`), four extended tables (`media_objects`, `transcripts`, `ai_outputs`, `brand_profiles`), RLS policies, HNSW vector indexes, Supabase Realtime publication on `ai_outputs`, and authenticated CRUD API routes for notes, people, dictionary terms, and speaker assignments. |
 | G-M2 | Audio ingest pipeline | ✅ shipped | Backend `type='audio'` upload support behind `ENABLE_GRANOLA`, mic/system R2 multipart completion, ffmpeg audio mixing, waveform generation, Deepgram transcript handoff, and audio queue workers that stay disabled in Loom-only mode. |
-| G-M3 | Desktop app — manual recording trigger | 🔜 next | Swift menubar item to manually start recording, ScreenCaptureKit + AVFoundation capture, multipart upload as `type='audio'`. |
+| G-M3 | Desktop app — manual recording trigger | 🚧 in progress | Desktop dev flow now has Granola audio API handshake, mic/system capture coordinators, manual audio note controls, chunked multipart upload, and backend smoke coverage. Remaining gate: Ian hardware smoke with real mic + system audio permissions. |
 | G-M4 | `/notes/:id` Granola UI | 📋 spec'd | Single-column markdown canvas, metadata pill row, persistent bottom strip, floating transcript card. |
 | G-M5 | Tabbed dashboard | 📋 spec'd | `/` becomes Recordings \| Notes tabs with shared folders and search. |
 | G-M6 | Speaker labeling MVP | 📋 spec'd | `/people` page, attendee picker, speaker chip popover, persistence. |
