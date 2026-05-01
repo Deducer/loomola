@@ -1,4 +1,5 @@
 import { requireAuth } from "@/lib/require-auth";
+import { enableGranola } from "@/lib/feature-flags";
 import { listBrandProfiles } from "@/db/queries/brand-profiles";
 import { TopNav } from "@/components/nav/top-nav";
 import { RecordFlow } from "@/components/record/record-flow";
@@ -9,7 +10,11 @@ export default async function RecordPage() {
   const brands = await listBrandProfiles(user.id);
   return (
     <>
-      <TopNav userEmail={user.email ?? "unknown"} activePath="record" />
+      <TopNav
+        userEmail={user.email ?? "unknown"}
+        activePath="record"
+        granolaEnabled={enableGranola()}
+      />
       <main className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-10">
         <h1 className="text-2xl font-semibold tracking-tight text-text">
           New recording

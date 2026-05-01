@@ -7,6 +7,11 @@ import { insertTranscript, type WordTimestamp } from "@/db/queries/transcripts";
 import { insertBlankAiOutput } from "@/db/queries/ai-outputs";
 import { enqueueAiJobs } from "@/lib/queue/enqueue-processing";
 import { enableGranola } from "@/lib/feature-flags";
+import { listDictionaryTerms } from "@/db/queries/dictionary-terms";
+import {
+  buildVariantReplacementMap,
+  collapseDictionaryVariants,
+} from "@/lib/dictionary/transcript-rewrite";
 
 type DeepgramWord = {
   word: string;
@@ -52,7 +57,7 @@ export async function POST(
   const channel = body.results?.channels?.[0];
   const alt = channel?.alternatives?.[0];
   const words = alt?.words ?? [];
-  const fullText = alt?.transcript ?? "";
+  const rawFullText = alt?.transcript ?? "";
   const language = channel?.detected_language ?? "en";
   const requestId = body.metadata?.request_id ?? null;
 
@@ -65,7 +70,7 @@ export async function POST(
   }));
 
   const [media] = await db
-    .select({ type: mediaObjects.type })
+    .select({ type: mediaObjects.type, ownerId: mediaObjects.ownerId })
     .from(mediaObjects)
     .where(eq(mediaObjects.id, recordingId))
     .limit(1);
@@ -76,14 +81,23 @@ export async function POST(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
+  const replacements = buildVariantReplacementMap(
+    await listDictionaryTerms(media.ownerId)
+  );
+  const rewritten = collapseDictionaryVariants(
+    rawFullText,
+    wordTimestamps,
+    replacements
+  );
+
   await insertTranscript({
     mediaObjectId: recordingId,
     deepgramRequestId: requestId,
     provider: "deepgram",
     providerRequestId: requestId,
     language,
-    fullText,
-    wordTimestamps,
+    fullText: rewritten.fullText,
+    wordTimestamps: rewritten.words,
   });
 
   if (media.type === "audio") {

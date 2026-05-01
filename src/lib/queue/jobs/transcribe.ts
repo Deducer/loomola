@@ -1,6 +1,10 @@
 import { getDeepgramClient } from "@/lib/deepgram/client";
 import { presignGet } from "@/lib/r2/presigned-get";
 import { signRecordingId } from "@/lib/deepgram/callback-signature";
+import { db } from "@/db";
+import { mediaObjects } from "@/db/schema";
+import { eq } from "drizzle-orm";
+import { getCanonicalTerms } from "@/db/queries/dictionary-terms";
 
 export const TRANSCRIBE_JOB = "transcribe";
 
@@ -33,6 +37,7 @@ export async function runTranscribeJob(data: TranscribeJobData): Promise<void> {
   const audioUrl = await presignGet(sourceKey);
   const sig = signRecordingId(mediaObjectId);
   const callbackUrl = `${appUrl}/api/webhooks/deepgram/${mediaObjectId}/${sig}`;
+  const keywords = await getDeepgramKeywords(mediaObjectId);
 
   const dg = getDeepgramClient();
   await dg.listen.v1.media.transcribeUrl({
@@ -42,9 +47,22 @@ export async function runTranscribeJob(data: TranscribeJobData): Promise<void> {
     smart_format: true,
     diarize: true,
     language: "en",
+    ...(keywords.length > 0 ? { keywords } : {}),
   });
 
   console.log(
     `[transcribe] submitted Deepgram request for media ${mediaObjectId}`
   );
+}
+
+async function getDeepgramKeywords(mediaObjectId: string): Promise<string[]> {
+  const [media] = await db
+    .select({ ownerId: mediaObjects.ownerId })
+    .from(mediaObjects)
+    .where(eq(mediaObjects.id, mediaObjectId))
+    .limit(1);
+  if (!media) return [];
+
+  const terms = await getCanonicalTerms(media.ownerId);
+  return terms.slice(0, 100).map((term) => term.term);
 }

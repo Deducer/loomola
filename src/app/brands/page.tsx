@@ -1,4 +1,5 @@
 import { requireAuth } from "@/lib/require-auth";
+import { enableGranola } from "@/lib/feature-flags";
 import { listBrandProfiles } from "@/db/queries/brand-profiles";
 import { BrandCard } from "@/components/brand/brand-card";
 import { TopNav } from "@/components/nav/top-nav";
@@ -12,7 +13,11 @@ export default async function BrandsPage() {
 
   return (
     <>
-      <TopNav userEmail={user.email ?? "unknown"} activePath="brands" />
+      <TopNav
+        userEmail={user.email ?? "unknown"}
+        activePath="brands"
+        granolaEnabled={enableGranola()}
+      />
       <main className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-10">
         <div className="flex items-end justify-between gap-4">
           <div>
