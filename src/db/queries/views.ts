@@ -6,13 +6,19 @@ import { eq, sql, inArray } from "drizzle-orm";
  * Upsert a view row. If the (media_object_id, visitor_hash) pair already
  * exists, bumps `updated_at`; otherwise inserts a fresh row with the given
  * user-agent summary.
+ *
+ * Returns `{ inserted }` so callers can branch on first-view-per-visitor
+ * (e.g. fire an owner notification email). The detection uses the
+ * `created_at = updated_at` invariant: on a fresh insert both default to
+ * `now()`; on a DO UPDATE we set `updated_at` to a new `now()` while
+ * `created_at` keeps its earlier value, making the equality false.
  */
 export async function upsertView(params: {
   mediaObjectId: string;
   visitorHash: string;
   userAgentSummary: string;
-}): Promise<void> {
-  await db
+}): Promise<{ inserted: boolean }> {
+  const [row] = await db
     .insert(views)
     .values({
       mediaObjectId: params.mediaObjectId,
@@ -22,7 +28,11 @@ export async function upsertView(params: {
     .onConflictDoUpdate({
       target: [views.mediaObjectId, views.viewerIpHash],
       set: { updatedAt: sql`now()` },
+    })
+    .returning({
+      inserted: sql<boolean>`${views.createdAt} = ${views.updatedAt}`,
     });
+  return { inserted: row?.inserted === true };
 }
 
 /**
