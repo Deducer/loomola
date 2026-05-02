@@ -101,6 +101,24 @@ struct MainRecorderView: View {
                         .disabled(viewModel.state == .signedOut)
                     }
                 }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Chrome meeting bridge")
+                        .font(.headline)
+                    Text(viewModel.nativeMessagingStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    HStack {
+                        Button(viewModel.isInstallingNativeMessagingHost ? "Installing..." : "Install Chrome Bridge") {
+                            viewModel.installNativeMessagingHost()
+                        }
+                        .disabled(viewModel.isInstallingNativeMessagingHost)
+
+                        Button("Show Extension Folder") {
+                            viewModel.openExtensionFolder()
+                        }
+                    }
+                }
             }
 
             VStack(alignment: .leading, spacing: 8) {

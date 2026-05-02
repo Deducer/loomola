@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 import Supabase
@@ -16,6 +17,8 @@ final class RecorderViewModel: ObservableObject {
     @Published private(set) var activeAudioRecordingStartedAt: Date?
     @Published private(set) var meetingContext: MeetingContext?
     @Published private(set) var meetingPromptContext: MeetingContext?
+    @Published private(set) var nativeMessagingStatus = "Chrome bridge can be installed after the extension is loaded."
+    @Published private(set) var isInstallingNativeMessagingHost = false
     @Published private(set) var captureSources = CaptureSourceSnapshot(
         displays: [],
         windows: [],
@@ -28,13 +31,16 @@ final class RecorderViewModel: ObservableObject {
     private var backendClient: BackendClient?
     private var audioNoteRecorder: AudioNoteRecorder?
     private var obsidianExportWriter: ObsidianExportWriter?
+    private var obsidianRealtimeSubscriber: ObsidianRealtimeSubscriber?
     private var obsidianSyncTask: Task<Void, Never>?
+    private var obsidianRealtimeTask: Task<Void, Never>?
     private var meetingWatchTask: Task<Void, Never>?
     private var obsidianSyncInFlight = false
     private var dismissedMeetingContext: MeetingContext?
     private var autoSuggestedAudioTitle: String?
     private let captureSourceProvider: CaptureSourceProvider?
     private let screenCaptureCoordinator: ScreenCaptureCoordinator?
+    private let nativeMessagingInstaller = NativeMessagingHostInstaller()
     private var activeRecordingURL: URL?
     private let obsidianSyncIntervalNanoseconds: UInt64 = 30_000_000_000
     private let meetingWatchIntervalNanoseconds: UInt64 = 15_000_000_000
@@ -61,6 +67,12 @@ final class RecorderViewModel: ObservableObject {
             }
             audioNoteRecorder = backendClient.map { AudioNoteRecorder(backend: $0) }
             obsidianExportWriter = backendClient.map { ObsidianExportWriter(backend: $0) }
+            obsidianRealtimeSubscriber = ObsidianRealtimeSubscriber(configuration: config) { [weak self] in
+                guard let token = await self?.currentAccessToken() else {
+                    throw RecorderViewModelError.missingAccessToken
+                }
+                return token
+            }
             statusMessage = "Ready to sign in. Saved sessions are not auto-restored in this dev build."
         } catch {
             state = .failed(message: error.localizedDescription)
@@ -103,8 +115,11 @@ final class RecorderViewModel: ObservableObject {
         Task {
             await audioNoteRecorder?.cancel()
             obsidianSyncTask?.cancel()
+            obsidianRealtimeTask?.cancel()
             meetingWatchTask?.cancel()
+            await obsidianRealtimeSubscriber?.stop()
             obsidianSyncTask = nil
+            obsidianRealtimeTask = nil
             meetingWatchTask = nil
             obsidianSyncInFlight = false
             meetingContext = nil
@@ -118,6 +133,38 @@ final class RecorderViewModel: ObservableObject {
             state = .signedOut
             statusMessage = "Signed out."
         }
+    }
+
+    func installNativeMessagingHost() {
+        guard !isInstallingNativeMessagingHost else { return }
+        isInstallingNativeMessagingHost = true
+        nativeMessagingStatus = "Installing Chrome bridge..."
+        Task {
+            do {
+                let result = try await nativeMessagingInstaller.install()
+                let lastLine = result.output
+                    .split(separator: "\n")
+                    .last
+                    .map(String.init)
+                isInstallingNativeMessagingHost = false
+                nativeMessagingStatus = lastLine.map {
+                    "Chrome bridge installed. \($0)"
+                } ?? "Chrome bridge installed. Reload the extension if Chrome was already open."
+                statusMessage = nativeMessagingStatus
+            } catch {
+                isInstallingNativeMessagingHost = false
+                nativeMessagingStatus = "Chrome bridge install failed."
+                statusMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func openExtensionFolder() {
+        guard let url = NativeMessagingHostInstaller.extensionDirectoryURL() else {
+            statusMessage = "Could not find the extension folder in this repo checkout."
+            return
+        }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
     func startRecordingPlaceholder() {
@@ -443,6 +490,7 @@ final class RecorderViewModel: ObservableObject {
             refreshCaptureSources()
         }
         startObsidianAutoSync()
+        startObsidianRealtimeSync(userId: session.user.id)
         startMeetingWatch()
     }
 
@@ -457,6 +505,26 @@ final class RecorderViewModel: ObservableObject {
                     return
                 }
                 self?.syncPendingObsidianNotes(showStatus: false)
+            }
+        }
+    }
+
+    private func startObsidianRealtimeSync(userId: UUID) {
+        guard obsidianRealtimeTask == nil, let obsidianRealtimeSubscriber else { return }
+        obsidianRealtimeTask = Task { [weak self] in
+            do {
+                try await obsidianRealtimeSubscriber.start(userId: userId) { [weak self] in
+                    await MainActor.run {
+                        self?.syncPendingObsidianNotes(showStatus: false)
+                    }
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                await MainActor.run {
+                    self?.obsidianRealtimeTask = nil
+                    self?.statusMessage = "Realtime Obsidian sync is unavailable; 30-second backup sync is still running."
+                }
             }
         }
     }

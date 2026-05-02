@@ -29,7 +29,8 @@ This directory is a development app, not a finished recorder. It includes:
 - ScreenCaptureKit first-display MP4 recording path on macOS 15+.
 - Upload of that local MP4 as the `composite` track through the existing backend.
 - Bubble overlay `NSPanel` with a live camera preview clipped into a circle.
-- Chrome native messaging bridge for Granola meeting signals from the extension.
+- In-app Chrome native messaging bridge installer for Granola meeting signals from the extension.
+- Realtime Obsidian sync trigger, with a 30-second polling backup.
 - Capture/composite/upload organization sketches for the remaining work.
 - API model types matching the existing `/api/recordings/*` routes.
 - Xcode signing/notarization placeholders.
@@ -85,8 +86,10 @@ For serious ScreenCaptureKit work, create an Xcode macOS App target from this sc
 ## Chrome Meeting Bridge
 
 The Chrome extension can detect active Meet/Teams/Zoom web tabs. To let Chrome
-deliver those signals to this SwiftPM dev app, install the native messaging
-host once after loading the unpacked extension:
+deliver those signals to this SwiftPM dev app, load the unpacked extension once,
+then click `Install Chrome Bridge` inside the desktop app.
+
+The same installer is still available from the terminal:
 
 ```bash
 cd /Users/iancross/Development/03Utilities/Loom_Clone

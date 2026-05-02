@@ -39,7 +39,8 @@ Microsoft Teams web, and Zoom web tabs. It stores and forwards a
 it does not start recording by itself.
 
 To bridge those browser signals into the local desktop app during development,
-install the Chrome native messaging host once:
+click `Install Chrome Bridge` in the desktop app after loading the unpacked
+extension. The same installer can still be run from the terminal:
 
 ```sh
 cd /Users/iancross/Development/03Utilities/Loom_Clone
