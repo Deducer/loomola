@@ -1,6 +1,8 @@
-import { getAudioNotePageData } from "@/db/queries/notes";
+import { getAudioNoteOwnerId, getAudioNotePageData } from "@/db/queries/notes";
 import { listPeople } from "@/db/queries/people";
 import { listSpeakerAssignments } from "@/db/queries/speaker-assignments";
+import { hasIntegrationToken } from "@/lib/integration-auth";
+import { requireAuth } from "@/lib/require-auth";
 import { presignGet } from "@/lib/r2/presigned-get";
 import {
   buildNoteExportPayload,
@@ -54,4 +56,15 @@ export function downloadHeaders(
     }"`,
     "cache-control": "private, no-store",
   };
+}
+
+export async function resolveNoteExportOwnerId(params: {
+  request: Request;
+  identifier: string;
+}): Promise<string | null> {
+  if (!hasIntegrationToken(params.request)) {
+    const user = await requireAuth(params.request);
+    return user.id;
+  }
+  return getAudioNoteOwnerId(params.identifier);
 }

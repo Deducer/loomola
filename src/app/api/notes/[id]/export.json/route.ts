@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { enableGranola } from "@/lib/feature-flags";
-import { requireAuth } from "@/lib/require-auth";
 import {
   downloadHeaders,
   loadNoteExportPayload,
+  resolveNoteExportOwnerId,
 } from "@/lib/notes/export-route";
 
 function granolaNotFound() {
@@ -15,11 +15,12 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   if (!enableGranola()) return granolaNotFound();
-  const user = await requireAuth(request);
   const { id } = await params;
+  const ownerId = await resolveNoteExportOwnerId({ request, identifier: id });
+  if (!ownerId) return granolaNotFound();
   const payload = await loadNoteExportPayload({
     identifier: id,
-    ownerId: user.id,
+    ownerId,
     requestUrl: request.url,
   });
   if (!payload) return granolaNotFound();

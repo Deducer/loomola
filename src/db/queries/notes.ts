@@ -136,6 +136,28 @@ export async function getAudioNotePageData(
   return row ?? null;
 }
 
+export async function getAudioNoteOwnerId(
+  identifier: string
+): Promise<string | null> {
+  const mediaWhere = isUuidIdentifier(identifier)
+    ? or(eq(mediaObjects.id, identifier), eq(mediaObjects.slug, identifier))
+    : eq(mediaObjects.slug, identifier);
+
+  const [row] = await db
+    .select({ ownerId: mediaObjects.ownerId })
+    .from(mediaObjects)
+    .where(
+      and(
+        mediaWhere,
+        eq(mediaObjects.type, "audio"),
+        isNull(mediaObjects.deletedAt)
+      )
+    )
+    .limit(1);
+
+  return row?.ownerId ?? null;
+}
+
 export async function markObsidianSaveRequested(
   mediaObjectId: string,
   ownerId: string
