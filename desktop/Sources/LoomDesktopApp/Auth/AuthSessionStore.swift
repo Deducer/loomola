@@ -2,6 +2,12 @@ import Foundation
 import Security
 import Supabase
 
+enum AuthSessionStorageMode {
+    case automatic
+    case file
+    case keychain
+}
+
 struct DesktopAuthConfiguration: Sendable {
     let apiBaseURL: URL
     let supabaseURL: URL
@@ -30,6 +36,16 @@ struct DesktopAuthConfiguration: Sendable {
 
 final class AuthSessionStore {
     private let service = "cloud.dissonance.loom.desktop"
+    private let storageMode: AuthSessionStorageMode
+    private let fileURL: URL
+
+    init(
+        storageMode: AuthSessionStorageMode = .automatic,
+        fileURL: URL = AuthSessionStore.defaultFileURL()
+    ) {
+        self.storageMode = storageMode
+        self.fileURL = fileURL
+    }
 
     func makeClient(configuration: DesktopAuthConfiguration) -> SupabaseClient {
         SupabaseClient(
@@ -60,6 +76,10 @@ final class AuthSessionStore {
     }
 
     func clear() throws {
+        if usesFileStore {
+            try? FileManager.default.removeItem(at: fileURL)
+            return
+        }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service
@@ -68,6 +88,10 @@ final class AuthSessionStore {
     }
 
     private func save(value: String, account: String) throws {
+        if usesFileStore {
+            try saveToFile(value: value, account: account)
+            return
+        }
         let data = Data(value.utf8)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -85,6 +109,12 @@ final class AuthSessionStore {
     }
 
     private func load(account: String) throws -> String? {
+        if usesFileStore {
+            let tokens = try loadFileTokens()
+            if account == "supabase-access-token" { return tokens.accessToken }
+            if account == "supabase-refresh-token" { return tokens.refreshToken }
+            return nil
+        }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -101,6 +131,59 @@ final class AuthSessionStore {
         }
         return String(decoding: data, as: UTF8.self)
     }
+
+    private var usesFileStore: Bool {
+        switch storageMode {
+        case .file:
+            return true
+        case .keychain:
+            return false
+        case .automatic:
+            if ProcessInfo.processInfo.environment["LOOM_DESKTOP_AUTH_STORE"] == "keychain" {
+                return false
+            }
+            return Bundle.main.bundlePath.contains("/.build/")
+        }
+    }
+
+    private func saveToFile(value: String, account: String) throws {
+        var tokens = try loadFileTokens()
+        if account == "supabase-access-token" {
+            tokens.accessToken = value
+        } else if account == "supabase-refresh-token" {
+            tokens.refreshToken = value
+        }
+        try FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try JSONEncoder().encode(tokens).write(to: fileURL, options: [.atomic])
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: fileURL.path
+        )
+    }
+
+    private func loadFileTokens() throws -> StoredAuthTokens {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            return StoredAuthTokens()
+        }
+        let data = try Data(contentsOf: fileURL)
+        return try JSONDecoder().decode(StoredAuthTokens.self, from: data)
+    }
+
+    private static func defaultFileURL() -> URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSHomeDirectory()).appending(path: "Library/Application Support")
+        return base
+            .appending(path: "LoomDesktop", directoryHint: .isDirectory)
+            .appending(path: "auth-session.json")
+    }
+}
+
+private struct StoredAuthTokens: Codable {
+    var accessToken: String?
+    var refreshToken: String?
 }
 
 enum KeychainError: Error {

@@ -21,7 +21,7 @@ This directory is a development app, not a finished recorder. It includes:
 - `Package.swift` with the initial app target and Supabase dependency.
 - `AppDelegate` menu bar stub.
 - SwiftUI main window with Supabase email/password sign-in.
-- Keychain-backed session storage.
+- File-backed dev session storage for raw SwiftPM runs, avoiding repeated Keychain prompts from unsigned rebuilds.
 - Backend start/abort handshake against the existing `/api/recordings/*` routes.
 - Granola `type='audio'` start/abort handshake against the same backend when `ENABLE_GRANOLA=true`.
 - Granola manual audio note dev flow: session model, AAC `.m4a` writer, mic capture, system-audio capture, multipart upload, complete, and discard.
@@ -70,7 +70,7 @@ The helper also falls back to the repo-root `.env.local` Supabase names used by 
 The runnable dev app can currently test:
 
 - Email/password sign-in to Supabase.
-- Saved session restore from Keychain.
+- Saved session restore from the local dev session file.
 - `Test Backend`: creates a desktop-shaped `media_objects` upload row, then aborts it.
 - `Test Audio Backend`: creates a Granola audio upload row with mic + system-audio tracks, then aborts it.
 - `Refresh Sources`: lists displays, windows, cameras, and microphones.

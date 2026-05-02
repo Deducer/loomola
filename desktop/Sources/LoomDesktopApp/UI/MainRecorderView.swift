@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MainRecorderView: View {
     @StateObject private var viewModel = RecorderViewModel()
+    @State private var meetingPromptWindow = MeetingPromptWindowController()
     @FocusState private var focusedField: FocusedField?
 
     var body: some View {
@@ -163,12 +164,41 @@ struct MainRecorderView: View {
         .onChange(of: viewModel.state) { _, _ in
             focusDefaultField()
         }
+        .onChange(of: viewModel.meetingPromptContext) { _, _ in
+            updateMeetingPromptWindow()
+        }
+        .onChange(of: viewModel.activeRecordingKind) { _, _ in
+            updateMeetingPromptWindow()
+        }
+        .onChange(of: viewModel.includeMicInAudioNote) { _, _ in
+            updateMeetingPromptWindow()
+        }
+        .onChange(of: viewModel.includeSystemAudioInAudioNote) { _, _ in
+            updateMeetingPromptWindow()
+        }
+        .onDisappear {
+            meetingPromptWindow.hide()
+        }
     }
 
     private func focusDefaultField() {
         if viewModel.state == .signedOut {
             focusedField = .email
         }
+    }
+
+    private func updateMeetingPromptWindow() {
+        guard let context = viewModel.meetingPromptContext else {
+            meetingPromptWindow.hide()
+            return
+        }
+        meetingPromptWindow.show(
+            context: context,
+            startDisabled: viewModel.activeRecordingKind != nil ||
+                (!viewModel.includeMicInAudioNote && !viewModel.includeSystemAudioInAudioNote),
+            start: { viewModel.startDetectedMeetingAudioNote() },
+            dismiss: { viewModel.dismissMeetingPrompt() }
+        )
     }
 }
 

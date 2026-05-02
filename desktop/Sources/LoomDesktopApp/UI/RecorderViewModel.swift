@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import Supabase
 
@@ -431,7 +432,9 @@ final class RecorderViewModel: ObservableObject {
             email = session.user.email ?? ""
         }
         refreshChromeMeetingContext(showStatus: false)
-        refreshCaptureSources()
+        if canListCaptureSourcesWithoutPrompt() {
+            refreshCaptureSources()
+        }
         startObsidianAutoSync()
         startMeetingWatch()
     }
@@ -462,7 +465,9 @@ final class RecorderViewModel: ObservableObject {
                     return
                 }
                 self?.refreshChromeMeetingContext(showStatus: false)
-                self?.refreshCaptureSources(showStatus: false)
+                if self?.canListCaptureSourcesWithoutPrompt() == true {
+                    self?.refreshCaptureSources(showStatus: false)
+                }
             }
         }
     }
@@ -502,6 +507,10 @@ final class RecorderViewModel: ObservableObject {
 
     private func currentAccessToken() -> String? {
         accessToken
+    }
+
+    private func canListCaptureSourcesWithoutPrompt() -> Bool {
+        CGPreflightScreenCaptureAccess()
     }
 }
 
