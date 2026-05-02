@@ -23,6 +23,7 @@ final class RecorderViewModel: ObservableObject {
     private var accessToken: String?
     private var backendClient: BackendClient?
     private var audioNoteRecorder: AudioNoteRecorder?
+    private var obsidianExportWriter: ObsidianExportWriter?
     private let captureSourceProvider: CaptureSourceProvider?
     private let screenCaptureCoordinator: ScreenCaptureCoordinator?
     private var activeRecordingURL: URL?
@@ -48,6 +49,7 @@ final class RecorderViewModel: ObservableObject {
                 return token
             }
             audioNoteRecorder = backendClient.map { AudioNoteRecorder(backend: $0) }
+            obsidianExportWriter = backendClient.map { ObsidianExportWriter(backend: $0) }
             statusMessage = "Ready to sign in. Saved sessions are not auto-restored in this dev build."
         } catch {
             state = .failed(message: error.localizedDescription)
@@ -328,6 +330,21 @@ final class RecorderViewModel: ObservableObject {
             activeRecordingKind = nil
             state = .signedInIdle
             statusMessage = "Audio note discarded."
+        }
+    }
+
+    func syncPendingObsidianNotes() {
+        guard let obsidianExportWriter else { return }
+        statusMessage = "Checking for pending Obsidian notes..."
+        Task {
+            do {
+                let count = try await obsidianExportWriter.syncPending()
+                statusMessage = count == 0
+                    ? "No Obsidian notes are pending."
+                    : "Synced \(count) note(s) to Obsidian."
+            } catch {
+                statusMessage = "Obsidian sync failed: \(error.localizedDescription)"
+            }
         }
     }
 

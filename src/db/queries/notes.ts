@@ -1,5 +1,11 @@
 import { db } from "@/db";
-import { aiOutputs, mediaObjects, notes, transcripts } from "@/db/schema";
+import {
+  aiOutputs,
+  brandProfiles,
+  mediaObjects,
+  notes,
+  transcripts,
+} from "@/db/schema";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { generateSlug } from "@/lib/slug";
 
@@ -14,9 +20,15 @@ export function isUuidIdentifier(value: string): boolean {
 
 export type AudioNotePageData = {
   media: typeof mediaObjects.$inferSelect;
+  brandProfile: typeof brandProfiles.$inferSelect | null;
   note: Note | null;
   transcript: typeof transcripts.$inferSelect | null;
   aiOutput: typeof aiOutputs.$inferSelect | null;
+};
+
+export type ObsidianPendingNote = {
+  id: string;
+  slug: string;
 };
 
 export async function createQuickAudioNote(ownerId: string): Promise<{
@@ -101,11 +113,13 @@ export async function getAudioNotePageData(
   const [row] = await db
     .select({
       media: mediaObjects,
+      brandProfile: brandProfiles,
       note: notes,
       transcript: transcripts,
       aiOutput: aiOutputs,
     })
     .from(mediaObjects)
+    .leftJoin(brandProfiles, eq(mediaObjects.brandProfileId, brandProfiles.id))
     .leftJoin(notes, eq(notes.mediaObjectId, mediaObjects.id))
     .leftJoin(transcripts, eq(transcripts.mediaObjectId, mediaObjects.id))
     .leftJoin(aiOutputs, eq(aiOutputs.mediaObjectId, mediaObjects.id))
@@ -120,6 +134,71 @@ export async function getAudioNotePageData(
     .limit(1);
 
   return row ?? null;
+}
+
+export async function markObsidianSaveRequested(
+  mediaObjectId: string,
+  ownerId: string
+): Promise<boolean> {
+  const [row] = await db
+    .update(mediaObjects)
+    .set({
+      obsidianSaveRequestedAt: sql`now()`,
+      obsidianSyncedAt: null,
+      updatedAt: sql`now()`,
+    })
+    .where(
+      and(
+        eq(mediaObjects.id, mediaObjectId),
+        eq(mediaObjects.ownerId, ownerId),
+        eq(mediaObjects.type, "audio"),
+        isNull(mediaObjects.deletedAt)
+      )
+    )
+    .returning({ id: mediaObjects.id });
+
+  return !!row;
+}
+
+export async function listObsidianPendingNotes(
+  ownerId: string
+): Promise<ObsidianPendingNote[]> {
+  return db
+    .select({ id: mediaObjects.id, slug: mediaObjects.slug })
+    .from(mediaObjects)
+    .where(
+      and(
+        eq(mediaObjects.ownerId, ownerId),
+        eq(mediaObjects.type, "audio"),
+        isNull(mediaObjects.deletedAt),
+        sql`${mediaObjects.obsidianSaveRequestedAt} IS NOT NULL`,
+        isNull(mediaObjects.obsidianSyncedAt)
+      )
+    );
+}
+
+export async function markObsidianSynced(
+  mediaObjectId: string,
+  ownerId: string
+): Promise<boolean> {
+  const [row] = await db
+    .update(mediaObjects)
+    .set({
+      obsidianSaveRequestedAt: null,
+      obsidianSyncedAt: sql`now()`,
+      updatedAt: sql`now()`,
+    })
+    .where(
+      and(
+        eq(mediaObjects.id, mediaObjectId),
+        eq(mediaObjects.ownerId, ownerId),
+        eq(mediaObjects.type, "audio"),
+        isNull(mediaObjects.deletedAt)
+      )
+    )
+    .returning({ id: mediaObjects.id });
+
+  return !!row;
 }
 
 export async function deleteNotes(

@@ -216,6 +216,39 @@ export function BrandForm({ action, initialValues, submitLabel }: Props) {
         )}
       </div>
 
+      <div className="border-t border-border pt-5">
+        <h2 className="text-sm font-semibold text-text">Granola notes</h2>
+        <p className="mt-1 text-xs leading-relaxed text-text-muted">
+          Optional project-specific destination for Obsidian exports. Leave blank to use the global default.
+        </p>
+      </div>
+
+      <div>
+        <label
+          htmlFor="meetingNotesVaultPath"
+          className="block text-xs font-semibold uppercase tracking-wider text-text-muted"
+        >
+          Obsidian vault path{" "}
+          <span className="font-normal normal-case tracking-normal text-text-subtle">
+            (optional)
+          </span>
+        </label>
+        <Input
+          id="meetingNotesVaultPath"
+          name="meetingNotesVaultPath"
+          type="text"
+          defaultValue={initialValues?.meetingNotesVaultPath ?? ""}
+          maxLength={500}
+          placeholder="/Users/iancross/Obsidian_Vaults/The Vault/0 - Inbox"
+          className="mt-1.5 font-mono text-xs sm:text-sm"
+        />
+        {errors.meetingNotesVaultPath && (
+          <p className="mt-1 text-xs text-destructive">
+            {errors.meetingNotesVaultPath}
+          </p>
+        )}
+      </div>
+
       <div>
         <label className="block text-xs font-semibold uppercase tracking-wider text-text-muted">
           Default theme{" "}

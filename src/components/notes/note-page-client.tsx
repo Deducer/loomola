@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -10,8 +10,11 @@ import {
   Check,
   ChevronUp,
   CircleAlert,
+  FileDown,
+  FileJson,
   FileText,
   Folder,
+  HardDriveDownload,
   LoaderCircle,
   MoreHorizontal,
   Pause,
@@ -54,6 +57,7 @@ type NotePageClientProps = {
 type SaveState = "idle" | "saving" | "saved" | "error";
 type GenerationStatus = "idle" | "pending" | "streaming" | "complete" | "failed";
 type NoteViewMode = "original" | "enhanced";
+type ObsidianSaveState = "idle" | "saving" | "queued" | "error";
 
 export function NotePageClient({
   mediaId,
@@ -91,6 +95,10 @@ export function NotePageClient({
   const [viewMode, setViewMode] = useState<NoteViewMode>(
     initialEnhancedSummary ? "enhanced" : "original"
   );
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [obsidianSaveState, setObsidianSaveState] =
+    useState<ObsidianSaveState>("idle");
+  const [obsidianPath, setObsidianPath] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [playing, setPlaying] = useState(false);
 
@@ -240,6 +248,23 @@ export function NotePageClient({
     }
   }
 
+  async function requestObsidianSave() {
+    setObsidianSaveState("saving");
+    try {
+      const response = await fetch(`/api/notes/${mediaId}/obsidian-save`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (!response.ok) throw new Error("obsidian_save_failed");
+      const data = (await response.json()) as { path?: string };
+      setObsidianPath(typeof data.path === "string" ? data.path : null);
+      setObsidianSaveState("queued");
+    } catch {
+      setObsidianSaveState("error");
+    }
+  }
+
   function seekTo(sec: number) {
     if (!audioRef.current) return;
     audioRef.current.currentTime = sec;
@@ -299,14 +324,25 @@ export function NotePageClient({
               </div>
             )}
             <Badge variant={status}>{status}</Badge>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 rounded-full hover:bg-bg-subtle"
-              aria-label="More note actions"
-            >
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
+            <div className="relative">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setActionsOpen((open) => !open)}
+                className="h-8 w-8 rounded-full hover:bg-bg-subtle"
+                aria-label="More note actions"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+              {actionsOpen && (
+                <NoteActionsMenu
+                  mediaId={mediaId}
+                  obsidianSaveState={obsidianSaveState}
+                  obsidianPath={obsidianPath}
+                  onRequestObsidianSave={requestObsidianSave}
+                />
+              )}
+            </div>
           </div>
         </div>
 
@@ -498,6 +534,86 @@ function SaveIndicator({ state }: { state: SaveState }) {
       <Check className="h-3 w-3" />
       Saved
     </span>
+  );
+}
+
+function NoteActionsMenu({
+  mediaId,
+  obsidianSaveState,
+  obsidianPath,
+  onRequestObsidianSave,
+}: {
+  mediaId: string;
+  obsidianSaveState: ObsidianSaveState;
+  obsidianPath: string | null;
+  onRequestObsidianSave: () => void;
+}) {
+  return (
+    <div className="absolute right-0 top-10 z-50 w-72 overflow-hidden rounded-lg border border-border bg-bg-elevated p-1.5 text-sm shadow-2xl shadow-black/35">
+      <MenuDownloadLink
+        href={`/api/notes/${mediaId}/export.md`}
+        icon={<FileDown className="h-4 w-4" />}
+        label="Download full meeting .md"
+      />
+      <MenuDownloadLink
+        href={`/api/notes/${mediaId}/transcript.md`}
+        icon={<FileText className="h-4 w-4" />}
+        label="Download transcript .md"
+      />
+      <MenuDownloadLink
+        href={`/api/notes/${mediaId}/export.json`}
+        icon={<FileJson className="h-4 w-4" />}
+        label="Download note .json"
+      />
+      <div className="my-1 border-t border-border" />
+      <button
+        type="button"
+        onClick={onRequestObsidianSave}
+        disabled={obsidianSaveState === "saving"}
+        className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-text-muted transition-colors hover:bg-bg-subtle hover:text-text disabled:opacity-60"
+      >
+        <HardDriveDownload className="h-4 w-4 text-emerald-400" />
+        <span className="min-w-0 flex-1">
+          <span className="block">
+            {obsidianSaveState === "saving"
+              ? "Queueing Obsidian save"
+              : obsidianSaveState === "queued"
+                ? "Queued for Obsidian"
+                : "Save to Obsidian"}
+          </span>
+          {obsidianPath && (
+            <span className="mt-0.5 block truncate font-mono text-[11px] text-text-subtle">
+              {obsidianPath}
+            </span>
+          )}
+          {obsidianSaveState === "error" && (
+            <span className="mt-0.5 block text-[11px] text-red-400">
+              Could not queue save.
+            </span>
+          )}
+        </span>
+      </button>
+    </div>
+  );
+}
+
+function MenuDownloadLink({
+  href,
+  icon,
+  label,
+}: {
+  href: string;
+  icon: ReactNode;
+  label: string;
+}) {
+  return (
+    <a
+      href={href}
+      className="flex items-center gap-2 rounded-md px-2.5 py-2 text-text-muted transition-colors hover:bg-bg-subtle hover:text-text"
+    >
+      <span className="text-text-subtle">{icon}</span>
+      <span>{label}</span>
+    </a>
   );
 }
 

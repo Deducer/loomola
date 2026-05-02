@@ -33,6 +33,7 @@ export const brandProfileInputSchema = z.object({
   ctaLabel: optionalText(40, "CTA label"),
   ctaUrl: optionalUrl,
   footerText: optionalText(280, "Footer"),
+  meetingNotesVaultPath: optionalText(500, "Obsidian vault path"),
   // null = visitor's OS / their last toggle wins. 'light' / 'dark' =
   // applied on first visit when the visitor has no stored preference.
   defaultTheme: z

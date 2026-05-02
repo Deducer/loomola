@@ -780,7 +780,7 @@ Highest priority wins:
 
 1. **Per-meeting override**: if the user alt-clicks the Save button, a path picker opens. The override applies only to this save.
 2. **Brand profile path**: `media_objects.brandProfileId` → `brand_profiles.meetingNotesVaultPath`. Set per-project from `/brands`.
-3. **Global default**: a single path stored in the desktop app's `UserDefaults` (e.g., `~/Vault/Meetings`).
+3. **Global default**: `/Users/iancross/Obsidian_Vaults/The Vault/0 - Inbox` unless overridden later from desktop settings or `OBSIDIAN_DEFAULT_VAULT_PATH`.
 
 The Save button shows the resolved path on hover/secondary text:
 

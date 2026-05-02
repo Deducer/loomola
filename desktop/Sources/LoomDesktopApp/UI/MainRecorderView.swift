@@ -116,6 +116,11 @@ struct MainRecorderView: View {
 
                 Spacer()
 
+                Button("Sync Obsidian") {
+                    viewModel.syncPendingObsidianNotes()
+                }
+                .disabled(viewModel.state == .signedOut)
+
                 Button("Open Dashboard") {
                     NSWorkspace.shared.open(URL(string: "https://loom.dissonance.cloud")!)
                 }

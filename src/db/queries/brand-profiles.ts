@@ -78,6 +78,7 @@ export async function createBrandProfile(
       ctaLabel: input.ctaLabel ?? null,
       ctaUrl: input.ctaUrl ?? null,
       footerText: input.footerText ?? null,
+      meetingNotesVaultPath: input.meetingNotesVaultPath ?? null,
       defaultTheme: input.defaultTheme ?? null,
     })
     .returning();
@@ -100,6 +101,7 @@ export async function updateBrandProfile(
     ctaLabel: input.ctaLabel ?? null,
     ctaUrl: input.ctaUrl ?? null,
     footerText: input.footerText ?? null,
+    meetingNotesVaultPath: input.meetingNotesVaultPath ?? null,
     defaultTheme: input.defaultTheme ?? null,
   };
   if (input.logoR2Key !== undefined) {

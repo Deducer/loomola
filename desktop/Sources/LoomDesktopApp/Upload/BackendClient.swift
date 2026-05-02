@@ -31,6 +31,50 @@ actor BackendClient {
         let _: EmptyResponse = try await post(path: "/api/recordings/\(recordingId)/abort", body: EmptyRequest())
     }
 
+    func pendingObsidianNotes() async throws -> PendingObsidianNotesResponse {
+        try await get(path: "/api/notes/obsidian-pending")
+    }
+
+    func noteMarkdownExport(mediaId: String) async throws -> String {
+        let data = try await getData(path: "/api/notes/\(mediaId)/export.md")
+        guard let markdown = String(data: data, encoding: .utf8) else {
+            throw BackendClientError.invalidTextResponse(path: "/api/notes/\(mediaId)/export.md")
+        }
+        return markdown
+    }
+
+    func markObsidianSynced(mediaId: String, filePath: String) async throws {
+        let _: EmptyResponse = try await post(
+            path: "/api/notes/\(mediaId)/obsidian-synced",
+            body: ObsidianSyncedRequest(filePath: filePath)
+        )
+    }
+
+    private func get<ResponseBody: Decodable>(path: String) async throws -> ResponseBody {
+        let data = try await getData(path: path)
+        do {
+            return try JSONDecoder().decode(ResponseBody.self, from: data)
+        } catch {
+            throw BackendClientError.decodingFailed(path: path, body: data, underlyingError: error)
+        }
+    }
+
+    private func getData(path: String) async throws -> Data {
+        let token = try await accessTokenProvider()
+        var request = URLRequest(url: baseURL.appending(path: path))
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw BackendClientError.nonHTTPResponse(path: path)
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw BackendClientError.badStatus(statusCode: http.statusCode, path: path, body: data)
+        }
+        return data
+    }
+
     private func post<RequestBody: Encodable, ResponseBody: Decodable>(
         path: String,
         body: RequestBody
@@ -171,6 +215,23 @@ struct CompleteRecordingResponse: Decodable, Equatable, Sendable {
     let slug: String
 }
 
+struct PendingObsidianNotesResponse: Decodable, Equatable, Sendable {
+    let notes: [PendingObsidianNote]
+}
+
+struct PendingObsidianNote: Decodable, Equatable, Sendable {
+    let mediaId: String
+    let slug: String
+    let title: String
+    let path: String
+    let filename: String
+    let exportUrl: String
+}
+
+struct ObsidianSyncedRequest: Encodable, Sendable {
+    let filePath: String
+}
+
 private struct EmptyRequest: Encodable {}
 private struct EmptyResponse: Decodable {}
 
@@ -178,6 +239,7 @@ enum BackendClientError: LocalizedError {
     case nonHTTPResponse(path: String)
     case badStatus(statusCode: Int, path: String, body: Data)
     case decodingFailed(path: String, body: Data, underlyingError: Error)
+    case invalidTextResponse(path: String)
 
     var errorDescription: String? {
         switch self {
@@ -197,6 +259,8 @@ enum BackendClientError: LocalizedError {
                 return "Could not read backend JSON for \(path): \(underlyingError.localizedDescription). Response: \(bodyText.prefix(500))"
             }
             return "Could not read backend JSON for \(path): \(underlyingError.localizedDescription)."
+        case .invalidTextResponse(let path):
+            return "Backend returned non-text content for \(path)."
         }
     }
 }

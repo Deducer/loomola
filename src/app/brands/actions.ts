@@ -36,6 +36,7 @@ function parseFormData(formData: FormData) {
     ctaLabel: formData.get("ctaLabel") ?? "",
     ctaUrl: formData.get("ctaUrl") ?? "",
     footerText: formData.get("footerText") ?? "",
+    meetingNotesVaultPath: formData.get("meetingNotesVaultPath") ?? "",
     defaultTheme: dt === "light" || dt === "dark" ? dt : null,
   });
 }
