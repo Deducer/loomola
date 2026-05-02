@@ -42,10 +42,15 @@ install the Chrome native messaging host once:
 
 ```sh
 cd /Users/iancross/Development/03Utilities/Loom_Clone
-desktop/scripts/install-native-messaging-host.sh <chrome-extension-id>
+desktop/scripts/install-native-messaging-host.sh
 ```
 
-Find the extension ID on `chrome://extensions` after loading `extension/`.
+If auto-detection fails, find the extension ID on `chrome://extensions` after
+loading `extension/`, then pass it explicitly:
+
+```sh
+desktop/scripts/install-native-messaging-host.sh <chrome-extension-id>
+```
 
 ## Architecture
 

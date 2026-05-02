@@ -90,12 +90,14 @@ host once after loading the unpacked extension:
 
 ```bash
 cd /Users/iancross/Development/03Utilities/Loom_Clone
-desktop/scripts/install-native-messaging-host.sh <chrome-extension-id>
+desktop/scripts/install-native-messaging-host.sh
 ```
 
-The extension ID is shown on `chrome://extensions`. The host writes the latest
-meeting signal to `~/Library/Application Support/LoomDesktop/chrome-meeting-signal.json`;
-the desktop app reads it during the existing 15-second meeting watch.
+The script auto-detects the unpacked extension ID after you load `extension/`.
+If it cannot, copy the extension ID from `chrome://extensions` and pass it as
+an argument. The host writes the latest meeting signal to
+`~/Library/Application Support/LoomDesktop/chrome-meeting-signal.json`; the
+desktop app reads it during the existing 15-second meeting watch.
 
 SwiftPM can build and run the dev app, but a proper `.app` bundle is still needed for the real recorder because macOS privacy prompts, usage strings, entitlements, signing, and notarization all behave more predictably from an app bundle than from a raw command-line executable.
 
