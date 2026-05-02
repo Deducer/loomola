@@ -13,6 +13,7 @@ if [[ ${#EXTENSION_IDS[@]} -eq 0 ]]; then
   done < <(node - "$EXTENSION_DIR" <<'NODE'
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 
 const extensionDir = path.resolve(process.argv[2]);
 const home = process.env.HOME;
@@ -27,6 +28,23 @@ const browserRoots = [
   path.join(home, "Library/Application Support/OpenAI/ChatGPT Atlas"),
 ];
 const ids = new Set();
+
+function extensionIdFromKey(key) {
+  const hash = crypto.createHash("sha256").update(Buffer.from(key, "base64")).digest();
+  const alphabet = "abcdefghijklmnop";
+  let id = "";
+  for (const byte of hash.subarray(0, 16)) {
+    id += alphabet[byte >> 4] + alphabet[byte & 15];
+  }
+  return id;
+}
+
+try {
+  const manifest = JSON.parse(fs.readFileSync(path.join(extensionDir, "manifest.json"), "utf8"));
+  if (manifest.key) ids.add(extensionIdFromKey(manifest.key));
+} catch {
+  // Profile detection below is still useful if the manifest is unreadable.
+}
 
 for (const root of browserRoots) {
   if (!fs.existsSync(root)) continue;

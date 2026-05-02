@@ -20,9 +20,10 @@ installed, you get the polished frameless experience.
 1. Open `chrome://extensions` in Chrome (or any Chromium browser — Brave,
    Edge, Arc).
 2. Toggle **Developer mode** on (top-right).
-3. Click **Load unpacked**.
-4. Select the `extension/` directory in this repo.
-5. The extension's icon should appear in the toolbar. Click it to see the
+3. If an older Loom Clone unpacked extension is already loaded, remove it.
+4. Click **Load unpacked**.
+5. Select the `extension/` directory in this repo.
+6. The extension's icon should appear in the toolbar. Click it to see the
    status (idle / recording).
 
 ## Use
@@ -45,11 +46,13 @@ cd /Users/iancross/Development/03Utilities/Loom_Clone
 desktop/scripts/install-native-messaging-host.sh
 ```
 
-If auto-detection fails, find the extension ID on `chrome://extensions` after
-loading `extension/`, then pass it explicitly:
+The extension has a stable unpacked-extension ID, so the script can register
+the host even when Chrome's profile metadata has not been flushed to disk. If
+manual registration is ever needed, the stable ID is
+`fhlommkndlhemikefocglkknpofgkfkj`:
 
 ```sh
-desktop/scripts/install-native-messaging-host.sh <chrome-extension-id>
+desktop/scripts/install-native-messaging-host.sh fhlommkndlhemikefocglkknpofgkfkj
 ```
 
 ## Architecture
@@ -65,8 +68,8 @@ Short version:
 - `content-script-page.js` runs on every other URL. Injects an
   `<iframe src="https://loom.dissonance.cloud/bubble">` when recording is in
   progress, removes it when recording stops. On meeting URLs it also watches
-  for active-call DOM markers or granted microphone permission and reports a
-  `meeting-active` signal to the background worker.
+  visible Meet/Teams/Zoom meeting pages and reports a `meeting-active` signal
+  to the background worker.
 - The iframe (loom-clone origin) handles `getUserMedia` + drag interactions.
   Drag events bubble up via cross-origin `postMessage`.
 - `background.js` is a Manifest V3 service worker that routes messages

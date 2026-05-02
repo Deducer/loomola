@@ -107,7 +107,7 @@ function removeIframe() {
 }
 
 console.log(
-  "[loom-clone-ext v0.7.0] content-script-page loaded on",
+  "[loom-clone-ext v0.8.0] content-script-page loaded on",
   location.href
 );
 
@@ -158,8 +158,8 @@ const MEETING_DETECTORS = [
     source: "meet",
     label: "Google Meet",
     hostMatches: () => location.hostname === "meet.google.com",
-    matches: () => location.hostname === "meet.google.com",
-    activeLabels: ["leave call", "leave meeting"],
+    matches: () =>
+      location.hostname === "meet.google.com" && location.pathname !== "/",
   },
   {
     source: "teams",
@@ -168,7 +168,6 @@ const MEETING_DETECTORS = [
     matches: () =>
       location.hostname === "teams.microsoft.com" &&
       location.pathname.startsWith("/v2/"),
-    activeLabels: ["leave"],
   },
   {
     source: "zoom",
@@ -179,7 +178,6 @@ const MEETING_DETECTORS = [
       (location.hostname === "zoom.us" ||
         location.hostname.endsWith(".zoom.us")) &&
       location.pathname.startsWith("/wc/"),
-    activeLabels: ["leave"],
   },
 ];
 
@@ -189,37 +187,6 @@ function currentMeetingDetector() {
 
 function isPotentialMeetingHost() {
   return MEETING_DETECTORS.some((detector) => detector.hostMatches());
-}
-
-function hasActiveCallDom(detector) {
-  if (document.querySelector('[data-call-state="active"]')) return true;
-  const elements = document.querySelectorAll(
-    'button,[role="button"],a,[aria-label],[title]'
-  );
-  for (const el of elements) {
-    const label = [
-      el.getAttribute("aria-label"),
-      el.getAttribute("title"),
-      el.textContent,
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-    if (detector.activeLabels.some((needle) => label.includes(needle))) {
-      return true;
-    }
-  }
-  return false;
-}
-
-async function hasGrantedMicPermission() {
-  try {
-    if (!navigator.permissions?.query) return false;
-    const status = await navigator.permissions.query({ name: "microphone" });
-    return status.state === "granted";
-  } catch {
-    return false;
-  }
 }
 
 function normalizeMeetingTitle(detector) {
@@ -234,10 +201,6 @@ function startMeetingWatcher() {
   async function checkMeeting() {
     const detector = currentMeetingDetector();
     if (!detector || document.visibilityState !== "visible") return;
-
-    const activeByDom = hasActiveCallDom(detector);
-    const activeByMic = activeByDom ? false : await hasGrantedMicPermission();
-    if (!activeByDom && !activeByMic) return;
 
     const now = Date.now();
     const title = normalizeMeetingTitle(detector);

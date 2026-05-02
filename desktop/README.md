@@ -93,9 +93,9 @@ cd /Users/iancross/Development/03Utilities/Loom_Clone
 desktop/scripts/install-native-messaging-host.sh
 ```
 
-The script auto-detects the unpacked extension ID after you load `extension/`.
-If it cannot, copy the extension ID from `chrome://extensions` and pass it as
-an argument. The host writes the latest meeting signal to
+The extension has a stable unpacked-extension ID, so the script can register
+the host even when Chrome's profile metadata has not been flushed to disk. The
+host writes the latest meeting signal to
 `~/Library/Application Support/LoomDesktop/chrome-meeting-signal.json`; the
 desktop app reads it during the existing 15-second meeting watch.
 
