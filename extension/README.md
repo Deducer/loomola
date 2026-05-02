@@ -37,6 +37,16 @@ Microsoft Teams web, and Zoom web tabs. It stores and forwards a
 `meeting-active` signal so the app can offer a consent-first meeting prompt;
 it does not start recording by itself.
 
+To bridge those browser signals into the local desktop app during development,
+install the Chrome native messaging host once:
+
+```sh
+cd /Users/iancross/Development/03Utilities/Loom_Clone
+desktop/scripts/install-native-messaging-host.sh <chrome-extension-id>
+```
+
+Find the extension ID on `chrome://extensions` after loading `extension/`.
+
 ## Architecture
 
 See [`docs/superpowers/specs/2026-04-26-chrome-extension-design.md`](../docs/superpowers/specs/2026-04-26-chrome-extension-design.md)
@@ -58,6 +68,9 @@ Short version:
   between content scripts. State (is-recording) is persisted in
   `chrome.storage.session` since service workers get killed after ~30s idle.
   The latest meeting signal is stored there too, so the popup can show it.
+- `LoomDesktopNativeHost` is a tiny Swift executable launched by Chrome native
+  messaging. It writes the latest meeting signal to Application Support, where
+  the desktop app's existing meeting watcher can read it.
 
 ## Build / no-build
 

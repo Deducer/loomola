@@ -8,6 +8,7 @@
 
 const STATE_KEY = "loomCloneRecordingState";
 const MEETING_SIGNAL_KEY = "loomCloneMeetingSignal";
+const NATIVE_HOST_NAME = "com.dissonance.loom_desktop";
 
 async function readState() {
   const result = await chrome.storage.session.get(STATE_KEY);
@@ -207,6 +208,20 @@ async function forwardMeetingSignalToApp(meeting) {
   );
 }
 
+async function forwardMeetingSignalToNativeHost(meeting) {
+  try {
+    await chrome.runtime.sendNativeMessage(NATIVE_HOST_NAME, {
+      event: "meeting-active",
+      source: meeting.source,
+      title: meeting.title,
+      tabUrl: meeting.tabUrl,
+      ts: meeting.ts,
+    });
+  } catch {
+    // Native host is optional during local development.
+  }
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   console.log("[loom-clone-ext:bg] received", msg?.type);
   // Async handlers must return true and call sendResponse later.
@@ -268,6 +283,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         };
         await writeMeetingSignal(meeting);
         await forwardMeetingSignalToApp(meeting);
+        await forwardMeetingSignalToNativeHost(meeting);
         sendResponse({ ok: true, meeting });
       } else if (msg?.type === "loom-clone:get-state") {
         const state = await readState();

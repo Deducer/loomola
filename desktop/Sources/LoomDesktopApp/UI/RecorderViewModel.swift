@@ -199,7 +199,8 @@ final class RecorderViewModel: ObservableObject {
         Task {
             do {
                 let snapshot = try await captureSourceProvider.snapshot()
-                let context = MeetingDetector.detect(from: snapshot)
+                let context = ChromeMeetingSignalStore.readLatest()
+                    ?? MeetingDetector.detect(from: snapshot)
                 let previousContext = meetingContext
                 captureSources = snapshot
                 applyMeetingContext(context)

@@ -8,7 +8,8 @@ let package = Package(
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "LoomDesktop", targets: ["LoomDesktopApp"])
+        .executable(name: "LoomDesktop", targets: ["LoomDesktopApp"]),
+        .executable(name: "LoomDesktopNativeHost", targets: ["LoomDesktopNativeHost"])
     ],
     dependencies: [
         .package(url: "https://github.com/supabase/supabase-swift.git", from: "2.0.0")
@@ -20,6 +21,10 @@ let package = Package(
                 .product(name: "Supabase", package: "supabase-swift")
             ],
             path: "Sources/LoomDesktopApp"
+        ),
+        .executableTarget(
+            name: "LoomDesktopNativeHost",
+            path: "Sources/LoomDesktopNativeHost"
         ),
         .testTarget(
             name: "LoomDesktopTests",

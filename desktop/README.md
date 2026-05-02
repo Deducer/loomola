@@ -29,6 +29,7 @@ This directory is a development app, not a finished recorder. It includes:
 - ScreenCaptureKit first-display MP4 recording path on macOS 15+.
 - Upload of that local MP4 as the `composite` track through the existing backend.
 - Bubble overlay `NSPanel` with a live camera preview clipped into a circle.
+- Chrome native messaging bridge for Granola meeting signals from the extension.
 - Capture/composite/upload organization sketches for the remaining work.
 - API model types matching the existing `/api/recordings/*` routes.
 - Xcode signing/notarization placeholders.
@@ -76,9 +77,25 @@ The runnable dev app can currently test:
 - `Start Recording`: records the first display to a local MP4 on macOS 15+, then `Stop` uploads it through the existing backend as the composite track.
 - `Start Audio Note`: records selected mic/system audio to `.m4a`, then `Stop Audio` uploads it through the Granola audio backend.
 - `Discard Audio`: stops the active audio note, aborts the backend row, and deletes local temp files.
+- Browser meeting detection: after installing the native messaging host, Meet/Teams/Zoom web calls can trigger the same consent-first "Meeting ready" prompt.
 - Menu bar `Show Bubble Overlay`: shows a draggable circular camera bubble.
 
 For serious ScreenCaptureKit work, create an Xcode macOS App target from this scaffold so `Info.plist`, entitlements, signing, and privacy prompts behave like a real app bundle.
+
+## Chrome Meeting Bridge
+
+The Chrome extension can detect active Meet/Teams/Zoom web tabs. To let Chrome
+deliver those signals to this SwiftPM dev app, install the native messaging
+host once after loading the unpacked extension:
+
+```bash
+cd /Users/iancross/Development/03Utilities/Loom_Clone
+desktop/scripts/install-native-messaging-host.sh <chrome-extension-id>
+```
+
+The extension ID is shown on `chrome://extensions`. The host writes the latest
+meeting signal to `~/Library/Application Support/LoomDesktop/chrome-meeting-signal.json`;
+the desktop app reads it during the existing 15-second meeting watch.
 
 SwiftPM can build and run the dev app, but a proper `.app` bundle is still needed for the real recorder because macOS privacy prompts, usage strings, entitlements, signing, and notarization all behave more predictably from an app bundle than from a raw command-line executable.
 
