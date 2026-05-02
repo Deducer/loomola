@@ -12,6 +12,7 @@ final class RecorderViewModel: ObservableObject {
     @Published private(set) var statusMessage = "Set LOOM_SUPABASE_URL and LOOM_SUPABASE_ANON_KEY, then sign in."
     @Published private(set) var configuration: DesktopAuthConfiguration?
     @Published private(set) var activeRecordingKind: DesktopRecordingKind?
+    @Published private(set) var meetingContext: MeetingContext?
     @Published private(set) var captureSources = CaptureSourceSnapshot(
         displays: [],
         windows: [],
@@ -178,8 +179,12 @@ final class RecorderViewModel: ObservableObject {
         statusMessage = "Refreshing capture sources..."
         Task {
             do {
-                captureSources = try await captureSourceProvider.snapshot()
-                statusMessage = "Found \(captureSources.displays.count) display(s), \(captureSources.windows.count) window(s), \(captureSources.cameras.count) camera(s), and \(captureSources.microphones.count) mic(s)."
+                let snapshot = try await captureSourceProvider.snapshot()
+                let context = MeetingDetector.detect(from: snapshot)
+                captureSources = snapshot
+                meetingContext = context
+                let detected = context.map { " Detected \($0.detectedApp)." } ?? ""
+                statusMessage = "Found \(snapshot.displays.count) display(s), \(snapshot.windows.count) window(s), \(snapshot.cameras.count) camera(s), and \(snapshot.microphones.count) mic(s).\(detected)"
             } catch {
                 statusMessage = "Could not list capture sources: \(error.localizedDescription)"
             }
@@ -290,12 +295,14 @@ final class RecorderViewModel: ObservableObject {
         let title = audioTitle
         let includeMic = includeMicInAudioNote
         let includeSystemAudio = includeSystemAudioInAudioNote
+        let meetingContext = meetingContext
         Task {
             do {
                 let session = try await audioNoteRecorder.start(
                     title: title,
                     includeMic: includeMic,
-                    includeSystemAudio: includeSystemAudio
+                    includeSystemAudio: includeSystemAudio,
+                    meetingContext: meetingContext
                 )
                 activeRecordingKind = .audio
                 state = .recording

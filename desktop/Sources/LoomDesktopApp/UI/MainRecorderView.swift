@@ -52,6 +52,12 @@ struct MainRecorderView: View {
                         Toggle("Mic", isOn: $viewModel.includeMicInAudioNote)
                         Toggle("System audio", isOn: $viewModel.includeSystemAudioInAudioNote)
                     }
+                    if let meetingContext = viewModel.meetingContext {
+                        Text("Detected \(meetingContext.detectedApp): \(meetingContext.sourceContextHint)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                     HStack {
                         Button("Start Audio Note") {
                             viewModel.startAudioNoteRecording()

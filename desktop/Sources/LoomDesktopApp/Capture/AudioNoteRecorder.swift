@@ -20,6 +20,7 @@ final class AudioNoteRecorder {
         title: String?,
         includeMic: Bool,
         includeSystemAudio: Bool,
+        meetingContext: MeetingContext? = nil,
         microphoneDeviceID: String? = nil
     ) async throws -> AudioRecordingSession {
         guard session == nil else {
@@ -37,7 +38,8 @@ final class AudioNoteRecorder {
         var nextSession = AudioRecordingSession(
             directory: directory,
             title: title?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
-            tracks: tracks
+            tracks: tracks,
+            meetingContext: meetingContext
         )
         let response = try await backend.startRecording(nextSession.startRequest)
         nextSession.backendRecordingId = response.recordingId

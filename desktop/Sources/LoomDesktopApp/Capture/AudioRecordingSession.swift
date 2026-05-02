@@ -6,6 +6,7 @@ struct AudioRecordingSession: Equatable, Sendable {
     let startedAt: Date
     let title: String?
     let tracks: Set<TrackKind>
+    let meetingContext: MeetingContext?
     var backendRecordingId: String?
 
     init(
@@ -14,6 +15,7 @@ struct AudioRecordingSession: Equatable, Sendable {
         startedAt: Date = Date(),
         title: String?,
         tracks: Set<TrackKind>,
+        meetingContext: MeetingContext? = nil,
         backendRecordingId: String? = nil
     ) {
         self.id = id
@@ -21,6 +23,7 @@ struct AudioRecordingSession: Equatable, Sendable {
         self.startedAt = startedAt
         self.title = title
         self.tracks = tracks
+        self.meetingContext = meetingContext
         self.backendRecordingId = backendRecordingId
     }
 
@@ -48,9 +51,10 @@ struct AudioRecordingSession: Equatable, Sendable {
             resolution: "audio-only",
             brandProfileId: nil,
             title: title,
+            meetingDetectedApp: meetingContext?.detectedApp,
             meetingStartedAtLocal: startedAtISO8601,
             attendees: [],
-            sourceContextHint: "manual desktop audio recording"
+            sourceContextHint: meetingContext?.sourceContextHint ?? "manual desktop audio recording"
         )
     }
 }

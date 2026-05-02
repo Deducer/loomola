@@ -32,4 +32,22 @@ final class AudioRecordingSessionTests: XCTestCase {
         XCTAssertEqual(object["meetingStartedAtLocal"] as? String, "2026-05-01T05:45:00Z")
         XCTAssertEqual(tracks.map { $0["kind"] as? String }, ["mic", "system-audio"])
     }
+
+    func testAudioSessionIncludesMeetingContext() throws {
+        let session = AudioRecordingSession(
+            directory: URL(fileURLWithPath: "/tmp/session"),
+            title: "Demo",
+            tracks: [.mic],
+            meetingContext: MeetingContext(
+                detectedApp: "google-meet",
+                sourceContextHint: "Chrome: meet.google.com"
+            )
+        )
+
+        let data = try JSONEncoder().encode(session.startRequest)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        XCTAssertEqual(object["meetingDetectedApp"] as? String, "google-meet")
+        XCTAssertEqual(object["sourceContextHint"] as? String, "Chrome: meet.google.com")
+    }
 }
