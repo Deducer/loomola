@@ -24,9 +24,12 @@ final class RecorderViewModel: ObservableObject {
     private var backendClient: BackendClient?
     private var audioNoteRecorder: AudioNoteRecorder?
     private var obsidianExportWriter: ObsidianExportWriter?
+    private var obsidianSyncTask: Task<Void, Never>?
+    private var obsidianSyncInFlight = false
     private let captureSourceProvider: CaptureSourceProvider?
     private let screenCaptureCoordinator: ScreenCaptureCoordinator?
     private var activeRecordingURL: URL?
+    private let obsidianSyncIntervalNanoseconds: UInt64 = 30_000_000_000
 
     init() {
         if #available(macOS 14.0, *) {
@@ -91,6 +94,9 @@ final class RecorderViewModel: ObservableObject {
         guard let authService else { return }
         Task {
             await audioNoteRecorder?.cancel()
+            obsidianSyncTask?.cancel()
+            obsidianSyncTask = nil
+            obsidianSyncInFlight = false
             try? await authService.signOut()
             accessToken = nil
             activeRecordingKind = nil
@@ -334,16 +340,30 @@ final class RecorderViewModel: ObservableObject {
     }
 
     func syncPendingObsidianNotes() {
+        syncPendingObsidianNotes(showStatus: true)
+    }
+
+    private func syncPendingObsidianNotes(showStatus: Bool) {
         guard let obsidianExportWriter else { return }
-        statusMessage = "Checking for pending Obsidian notes..."
+        guard !obsidianSyncInFlight else { return }
+        obsidianSyncInFlight = true
+        if showStatus {
+            statusMessage = "Checking for pending Obsidian notes..."
+        }
         Task {
             do {
                 let count = try await obsidianExportWriter.syncPending()
-                statusMessage = count == 0
-                    ? "No Obsidian notes are pending."
-                    : "Synced \(count) note(s) to Obsidian."
+                obsidianSyncInFlight = false
+                if showStatus || count > 0 {
+                    statusMessage = count == 0
+                        ? "No Obsidian notes are pending."
+                        : "Synced \(count) note(s) to Obsidian."
+                }
             } catch {
-                statusMessage = "Obsidian sync failed: \(error.localizedDescription)"
+                obsidianSyncInFlight = false
+                if showStatus {
+                    statusMessage = "Obsidian sync failed: \(error.localizedDescription)"
+                }
             }
         }
     }
@@ -355,6 +375,22 @@ final class RecorderViewModel: ObservableObject {
             email = session.user.email ?? ""
         }
         refreshCaptureSources()
+        startObsidianAutoSync()
+    }
+
+    private func startObsidianAutoSync() {
+        guard obsidianSyncTask == nil else { return }
+        syncPendingObsidianNotes(showStatus: false)
+        obsidianSyncTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: self?.obsidianSyncIntervalNanoseconds ?? 30_000_000_000)
+                } catch {
+                    return
+                }
+                self?.syncPendingObsidianNotes(showStatus: false)
+            }
+        }
     }
 
     private func currentAccessToken() -> String? {

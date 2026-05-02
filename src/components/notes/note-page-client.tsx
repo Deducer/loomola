@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -50,6 +57,8 @@ type NotePageClientProps = {
   transcriptWords: Word[];
   initialEnhancedSummary: string | null;
   initialGenerationStatus: GenerationStatus;
+  initialObsidianSaveState: ObsidianSaveState;
+  initialObsidianPath: string;
   people: TranscriptPerson[];
   speakerAssignments: TranscriptSpeakerAssignment[];
 };
@@ -57,7 +66,7 @@ type NotePageClientProps = {
 type SaveState = "idle" | "saving" | "saved" | "error";
 type GenerationStatus = "idle" | "pending" | "streaming" | "complete" | "failed";
 type NoteViewMode = "original" | "enhanced";
-type ObsidianSaveState = "idle" | "saving" | "queued" | "error";
+type ObsidianSaveState = "idle" | "saving" | "queued" | "synced" | "error";
 
 export function NotePageClient({
   mediaId,
@@ -74,6 +83,8 @@ export function NotePageClient({
   transcriptWords,
   initialEnhancedSummary,
   initialGenerationStatus,
+  initialObsidianSaveState,
+  initialObsidianPath,
   people,
   speakerAssignments,
 }: NotePageClientProps) {
@@ -97,8 +108,10 @@ export function NotePageClient({
   );
   const [actionsOpen, setActionsOpen] = useState(false);
   const [obsidianSaveState, setObsidianSaveState] =
-    useState<ObsidianSaveState>("idle");
-  const [obsidianPath, setObsidianPath] = useState<string | null>(null);
+    useState<ObsidianSaveState>(initialObsidianSaveState);
+  const [obsidianPath, setObsidianPath] = useState<string | null>(
+    initialObsidianPath
+  );
   const [currentTime, setCurrentTime] = useState(0);
   const [playing, setPlaying] = useState(false);
 
@@ -189,6 +202,30 @@ export function NotePageClient({
     };
   }, [generationStatus, refreshEnhancement]);
 
+  const refreshObsidianStatus = useCallback(async () => {
+    const response = await fetch(`/api/notes/${mediaId}/obsidian-status`);
+    if (!response.ok) throw new Error("obsidian_status_failed");
+    const data = (await response.json()) as {
+      status: "idle" | "queued" | "synced";
+      path: string;
+    };
+    setObsidianSaveState(data.status);
+    setObsidianPath(data.path);
+  }, [mediaId]);
+
+  useEffect(() => {
+    if (!actionsOpen) return;
+    void refreshObsidianStatus().catch(() => undefined);
+  }, [actionsOpen, refreshObsidianStatus]);
+
+  useEffect(() => {
+    if (obsidianSaveState !== "queued") return;
+    const timer = window.setInterval(() => {
+      void refreshObsidianStatus().catch(() => undefined);
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [obsidianSaveState, refreshObsidianStatus]);
+
   async function saveTitle() {
     const trimmed = title.trim();
     if (!trimmed || trimmed === lastSavedTitle) return;
@@ -257,9 +294,9 @@ export function NotePageClient({
         body: JSON.stringify({}),
       });
       if (!response.ok) throw new Error("obsidian_save_failed");
-      const data = (await response.json()) as { path?: string };
+      const data = (await response.json()) as { path?: string; status?: string };
       setObsidianPath(typeof data.path === "string" ? data.path : null);
-      setObsidianSaveState("queued");
+      setObsidianSaveState(data.status === "queued" ? "queued" : "idle");
     } catch {
       setObsidianSaveState("error");
     }
@@ -579,11 +616,18 @@ function NoteActionsMenu({
               ? "Queueing Obsidian save"
               : obsidianSaveState === "queued"
                 ? "Queued for Obsidian"
+                : obsidianSaveState === "synced"
+                  ? "Synced to Obsidian"
                 : "Save to Obsidian"}
           </span>
           {obsidianPath && (
             <span className="mt-0.5 block truncate font-mono text-[11px] text-text-subtle">
               {obsidianPath}
+            </span>
+          )}
+          {obsidianSaveState === "synced" && (
+            <span className="mt-0.5 block text-[11px] text-text-subtle">
+              Click to save again.
             </span>
           )}
           {obsidianSaveState === "error" && (

@@ -170,7 +170,7 @@ Self-hosted Granola-faithful AI meeting note-taker built on top of the existing 
 | G-M7 | Shared dictionary | ✅ shipped | `/dictionary` page, bulk paste, canonical/variant terms, Deepgram Nova-2 `keywords` wiring, and transcript variant collapse at webhook persistence. |
 | G-M8 | pgvector embedding-on-write | ✅ shipped | `embed_transcript` and `embed_summary` jobs enqueue after transcript/summary writes using OpenAI `text-embedding-3-small`. |
 | G-M9 | AI enhancement (user-triggered) | ✅ shipped | "Generate notes" trigger, OpenRouter/Claude enhancement pipeline, Enhanced/Original toggle, and styled Markdown rendering. |
-| G-M10 | Per-project Obsidian sync | 🚧 partial | Canonical Markdown/JSON export endpoints, brand profile vault path field, manual Save to Obsidian queue, and desktop manual pending-writer. Realtime subscriber/automatic background sync remains. |
+| G-M10 | Per-project Obsidian sync | 🚧 partial | Canonical Markdown/JSON export endpoints, brand profile vault path field, manual Save to Obsidian queue, desktop manual pending-writer, and 30-second desktop background sync. Realtime subscriber and moved-file idempotency remain. |
 | G-M11 | LLM-accessible API + meeting detection | 📋 spec'd | `INTEGRATION_API_TOKEN`, JSON/zip export endpoints, NSWorkspace meeting detection, Chrome extension content scripts, auto-arm UX. |
 
 ## Open follow-ups (next milestones to spec)

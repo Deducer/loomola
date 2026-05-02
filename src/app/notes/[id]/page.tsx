@@ -6,6 +6,7 @@ import { getAudioNotePageData } from "@/db/queries/notes";
 import { listPeople } from "@/db/queries/people";
 import { listSpeakerAssignments } from "@/db/queries/speaker-assignments";
 import { NotePageClient } from "@/components/notes/note-page-client";
+import { resolveObsidianPath } from "@/lib/notes/obsidian-path";
 import type { Word } from "@/lib/viewer/paragraphs";
 
 export default async function NotesPage({
@@ -28,6 +29,12 @@ export default async function NotesPage({
     listPeople(user.id),
     listSpeakerAssignments(data.media.id, user.id),
   ]);
+  const initialObsidianStatus =
+    data.media.obsidianSaveRequestedAt && !data.media.obsidianSyncedAt
+      ? "queued"
+      : data.media.obsidianSyncedAt
+        ? "synced"
+        : "idle";
 
   return (
     <NotePageClient
@@ -45,6 +52,10 @@ export default async function NotesPage({
       transcriptWords={normalizeWords(data.transcript?.wordTimestamps)}
       initialEnhancedSummary={data.aiOutput?.summary ?? null}
       initialGenerationStatus={data.aiOutput?.generationStatusValue ?? "idle"}
+      initialObsidianSaveState={initialObsidianStatus}
+      initialObsidianPath={resolveObsidianPath({
+        projectPath: data.brandProfile?.meetingNotesVaultPath,
+      })}
       people={people.map((person) => ({
         id: person.id,
         displayName: person.displayName,
