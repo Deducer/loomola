@@ -45,8 +45,11 @@ export async function updateSession(request: NextRequest) {
   const isBearerNotesApi =
     url.pathname.startsWith("/api/notes/") &&
     /^Bearer\s+.+/i.test(request.headers.get("authorization") ?? "");
+  const isBearerExportApi =
+    url.pathname.startsWith("/api/export/") &&
+    /^Bearer\s+.+/i.test(request.headers.get("authorization") ?? "");
 
-  if (!user && !isAuthRoute && !isApiHealth && !isPublicShare && !isPublicViewerApi && !isWebhook && !isBubbleIframe && !isBearerRecordingApi && !isBearerNotesApi) {
+  if (!user && !isAuthRoute && !isApiHealth && !isPublicShare && !isPublicViewerApi && !isWebhook && !isBubbleIframe && !isBearerRecordingApi && !isBearerNotesApi && !isBearerExportApi) {
     url.pathname = "/login";
     return NextResponse.redirect(url);
   }
