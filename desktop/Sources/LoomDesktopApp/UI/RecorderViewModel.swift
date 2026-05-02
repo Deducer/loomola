@@ -13,6 +13,7 @@ final class RecorderViewModel: ObservableObject {
     @Published private(set) var statusMessage = "Set LOOM_SUPABASE_URL and LOOM_SUPABASE_ANON_KEY, then sign in."
     @Published private(set) var configuration: DesktopAuthConfiguration?
     @Published private(set) var activeRecordingKind: DesktopRecordingKind?
+    @Published private(set) var activeAudioRecordingStartedAt: Date?
     @Published private(set) var meetingContext: MeetingContext?
     @Published private(set) var meetingPromptContext: MeetingContext?
     @Published private(set) var captureSources = CaptureSourceSnapshot(
@@ -113,6 +114,7 @@ final class RecorderViewModel: ObservableObject {
             try? await authService.signOut()
             accessToken = nil
             activeRecordingKind = nil
+            activeAudioRecordingStartedAt = nil
             state = .signedOut
             statusMessage = "Signed out."
         }
@@ -355,10 +357,12 @@ final class RecorderViewModel: ObservableObject {
                     meetingContext: meetingContext
                 )
                 activeRecordingKind = .audio
+                activeAudioRecordingStartedAt = Date()
                 state = .recording
                 statusMessage = "Recording audio note with \(session.tracks.count) track(s)."
             } catch {
                 activeRecordingKind = nil
+                activeAudioRecordingStartedAt = nil
                 state = .failed(message: error.localizedDescription)
                 statusMessage = "Audio note failed to start: \(error.localizedDescription)"
             }
@@ -374,10 +378,12 @@ final class RecorderViewModel: ObservableObject {
                 state = .uploading(progress: 0.2)
                 let complete = try await audioNoteRecorder.stopAndUpload()
                 activeRecordingKind = nil
+                activeAudioRecordingStartedAt = nil
                 state = .complete(slug: complete.slug)
                 statusMessage = "Uploaded audio note. Slug: \(complete.slug)"
             } catch {
                 activeRecordingKind = nil
+                activeAudioRecordingStartedAt = nil
                 state = .failed(message: error.localizedDescription)
                 statusMessage = "Audio note upload failed: \(error.localizedDescription)"
             }
@@ -391,6 +397,7 @@ final class RecorderViewModel: ObservableObject {
         Task {
             await audioNoteRecorder.cancel()
             activeRecordingKind = nil
+            activeAudioRecordingStartedAt = nil
             state = .signedInIdle
             statusMessage = "Audio note discarded."
         }

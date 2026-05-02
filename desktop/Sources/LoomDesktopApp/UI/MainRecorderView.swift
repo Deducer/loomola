@@ -3,6 +3,7 @@ import SwiftUI
 struct MainRecorderView: View {
     @StateObject private var viewModel = RecorderViewModel()
     @State private var meetingPromptWindow = MeetingPromptWindowController()
+    @State private var audioRecordingWindow = AudioRecordingWindowController()
     @FocusState private var focusedField: FocusedField?
 
     var body: some View {
@@ -169,6 +170,13 @@ struct MainRecorderView: View {
         }
         .onChange(of: viewModel.activeRecordingKind) { _, _ in
             updateMeetingPromptWindow()
+            updateAudioRecordingWindow()
+        }
+        .onChange(of: viewModel.activeAudioRecordingStartedAt) { _, _ in
+            updateAudioRecordingWindow()
+        }
+        .onChange(of: viewModel.audioTitle) { _, _ in
+            updateAudioRecordingWindow()
         }
         .onChange(of: viewModel.includeMicInAudioNote) { _, _ in
             updateMeetingPromptWindow()
@@ -178,6 +186,7 @@ struct MainRecorderView: View {
         }
         .onDisappear {
             meetingPromptWindow.hide()
+            audioRecordingWindow.hide()
         }
     }
 
@@ -198,6 +207,22 @@ struct MainRecorderView: View {
                 (!viewModel.includeMicInAudioNote && !viewModel.includeSystemAudioInAudioNote),
             start: { viewModel.startDetectedMeetingAudioNote() },
             dismiss: { viewModel.dismissMeetingPrompt() }
+        )
+    }
+
+    private func updateAudioRecordingWindow() {
+        guard
+            viewModel.activeRecordingKind == .audio,
+            let startedAt = viewModel.activeAudioRecordingStartedAt
+        else {
+            audioRecordingWindow.hide()
+            return
+        }
+        audioRecordingWindow.show(
+            title: viewModel.audioTitle,
+            startedAt: startedAt,
+            stop: { viewModel.stopAudioNoteRecordingAndUpload() },
+            discard: { viewModel.cancelAudioNoteRecording() }
         )
     }
 }
