@@ -107,7 +107,7 @@ function removeIframe() {
 }
 
 console.log(
-  "[loom-clone-ext v0.5.0] content-script-page loaded on",
+  "[loom-clone-ext v0.6.0] content-script-page loaded on",
   location.href
 );
 
@@ -153,6 +153,115 @@ function safeSendMessage(msg) {
   }
 }
 
+const MEETING_DETECTORS = [
+  {
+    source: "meet",
+    label: "Google Meet",
+    hostMatches: () => location.hostname === "meet.google.com",
+    matches: () => location.hostname === "meet.google.com",
+    activeLabels: ["leave call", "leave meeting"],
+  },
+  {
+    source: "teams",
+    label: "Microsoft Teams",
+    hostMatches: () => location.hostname === "teams.microsoft.com",
+    matches: () =>
+      location.hostname === "teams.microsoft.com" &&
+      location.pathname.startsWith("/v2/"),
+    activeLabels: ["leave"],
+  },
+  {
+    source: "zoom",
+    label: "Zoom",
+    hostMatches: () =>
+      location.hostname === "zoom.us" || location.hostname.endsWith(".zoom.us"),
+    matches: () =>
+      (location.hostname === "zoom.us" ||
+        location.hostname.endsWith(".zoom.us")) &&
+      location.pathname.startsWith("/wc/"),
+    activeLabels: ["leave"],
+  },
+];
+
+function currentMeetingDetector() {
+  return MEETING_DETECTORS.find((detector) => detector.matches()) ?? null;
+}
+
+function isPotentialMeetingHost() {
+  return MEETING_DETECTORS.some((detector) => detector.hostMatches());
+}
+
+function hasActiveCallDom(detector) {
+  if (document.querySelector('[data-call-state="active"]')) return true;
+  const elements = document.querySelectorAll(
+    'button,[role="button"],a,[aria-label],[title]'
+  );
+  for (const el of elements) {
+    const label = [
+      el.getAttribute("aria-label"),
+      el.getAttribute("title"),
+      el.textContent,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    if (detector.activeLabels.some((needle) => label.includes(needle))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function hasGrantedMicPermission() {
+  try {
+    if (!navigator.permissions?.query) return false;
+    const status = await navigator.permissions.query({ name: "microphone" });
+    return status.state === "granted";
+  } catch {
+    return false;
+  }
+}
+
+function normalizeMeetingTitle(detector) {
+  const title = document.title?.trim();
+  if (!title) return detector.label;
+  return title;
+}
+
+function startMeetingWatcher() {
+  let lastSignal = null;
+
+  async function checkMeeting() {
+    const detector = currentMeetingDetector();
+    if (!detector || document.visibilityState !== "visible") return;
+
+    const activeByDom = hasActiveCallDom(detector);
+    const activeByMic = activeByDom ? false : await hasGrantedMicPermission();
+    if (!activeByDom && !activeByMic) return;
+
+    const now = Date.now();
+    const title = normalizeMeetingTitle(detector);
+    const key = `${detector.source}:${location.href}:${title}`;
+    if (lastSignal?.key === key && now - lastSignal.ts < 60_000) return;
+    lastSignal = { key, ts: now };
+
+    void safeSendMessage({
+      type: "loom-clone:meeting-active",
+      meeting: {
+        event: "meeting-active",
+        source: detector.source,
+        title,
+        tabUrl: location.href,
+        ts: now,
+      },
+    });
+  }
+
+  window.setTimeout(checkMeeting, 1_000);
+  window.setInterval(checkMeeting, 5_000);
+  document.addEventListener("visibilitychange", checkMeeting);
+}
+
 if (IS_TOP_FRAME) {
   try {
     chrome.runtime.onMessage.addListener((msg) => {
@@ -176,6 +285,10 @@ if (IS_TOP_FRAME) {
   void safeSendMessage({ type: "loom-clone:get-state" }).then((response) => {
     if (response?.state) ensureIframe(response.state);
   });
+
+  if (isPotentialMeetingHost()) {
+    startMeetingWatcher();
+  }
 }
 
 /**

@@ -7,6 +7,7 @@
  */
 
 const STATE_KEY = "loomCloneRecordingState";
+const MEETING_SIGNAL_KEY = "loomCloneMeetingSignal";
 
 async function readState() {
   const result = await chrome.storage.session.get(STATE_KEY);
@@ -18,6 +19,19 @@ async function writeState(value) {
     await chrome.storage.session.remove(STATE_KEY);
   } else {
     await chrome.storage.session.set({ [STATE_KEY]: value });
+  }
+}
+
+async function readMeetingSignal() {
+  const result = await chrome.storage.session.get(MEETING_SIGNAL_KEY);
+  return result[MEETING_SIGNAL_KEY] ?? null;
+}
+
+async function writeMeetingSignal(value) {
+  if (value === null) {
+    await chrome.storage.session.remove(MEETING_SIGNAL_KEY);
+  } else {
+    await chrome.storage.session.set({ [MEETING_SIGNAL_KEY]: value });
   }
 }
 
@@ -174,7 +188,26 @@ async function forwardPositionToApp(position) {
   );
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+async function forwardMeetingSignalToApp(meeting) {
+  const tabs = await chrome.tabs.query({
+    url: "https://loom.dissonance.cloud/*",
+  });
+  await Promise.all(
+    tabs.map(async (tab) => {
+      if (!tab.id) return;
+      try {
+        await chrome.tabs.sendMessage(tab.id, {
+          type: "loom-clone:meeting-active",
+          meeting,
+        });
+      } catch {
+        // ignore
+      }
+    })
+  );
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   console.log("[loom-clone-ext:bg] received", msg?.type);
   // Async handlers must return true and call sendResponse later.
   (async () => {
@@ -224,9 +257,24 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           await writeState(cur);
         }
         sendResponse({ ok: true });
+      } else if (msg?.type === "loom-clone:meeting-active") {
+        const meeting = {
+          source: msg.meeting?.source,
+          title: msg.meeting?.title ?? null,
+          tabUrl: msg.meeting?.tabUrl ?? sender.tab?.url ?? null,
+          ts: typeof msg.meeting?.ts === "number" ? msg.meeting.ts : Date.now(),
+          tabId: sender.tab?.id ?? null,
+          receivedAt: Date.now(),
+        };
+        await writeMeetingSignal(meeting);
+        await forwardMeetingSignalToApp(meeting);
+        sendResponse({ ok: true, meeting });
       } else if (msg?.type === "loom-clone:get-state") {
         const state = await readState();
         sendResponse({ ok: true, state });
+      } else if (msg?.type === "loom-clone:get-meeting-signal") {
+        const meeting = await readMeetingSignal();
+        sendResponse({ ok: true, meeting });
       } else {
         sendResponse({ ok: false, error: "unknown message type" });
       }

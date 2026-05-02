@@ -7,7 +7,7 @@
       body {
         margin: 0;
         padding: 16px;
-        width: 240px;
+        width: 280px;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
           sans-serif;
         font-size: 13px;
@@ -41,9 +41,16 @@
         font-weight: 500;
         margin-bottom: 8px;
       }
+      .status-row {
+        margin-bottom: 12px;
+      }
       .status-active {
         background: rgba(239, 68, 68, 0.15);
         color: #fca5a5;
+      }
+      .status-meeting {
+        background: rgba(34, 197, 94, 0.15);
+        color: #86efac;
       }
       .status-idle {
         background: rgba(255, 255, 255, 0.06);
@@ -60,13 +67,29 @@
       .dot-grey {
         background: #71717a;
       }
+      .dot-green {
+        background: #22c55e;
+      }
+      .muted {
+        margin-top: -6px;
+        font-size: 12px;
+      }
     </style>
   </head>
   <body>
     <h1>Loom Clone</h1>
-    <div id="status" class="status status-idle">
-      <span class="dot dot-grey"></span>
-      <span id="status-text">No recording in progress</span>
+    <div class="status-row">
+      <div id="status" class="status status-idle">
+        <span class="dot dot-grey"></span>
+        <span id="status-text">No recording in progress</span>
+      </div>
+    </div>
+    <div class="status-row">
+      <div id="meeting-status" class="status status-idle">
+        <span class="dot dot-grey"></span>
+        <span id="meeting-status-text">No meeting detected</span>
+      </div>
+      <p id="meeting-detail" class="muted"></p>
     </div>
     <p>
       Start a recording at

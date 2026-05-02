@@ -86,6 +86,15 @@
             },
             "*"
           );
+        } else if (msg?.type === "loom-clone:meeting-active") {
+          window.postMessage(
+            {
+              source: "loom-clone-extension",
+              type: "meeting-active",
+              meeting: msg.meeting,
+            },
+            window.location.origin
+          );
         }
       } catch {
         /* orphan callback after reload — silent */

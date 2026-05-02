@@ -32,6 +32,11 @@ installed, you get the polished frameless experience.
 3. Switch to that tab — a frameless circle bubble appears in the bottom-right.
 4. Drag the bubble anywhere on the page. The composite recording follows.
 
+For Granola-alt, the same extension also watches active Google Meet,
+Microsoft Teams web, and Zoom web tabs. It stores and forwards a
+`meeting-active` signal so the app can offer a consent-first meeting prompt;
+it does not start recording by itself.
+
 ## Architecture
 
 See [`docs/superpowers/specs/2026-04-26-chrome-extension-design.md`](../docs/superpowers/specs/2026-04-26-chrome-extension-design.md)
@@ -44,18 +49,25 @@ Short version:
   background service worker.
 - `content-script-page.js` runs on every other URL. Injects an
   `<iframe src="https://loom.dissonance.cloud/bubble">` when recording is in
-  progress, removes it when recording stops.
+  progress, removes it when recording stops. On meeting URLs it also watches
+  for active-call DOM markers or granted microphone permission and reports a
+  `meeting-active` signal to the background worker.
 - The iframe (loom-clone origin) handles `getUserMedia` + drag interactions.
   Drag events bubble up via cross-origin `postMessage`.
 - `background.js` is a Manifest V3 service worker that routes messages
   between content scripts. State (is-recording) is persisted in
   `chrome.storage.session` since service workers get killed after ~30s idle.
+  The latest meeting signal is stored there too, so the popup can show it.
 
 ## Build / no-build
 
 There's no build step. Plain ES modules in the service worker; everything
 else is regular `<script>`. Edit any file and reload the extension at
 `chrome://extensions`.
+
+After pulling extension changes, click **Reload** on the unpacked extension in
+`chrome://extensions`; Chrome does not automatically reload unpacked
+extensions from disk.
 
 ## Icons
 
