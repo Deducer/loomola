@@ -18,6 +18,7 @@ import { RecordingsGrid } from "@/components/dashboard/recordings-grid";
 import { DashboardTabs } from "@/components/dashboard/dashboard-tabs";
 import { NotesList } from "@/components/dashboard/notes-list";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/cn";
 
 const VALID_SORTS: SearchSort[] = [
   "date_desc",
@@ -115,7 +116,12 @@ export default async function HomePage({
         activePath="recordings"
         granolaEnabled={granolaEnabled}
       />
-      <div className="mx-auto flex max-w-6xl">
+      <div
+        className={cn(
+          "mx-auto flex",
+          activeTab === "notes" ? "max-w-[1040px]" : "max-w-6xl"
+        )}
+      >
         <FolderSidebar
           folders={folders}
           currentFolderId={folderId}
@@ -153,7 +159,10 @@ export default async function HomePage({
             </div>
             {activeTab === "notes" ? (
               <form action={createQuickNote}>
-                <Button>
+                <Button
+                  variant="outline"
+                  className="border-border-strong bg-bg-subtle text-text hover:bg-bg-elevated"
+                >
                   <Plus className="h-4 w-4" />
                   Quick note
                 </Button>
@@ -208,7 +217,10 @@ export default async function HomePage({
                     Record a meeting from the desktop app or start a quick note.
                   </p>
                   <form action={createQuickNote} className="mt-5 inline-block">
-                    <Button>
+                    <Button
+                      variant="outline"
+                      className="border-border-strong bg-bg-subtle text-text hover:bg-bg-elevated"
+                    >
                       <Plus className="h-4 w-4" />
                       Quick note
                     </Button>

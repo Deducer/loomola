@@ -29,6 +29,7 @@ export function TranscriptPanel({
   people = [],
   speakerAssignments = [],
   onSpeakerAssignmentsChange,
+  tone = "accent",
 }: {
   mediaId?: string;
   words: Word[];
@@ -38,6 +39,7 @@ export function TranscriptPanel({
   people?: TranscriptPerson[];
   speakerAssignments?: TranscriptSpeakerAssignment[];
   onSpeakerAssignmentsChange?: (assignments: TranscriptSpeakerAssignment[]) => void;
+  tone?: "accent" | "neutral";
 }) {
   const paragraphs = useMemo(() => groupWordsIntoParagraphs(words), [words]);
   const activeIdx = useMemo(
@@ -136,7 +138,11 @@ export function TranscriptPanel({
                       setOpenSpeaker(openSpeaker === speakerIdx ? null : speakerIdx);
                       setLabelDraft("");
                     }}
-                    className="text-xs font-medium text-accent hover:text-text"
+                    className={
+                      tone === "neutral"
+                        ? "text-xs font-medium text-text-muted hover:text-text"
+                        : "text-xs font-medium text-accent hover:text-text"
+                    }
                   >
                     {speakerLabel}
                   </button>
@@ -197,7 +203,9 @@ export function TranscriptPanel({
                 onClick={() => onSeek(p.startSec)}
                 className={`block w-full rounded-md px-3 py-2 text-left text-sm leading-7 transition-colors ${
                   i === activeIdx
-                    ? "bg-accent/10 text-text"
+                    ? tone === "neutral"
+                      ? "bg-bg-elevated text-text"
+                      : "bg-accent/10 text-text"
                     : "text-text-muted hover:bg-bg-elevated hover:text-text"
                 }`}
               >

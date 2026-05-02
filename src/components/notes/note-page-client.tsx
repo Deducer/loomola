@@ -106,10 +106,13 @@ export function NotePageClient({
   const durationLabel = useMemo(() => {
     const seconds = Math.round(Number(durationSeconds ?? 0));
     if (!Number.isFinite(seconds) || seconds <= 0) return null;
-    const minutes = Math.floor(seconds / 60);
-    const remainder = seconds % 60;
-    return `${minutes}:${String(remainder).padStart(2, "0")}`;
+    return formatAudioTime(seconds);
   }, [durationSeconds]);
+  const progressPercent = useMemo(() => {
+    const seconds = Number(durationSeconds ?? 0);
+    if (!Number.isFinite(seconds) || seconds <= 0) return 0;
+    return Math.min(100, Math.max(0, (currentTime / seconds) * 100));
+  }, [currentTime, durationSeconds]);
   const attendeeLabel = useMemo(() => {
     if (!Array.isArray(attendees) || attendees.length === 0) return "Me";
     return `${attendees.length + 1} people`;
@@ -255,8 +258,8 @@ export function NotePageClient({
 
   return (
     <div className="min-h-screen bg-bg pb-32 text-text">
-      <main className="mx-auto flex min-h-screen w-full max-w-2xl flex-col px-4 py-5 sm:px-6 sm:py-9">
-        <div className="flex items-center justify-between text-text-subtle">
+      <main className="mx-auto flex min-h-screen w-full max-w-[760px] flex-col px-4 py-4 sm:px-6 sm:py-7">
+        <div className="sticky top-0 z-20 -mx-4 flex items-center justify-between border-b border-border/70 bg-bg/95 px-4 py-3 text-text-subtle backdrop-blur sm:-mx-6 sm:px-6">
           <Link href="/" aria-label="Back to dashboard">
             <Button
               variant="ghost"
@@ -307,32 +310,32 @@ export function NotePageClient({
           </div>
         </div>
 
-        <section className="mt-10">
+        <section className="mt-12">
           <input
             value={title}
             onChange={(event) => setTitle(event.target.value)}
             onBlur={saveTitle}
             placeholder="New note"
             className={cn(
-              "w-full border-none bg-transparent px-0 text-[2.35rem] font-semibold leading-tight tracking-normal text-text outline-none placeholder:italic placeholder:text-text-subtle sm:text-[2.65rem]",
+              "w-full border-none bg-transparent px-0 text-[2.35rem] font-semibold leading-tight tracking-normal text-text outline-none placeholder:font-serif placeholder:italic placeholder:text-text-subtle sm:text-[2.7rem]",
               !title.trim() && "italic text-text-subtle"
             )}
           />
           <div className="mt-5 flex flex-wrap items-center gap-2 text-sm text-text-muted">
-            <span className="inline-flex h-8 items-center gap-1.5 rounded-full bg-bg-subtle px-3">
+            <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border bg-bg-subtle/80 px-3">
               <Calendar className="h-3.5 w-3.5" />
               {meetingDate}
             </span>
-            <span className="inline-flex h-8 items-center gap-1.5 rounded-full bg-bg-subtle px-3">
+            <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border bg-bg-subtle/80 px-3">
               <Users className="h-3.5 w-3.5" />
               {attendeeLabel}
             </span>
-            <span className="inline-flex h-8 items-center gap-1.5 rounded-full bg-bg-subtle px-3">
+            <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border bg-bg-subtle/80 px-3">
               <Folder className="h-3.5 w-3.5" />
               {folderLabel ?? "Add to folder"}
             </span>
             {durationLabel && (
-              <span className="inline-flex h-8 items-center rounded-full bg-bg-subtle px-3">
+              <span className="inline-flex h-8 items-center rounded-full border border-border bg-bg-subtle/80 px-3 tabular-nums">
                 {durationLabel}
               </span>
             )}
@@ -340,7 +343,7 @@ export function NotePageClient({
           </div>
         </section>
 
-        <section className="mt-12 flex-1">
+        <section className="mt-11 flex-1">
           {viewMode === "enhanced" && enhancedSummary ? (
             <EnhancedMarkdown markdown={enhancedSummary} />
           ) : (
@@ -348,7 +351,7 @@ export function NotePageClient({
               value={body}
               onChange={(event) => setBody(event.target.value)}
               placeholder="Write notes"
-              className="min-h-[42vh] resize-none border-0 bg-transparent px-0 py-0 text-base leading-8 shadow-none placeholder:text-text-subtle focus-visible:ring-0 focus-visible:ring-offset-0"
+              className="min-h-[46vh] resize-none border-0 bg-transparent px-0 py-0 text-[1.03rem] leading-8 shadow-none placeholder:font-serif placeholder:italic placeholder:text-[1.12rem] placeholder:text-text-subtle focus-visible:ring-0 focus-visible:ring-offset-0"
             />
           )}
           <div className="mt-4 flex items-center gap-2 text-xs text-text-subtle">
@@ -364,20 +367,25 @@ export function NotePageClient({
         </section>
 
         {transcriptOpen && (
-          <section className="fixed inset-x-4 bottom-28 z-30 mx-auto max-w-2xl rounded-lg border border-border bg-bg-elevated p-3 shadow-2xl shadow-black/30">
+          <section className="fixed inset-x-3 bottom-24 z-30 mx-auto max-h-[58vh] max-w-[760px] rounded-xl border border-border bg-bg-elevated/95 p-3 shadow-2xl shadow-black/35 backdrop-blur">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 text-sm font-medium">
-                <FileText className="h-4 w-4 text-accent" />
+                <FileText className="h-4 w-4 text-emerald-400" />
                 Transcript
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setTranscriptOpen(false)}
-                aria-label="Collapse transcript"
-              >
-                <ChevronUp className="h-4 w-4" />
-              </Button>
+              <div className="flex items-center gap-2">
+                <span className="hidden rounded-full border border-border bg-bg-subtle px-2 py-1 text-xs text-text-muted sm:inline-flex">
+                  English
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setTranscriptOpen(false)}
+                  aria-label="Collapse transcript"
+                >
+                  <ChevronUp className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
             <TranscriptPanel
               mediaId={mediaId}
@@ -388,19 +396,20 @@ export function NotePageClient({
               people={people}
               speakerAssignments={speakerAssignmentsState}
               onSpeakerAssignmentsChange={setSpeakerAssignmentsState}
+              tone="neutral"
             />
           </section>
         )}
       </main>
 
-      <div className="fixed inset-x-0 bottom-0 z-40 px-4 pb-4 pt-3">
-        <div className="mx-auto flex max-w-2xl items-center gap-2 rounded-lg border border-border bg-bg-subtle/95 p-2 shadow-2xl shadow-black/30 backdrop-blur">
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 px-4 pb-4 pt-3">
+        <div className="pointer-events-auto mx-auto flex max-w-[760px] items-center gap-2 rounded-xl border border-border bg-bg-subtle/95 p-2 shadow-2xl shadow-black/35 backdrop-blur">
           <Button
             variant="secondary"
             size="icon"
             onClick={togglePlay}
             disabled={!audioUrl}
-            className="h-10 w-10 shrink-0 rounded-md bg-bg-elevated hover:bg-border-strong"
+            className="h-10 w-10 shrink-0 rounded-lg border border-border bg-bg-elevated hover:bg-border-strong"
             aria-label={playing ? "Pause audio" : "Play audio"}
           >
             {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
@@ -408,27 +417,41 @@ export function NotePageClient({
           <button
             type="button"
             onClick={() => setTranscriptOpen((open) => !open)}
-            className="flex min-w-0 flex-1 items-center gap-3 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-bg-elevated"
+            className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-bg-elevated"
           >
             <Volume2 className="h-4 w-4 shrink-0 text-emerald-400" />
-            {waveformUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={waveformUrl}
-                alt=""
-                className="h-8 min-w-0 flex-1 rounded object-cover opacity-90"
+            <span className="relative min-w-0 flex-1 overflow-hidden rounded-md border border-border bg-bg">
+              {waveformUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={waveformUrl}
+                  alt=""
+                  className="h-8 w-full object-cover opacity-80"
+                />
+              ) : (
+                <span className="flex h-8 items-center px-2 text-sm text-text-muted">
+                  {status === "ready" ? "Waveform unavailable" : "Processing"}
+                </span>
+              )}
+              <span
+                className="absolute inset-y-0 left-0 bg-emerald-500/10"
+                style={{ width: `${progressPercent}%` }}
               />
-            ) : (
-              <span className="min-w-0 flex-1 text-sm text-text-muted">
-                {status === "ready" ? "Waveform unavailable" : "Processing"}
-              </span>
-            )}
+              <span
+                className="absolute bottom-0 left-0 h-0.5 bg-emerald-400"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </span>
+            <span className="hidden w-[74px] shrink-0 text-right text-xs tabular-nums text-text-subtle sm:block">
+              {formatAudioTime(currentTime)}
+              {durationLabel ? ` / ${durationLabel}` : ""}
+            </span>
           </button>
           <Button
             variant="ghost"
             size="icon"
             onClick={() => setTranscriptOpen((open) => !open)}
-            className="h-9 w-9 shrink-0 rounded-md"
+            className="h-9 w-9 shrink-0 rounded-lg"
             aria-label="Toggle transcript"
           >
             <ChevronUp
@@ -496,9 +519,9 @@ function EnhancementControls({
 
   if (generating) {
     return (
-      <div className="mt-10 flex justify-center">
-        <span className="inline-flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-300 shadow-lg shadow-black/20">
-          <LoaderCircle className="h-4 w-4 animate-spin" />
+      <div className="mt-12 flex justify-center">
+        <span className="inline-flex items-center gap-2 rounded-full border border-border bg-bg-subtle px-4 py-2 text-sm font-semibold text-text shadow-lg shadow-black/20">
+          <LoaderCircle className="h-4 w-4 animate-spin text-emerald-400" />
           Enhancing notes
         </span>
       </div>
@@ -514,13 +537,13 @@ function EnhancementControls({
   }
 
   return (
-    <div className="mt-10 flex flex-col items-center gap-3">
+    <div className="mt-12 flex flex-col items-center gap-3">
       <Button
         variant="outline"
         onClick={onGenerate}
-        className="rounded-full border-emerald-500/30 bg-emerald-500/5 px-5 text-emerald-300 hover:bg-emerald-500/10"
+        className="rounded-full border-border-strong bg-bg-subtle px-5 text-text hover:bg-bg-elevated"
       >
-        <Sparkles className="h-4 w-4" />
+        <Sparkles className="h-4 w-4 text-emerald-400" />
         {generationStatus === "failed" ? "Try again" : "Generate notes"}
       </Button>
       {error && <p className="text-xs text-red-400">{error}</p>}
@@ -530,33 +553,33 @@ function EnhancementControls({
 
 function EnhancedMarkdown({ markdown }: { markdown: string }) {
   return (
-    <article className="min-h-[42vh] text-[0.97rem] leading-8 text-text">
+    <article className="min-h-[46vh] text-[1rem] leading-8 text-text">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
           h1: ({ node, ...props }) => (
             <h1
-              className="mb-5 mt-9 text-3xl font-semibold leading-tight text-text first:mt-0"
+              className="mb-5 mt-10 text-3xl font-semibold leading-tight text-text first:mt-0"
               {...props}
             />
           ),
           h2: ({ node, ...props }) => (
-            <h2 className="mb-3 mt-9 text-xl font-semibold leading-snug text-text first:mt-0" {...props} />
+            <h2 className="mb-3 mt-10 text-xl font-semibold leading-snug text-text first:mt-0" {...props} />
           ),
           h3: ({ node, ...props }) => (
-            <h3 className="mb-2 mt-7 text-base font-semibold leading-snug text-text first:mt-0" {...props} />
+            <h3 className="mb-2 mt-8 text-base font-semibold leading-snug text-text first:mt-0" {...props} />
           ),
           p: ({ node, ...props }) => (
             <p className="my-4 text-text-muted" {...props} />
           ),
           ul: ({ node, ...props }) => (
-            <ul className="my-4 list-disc space-y-2 pl-5 text-text-muted" {...props} />
+            <ul className="my-4 list-disc space-y-2 pl-5 text-text-muted marker:text-text-subtle" {...props} />
           ),
           ol: ({ node, ...props }) => (
-            <ol className="my-4 list-decimal space-y-2 pl-5 text-text-muted" {...props} />
+            <ol className="my-4 list-decimal space-y-2 pl-5 text-text-muted marker:text-text-subtle" {...props} />
           ),
           li: ({ node, ...props }) => (
-            <li className="pl-1 marker:text-text-subtle" {...props} />
+            <li className="pl-1" {...props} />
           ),
           strong: ({ node, ...props }) => (
             <strong className="font-semibold text-text" {...props} />
@@ -567,6 +590,15 @@ function EnhancedMarkdown({ markdown }: { markdown: string }) {
           code: ({ node, ...props }) => (
             <code className="rounded bg-bg-elevated px-1 py-0.5 font-mono text-sm text-text" {...props} />
           ),
+          blockquote: ({ node, ...props }) => (
+            <blockquote className="my-5 border-l border-border-strong pl-4 text-text-muted" {...props} />
+          ),
+          hr: ({ node, ...props }) => (
+            <hr className="my-8 border-border" {...props} />
+          ),
+          a: ({ node, ...props }) => (
+            <a className="text-text underline decoration-border-strong underline-offset-4 hover:decoration-text-muted" {...props} />
+          ),
           input: ({ node, ...props }) => (
             <input className="mr-2 align-middle accent-emerald-500" {...props} />
           ),
@@ -576,4 +608,11 @@ function EnhancedMarkdown({ markdown }: { markdown: string }) {
       </ReactMarkdown>
     </article>
   );
+}
+
+function formatAudioTime(value: number): string {
+  const seconds = Math.max(0, Math.round(value));
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return `${minutes}:${String(remainder).padStart(2, "0")}`;
 }
