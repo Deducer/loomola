@@ -40,7 +40,8 @@ final class AudioRecordingSessionTests: XCTestCase {
             tracks: [.mic],
             meetingContext: MeetingContext(
                 detectedApp: "google-meet",
-                sourceContextHint: "Chrome: meet.google.com"
+                sourceContextHint: "Chrome: meet.google.com",
+                suggestedTitle: "Weekly Sync"
             )
         )
 

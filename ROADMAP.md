@@ -171,7 +171,7 @@ Self-hosted Granola-faithful AI meeting note-taker built on top of the existing 
 | G-M8 | pgvector embedding-on-write | ✅ shipped | `embed_transcript` and `embed_summary` jobs enqueue after transcript/summary writes using OpenAI `text-embedding-3-small`. |
 | G-M9 | AI enhancement (user-triggered) | ✅ shipped | "Generate notes" trigger, OpenRouter/Claude enhancement pipeline, Enhanced/Original toggle, and styled Markdown rendering. |
 | G-M10 | Per-project Obsidian sync | 🚧 partial | Canonical Markdown/JSON export endpoints, brand profile vault path field, manual Save to Obsidian queue, desktop manual pending-writer, 30-second desktop background sync, and moved-file re-sync by Markdown `meeting_id`. Realtime subscriber remains. |
-| G-M11 | LLM-accessible API + meeting detection | 🚧 partial | `INTEGRATION_API_TOKEN` now works for per-note Markdown/JSON/transcript exports and `/api/export/bundle.zip` bulk Markdown export. Desktop now passively stamps audio notes with detected Meet/Zoom/Teams/Webex context when source refresh sees those windows. Auto-arm UX and Chrome extension content scripts remain. |
+| G-M11 | LLM-accessible API + meeting detection | 🚧 partial | `INTEGRATION_API_TOKEN` now works for per-note Markdown/JSON/transcript exports and `/api/export/bundle.zip` bulk Markdown export. Desktop now polls for Meet/Zoom/Teams/Webex, shows a consent-first Meeting ready prompt, auto-suggests the title, and stamps audio notes with detected context. Chrome extension content scripts remain. |
 
 ## Open follow-ups (next milestones to spec)
 

@@ -10,6 +10,7 @@ final class MeetingDetectorTests: XCTestCase {
 
         XCTAssertEqual(context?.detectedApp, "google-meet")
         XCTAssertEqual(context?.sourceContextHint, "Google Chrome: Weekly Sync - meet.google.com")
+        XCTAssertEqual(context?.suggestedTitle, "Weekly Sync")
     }
 
     func testDetectsZoomAndTeams() {
@@ -25,5 +26,12 @@ final class MeetingDetectorTests: XCTestCase {
 
     func testIgnoresNonMeetingWindows() {
         XCTAssertNil(MeetingDetector.detect(applicationName: "Notes", title: "Shopping list"))
+    }
+
+    func testSuggestedTitleFallsBackWhenWindowTitleIsEmpty() {
+        XCTAssertEqual(
+            MeetingDetector.suggestedTitle(from: " ", fallback: "Google Meet"),
+            "Google Meet"
+        )
     }
 }

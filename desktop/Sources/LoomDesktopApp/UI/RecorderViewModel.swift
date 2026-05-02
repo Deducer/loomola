@@ -13,6 +13,7 @@ final class RecorderViewModel: ObservableObject {
     @Published private(set) var configuration: DesktopAuthConfiguration?
     @Published private(set) var activeRecordingKind: DesktopRecordingKind?
     @Published private(set) var meetingContext: MeetingContext?
+    @Published private(set) var meetingPromptContext: MeetingContext?
     @Published private(set) var captureSources = CaptureSourceSnapshot(
         displays: [],
         windows: [],
@@ -26,11 +27,15 @@ final class RecorderViewModel: ObservableObject {
     private var audioNoteRecorder: AudioNoteRecorder?
     private var obsidianExportWriter: ObsidianExportWriter?
     private var obsidianSyncTask: Task<Void, Never>?
+    private var meetingWatchTask: Task<Void, Never>?
     private var obsidianSyncInFlight = false
+    private var dismissedMeetingContext: MeetingContext?
+    private var autoSuggestedAudioTitle: String?
     private let captureSourceProvider: CaptureSourceProvider?
     private let screenCaptureCoordinator: ScreenCaptureCoordinator?
     private var activeRecordingURL: URL?
     private let obsidianSyncIntervalNanoseconds: UInt64 = 30_000_000_000
+    private let meetingWatchIntervalNanoseconds: UInt64 = 15_000_000_000
 
     init() {
         if #available(macOS 14.0, *) {
@@ -96,8 +101,14 @@ final class RecorderViewModel: ObservableObject {
         Task {
             await audioNoteRecorder?.cancel()
             obsidianSyncTask?.cancel()
+            meetingWatchTask?.cancel()
             obsidianSyncTask = nil
+            meetingWatchTask = nil
             obsidianSyncInFlight = false
+            meetingContext = nil
+            meetingPromptContext = nil
+            dismissedMeetingContext = nil
+            autoSuggestedAudioTitle = nil
             try? await authService.signOut()
             accessToken = nil
             activeRecordingKind = nil
@@ -172,23 +183,52 @@ final class RecorderViewModel: ObservableObject {
     }
 
     func refreshCaptureSources() {
+        refreshCaptureSources(showStatus: true)
+    }
+
+    private func refreshCaptureSources(showStatus: Bool) {
         guard let captureSourceProvider else {
-            statusMessage = "ScreenCaptureKit source listing requires macOS 14 or newer."
+            if showStatus {
+                statusMessage = "ScreenCaptureKit source listing requires macOS 14 or newer."
+            }
             return
         }
-        statusMessage = "Refreshing capture sources..."
+        if showStatus {
+            statusMessage = "Refreshing capture sources..."
+        }
         Task {
             do {
                 let snapshot = try await captureSourceProvider.snapshot()
                 let context = MeetingDetector.detect(from: snapshot)
+                let previousContext = meetingContext
                 captureSources = snapshot
-                meetingContext = context
+                applyMeetingContext(context)
                 let detected = context.map { " Detected \($0.detectedApp)." } ?? ""
-                statusMessage = "Found \(snapshot.displays.count) display(s), \(snapshot.windows.count) window(s), \(snapshot.cameras.count) camera(s), and \(snapshot.microphones.count) mic(s).\(detected)"
+                if showStatus || (context != nil && context != previousContext) {
+                    statusMessage = "Found \(snapshot.displays.count) display(s), \(snapshot.windows.count) window(s), \(snapshot.cameras.count) camera(s), and \(snapshot.microphones.count) mic(s).\(detected)"
+                }
             } catch {
-                statusMessage = "Could not list capture sources: \(error.localizedDescription)"
+                if showStatus {
+                    statusMessage = "Could not list capture sources: \(error.localizedDescription)"
+                }
             }
         }
+    }
+
+    func dismissMeetingPrompt() {
+        dismissedMeetingContext = meetingPromptContext
+        meetingPromptContext = nil
+        statusMessage = "Meeting prompt dismissed. Manual audio notes still use detected context while the meeting remains visible."
+    }
+
+    func startDetectedMeetingAudioNote() {
+        if audioTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           let suggested = meetingPromptContext?.suggestedTitle ?? meetingContext?.suggestedTitle {
+            audioTitle = suggested
+            autoSuggestedAudioTitle = suggested
+        }
+        meetingPromptContext = nil
+        startAudioNoteRecording()
     }
 
     func startScreenPreview() {
@@ -296,6 +336,7 @@ final class RecorderViewModel: ObservableObject {
         let includeMic = includeMicInAudioNote
         let includeSystemAudio = includeSystemAudioInAudioNote
         let meetingContext = meetingContext
+        meetingPromptContext = nil
         Task {
             do {
                 let session = try await audioNoteRecorder.start(
@@ -383,6 +424,7 @@ final class RecorderViewModel: ObservableObject {
         }
         refreshCaptureSources()
         startObsidianAutoSync()
+        startMeetingWatch()
     }
 
     private func startObsidianAutoSync() {
@@ -397,6 +439,39 @@ final class RecorderViewModel: ObservableObject {
                 }
                 self?.syncPendingObsidianNotes(showStatus: false)
             }
+        }
+    }
+
+    private func startMeetingWatch() {
+        guard meetingWatchTask == nil else { return }
+        meetingWatchTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: self?.meetingWatchIntervalNanoseconds ?? 15_000_000_000)
+                } catch {
+                    return
+                }
+                self?.refreshCaptureSources(showStatus: false)
+            }
+        }
+    }
+
+    private func applyMeetingContext(_ context: MeetingContext?) {
+        meetingContext = context
+        guard let context else {
+            meetingPromptContext = nil
+            dismissedMeetingContext = nil
+            return
+        }
+
+        if audioTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            audioTitle == autoSuggestedAudioTitle {
+            audioTitle = context.suggestedTitle
+            autoSuggestedAudioTitle = context.suggestedTitle
+        }
+
+        if dismissedMeetingContext != context && activeRecordingKind == nil {
+            meetingPromptContext = context
         }
     }
 

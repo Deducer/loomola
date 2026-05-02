@@ -46,6 +46,15 @@ struct MainRecorderView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Granola audio note")
                         .font(.headline)
+                    if let meetingPromptContext = viewModel.meetingPromptContext {
+                        MeetingPromptView(
+                            context: meetingPromptContext,
+                            start: { viewModel.startDetectedMeetingAudioNote() },
+                            dismiss: { viewModel.dismissMeetingPrompt() },
+                            startDisabled: viewModel.activeRecordingKind != nil ||
+                                (!viewModel.includeMicInAudioNote && !viewModel.includeSystemAudioInAudioNote)
+                        )
+                    }
                     TextField("Optional title", text: $viewModel.audioTitle)
                         .textFieldStyle(.roundedBorder)
                     HStack {
@@ -158,6 +167,41 @@ struct MainRecorderView: View {
 private enum FocusedField: Hashable {
     case email
     case password
+}
+
+private struct MeetingPromptView: View {
+    let context: MeetingContext
+    let start: () -> Void
+    let dismiss: () -> Void
+    let startDisabled: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Meeting ready")
+                        .font(.subheadline.weight(.semibold))
+                    Text("\(context.suggestedTitle) · \(context.detectedApp)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Button("Not now", action: dismiss)
+                Button("Start") {
+                    start()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(startDisabled)
+            }
+            Text(context.sourceContextHint)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+        }
+        .padding(10)
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+    }
 }
 
 private struct CaptureSourcesView: View {
