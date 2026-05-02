@@ -186,9 +186,17 @@ final class RecorderViewModel: ObservableObject {
         refreshCaptureSources(showStatus: true)
     }
 
+    func checkMeetingContext() {
+        dismissedMeetingContext = nil
+        if !refreshChromeMeetingContext(showStatus: true) {
+            refreshCaptureSources(showStatus: true)
+        }
+    }
+
     private func refreshCaptureSources(showStatus: Bool) {
+        let hasChromeContext = refreshChromeMeetingContext(showStatus: false)
         guard let captureSourceProvider else {
-            if showStatus {
+            if showStatus && !hasChromeContext {
                 statusMessage = "ScreenCaptureKit source listing requires macOS 14 or newer."
             }
             return
@@ -199,8 +207,7 @@ final class RecorderViewModel: ObservableObject {
         Task {
             do {
                 let snapshot = try await captureSourceProvider.snapshot()
-                let context = ChromeMeetingSignalStore.readLatest()
-                    ?? MeetingDetector.detect(from: snapshot)
+                let context = ChromeMeetingSignalStore.readLatest() ?? MeetingDetector.detect(from: snapshot)
                 let previousContext = meetingContext
                 captureSources = snapshot
                 applyMeetingContext(context)
@@ -209,7 +216,7 @@ final class RecorderViewModel: ObservableObject {
                     statusMessage = "Found \(snapshot.displays.count) display(s), \(snapshot.windows.count) window(s), \(snapshot.cameras.count) camera(s), and \(snapshot.microphones.count) mic(s).\(detected)"
                 }
             } catch {
-                if showStatus {
+                if showStatus && !hasChromeContext {
                     statusMessage = "Could not list capture sources: \(error.localizedDescription)"
                 }
             }
@@ -423,6 +430,7 @@ final class RecorderViewModel: ObservableObject {
         if email.isEmpty {
             email = session.user.email ?? ""
         }
+        refreshChromeMeetingContext(showStatus: false)
         refreshCaptureSources()
         startObsidianAutoSync()
         startMeetingWatch()
@@ -445,6 +453,7 @@ final class RecorderViewModel: ObservableObject {
 
     private func startMeetingWatch() {
         guard meetingWatchTask == nil else { return }
+        refreshChromeMeetingContext(showStatus: false)
         meetingWatchTask = Task { [weak self] in
             while !Task.isCancelled {
                 do {
@@ -452,9 +461,21 @@ final class RecorderViewModel: ObservableObject {
                 } catch {
                     return
                 }
+                self?.refreshChromeMeetingContext(showStatus: false)
                 self?.refreshCaptureSources(showStatus: false)
             }
         }
+    }
+
+    @discardableResult
+    private func refreshChromeMeetingContext(showStatus: Bool) -> Bool {
+        guard let context = ChromeMeetingSignalStore.readLatest() else { return false }
+        let previousContext = meetingContext
+        applyMeetingContext(context)
+        if showStatus || context != previousContext {
+            statusMessage = "Detected \(context.detectedApp): \(context.sourceContextHint)"
+        }
+        return true
     }
 
     private func applyMeetingContext(_ context: MeetingContext?) {

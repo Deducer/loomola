@@ -92,6 +92,11 @@ struct MainRecorderView: View {
                             viewModel.startAndAbortAudioBackendHandshake()
                         }
                         .disabled(viewModel.state == .signedOut)
+
+                        Button("Check Meeting") {
+                            viewModel.checkMeetingContext()
+                        }
+                        .disabled(viewModel.state == .signedOut)
                     }
                 }
             }
@@ -151,6 +156,9 @@ struct MainRecorderView: View {
         .onAppear {
             AppActivation.bringRecorderToFront()
             focusDefaultField()
+        }
+        .task {
+            await viewModel.restoreSession()
         }
         .onChange(of: viewModel.state) { _, _ in
             focusDefaultField()
