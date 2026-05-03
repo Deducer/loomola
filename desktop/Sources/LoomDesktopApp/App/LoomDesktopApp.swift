@@ -7,7 +7,7 @@ struct LoomDesktopApp: App {
     var body: some Scene {
         WindowGroup("Loom Desktop") {
             MainRecorderView()
-                .frame(minWidth: 520, minHeight: 420)
+                .frame(minWidth: 760, minHeight: 620)
         }
         .windowStyle(.hiddenTitleBar)
     }
