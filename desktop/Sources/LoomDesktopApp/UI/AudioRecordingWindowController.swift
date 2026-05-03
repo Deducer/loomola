@@ -24,7 +24,7 @@ final class AudioRecordingWindowController {
             }
         )
         let hostingView = NSHostingView(rootView: content)
-        let size = NSSize(width: 330, height: 116)
+        let size = NSSize(width: 74, height: 138)
 
         let panel = panel ?? NSPanel(
             contentRect: NSRect(origin: .zero, size: size),
@@ -64,49 +64,65 @@ private struct AudioRecordingPanelView: View {
     let startedAt: Date
     let stop: () -> Void
     let discard: () -> Void
+    @State private var hovering = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            RecordingPulse()
-                .padding(.top, 4)
+        VStack(spacing: 9) {
+            Image(systemName: "waveform.circle.fill")
+                .font(.system(size: 27, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.white.opacity(0.84))
+                .padding(.top, 10)
 
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text("Recording")
-                        .font(.system(size: 15, weight: .semibold))
-                    Spacer()
-                    TimelineView(.periodic(from: startedAt, by: 1)) { timeline in
-                        Text(elapsedText(now: timeline.date))
-                            .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                    }
-                }
-                .foregroundStyle(.white)
-
-                Text(title)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.68))
-                    .lineLimit(1)
-
-                HStack(spacing: 8) {
-                    Button("Stop", action: stop)
-                    Button("Discard", action: discard)
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.white.opacity(0.72))
-                }
-                .font(.system(size: 12, weight: .semibold))
-                .padding(.top, 4)
+            TimelineView(.periodic(from: startedAt, by: 1)) { timeline in
+                Text(elapsedText(now: timeline.date))
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.54))
             }
+
+            Spacer(minLength: 0)
+
+            if hovering {
+                HStack(spacing: 7) {
+                    Button(action: stop) {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                    .help("Stop and upload audio note")
+
+                    Button(action: discard) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                    .help("Discard audio note")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.white.opacity(0.8))
+                .transition(.opacity.combined(with: .scale(scale: 0.92)))
+            } else {
+                LiveDots()
+                    .transition(.opacity.combined(with: .scale(scale: 0.92)))
+                    .help(title)
+            }
+
+            Spacer(minLength: 0)
         }
-        .padding(14)
-        .frame(width: 330, height: 116)
+        .padding(.horizontal, 9)
+        .frame(width: 74, height: 138)
         .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color(red: 0.11, green: 0.11, blue: 0.12).opacity(0.96))
+            Capsule()
+                .fill(Color(red: 0.12, green: 0.12, blue: 0.13).opacity(0.94))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 14)
+            Capsule()
                 .stroke(Color.white.opacity(0.12), lineWidth: 1)
         )
+        .shadow(color: .black.opacity(0.26), radius: 18, x: 0, y: 10)
+        .onHover { isHovering in
+            withAnimation(.easeOut(duration: 0.14)) {
+                hovering = isHovering
+            }
+        }
     }
 
     private func elapsedText(now: Date) -> String {
@@ -117,15 +133,14 @@ private struct AudioRecordingPanelView: View {
     }
 }
 
-private struct RecordingPulse: View {
+private struct LiveDots: View {
     var body: some View {
-        Circle()
-            .fill(Color(red: 0.18, green: 0.82, blue: 0.42))
-            .frame(width: 14, height: 14)
-            .overlay(
+        HStack(spacing: 5) {
+            ForEach(0..<3) { _ in
                 Circle()
-                    .stroke(Color.white.opacity(0.26), lineWidth: 2)
-                    .frame(width: 24, height: 24)
-            )
+                    .fill(Color(red: 0.48, green: 0.9, blue: 0.08))
+                    .frame(width: 4, height: 4)
+            }
+        }
     }
 }
