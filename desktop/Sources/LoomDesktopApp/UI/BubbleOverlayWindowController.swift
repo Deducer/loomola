@@ -62,7 +62,16 @@ final class BubbleOverlayWindowController {
         )
         let panel = BubblePanel(
             contentRect: NSRect(x: 320, y: 320, width: 180, height: 180),
-            styleMask: [.borderless, .nonactivatingPanel],
+            // .hudWindow tells AppKit "this is a transient HUD-style
+            // overlay, not a regular window." Combined with the
+            // collectionBehavior flags below, it tells most window-
+            // management code (Stage Manager, Mission Control,
+            // window-arrangement HUDs) to leave us alone. Third-party
+            // tools that hook ALL window moves (Chrome's split-view
+            // tab snap, Magnet, Rectangle) may still flicker — those
+            // would require a non-AppKit overlay (CGS private APIs)
+            // to fully bypass.
+            styleMask: [.borderless, .nonactivatingPanel, .hudWindow],
             backing: .buffered,
             defer: false
         )
@@ -70,10 +79,7 @@ final class BubbleOverlayWindowController {
         panel.backgroundColor = .clear
         panel.hasShadow = true
         // .popUpMenu sits above .floating and above Stage Manager's
-        // window-snap UI. Combined with .transient + .stationary +
-        // .ignoresCycle, the panel doesn't appear in Mission Control,
-        // doesn't trigger window-arrangement HUDs, and doesn't show
-        // up in ⌘` cycling.
+        // window-snap UI.
         panel.level = .popUpMenu
         panel.collectionBehavior = [
             .canJoinAllSpaces,
@@ -83,12 +89,9 @@ final class BubbleOverlayWindowController {
             .ignoresCycle,
         ]
         panel.contentView = contentView
-        // We implement custom drag in BubblePanel's mouseDown/Dragged
-        // handlers — bypassing AppKit's standard window drag avoids
-        // triggering Stage Manager / Chrome's split-view snap zones,
-        // which fire on any window dragged near a screen edge.
         panel.isMovableByWindowBackground = false
         panel.isMovable = false
+        panel.isExcludedFromWindowsMenu = true
         // Hide from ScreenCaptureKit so the compositor's screen
         // capture is "naked" of the overlay — bubble is composited
         // independently at the user's BubblePlacement; capturing it
@@ -150,16 +153,20 @@ final class BubbleOverlayWindowController {
     }
 }
 
-/// NSPanel subclass that handles its own drag rather than relying on
-/// AppKit's `isMovableByWindowBackground` machinery — that machinery
-/// integrates with Stage Manager, the macOS window-arrangement HUDs,
-/// and Chrome's split-view snap zones, all of which fire whenever a
-/// window crosses a screen edge. A bubble overlay isn't a window in
-/// the user's mental model, so we sidestep that whole UI by setting
-/// the panel frame programmatically each mouseDragged tick.
+/// NSPanel subclass that owns the bubble's drag + scroll-to-resize.
+/// Drag uses programmatic `setFrameOrigin` rather than AppKit's
+/// `isMovableByWindowBackground` machinery — that machinery hooks
+/// into more window-management UIs. Scroll-wheel scaling is the v1
+/// resize affordance (no Loom-style corner handle yet).
 private final class BubblePanel: NSPanel {
     private var dragMouseDownInScreen: NSPoint?
     private var dragInitialOrigin: NSPoint?
+
+    /// Bounds for scroll-wheel resize. Loom's bubble is roughly in
+    /// this range — small enough to corner-perch, big enough to read
+    /// expressions when centered.
+    private static let minSize: CGFloat = 90
+    private static let maxSize: CGFloat = 360
 
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
@@ -182,6 +189,35 @@ private final class BubblePanel: NSPanel {
     override func mouseUp(with event: NSEvent) {
         dragMouseDownInScreen = nil
         dragInitialOrigin = nil
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        // Scroll wheel resizes the bubble, kept centered. Both axes
+        // contribute so trackpad users get the effect with horizontal
+        // or vertical scroll. Hold ⌥/⇧ to slow the resize down for
+        // fine adjustments.
+        let raw = event.scrollingDeltaY != 0 ? event.scrollingDeltaY : event.scrollingDeltaX
+        if raw == 0 { return }
+        let modifier = event.modifierFlags
+        let speed: CGFloat = modifier.contains(.shift) || modifier.contains(.option) ? 0.4 : 1.4
+        let delta = raw * speed
+        let currentSize = frame.size
+        let newSide = max(
+            Self.minSize,
+            min(Self.maxSize, currentSize.width + delta)
+        )
+        if abs(newSide - currentSize.width) < 0.5 { return }
+
+        // Keep the bubble centered on its current center while
+        // resizing — feels right for a circle.
+        let center = NSPoint(x: frame.midX, y: frame.midY)
+        let newFrame = NSRect(
+            x: center.x - newSide / 2,
+            y: center.y - newSide / 2,
+            width: newSide,
+            height: newSide
+        )
+        setFrame(newFrame, display: true)
     }
 }
 
@@ -208,7 +244,13 @@ private final class CameraBubbleView: NSView {
         wantsLayer = true
         layer?.cornerRadius = frameRect.width / 2
         layer?.masksToBounds = true
-        layer?.backgroundColor = NSColor.systemPurple.withAlphaComponent(0.82).cgColor
+        // Subtle dark placeholder. The camera preview layer is on top
+        // and fills the bubble whenever frames are flowing; this
+        // background is only visible during the brief gap between
+        // session-start and first-frame, or when the camera is
+        // permission-denied. Previous "systemPurple" was jarringly
+        // visible in those frames.
+        layer?.backgroundColor = NSColor.black.withAlphaComponent(0.32).cgColor
         previewLayer.videoGravity = .resizeAspectFill
         layer?.addSublayer(previewLayer)
         if manageInputs {
