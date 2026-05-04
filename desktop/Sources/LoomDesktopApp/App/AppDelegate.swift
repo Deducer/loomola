@@ -3,7 +3,14 @@ import AppKit
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
-    private let bubbleOverlay = BubbleOverlayWindowController()
+    /// Single shared camera session — fed both into the bubble overlay
+    /// preview AND (eventually) into the CompositeRecorder. Owning this
+    /// at AppDelegate guarantees one-session-per-camera even when
+    /// multiple consumers (overlay + compositor) are active.
+    private let cameraCoordinator = CameraCaptureCoordinator()
+    private lazy var bubbleOverlay = BubbleOverlayWindowController(
+        cameraCoordinator: cameraCoordinator
+    )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         configureMenuBar()

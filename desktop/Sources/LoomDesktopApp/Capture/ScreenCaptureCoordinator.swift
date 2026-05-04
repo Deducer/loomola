@@ -15,6 +15,15 @@ final class ScreenCaptureCoordinator: NSObject, SCStreamOutput, SCStreamDelegate
     private var recordingFinishFallbackTask: Task<Void, Never>?
     private let sampleQueue = DispatchQueue(label: "cloud.dissonance.loom.desktop.screen-samples")
 
+    // Compositor sample-buffer plumbing. Per-frame screen pixel buffers
+    // are published behind an NSLock for the future CompositeRecorder to
+    // sample at draw time. nonisolated(unsafe) because the lock guards
+    // cross-thread access — the SCStreamOutput callback is nonisolated
+    // and the future compositor reader will also be off the main actor.
+    private let latestScreenLock = NSLock()
+    nonisolated(unsafe) private var latestScreenPixelBufferStorage: CVPixelBuffer?
+    private(set) var capturedDisplaySizePixels: CGSize = .zero
+
     deinit {
         recordingFinishFallbackTask?.cancel()
         recordingFinishContinuation?.resume(
@@ -158,9 +167,25 @@ final class ScreenCaptureCoordinator: NSObject, SCStreamOutput, SCStreamDelegate
         of type: SCStreamOutputType
     ) {
         guard type == .screen, sampleBuffer.isValid else { return }
+        if let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
+            latestScreenLock.lock()
+            latestScreenPixelBufferStorage = pixelBuffer
+            latestScreenLock.unlock()
+        }
         Task { @MainActor [weak self] in
             self?.frameCount += 1
         }
+    }
+
+    /// Returns the most recently delivered screen frame's pixel buffer,
+    /// or nil when no frame has arrived yet. Sampled by the future
+    /// CompositeRecorder at draw time — cheap (single-pointer read
+    /// behind a mutex). Not nonisolated because the lock is fine to
+    /// take from any thread.
+    nonisolated func latestScreenPixelBuffer() -> CVPixelBuffer? {
+        latestScreenLock.lock()
+        defer { latestScreenLock.unlock() }
+        return latestScreenPixelBufferStorage
     }
 }
 

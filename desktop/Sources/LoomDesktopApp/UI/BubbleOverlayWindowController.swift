@@ -18,15 +18,25 @@ final class BubbleOverlayWindowController {
         didSet { publishCurrentPlacement() }
     }
 
+    /// Shared camera session. When provided, the bubble overlay uses
+    /// the coordinator's session for its preview layer AND the future
+    /// CompositeRecorder samples from the same coordinator's
+    /// `latestPixelBuffer()` — so we never run two camera sessions on
+    /// the same device. When nil, the overlay falls back to a private
+    /// inline session (M1 behavior, kept for backward compatibility).
+    let cameraCoordinator: CameraCaptureCoordinator?
+
     private var panel: NSPanel?
     private var moveObservation: NSObjectProtocol?
 
     init(
         positionController: BubblePositionController = BubblePositionController(),
-        shape: BubbleShape = .circle
+        shape: BubbleShape = .circle,
+        cameraCoordinator: CameraCaptureCoordinator? = nil
     ) {
         self.positionController = positionController
         self.shape = shape
+        self.cameraCoordinator = cameraCoordinator
     }
 
     deinit {
@@ -41,7 +51,18 @@ final class BubbleOverlayWindowController {
             return
         }
 
-        let contentView = CameraBubbleView(frame: NSRect(x: 0, y: 0, width: 180, height: 180))
+        // If a shared coordinator is provided, kick off camera capture
+        // through it (idempotent + handles permission internally). The
+        // bubble's preview layer attaches to the coordinator's session
+        // below.
+        if let cameraCoordinator {
+            cameraCoordinator.requestPermissionAndStart(deviceID: nil)
+        }
+
+        let contentView = CameraBubbleView(
+            frame: NSRect(x: 0, y: 0, width: 180, height: 180),
+            sharedSession: cameraCoordinator?.session
+        )
         let panel = NSPanel(
             contentRect: NSRect(x: 320, y: 320, width: 180, height: 180),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -65,6 +86,11 @@ final class BubbleOverlayWindowController {
     func hide() {
         panel?.orderOut(nil)
         positionController.set(nil)
+        // Stop the shared camera session when the bubble is hidden — no
+        // visible consumer + no compositor running today = camera
+        // shouldn't be drawing power. When the compositor lands and is
+        // active, it'll keep the coordinator started independently.
+        cameraCoordinator?.stop()
     }
 
     var currentFrame: CGRect? {
@@ -116,11 +142,23 @@ final class BubbleOverlayWindowController {
 }
 
 private final class CameraBubbleView: NSView {
-    private let session = AVCaptureSession()
+    /// Either the shared coordinator's session (preferred path) or a
+    /// private inline session (fallback when no coordinator was
+    /// supplied). When using the shared session, `manageInputs` is
+    /// false — the coordinator owns input/output configuration.
+    private let session: AVCaptureSession
+    private let manageInputs: Bool
     private let sessionQueue = DispatchQueue(label: "cloud.dissonance.loom.desktop.camera-preview")
     private let previewLayer: AVCaptureVideoPreviewLayer
 
-    override init(frame frameRect: NSRect) {
+    init(frame frameRect: NSRect, sharedSession: AVCaptureSession?) {
+        if let sharedSession {
+            session = sharedSession
+            manageInputs = false
+        } else {
+            session = AVCaptureSession()
+            manageInputs = true
+        }
         previewLayer = AVCaptureVideoPreviewLayer(session: session)
         super.init(frame: frameRect)
         wantsLayer = true
@@ -129,7 +167,9 @@ private final class CameraBubbleView: NSView {
         layer?.backgroundColor = NSColor.systemPurple.withAlphaComponent(0.82).cgColor
         previewLayer.videoGravity = .resizeAspectFill
         layer?.addSublayer(previewLayer)
-        startCameraPreview()
+        if manageInputs {
+            startCameraPreview()
+        }
     }
 
     required init?(coder: NSCoder) {

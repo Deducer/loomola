@@ -105,6 +105,40 @@ final class CameraCaptureCoordinator: NSObject, @unchecked Sendable {
         isStarted = false
     }
 
+    /// Convenience for UI consumers: handles the camera permission
+    /// prompt + starts the session on grant. Errors are logged rather
+    /// than thrown — UI doesn't have a great recovery path beyond
+    /// "the bubble preview is gray." Idempotent: if already started
+    /// with the requested device, no-op.
+    func requestPermissionAndStart(deviceID: String?) {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            tryStart(deviceID: deviceID)
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
+                guard granted else { return }
+                Task { @MainActor in
+                    self?.tryStart(deviceID: deviceID)
+                }
+            }
+        case .denied, .restricted:
+            // Nothing to do — the UI will render its purple
+            // placeholder background. Users can re-grant in System
+            // Settings → Privacy & Security → Camera.
+            break
+        @unknown default:
+            break
+        }
+    }
+
+    private func tryStart(deviceID: String?) {
+        do {
+            try start(deviceID: deviceID)
+        } catch {
+            print("[camera] start failed: \(error.localizedDescription)")
+        }
+    }
+
     /// Returns the most recently delivered camera frame's pixel buffer,
     /// or nil when no frame has arrived yet. Called by the future
     /// compositor at draw time. Cheap.
