@@ -31,14 +31,6 @@ struct CompletedPart: Codable, Equatable, Sendable {
     }
 }
 
-struct BubblePlacement: Equatable, Sendable {
-    var frameInScreenCoordinates: CGRect
-    var capturedDisplayFrame: CGRect
-
-    var normalizedCenter: CGPoint {
-        CGPoint(
-            x: (frameInScreenCoordinates.midX - capturedDisplayFrame.minX) / capturedDisplayFrame.width,
-            y: (frameInScreenCoordinates.midY - capturedDisplayFrame.minY) / capturedDisplayFrame.height
-        )
-    }
-}
+// Note: the rich BubblePlacement type lives in Models/BubblePlacement.swift
+// and is the source of truth for bubble geometry. The placeholder that
+// previously lived here has been removed in favor of that type.
