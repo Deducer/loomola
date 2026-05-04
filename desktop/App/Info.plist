@@ -4,10 +4,18 @@
 <dict>
 	<key>CFBundleDisplayName</key>
 	<string>Loom Desktop</string>
+	<key>CFBundleExecutable</key>
+	<string>LoomDesktop</string>
 	<key>CFBundleIdentifier</key>
 	<string>cloud.dissonance.loom.desktop</string>
 	<key>CFBundleName</key>
 	<string>Loom Desktop</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -25,5 +33,7 @@
 	<string>Loom Desktop needs microphone access to record narration.</string>
 	<key>NSScreenCaptureUsageDescription</key>
 	<string>Loom Desktop needs screen recording access to capture the selected screen or window.</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
 </dict>
 </plist>

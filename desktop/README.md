@@ -11,7 +11,7 @@ This app is intentionally a thin record-and-upload client. It should not own met
 - ScreenCaptureKit for screen/window/system-audio capture.
 - AVFoundation for camera, mic, and MP4/M4A encoding.
 - supabase-swift for user authentication.
-- macOS Keychain for saved sessions.
+- File-backed dev session storage for raw SwiftPM-built app bundles.
 - URLSession for calls to the existing Next.js API and R2 presigned upload URLs.
 
 ## Current Status
@@ -58,13 +58,21 @@ swift package resolve
 swift run LoomDesktop
 ```
 
-Or use the helper script:
+That direct `swift run` path is useful for quick compile checks, but the
+recommended development path is the helper script:
 
 ```bash
 cp .env.example .env.local
 # Fill in LOOM_SUPABASE_URL and LOOM_SUPABASE_ANON_KEY
 ./scripts/run-dev.sh
 ```
+
+The helper builds `desktop/.build/LoomDesktop.app`, copies the SwiftPM binary into
+that app bundle, includes `App/Info.plist`, ad-hoc signs it with
+`App/LoomDesktop.entitlements`, and launches the bundled executable with your
+environment variables intact. That gives macOS a stable bundle identifier and
+privacy usage strings during development, while still letting Doppler/env config
+flow into the process.
 
 The helper also falls back to the repo-root `.env.local` Supabase names used by the web app (`NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`), so an existing local web-app env file is enough for a development run. API calls default to `https://loom.dissonance.cloud`; set `LOOM_API_BASE_URL=http://localhost:3000` only when you intentionally want the desktop app to talk to a locally running Next.js server.
 
@@ -81,7 +89,9 @@ The runnable dev app can currently test:
 - Browser meeting detection: after installing the native messaging host, Meet/Teams/Zoom web calls can trigger the same consent-first "Meeting ready" prompt.
 - Menu bar `Show Bubble Overlay`: shows a draggable circular camera bubble.
 
-For serious ScreenCaptureKit work, create an Xcode macOS App target from this scaffold so `Info.plist`, entitlements, signing, and privacy prompts behave like a real app bundle.
+For serious ScreenCaptureKit work, prefer `./scripts/run-dev.sh` over `swift run`
+so `Info.plist`, entitlements, signing, and privacy prompts behave more like a
+real app bundle. A proper Xcode archive is still needed for distribution.
 
 ## Chrome Meeting Bridge
 
@@ -102,7 +112,9 @@ host writes the latest meeting signal to
 `~/Library/Application Support/LoomDesktop/chrome-meeting-signal.json`; the
 desktop app reads it during the existing 15-second meeting watch.
 
-SwiftPM can build and run the dev app, but a proper `.app` bundle is still needed for the real recorder because macOS privacy prompts, usage strings, entitlements, signing, and notarization all behave more predictably from an app bundle than from a raw command-line executable.
+`./scripts/run-dev.sh` creates an ad-hoc signed `.app` bundle for development.
+That is not a distributable build, but it is much closer to the real recorder
+shape than a raw command-line executable.
 
 Recommended app settings:
 

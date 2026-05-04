@@ -72,5 +72,9 @@ if [[ -z "${LOOM_SUPABASE_URL:-}" || -z "${LOOM_SUPABASE_ANON_KEY:-}" ]]; then
 fi
 
 echo "Using API base: ${LOOM_API_BASE_URL}"
-echo "Launching Loom Desktop dev build..."
-swift run LoomDesktop
+echo "Building Loom Desktop dev app bundle..."
+./scripts/build-dev-app.sh
+
+APP_PATH="${LOOM_DESKTOP_APP_PATH:-"$PWD/.build/LoomDesktop.app"}"
+echo "Launching Loom Desktop dev app bundle..."
+exec "$APP_PATH/Contents/MacOS/LoomDesktop"
