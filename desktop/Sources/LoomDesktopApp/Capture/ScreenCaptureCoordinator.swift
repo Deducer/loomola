@@ -24,6 +24,12 @@ final class ScreenCaptureCoordinator: NSObject, SCStreamOutput, SCStreamDelegate
     nonisolated(unsafe) private var latestScreenPixelBufferStorage: CVPixelBuffer?
     private(set) var capturedDisplaySizePixels: CGSize = .zero
 
+    /// Compositor hook. When set, every valid screen `CMSampleBuffer`
+    /// is forwarded with its original PTS — the compositor uses this
+    /// as its render-driver pulse and source of truth for timing.
+    /// Called on the SCStreamOutput sample queue (not main).
+    nonisolated(unsafe) var onScreenSampleBuffer: ((CMSampleBuffer) -> Void)?
+
     deinit {
         recordingFinishFallbackTask?.cancel()
         recordingFinishContinuation?.resume(
@@ -172,6 +178,7 @@ final class ScreenCaptureCoordinator: NSObject, SCStreamOutput, SCStreamDelegate
             latestScreenPixelBufferStorage = pixelBuffer
             latestScreenLock.unlock()
         }
+        onScreenSampleBuffer?(sampleBuffer)
         Task { @MainActor [weak self] in
             self?.frameCount += 1
         }

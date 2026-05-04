@@ -76,6 +76,11 @@ final class BubbleOverlayWindowController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentView = contentView
         panel.isMovableByWindowBackground = true
+        // Hide from ScreenCaptureKit so the compositor's screen capture is
+        // "naked" of the overlay — the bubble is composited independently
+        // at the user's BubblePlacement, so capturing the overlay too
+        // would draw it twice in the export.
+        panel.sharingType = .none
         panel.orderFrontRegardless()
         self.panel = panel
 

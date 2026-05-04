@@ -17,6 +17,12 @@ import Foundation
 final class MicrophoneCaptureCoordinator: NSObject, @unchecked Sendable {
     var onLevel: ((Double) -> Void)?
 
+    /// Compositor hook. When set, every mic `CMSampleBuffer` is also
+    /// forwarded here so the CompositeRecorder can mux mic audio into
+    /// the composite MP4 alongside the existing AudioAssetWriter file.
+    /// Called on the audio engine tap thread.
+    var onSampleBuffer: ((CMSampleBuffer) -> Void)?
+
     private var engine: AVAudioEngine?
     private var writer: AudioAssetWriter?
     private var formatDescription: CMAudioFormatDescription?
@@ -89,6 +95,7 @@ final class MicrophoneCaptureCoordinator: NSObject, @unchecked Sendable {
            )
         {
             try? writer?.append(sampleBuffer)
+            onSampleBuffer?(sampleBuffer)
         }
         if let level = peakLevel(of: buffer) {
             onLevel?(level)
