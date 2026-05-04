@@ -874,10 +874,6 @@ function EnhancementControls({
     return null;
   }
 
-  if (hasEnhancedSummary && generationStatus !== "failed") {
-    return null;
-  }
-
   return (
     <div className="mt-12 flex flex-col items-center gap-3">
       <Button
@@ -886,7 +882,11 @@ function EnhancementControls({
         className="rounded-full border-border-strong bg-bg-subtle px-5 text-text hover:bg-bg-elevated"
       >
         <Sparkles className="h-4 w-4 text-emerald-400" />
-        {generationStatus === "failed" ? "Try again" : "Generate notes"}
+        {generationStatus === "failed"
+          ? "Try again"
+          : hasEnhancedSummary
+            ? "Regenerate notes"
+            : "Generate notes"}
       </Button>
       {error && <p className="text-xs text-red-400">{error}</p>}
     </div>
