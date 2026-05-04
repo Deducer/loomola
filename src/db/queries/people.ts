@@ -8,6 +8,7 @@ export type CreatePersonInput = {
   displayName: string;
   email?: string | null;
   notes?: string | null;
+  isSelf?: boolean;
 };
 
 export async function createPerson(
@@ -21,6 +22,7 @@ export async function createPerson(
       displayName: input.displayName,
       email: input.email ?? null,
       notes: input.notes ?? null,
+      isSelf: input.isSelf ?? false,
     })
     .returning();
   return row;

@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, X } from "lucide-react";
+import { toast } from "sonner";
 import {
   groupWordsIntoParagraphs,
   findActiveParagraphIndex,
@@ -8,6 +10,7 @@ import {
 } from "@/lib/viewer/paragraphs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/cn";
 
 export type TranscriptPerson = {
   id: string;
@@ -18,6 +21,11 @@ export type TranscriptSpeakerAssignment = {
   speakerIdx: number;
   personId: string | null;
   displayLabelOverride: string | null;
+  isSuggestion?: boolean;
+  suggestedNewPersonPayload?: {
+    displayName: string | null;
+    email: string | null;
+  } | null;
 };
 
 export function TranscriptPanel({
@@ -111,6 +119,91 @@ export function TranscriptPanel({
     }
   }
 
+  async function acceptSuggestion(
+    assignment: TranscriptSpeakerAssignment,
+    speakerLabel: string
+  ) {
+    if (!mediaId) return;
+    setBusySpeaker(assignment.speakerIdx);
+    try {
+      const body = assignment.personId
+        ? { speakerIdx: assignment.speakerIdx, personId: assignment.personId }
+        : {
+            speakerIdx: assignment.speakerIdx,
+            createPerson: {
+              displayName:
+                assignment.suggestedNewPersonPayload?.displayName ??
+                assignment.displayLabelOverride ??
+                speakerLabel,
+              email: assignment.suggestedNewPersonPayload?.email ?? null,
+            },
+          };
+      const response = await fetch(
+        `/api/recordings/${mediaId}/speaker-suggestions/accept`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        }
+      );
+      if (!response.ok) {
+        if (response.status === 409) {
+          // Already cleared by another tab — silent.
+          onSpeakerAssignmentsChange?.(
+            speakerAssignments.filter(
+              (item) => item.speakerIdx !== assignment.speakerIdx
+            )
+          );
+          return;
+        }
+        throw new Error(`accept_failed_${response.status}`);
+      }
+      const result = (await response.json()) as { personId: string };
+      // Update local: clear the suggestion flag, set the personId.
+      const next = speakerAssignments.map((item) =>
+        item.speakerIdx === assignment.speakerIdx
+          ? {
+              ...item,
+              personId: result.personId,
+              displayLabelOverride: null,
+              isSuggestion: false,
+              suggestedNewPersonPayload: null,
+            }
+          : item
+      );
+      onSpeakerAssignmentsChange?.(next);
+      toast.success(`Labeled Speaker ${assignment.speakerIdx + 1} as ${speakerLabel}`);
+    } catch (err) {
+      console.error("[transcript-panel] accept suggestion failed:", err);
+      toast.error("Couldn't apply the suggestion. Try again.");
+    } finally {
+      setBusySpeaker(null);
+    }
+  }
+
+  async function dismissSuggestion(speakerIdx: number) {
+    if (!mediaId) return;
+    setBusySpeaker(speakerIdx);
+    try {
+      const response = await fetch(
+        `/api/recordings/${mediaId}/speaker-suggestions/dismiss`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ speakerIdx }),
+        }
+      );
+      if (!response.ok) throw new Error(`dismiss_failed_${response.status}`);
+      onSpeakerAssignmentsChange?.(
+        speakerAssignments.filter((item) => item.speakerIdx !== speakerIdx)
+      );
+    } catch (err) {
+      console.error("[transcript-panel] dismiss suggestion failed:", err);
+    } finally {
+      setBusySpeaker(null);
+    }
+  }
+
   return (
     <div>
       <div
@@ -128,24 +221,63 @@ export function TranscriptPanel({
               ? labelForSpeaker(speakerIdx, assignmentBySpeaker, peopleById)
               : null;
 
+          const assignment =
+            speakerIdx !== null ? assignmentBySpeaker.get(speakerIdx) : undefined;
+          const isSuggested = Boolean(assignment?.isSuggestion);
+
           return (
             <div key={i} className="relative">
               {showSpeaker && speakerLabel && (
-                <div className="px-3 pb-1 pt-2">
+                <div className="flex items-center gap-2 px-3 pb-1 pt-2">
                   <button
                     type="button"
                     onClick={() => {
                       setOpenSpeaker(openSpeaker === speakerIdx ? null : speakerIdx);
                       setLabelDraft("");
                     }}
-                    className={
-                      tone === "neutral"
-                        ? "text-xs font-medium text-text-muted hover:text-text"
-                        : "text-xs font-medium text-accent hover:text-text"
-                    }
+                    className={cn(
+                      "text-xs font-medium hover:text-text",
+                      tone === "neutral" ? "text-text-muted" : "text-accent",
+                      isSuggested && "italic"
+                    )}
                   >
                     {speakerLabel}
+                    {isSuggested && (
+                      <span className="ml-1 text-[10px] uppercase tracking-wider text-text-subtle">
+                        suggested
+                      </span>
+                    )}
                   </button>
+                  {isSuggested && assignment && speakerIdx !== null && (
+                    <span className="inline-flex items-center gap-0.5">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void acceptSuggestion(assignment, speakerLabel);
+                        }}
+                        disabled={busySpeaker === speakerIdx}
+                        className="flex h-5 w-5 items-center justify-center rounded-full text-emerald-400 transition-colors hover:bg-emerald-500/15 disabled:opacity-50"
+                        aria-label={`Confirm Speaker ${speakerIdx + 1} as ${speakerLabel}`}
+                        title={`Confirm as ${speakerLabel}`}
+                      >
+                        <Check className="h-3.5 w-3.5" strokeWidth={2.5} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void dismissSuggestion(speakerIdx);
+                        }}
+                        disabled={busySpeaker === speakerIdx}
+                        className="flex h-5 w-5 items-center justify-center rounded-full text-text-subtle transition-colors hover:bg-bg-subtle hover:text-red-400 disabled:opacity-50"
+                        aria-label="Dismiss suggestion"
+                        title="Dismiss"
+                      >
+                        <X className="h-3.5 w-3.5" strokeWidth={2.5} />
+                      </button>
+                    </span>
+                  )}
                   {openSpeaker === speakerIdx && speakerIdx !== null && (
                     <div className="mt-2 w-full rounded-lg border border-border bg-bg-elevated p-3 shadow-lg">
                       <p className="text-xs font-semibold uppercase tracking-wider text-text-subtle">

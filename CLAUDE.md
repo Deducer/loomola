@@ -108,6 +108,22 @@ When adding a new public-facing endpoint that accepts user input, default to `ch
 - **Mobile** — designed desktop-first. No focused mobile pass yet; share page renders OK below 768px but not battle-tested.
 - **Brand `fontFamily` is Google Fonts only** — the share page injects `<link href="https://fonts.googleapis.com/css2?family=<name>:wght@400;500;600;700">` and applies the family page-wide. Foundry/commercial fonts (Söhne, TT Norms, Pangram Pangram "Test ..." trial fonts, etc.) silently 404 and fall back to the system sans. Custom-font upload (R2 + `@font-face`) is the right next step but not built yet.
 
+## Speaker recognition (G-M13 v1 shipped 2026-05-04; Path C deferred)
+
+After `generate_title_summary` completes for an **audio note** that has attendee data, a `suggest_speakers` pg-boss job auto-suggests `speaker_idx → person` mappings using `media_objects.attendees` + the new `people.is_self` flag. ✓ accepts (creates a Person inline if needed); ✗ dismisses with a sticky lock. Pill UX shaped after G-M12 folder suggestion. Pure logic in `src/lib/speaker-suggestion/` (35 unit tests).
+
+**v1 (Path B) limitations to be aware of when extending:**
+- Audio-only. Worker explicitly filters `type === "audio"` because the speaker-labeling UI in `transcript-panel.tsx` only exists for audio notes today. Video gets the same flow when a creator-side video transcript surface is added.
+- Strict-only matching: speaker_count == attendee_count + 1, and self-detection requires > 5% margin in total speech. When numbers don't line up the worker no-ops rather than guessing.
+- Runs once per recording; controlled by the unique index on `(media_object_id, speaker_idx)`.
+
+**v2 (Path C, deferred):** voice biometrics. Per-speaker voice embeddings on `people` rows; cosine match identifies same voice across recordings. Tech-stack choice (Pyannote / SpeechBrain / Resemblyzer / AssemblyAI) deliberately deferred until v1 has lived for ≥ 2 weeks.
+
+- Spec: `docs/superpowers/specs/2026-05-04-speaker-recognition-design.md`
+- v1 plan: `docs/superpowers/plans/2026-05-04-speaker-recognition-v1-attendee-match.md`
+- New schema: `speaker_assignments.is_suggestion`, `suggested_at`, `dismissed_at`, `suggested_new_person_payload`; `people.is_self` (partial unique index).
+- API: `POST /api/recordings/[id]/speaker-suggestions/{accept,dismiss}`.
+
 ## Folder suggestion (G-M12, shipped 2026-05-04)
 
 After `generate_title_summary` finishes for any recording (Loom or Granola) that arrived with no `folder_id`, a `suggest_folder` pg-boss job runs the user's note + their existing folders through Haiku 4.5 and persists `media_objects.suggested_folder_id` only when the model returns `confidence === "high"` AND the suggested folder is in the user's actual folder list (hallucination defense).

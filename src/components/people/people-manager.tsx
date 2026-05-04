@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Pencil, Plus, Trash2, X } from "lucide-react";
+import { Pencil, Plus, Trash2, User, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,12 +15,42 @@ type Draft = {
 
 const EMPTY_DRAFT: Draft = { displayName: "", email: "", notes: "" };
 
-export function PeopleManager({ initialPeople }: { initialPeople: Person[] }) {
+export function PeopleManager({
+  initialPeople,
+  hasSelf = true,
+  authEmail = null,
+}: {
+  initialPeople: Person[];
+  hasSelf?: boolean;
+  authEmail?: string | null;
+}) {
   const [people, setPeople] = useState(initialPeople);
+  const [selfMissing, setSelfMissing] = useState(!hasSelf);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingDraft, setEditingDraft] = useState<Draft>(EMPTY_DRAFT);
   const [busy, setBusy] = useState(false);
+
+  async function createSelfPerson() {
+    setBusy(true);
+    try {
+      const response = await fetch("/api/people", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          displayName: deriveSelfName(authEmail),
+          email: authEmail,
+          isSelf: true,
+        }),
+      });
+      if (!response.ok) throw new Error("create_self_failed");
+      const person = (await response.json()) as Person;
+      setPeople((current) => [person, ...current]);
+      setSelfMissing(false);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function createPerson() {
     const displayName = draft.displayName.trim();
@@ -92,6 +122,25 @@ export function PeopleManager({ initialPeople }: { initialPeople: Person[] }) {
 
   return (
     <div className="space-y-6">
+      {selfMissing && (
+        <div className="flex items-start gap-3 rounded-lg border border-accent/30 bg-accent/5 p-4">
+          <User className="mt-0.5 h-5 w-5 shrink-0 text-accent" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-text">
+              Mark yourself in your contacts
+            </p>
+            <p className="mt-1 text-sm text-text-muted">
+              Adds a "you" record so future recordings can identify your
+              voice as the host and auto-label the other speakers.
+            </p>
+          </div>
+          <Button size="sm" onClick={createSelfPerson} disabled={busy}>
+            <Plus className="h-4 w-4" />
+            Add me
+          </Button>
+        </div>
+      )}
+
       <section className="rounded-lg border border-border bg-bg-subtle p-4">
         <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
           <Input
@@ -227,4 +276,18 @@ export function PeopleManager({ initialPeople }: { initialPeople: Person[] }) {
       )}
     </div>
   );
+}
+
+/** Best-effort default name from the user's auth email. The user can edit
+ *  on creation; this just spares them typing. */
+function deriveSelfName(authEmail: string | null): string {
+  if (!authEmail) return "Me";
+  const local = authEmail.split("@")[0] ?? "";
+  if (!local) return "Me";
+  // Convert "ian.cross" or "iancross" or "ian-cross" to a title-cased name.
+  return local
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ") || "Me";
 }

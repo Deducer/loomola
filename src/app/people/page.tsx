@@ -12,6 +12,7 @@ export default async function PeoplePage() {
   if (!enableGranola()) notFound();
 
   const people = await listPeople(user.id);
+  const hasSelf = people.some((p) => p.isSelf);
 
   return (
     <>
@@ -27,7 +28,11 @@ export default async function PeoplePage() {
             Known meeting participants for speaker labeling.
           </p>
         </div>
-        <PeopleManager initialPeople={people} />
+        <PeopleManager
+          initialPeople={people}
+          hasSelf={hasSelf}
+          authEmail={user.email ?? null}
+        />
       </main>
     </>
   );

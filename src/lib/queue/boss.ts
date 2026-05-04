@@ -55,6 +55,11 @@ import {
   runSuggestFolderJob,
   type SuggestFolderJobData,
 } from "./jobs/suggest-folder";
+import {
+  SUGGEST_SPEAKERS_JOB,
+  runSuggestSpeakersJob,
+  type SuggestSpeakersJobData,
+} from "./jobs/suggest-speakers";
 import { enableGranola } from "@/lib/feature-flags";
 
 let cached: PgBoss | null = null;
@@ -86,6 +91,7 @@ async function init(): Promise<PgBoss> {
   await boss.createQueue(PREVIEW_SPRITE_JOB);
   await boss.createQueue(TRANSCODE_PLAYBACK_JOB);
   await boss.createQueue(SUGGEST_FOLDER_JOB);
+  await boss.createQueue(SUGGEST_SPEAKERS_JOB);
   if (granolaEnabled) {
     await boss.createQueue(MIX_AUDIO_JOB);
     await boss.createQueue(AUDIO_WAVEFORM_JOB);
@@ -127,6 +133,19 @@ async function init(): Promise<PgBoss> {
           err
         );
       }
+      // Best-effort enqueue of speaker suggestion — same shape.
+      try {
+        await boss.send(
+          SUGGEST_SPEAKERS_JOB,
+          { mediaObjectId: job.data.mediaObjectId },
+          SUGGEST_SPEAKERS_JOB_OPTIONS
+        );
+      } catch (err) {
+        console.error(
+          `[pg-boss] failed to enqueue speaker suggestion for ${job.data.mediaObjectId}:`,
+          err
+        );
+      }
     }
   });
   await boss.work<ChaptersJobData>(CHAPTERS_JOB, async (jobs) => {
@@ -152,6 +171,18 @@ async function init(): Promise<PgBoss> {
         // Never throw — a classifier failure shouldn't poison the queue.
         console.error(
           `[suggest-folder] job ${job.data.mediaObjectId} failed:`,
+          err
+        );
+      }
+    }
+  });
+  await boss.work<SuggestSpeakersJobData>(SUGGEST_SPEAKERS_JOB, async (jobs) => {
+    for (const job of jobs) {
+      try {
+        await runSuggestSpeakersJob(job.data);
+      } catch (err) {
+        console.error(
+          `[suggest-speakers] job ${job.data.mediaObjectId} failed:`,
           err
         );
       }
@@ -274,6 +305,13 @@ const SUGGEST_FOLDER_JOB_OPTIONS = {
   retryDelay: 30,
   retryBackoff: false,
   expireInSeconds: 600,
+};
+
+const SUGGEST_SPEAKERS_JOB_OPTIONS = {
+  retryLimit: 1,
+  retryDelay: 30,
+  retryBackoff: false,
+  expireInSeconds: 300,
 };
 
 export async function enqueueMixAudio(data: MixAudioJobData): Promise<void> {

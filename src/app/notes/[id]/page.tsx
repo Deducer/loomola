@@ -78,6 +78,12 @@ export default async function NotesPage({
         speakerIdx: assignment.speakerIdx,
         personId: assignment.personId,
         displayLabelOverride: assignment.displayLabelOverride,
+        isSuggestion: assignment.isSuggestion,
+        suggestedNewPersonPayload:
+          assignment.suggestedNewPersonPayload as
+            | { displayName: string | null; email: string | null }
+            | null
+            | undefined,
       }))}
     />
   );

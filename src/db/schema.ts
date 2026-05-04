@@ -8,6 +8,7 @@ import {
   jsonb,
   integer,
   bigserial,
+  boolean,
   uniqueIndex,
   index,
   customType,
@@ -327,6 +328,11 @@ export const people = pgTable(
     displayName: text("display_name").notNull(),
     email: text("email"),
     notes: text("notes"),
+    // Marks the user's own Person row. Used by speaker-suggestion to pick
+    // the host speaker_idx and (later, in v2 voice biometrics) seeded as
+    // the user's voice fingerprint baseline. At most one is_self=true per
+    // owner, enforced by partial unique index people_owner_self_unique.
+    isSelf: boolean("is_self").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -355,6 +361,16 @@ export const speakerAssignments = pgTable(
       onDelete: "set null",
     }),
     displayLabelOverride: text("display_label_override"),
+    // suggest_speakers job sets is_suggestion = true on auto-suggested
+    // rows; UI ✓ flips it to false (confirmed) and ✗ deletes the row +
+    // stamps dismissed_at on a separate marker row to suppress re-suggest.
+    isSuggestion: boolean("is_suggestion").notNull().default(false),
+    suggestedAt: timestamp("suggested_at", { withTimezone: true }),
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
+    // Pre-fill payload for "create Person from meeting attendee" suggestions.
+    // Shape: { displayName: string | null, email: string | null }. NULL
+    // when person_id is set (no creation needed).
+    suggestedNewPersonPayload: jsonb("suggested_new_person_payload"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

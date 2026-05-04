@@ -141,6 +141,13 @@
       "when": 1777992400000,
       "tag": "0019_folder_suggestion",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1777996000000,
+      "tag": "0020_speaker_suggestion",
+      "breakpoints": true
     }
   ]
 }

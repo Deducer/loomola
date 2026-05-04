@@ -8,6 +8,7 @@ const createPersonSchema = z.object({
   displayName: z.string().trim().min(1).max(160),
   email: z.string().trim().email().nullable().optional(),
   notes: z.string().nullable().optional(),
+  isSelf: z.boolean().optional(),
 });
 
 function granolaNotFound() {

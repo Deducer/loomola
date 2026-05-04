@@ -108,6 +108,16 @@ When adding a new public-facing endpoint that accepts user input, default to `ch
 - **Mobile** — designed desktop-first. No focused mobile pass yet; share page renders OK below 768px but not battle-tested.
 - **Brand `fontFamily` is Google Fonts only** — the share page injects `<link href="https://fonts.googleapis.com/css2?family=<name>:wght@400;500;600;700">` and applies the family page-wide. Foundry/commercial fonts (Söhne, TT Norms, Pangram Pangram "Test ..." trial fonts, etc.) silently 404 and fall back to the system sans. Custom-font upload (R2 + `@font-face`) is the right next step but not built yet.
 
+## Speaker recognition (G-M13 v1 shipped 2026-05-04; Path C deferred)
+
+`suggest_speakers` pg-boss job auto-suggests `speaker_idx → person` for audio notes using `media_objects.attendees` + `people.is_self`. ✓/✗ pill on the transcript card on `/notes/:id`. Pure logic in `src/lib/speaker-suggestion/`. Worker is audio-only for v1 because the labeling UI is audio-only.
+
+**v2 (Path C, deferred):** voice biometrics. Tech-stack (Pyannote / SpeechBrain / Resemblyzer / AssemblyAI) deliberately deferred.
+
+- Spec: `docs/superpowers/specs/2026-05-04-speaker-recognition-design.md`
+- v1 plan: `docs/superpowers/plans/2026-05-04-speaker-recognition-v1-attendee-match.md`
+- API: `POST /api/recordings/[id]/speaker-suggestions/{accept,dismiss}`.
+
 ## Folder suggestion (G-M12, shipped 2026-05-04)
 
 After `generate_title_summary` finishes for any recording (Loom or Granola) that arrived with no `folder_id`, a `suggest_folder` pg-boss job runs the user's note + their existing folders through Haiku 4.5 and persists `media_objects.suggested_folder_id` only when the model returns `confidence === "high"` AND the suggested folder is in the user's actual folder list (hallucination defense).
