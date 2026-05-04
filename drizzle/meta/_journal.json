@@ -120,6 +120,27 @@
       "when": 1777981600000,
       "tag": "0016_note_attachments",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1777985200000,
+      "tag": "0017_rate_limit_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1777988800000,
+      "tag": "0018_webhook_nonces",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1777992400000,
+      "tag": "0019_folder_suggestion",
+      "breakpoints": true
     }
   ]
 }

@@ -6,6 +6,10 @@
 	<string>Loom Desktop</string>
 	<key>CFBundleExecutable</key>
 	<string>LoomDesktop</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>cloud.dissonance.loom.desktop</string>
 	<key>CFBundleName</key>

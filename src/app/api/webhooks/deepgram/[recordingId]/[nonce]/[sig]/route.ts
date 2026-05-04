@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { verifyRecordingSignature } from "@/lib/deepgram/callback-signature";
+import { verifyAndConsumeCallbackToken } from "@/lib/deepgram/callback-signature";
 import { db } from "@/db";
 import { mediaObjects } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -46,11 +46,20 @@ type DeepgramCallbackBody = {
 
 export async function POST(
   request: Request,
-  { params }: { params: Promise<{ recordingId: string; sig: string }> }
+  {
+    params,
+  }: {
+    params: Promise<{ recordingId: string; nonce: string; sig: string }>;
+  }
 ) {
-  const { recordingId, sig } = await params;
+  const { recordingId, nonce, sig } = await params;
 
-  if (!verifyRecordingSignature(recordingId, sig)) {
+  const ok = await verifyAndConsumeCallbackToken({
+    recordingId,
+    nonce,
+    sig,
+  });
+  if (!ok) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
 
@@ -126,7 +135,8 @@ export async function POST(
   }
 
   // Pre-create the ai_outputs row so the 3 UPDATE-based jobs have a target.
-  const llmModel = process.env.LLM_MODEL ?? process.env.LLM_MODEL_ID ?? "claude-sonnet-4-6";
+  const llmModel =
+    process.env.LLM_MODEL ?? process.env.LLM_MODEL_ID ?? "claude-sonnet-4-6";
   await insertBlankAiOutput(recordingId, llmModel);
 
   // Flip to 'processing' and fan out the 3 transcript-dependent AI jobs.

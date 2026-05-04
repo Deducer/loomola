@@ -4,6 +4,7 @@ import type { LanguageModel } from "ai";
 
 let cachedPrimary: LanguageModel | null = null;
 let cachedFallback: LanguageModel | null = null;
+let cachedClassifier: LanguageModel | null = null;
 
 /**
  * Returns a cached LanguageModel configured from env. Defaults to
@@ -33,6 +34,37 @@ export function getLlm(): LanguageModel {
   }
 
   throw new Error(`Unsupported LLM_PROVIDER: ${provider}`);
+}
+
+/**
+ * Returns a cached LanguageModel for classification-style tasks (folder
+ * suggestion, etc.) — defaults to Haiku 4.5 because classification is
+ * latency- and cost-sensitive and Sonnet's reasoning isn't required.
+ * Override with LLM_CLASSIFIER_MODEL in Doppler.
+ */
+export function getClassifierLlm(): LanguageModel {
+  if (cachedClassifier) return cachedClassifier;
+  const provider = process.env.LLM_CLASSIFIER_PROVIDER ?? process.env.LLM_PROVIDER ?? "anthropic";
+  const modelId =
+    process.env.LLM_CLASSIFIER_MODEL ?? "claude-haiku-4-5-20251001";
+
+  if (provider === "anthropic") {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set");
+    const anthropic = createAnthropic({ apiKey });
+    cachedClassifier = anthropic(modelId);
+    return cachedClassifier;
+  }
+
+  if (provider === "openrouter") {
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    if (!apiKey) throw new Error("OPENROUTER_API_KEY is not set");
+    const openrouter = createOpenRouter({ apiKey });
+    cachedClassifier = openrouter(modelId);
+    return cachedClassifier;
+  }
+
+  throw new Error(`Unsupported LLM_CLASSIFIER_PROVIDER: ${provider}`);
 }
 
 /**

@@ -87,6 +87,18 @@ Stage 1 (M1–M11) + Stage 1.5a/b + Stage 1.6 + Stage 1.7 + Stage 1.8 all shippe
 - **Polymorphic media:** `media_objects.type` is `'video' | 'audio'`. Preserve this abstraction — it's what lets future audio products share infra.
 - **Code style:** existing surface uses CSS-var tokens (`--accent`, `--text`, `--bg-subtle`, etc.) — don't introduce ad-hoc hex colors. Components follow `class-variance-authority` for variant systems where useful.
 
+## Security posture
+
+Stage 3 (security hardening pack, shipped 2026-05-04) brought the app to a posture that survives a first-pass external review:
+
+- **HTTP security headers everywhere.** `src/lib/security/headers.ts` is invoked from `src/middleware.ts` for every response — sets CSP (frame-ancestors `'self'`), HSTS (2-year preload), `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`, `X-Frame-Options: SAMEORIGIN`. The `/bubble` route is special-cased with `allowFraming: true` so the Chrome-extension iframe can be embedded into any tab.
+- **Time-bound unlock cookies.** `src/lib/viewer/unlock-cookie.ts` signs `slug:passwordHash:issuedAt` and rejects > 24 h old, future-dated, tampered, or empty.
+- **Deepgram callback nonce.** Single-use nonces persisted in `webhook_nonces`, atomically consumed via `UPDATE ... WHERE consumed_at IS NULL AND expires_at > now()`. Webhook URL shape: `/api/webhooks/deepgram/[recordingId]/[nonce]/[sig]`. Tests cover replay rejection, expiry, tamper, mismatched recording id, never-issued nonce.
+- **Persistent rate limits.** `src/lib/rate-limit/check.ts` (sliding-window over `rate_limit_events`) is shared by comment posts (3/5min/visitor) and password unlock attempts (5/5min/visitor). The pure decision lives in `src/lib/rate-limit/evaluate.ts` for testability. Opportunistic 1%-of-allowed cleanup keeps the table small without a cron.
+- **Desktop Keychain-only.** `desktop/Sources/LoomDesktopApp/Auth/AuthSessionStore.swift` no longer falls back to plaintext-file storage based on bundle path. `.fileForTesting` mode survives only as a unit-test seam.
+
+When adding a new public-facing endpoint that accepts user input, default to `checkRateLimit({ scope: '<endpoint>:visitor', key: hashVisitor(req), max, windowSec })`.
+
 ## Known Issues / Quirks
 
 - **Chrome-only by design** — `getDisplayMedia` system-audio capture is Chrome-only; the worker compositor uses `MediaStreamTrackProcessor` / `MediaStreamTrackGenerator` (Chrome 94+). Safari/Firefox aren't supported. The bubble extension is also Chrome MV3 only.
@@ -95,6 +107,16 @@ Stage 1 (M1–M11) + Stage 1.5a/b + Stage 1.6 + Stage 1.7 + Stage 1.8 all shippe
 - **`ai-schemas.test.ts > rejects negative timestamps`** — fails (pre-existing); minor schema gap, not blocking.
 - **Mobile** — designed desktop-first. No focused mobile pass yet; share page renders OK below 768px but not battle-tested.
 - **Brand `fontFamily` is Google Fonts only** — the share page injects `<link href="https://fonts.googleapis.com/css2?family=<name>:wght@400;500;600;700">` and applies the family page-wide. Foundry/commercial fonts (Söhne, TT Norms, Pangram Pangram "Test ..." trial fonts, etc.) silently 404 and fall back to the system sans. Custom-font upload (R2 + `@font-face`) is the right next step but not built yet.
+
+## Folder suggestion (G-M12, shipped 2026-05-04)
+
+After `generate_title_summary` finishes for any recording (Loom or Granola) that arrived with no `folder_id`, a `suggest_folder` pg-boss job runs the user's note + their existing folders through Haiku 4.5 and persists `media_objects.suggested_folder_id` only when the model returns `confidence === "high"` AND the suggested folder is in the user's actual folder list (hallucination defense).
+
+- **Schema columns:** `suggested_folder_id`, `suggested_folder_at`, `suggested_folder_dismissed_at` on `media_objects` (migration `0019_folder_suggestion.sql`).
+- **UI:** `<FolderSuggestionPill />` renders on dashboard cards (both `recording-card.tsx` and `notes-list.tsx`) when `suggested_folder_id` is set and the user hasn't already filed it. ✓ accepts → `toast.success` via the already-mounted `<Toaster position="bottom-right" />`. ✗ dismisses with a sticky lock that's cleared on AI regen.
+- **Classifier model:** `LLM_CLASSIFIER_MODEL` env var (defaults to `claude-haiku-4-5-20251001`). Optional `LLM_CLASSIFIER_PROVIDER` falls back to `LLM_PROVIDER`.
+- **Cost:** ~$0.005 per note. Job is best-effort; failures never block the title/summary write.
+- **Realtime:** suggestions appear on next page load — no client-side realtime subscription on the dashboard yet. That's a follow-up polish.
 
 ## Granola-alt (in progress)
 

@@ -1,47 +1,28 @@
-const WINDOW_MS = 5 * 60 * 1000;
-const LIMIT = 3;
-const MAX_ENTRIES = 10_000;
+import {
+  checkRateLimit,
+  type RateLimitStore,
+} from "@/lib/rate-limit/check";
+import type { RateLimitResult } from "@/lib/rate-limit/evaluate";
 
-const hits = new Map<string, number[]>();
+const SCOPE = "comments:visitor";
+const MAX = 3;
+const WINDOW_SEC = 5 * 60;
 
 /**
- * In-memory sliding-window rate limit. 3 hits per 5 minutes per visitor hash.
- * LRU-bounded at 10k distinct visitors to keep memory bounded. Process-local
- * — does not survive restarts, which is acceptable at this scale.
+ * Persistent sliding-window rate limit for visitor comments. 3 hits per
+ * 5 minutes per visitor hash, backed by Postgres `rate_limit_events` so it
+ * survives restarts and horizontal scale.
  */
-export function checkAndBump(visitorHash: string): {
-  allowed: boolean;
-  retryAfterSec?: number;
-} {
-  const now = Date.now();
-  const cutoff = now - WINDOW_MS;
-
-  let times = hits.get(visitorHash) ?? [];
-  times = times.filter((t) => t > cutoff);
-
-  if (times.length >= LIMIT) {
-    const oldest = times[0];
-    const retryAfterSec = Math.max(1, Math.ceil((oldest + WINDOW_MS - now) / 1000));
-    hits.set(visitorHash, times);
-    return { allowed: false, retryAfterSec };
-  }
-
-  times.push(now);
-  hits.set(visitorHash, times);
-
-  if (hits.size > MAX_ENTRIES) {
-    const toEvict = Math.ceil(MAX_ENTRIES / 4);
-    let i = 0;
-    for (const key of hits.keys()) {
-      if (i++ >= toEvict) break;
-      hits.delete(key);
-    }
-  }
-
-  return { allowed: true };
-}
-
-/** Test-only reset. Not part of the public module contract. */
-export function __resetForTest(): void {
-  hits.clear();
+export async function checkAndBump(
+  visitorHash: string,
+  opts: { now?: number; store?: RateLimitStore } = {}
+): Promise<RateLimitResult> {
+  return checkRateLimit({
+    scope: SCOPE,
+    key: visitorHash,
+    max: MAX,
+    windowSec: WINDOW_SEC,
+    now: opts.now,
+    store: opts.store,
+  });
 }

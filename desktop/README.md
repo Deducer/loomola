@@ -11,7 +11,7 @@ This app is intentionally a thin record-and-upload client. It should not own met
 - ScreenCaptureKit for screen/window/system-audio capture.
 - AVFoundation for camera, mic, and MP4/M4A encoding.
 - supabase-swift for user authentication.
-- File-backed dev session storage for raw SwiftPM-built app bundles.
+- macOS Keychain for session token storage. The previous "auto-fall-back to a plaintext JSON file when the bundle path looked dev-y" path is gone — Keychain is the only production storage.
 - URLSession for calls to the existing Next.js API and R2 presigned upload URLs.
 
 ## Current Status
@@ -21,7 +21,7 @@ This directory is a development app, not a finished recorder. It includes:
 - `Package.swift` with the initial app target and Supabase dependency.
 - `AppDelegate` menu bar stub.
 - SwiftUI main window with Supabase email/password sign-in.
-- File-backed dev session storage for raw SwiftPM runs, avoiding repeated Keychain prompts from unsigned rebuilds.
+- macOS Keychain session storage. Production-only; there is no plaintext fallback.
 - Backend start/abort handshake against the existing `/api/recordings/*` routes.
 - Granola `type='audio'` start/abort handshake against the same backend when `ENABLE_GRANOLA=true`.
 - Granola manual audio note dev flow: session model, AAC `.m4a` writer, mic capture, system-audio capture, multipart upload, complete, and discard.
@@ -79,7 +79,7 @@ The helper also falls back to the repo-root `.env.local` Supabase names used by 
 The runnable dev app can currently test:
 
 - Email/password sign-in to Supabase.
-- Saved session restore from the local dev session file.
+- Saved session restore from the macOS Keychain.
 - `Test Backend`: creates a desktop-shaped `media_objects` upload row, then aborts it.
 - `Test Audio Backend`: creates a Granola audio upload row with mic + system-audio tracks, then aborts it.
 - `Refresh Sources`: lists displays, windows, cameras, and microphones.
@@ -92,6 +92,21 @@ The runnable dev app can currently test:
 For serious ScreenCaptureKit work, prefer `./scripts/run-dev.sh` over `swift run`
 so `Info.plist`, entitlements, signing, and privacy prompts behave more like a
 real app bundle. A proper Xcode archive is still needed for distribution.
+
+### Keychain prompts on dev builds
+
+The session store is Keychain-only. On a freshly-built unsigned binary, macOS
+will prompt for Keychain access on the very first save and load — Keychain
+ACLs key on the binary's code signature, and an unsigned binary has a fresh
+identity each rebuild. The helper script `scripts/run-dev.sh` ad-hoc signs
+the bundle (`codesign -s - --force --deep …`) before launch, which gives the
+bundle a stable signing identity across rebuilds, so you should only see the
+prompt once per development install.
+
+If you do see Keychain prompts on every launch, confirm `run-dev.sh` is
+ad-hoc signing the bundle. The previous "auto-fall-back to a plaintext file
+in `~/Library/Application Support/LoomDesktop/auth-session.json`" path is
+removed — there is no longer a way to bypass Keychain by accident.
 
 ## Chrome Meeting Bridge
 

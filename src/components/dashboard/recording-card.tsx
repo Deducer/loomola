@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { RecordingCardMenu } from "./recording-card-menu";
+import { FolderSuggestionPill } from "./folder-suggestion-pill";
 import type { RecordingWithBrand } from "@/db/queries/recordings";
 import type { Folder } from "@/db/queries/folders";
 
@@ -56,7 +57,16 @@ export function RecordingCard({
 }) {
   const [copied, setCopied] = useState(false);
   const [previewing, setPreviewing] = useState(false);
+  const [suggestionCleared, setSuggestionCleared] = useState(false);
   const displayTitle = rec.title || rec.aiTitle || "Untitled recording";
+
+  const showSuggestion =
+    !suggestionCleared &&
+    rec.folderId === null &&
+    rec.suggestedFolderId !== null;
+  const suggestedFolder = showSuggestion
+    ? folders.find((f) => f.id === rec.suggestedFolderId)
+    : null;
   const accent = rec.brand?.accentColor;
   const statusVariant: BadgeVariant =
     rec.status === "ready"
@@ -164,6 +174,18 @@ export function RecordingCard({
           <div className="absolute bottom-2 right-2 rounded-md bg-black/65 px-2 py-1 text-xs font-medium text-white">
             {formatDuration(rec.durationSeconds)}
           </div>
+          {suggestedFolder && rec.suggestedFolderId && (
+            <div className="absolute bottom-2 left-2 z-10">
+              <FolderSuggestionPill
+                recordingId={rec.id}
+                recordingTitle={displayTitle}
+                suggestedFolderId={rec.suggestedFolderId}
+                suggestedFolderName={suggestedFolder.name}
+                onAccepted={() => setSuggestionCleared(true)}
+                onDismissed={() => setSuggestionCleared(true)}
+              />
+            </div>
+          )}
           {accent && (
             <div
               className="absolute inset-x-0 bottom-0 h-[3px]"

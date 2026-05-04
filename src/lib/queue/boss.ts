@@ -50,6 +50,11 @@ import {
   runEmbedSummaryJob,
   type EmbedSummaryJobData,
 } from "./jobs/embed-summary";
+import {
+  SUGGEST_FOLDER_JOB,
+  runSuggestFolderJob,
+  type SuggestFolderJobData,
+} from "./jobs/suggest-folder";
 import { enableGranola } from "@/lib/feature-flags";
 
 let cached: PgBoss | null = null;
@@ -80,6 +85,7 @@ async function init(): Promise<PgBoss> {
   await boss.createQueue(THUMBNAIL_JOB);
   await boss.createQueue(PREVIEW_SPRITE_JOB);
   await boss.createQueue(TRANSCODE_PLAYBACK_JOB);
+  await boss.createQueue(SUGGEST_FOLDER_JOB);
   if (granolaEnabled) {
     await boss.createQueue(MIX_AUDIO_JOB);
     await boss.createQueue(AUDIO_WAVEFORM_JOB);
@@ -107,6 +113,20 @@ async function init(): Promise<PgBoss> {
           );
         }
       }
+      // Best-effort enqueue of folder suggestion — never blocks the
+      // user-visible title/summary write.
+      try {
+        await boss.send(
+          SUGGEST_FOLDER_JOB,
+          { mediaObjectId: job.data.mediaObjectId },
+          SUGGEST_FOLDER_JOB_OPTIONS
+        );
+      } catch (err) {
+        console.error(
+          `[pg-boss] failed to enqueue folder suggestion for ${job.data.mediaObjectId}:`,
+          err
+        );
+      }
     }
   });
   await boss.work<ChaptersJobData>(CHAPTERS_JOB, async (jobs) => {
@@ -123,6 +143,19 @@ async function init(): Promise<PgBoss> {
   });
   await boss.work<TranscodePlaybackJobData>(TRANSCODE_PLAYBACK_JOB, async (jobs) => {
     for (const job of jobs) await runTranscodePlaybackJob(job.data);
+  });
+  await boss.work<SuggestFolderJobData>(SUGGEST_FOLDER_JOB, async (jobs) => {
+    for (const job of jobs) {
+      try {
+        await runSuggestFolderJob(job.data);
+      } catch (err) {
+        // Never throw — a classifier failure shouldn't poison the queue.
+        console.error(
+          `[suggest-folder] job ${job.data.mediaObjectId} failed:`,
+          err
+        );
+      }
+    }
   });
   if (granolaEnabled) {
     await boss.work<MixAudioJobData>(MIX_AUDIO_JOB, async (jobs) => {
@@ -234,6 +267,13 @@ const EMBEDDING_JOB_OPTIONS = {
   retryDelay: 60,
   retryBackoff: true,
   expireInSeconds: 3600,
+};
+
+const SUGGEST_FOLDER_JOB_OPTIONS = {
+  retryLimit: 1,
+  retryDelay: 30,
+  retryBackoff: false,
+  expireInSeconds: 600,
 };
 
 export async function enqueueMixAudio(data: MixAudioJobData): Promise<void> {

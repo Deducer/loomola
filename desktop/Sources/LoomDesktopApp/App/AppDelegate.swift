@@ -14,7 +14,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func configureMenuBar() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.title = "Loom"
+        if let button = item.button {
+            if let image = NSImage(named: "loomola-logo-mark") {
+                // Constrain to a sensible menubar height (~18pt). Don't mark
+                // as a template image — the loomola mark is intentionally
+                // colored and should keep its blue/green branding.
+                image.size = NSSize(width: 18, height: 18)
+                image.isTemplate = false
+                button.image = image
+                button.imagePosition = .imageOnly
+            } else {
+                button.title = "Loomola"
+            }
+        }
 
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Show Recorder", action: #selector(showRecorder), keyEquivalent: "r"))

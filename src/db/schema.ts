@@ -7,6 +7,7 @@ import {
   numeric,
   jsonb,
   integer,
+  bigserial,
   uniqueIndex,
   index,
   customType,
@@ -145,6 +146,16 @@ export const mediaObjects = pgTable("media_objects", {
   }),
   obsidianSyncedAt: timestamp("obsidian_synced_at", { withTimezone: true }),
   sourceContextHint: text("source_context_hint"),
+  // AI-suggested folder. Populated by the suggest_folder pg-boss job after
+  // generate_title_summary completes for any note that arrives without a
+  // folderId. Cleared when the user accepts (folderId becomes set) or
+  // dismisses (suggestedFolderDismissedAt is stamped).
+  suggestedFolderId: uuid("suggested_folder_id"),
+  suggestedFolderAt: timestamp("suggested_folder_at", { withTimezone: true }),
+  suggestedFolderDismissedAt: timestamp(
+    "suggested_folder_dismissed_at",
+    { withTimezone: true }
+  ),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -425,3 +436,50 @@ export const summaryEmbeddings = pgTable("summary_embeddings", {
     .defaultNow()
     .notNull(),
 });
+
+// ---------------------------------------------------------------------------
+// rate_limit_events — generic sliding-window rate-limit storage
+// ---------------------------------------------------------------------------
+
+export const rateLimitEvents = pgTable(
+  "rate_limit_events",
+  {
+    id: bigserial("id", { mode: "bigint" }).primaryKey(),
+    scope: text("scope").notNull(),
+    key: text("key").notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    scopeKeyOccurredAtIdx: index(
+      "rate_limit_events_scope_key_occurred_at_idx"
+    ).on(t.scope, t.key, t.occurredAt.desc()),
+  })
+);
+
+// ---------------------------------------------------------------------------
+// webhook_nonces — single-use nonces for outbound→inbound webhook callbacks
+// (currently Deepgram). Verified-and-consumed atomically by the webhook
+// route; replay attacks bounce off the consumed_at check.
+// ---------------------------------------------------------------------------
+
+export const webhookNonces = pgTable(
+  "webhook_nonces",
+  {
+    nonce: text("nonce").primaryKey(),
+    recordingId: uuid("recording_id")
+      .notNull()
+      .references(() => mediaObjects.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    issuedAt: timestamp("issued_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    recordingIdIdx: index("webhook_nonces_recording_id_idx").on(t.recordingId),
+    expiresAtIdx: index("webhook_nonces_expires_at_idx").on(t.expiresAt),
+  })
+);

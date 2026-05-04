@@ -131,6 +131,11 @@ export async function runTitleSummaryJob(
     const { object } = await generateObjectWithFallback({
       schema: enhancedNotesSchema,
       schemaName: "EnhancedNotes",
+      // Sized for 5-6 hour event recordings (the longest practical case),
+      // which can produce ~15-25K output tokens of structured markdown.
+      // Sonnet 4.6 supports up to 64K output tokens natively; 32K is well
+      // above realistic worst case and leaves headroom.
+      maxOutputTokens: 32000,
       messages: buildAudioNotesEnhancementMessages({
         prompt,
         imageAttachments,

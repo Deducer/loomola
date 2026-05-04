@@ -3,6 +3,7 @@ import {
   titleSummarySchema,
   chaptersSchema,
   actionItemsSchema,
+  enhancedNotesSchema,
 } from "@/lib/ai/schemas";
 
 describe("titleSummarySchema", () => {
@@ -21,6 +22,42 @@ describe("titleSummarySchema", () => {
 
   it("rejects a too-short summary", () => {
     const r = titleSummarySchema.safeParse({ title: "Ok title", summary: "short" });
+    expect(r.success).toBe(false);
+  });
+});
+
+describe("enhancedNotesSchema", () => {
+  it("accepts a long summary (hour-long meeting notes)", () => {
+    // 1-hour meeting → 15-25K chars; previously capped at .max(6000).
+    const longBody = "## Section\n\n- bullet ".repeat(2000); // ~40KB
+    const r = enhancedNotesSchema.safeParse({
+      title: "Style consistency review",
+      summary: longBody,
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("accepts an event-length summary (5-6 hour recording)", () => {
+    // 5-6 hour event recordings can produce ~50-80 KB of structured
+    // markdown. The schema must accommodate that without truncation.
+    const eventBody = "## Section\n\n- bullet point line ".repeat(5000); // ~150KB
+    const r = enhancedNotesSchema.safeParse({
+      title: "All-day workshop notes",
+      summary: eventBody,
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("still rejects an empty title", () => {
+    const r = enhancedNotesSchema.safeParse({
+      title: "",
+      summary: "decent length summary content",
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("still rejects a too-short summary", () => {
+    const r = enhancedNotesSchema.safeParse({ title: "ok", summary: "hi" });
     expect(r.success).toBe(false);
   });
 });

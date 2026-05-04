@@ -2,10 +2,11 @@ import Foundation
 import Security
 import Supabase
 
-enum AuthSessionStorageMode {
-    case automatic
-    case file
+enum AuthSessionStorageMode: Equatable {
     case keychain
+    /// Test seam only — production code must never construct the store with
+    /// this mode. Persists tokens as plaintext JSON at the supplied fileURL.
+    case fileForTesting
 }
 
 struct DesktopAuthConfiguration: Sendable {
@@ -40,12 +41,19 @@ final class AuthSessionStore {
     private let fileURL: URL
 
     init(
-        storageMode: AuthSessionStorageMode = .automatic,
+        storageMode: AuthSessionStorageMode = .keychain,
         fileURL: URL = AuthSessionStore.defaultFileURL()
     ) {
         self.storageMode = storageMode
         self.fileURL = fileURL
     }
+
+    /// Test-only accessor for the storage mode. Production code should not
+    /// branch on this — the production answer is always Keychain.
+    var storageModeForTesting: AuthSessionStorageMode { storageMode }
+
+    /// Test-only accessor; mirrors the internal usesFileStore predicate.
+    var usesFileStoreForTesting: Bool { usesFileStore }
 
     func makeClient(configuration: DesktopAuthConfiguration) -> SupabaseClient {
         SupabaseClient(
@@ -133,17 +141,7 @@ final class AuthSessionStore {
     }
 
     private var usesFileStore: Bool {
-        switch storageMode {
-        case .file:
-            return true
-        case .keychain:
-            return false
-        case .automatic:
-            if ProcessInfo.processInfo.environment["LOOM_DESKTOP_AUTH_STORE"] == "keychain" {
-                return false
-            }
-            return Bundle.main.bundlePath.contains("/.build/")
-        }
+        storageMode == .fileForTesting
     }
 
     private func saveToFile(value: String, account: String) throws {

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
 import {
   signUnlockToken,
   verifyUnlockToken,
@@ -19,11 +19,18 @@ describe("signUnlockToken / verifyUnlockToken", () => {
   const slug = "V2LyopYmWS";
   const passwordHash = "$2a$10$abcdefghijklmnopqrstuv";
 
-  it("produces a deterministic hex token", () => {
-    const t1 = signUnlockToken({ slug, passwordHash });
-    const t2 = signUnlockToken({ slug, passwordHash });
-    expect(t1).toBe(t2);
-    expect(t1).toMatch(/^[0-9a-f]{64}$/);
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-04T12:00:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("produces a token shaped like <issuedAt>.<hex sig>", () => {
+    const t = signUnlockToken({ slug, passwordHash });
+    expect(t).toMatch(/^\d+\.[0-9a-f]{64}$/);
   });
 
   it("accepts its own output", () => {
@@ -31,9 +38,17 @@ describe("signUnlockToken / verifyUnlockToken", () => {
     expect(verifyUnlockToken({ slug, passwordHash, token })).toBe(true);
   });
 
-  it("rejects a tampered token", () => {
+  it("rejects a tampered signature", () => {
     const token = signUnlockToken({ slug, passwordHash });
-    const bad = "0".repeat(token.length);
+    const [issuedAt, sig] = token.split(".");
+    const bad = `${issuedAt}.${"0".repeat(sig.length)}`;
+    expect(verifyUnlockToken({ slug, passwordHash, token: bad })).toBe(false);
+  });
+
+  it("rejects a tampered issuedAt", () => {
+    const token = signUnlockToken({ slug, passwordHash });
+    const [, sig] = token.split(".");
+    const bad = `${Date.now() - 1000}.${sig}`;
     expect(verifyUnlockToken({ slug, passwordHash, token: bad })).toBe(false);
   });
 
@@ -54,5 +69,35 @@ describe("signUnlockToken / verifyUnlockToken", () => {
 
   it("returns false on empty token", () => {
     expect(verifyUnlockToken({ slug, passwordHash, token: "" })).toBe(false);
+  });
+
+  it("returns false on a malformed token (no period separator)", () => {
+    expect(
+      verifyUnlockToken({
+        slug,
+        passwordHash,
+        token: "a".repeat(64),
+      })
+    ).toBe(false);
+  });
+
+  it("rejects a token issued > 24h ago", () => {
+    const token = signUnlockToken({ slug, passwordHash });
+    // Advance past 24h boundary
+    vi.advanceTimersByTime(24 * 60 * 60 * 1000 + 1000);
+    expect(verifyUnlockToken({ slug, passwordHash, token })).toBe(false);
+  });
+
+  it("accepts a token issued just under 24h ago", () => {
+    const token = signUnlockToken({ slug, passwordHash });
+    vi.advanceTimersByTime(24 * 60 * 60 * 1000 - 1000);
+    expect(verifyUnlockToken({ slug, passwordHash, token })).toBe(true);
+  });
+
+  it("rejects a token with a future issuedAt (clock skew defense)", () => {
+    const sig = signUnlockToken({ slug, passwordHash });
+    // Roll back system time so the existing token is "from the future"
+    vi.setSystemTime(new Date("2026-05-03T12:00:00Z"));
+    expect(verifyUnlockToken({ slug, passwordHash, token: sig })).toBe(false);
   });
 });

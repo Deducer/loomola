@@ -1,5 +1,5 @@
 import { generateObject } from "ai";
-import type { ModelMessage } from "ai";
+import type { LanguageModel, ModelMessage } from "ai";
 import type { z } from "zod";
 import { getLlm, getFallbackLlm } from "./client";
 
@@ -7,6 +7,14 @@ type GenerateObjectWithFallbackArgs<T> = {
   schema: z.ZodType<T>;
   schemaName?: string;
   schemaDescription?: string;
+  /** Forwarded to AI SDK's `generateObject`. Defaults to provider default
+   * when omitted. Raise for long-form outputs (e.g. enhanced meeting notes
+   * from hour-long meetings, where the default 8K-token cap truncates). */
+  maxOutputTokens?: number;
+  /** Override the primary model. Defaults to `getLlm()` (Sonnet for the
+   * main pipeline). Used by classification-style callers that prefer
+   * Haiku via `getClassifierLlm()`. */
+  model?: LanguageModel;
 } & (
   | { prompt: string; messages?: never }
   | { messages: ModelMessage[]; prompt?: never }
@@ -22,8 +30,10 @@ type GenerateObjectWithFallbackArgs<T> = {
 export async function generateObjectWithFallback<T>(
   args: GenerateObjectWithFallbackArgs<T>
 ): Promise<{ object: T }> {
+  const { model: overrideModel, ...rest } = args;
+  const primary = overrideModel ?? getLlm();
   try {
-    const result = await generateObject({ model: getLlm(), ...args });
+    const result = await generateObject({ model: primary, ...rest });
     return { object: result.object as T };
   } catch (err) {
     const fallback = getFallbackLlm();
@@ -32,7 +42,7 @@ export async function generateObjectWithFallback<T>(
       "[ai-fallback] primary failed non-retryably, falling back to OpenRouter:",
       err instanceof Error ? err.message : String(err)
     );
-    const result = await generateObject({ model: fallback, ...args });
+    const result = await generateObject({ model: fallback, ...rest });
     return { object: result.object as T };
   }
 }

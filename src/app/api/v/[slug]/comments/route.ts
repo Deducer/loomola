@@ -59,7 +59,7 @@ export async function POST(
 
   // Rate-limit keyed on the visitor hash (same derivation as view tracking).
   const visitorHash = hashVisitor(request);
-  const rate = checkAndBump(visitorHash);
+  const rate = await checkAndBump(visitorHash);
   if (!rate.allowed) {
     return NextResponse.json(
       { error: "rate_limited", retryAfterSec: rate.retryAfterSec ?? 60 },

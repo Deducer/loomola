@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AudioWaveform, CalendarClock, FileAudio, Folder, UserRound } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { FolderSuggestionPill } from "./folder-suggestion-pill";
 import type { Folder as DbFolder } from "@/db/queries/folders";
 import type { RecordingWithBrand } from "@/db/queries/recordings";
 
@@ -68,6 +69,20 @@ export function NotesList({
                         <Folder className="h-3.5 w-3.5" />
                         <span className="truncate">{folderName}</span>
                       </span>
+                    )}
+                    {!note.folderId && note.suggestedFolderId && (
+                      (() => {
+                        const suggested = folderNames.get(note.suggestedFolderId);
+                        if (!suggested) return null;
+                        return (
+                          <FolderSuggestionPill
+                            recordingId={note.id}
+                            recordingTitle={title}
+                            suggestedFolderId={note.suggestedFolderId}
+                            suggestedFolderName={suggested}
+                          />
+                        );
+                      })()
                     )}
                   </span>
                 </Link>

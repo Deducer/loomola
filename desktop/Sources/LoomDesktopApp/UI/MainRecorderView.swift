@@ -107,16 +107,18 @@ struct MainRecorderView: View {
                         syncObsidian: { viewModel.syncPendingObsidianNotes() }
                     )
 
-                    DiagnosticsCard(
-                        state: viewModel.state,
-                        activeRecordingKind: viewModel.activeRecordingKind,
-                        testVideoBackend: { viewModel.startAndAbortBackendHandshake() },
-                        testAudioBackend: { viewModel.startAndAbortAudioBackendHandshake() }
-                    )
-
                     CaptureSourcesView(snapshot: viewModel.captureSources)
 
                     StatusCard(message: viewModel.statusMessage)
+
+                    DeveloperToolsDisclosure {
+                        DiagnosticsCard(
+                            state: viewModel.state,
+                            activeRecordingKind: viewModel.activeRecordingKind,
+                            testVideoBackend: { viewModel.startAndAbortBackendHandshake() },
+                            testAudioBackend: { viewModel.startAndAbortAudioBackendHandshake() }
+                        )
+                    }
                 }
                 .padding(24)
             }
@@ -218,18 +220,7 @@ private struct AppHeader: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(.linearGradient(
-                        colors: [.blue.opacity(0.92), .green.opacity(0.86)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ))
-                Image(systemName: "waveform.and.video")
-                    .font(.system(size: 19, weight: .semibold))
-                    .foregroundStyle(.white)
-            }
-            .frame(width: 42, height: 42)
+            BrandLogoMark(size: 42)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("Loomola Desktop")
@@ -412,29 +403,62 @@ private struct CaptureModeSelector: View {
     var body: some View {
         HStack(spacing: 4) {
             ForEach(CaptureMode.allCases, id: \.self) { option in
-                Button {
-                    mode = option
-                } label: {
-                    Label(option.title, systemImage: option.symbol)
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 7)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(mode == option ? option.tint : .secondary)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(mode == option ? Color(nsColor: .controlBackgroundColor) : .clear)
+                CaptureModeSegment(
+                    option: option,
+                    isSelected: mode == option,
+                    onSelect: { mode = option }
                 )
             }
         }
         .padding(4)
-        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.primary.opacity(0.06))
+        )
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.primary.opacity(0.10), lineWidth: 1)
         )
         .disabled(disabled)
+    }
+}
+
+private struct CaptureModeSegment: View {
+    let option: CaptureMode
+    let isSelected: Bool
+    let onSelect: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 6) {
+                Image(systemName: option.symbol)
+                    .font(.system(size: 13, weight: .semibold))
+                Text(option.title)
+                    .font(.subheadline.weight(.semibold))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .foregroundStyle(isSelected ? Color.white : Color.primary.opacity(hovering ? 0.92 : 0.7))
+            .background(
+                ZStack {
+                    if isSelected {
+                        RoundedRectangle(cornerRadius: 7)
+                            .fill(option.tint)
+                            .shadow(color: option.tint.opacity(0.35), radius: 4, x: 0, y: 1)
+                    } else if hovering {
+                        RoundedRectangle(cornerRadius: 7)
+                            .fill(Color.primary.opacity(0.06))
+                    }
+                }
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: isSelected)
+        .animation(.easeOut(duration: 0.12), value: hovering)
     }
 }
 
@@ -610,10 +634,29 @@ private struct CaptureSourcesView: View {
                     .font(.headline)
 
                 Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 8) {
-                    SourceRow(title: "Displays", value: snapshot.displays.prefix(2).map { "\($0.width)x\($0.height)" }.joined(separator: ", "))
-                    SourceRow(title: "Cameras", value: snapshot.cameras.prefix(2).map(\.name).joined(separator: ", "))
-                    SourceRow(title: "Mics", value: snapshot.microphones.prefix(2).map(\.name).joined(separator: ", "))
-                    SourceRow(title: "Windows", value: snapshot.windows.prefix(2).map { "\($0.applicationName): \($0.title)" }.joined(separator: ", "))
+                    SourceRow(
+                        title: "Displays",
+                        value: snapshot.displays
+                            .map { "\($0.width)x\($0.height)" }
+                            .joined(separator: ", ")
+                    )
+                    SourceRow(
+                        title: "Cameras",
+                        value: snapshot.cameras.map(\.name).joined(separator: ", ")
+                    )
+                    SourceRow(
+                        title: "Mics",
+                        value: snapshot.microphones
+                            .map(\.name)
+                            .joined(separator: ", ")
+                    )
+                    SourceRow(
+                        title: "Windows",
+                        value: snapshot.windows
+                            .prefix(8)
+                            .map { "\($0.applicationName): \($0.title)" }
+                            .joined(separator: ", ")
+                    )
                 }
                 .font(.caption)
             }
@@ -626,13 +669,14 @@ private struct SourceRow: View {
     let value: String
 
     var body: some View {
-        GridRow {
+        GridRow(alignment: .top) {
             Text(title)
                 .fontWeight(.semibold)
                 .foregroundStyle(.primary)
             Text(value.isEmpty ? "None found" : value)
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
+                .fixedSize(horizontal: false, vertical: true)
+                .multilineTextAlignment(.leading)
         }
     }
 }
@@ -713,3 +757,59 @@ private struct StatusPill: View {
             .background(.quaternary, in: Capsule())
     }
 }
+
+/// Collapsed-by-default disclosure for developer-only UI (backend test
+/// buttons, etc.) so the main app surface feels production-y while the
+/// affordances stay one click away during active development.
+private struct DeveloperToolsDisclosure<Content: View>: View {
+    @State private var expanded = false
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $expanded) {
+            content()
+                .padding(.top, 6)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "hammer")
+                    .font(.system(size: 11, weight: .semibold))
+                Text("Developer tools")
+                    .font(.caption.weight(.semibold))
+            }
+            .foregroundStyle(.secondary)
+            .padding(.vertical, 4)
+        }
+        .padding(.horizontal, 6)
+    }
+}
+
+/// Renders the loomola brand mark from the bundled PNG when available,
+/// falling back to a generic recording-themed system icon when running
+/// outside the .app bundle (e.g. raw `swift run` for fast iteration).
+private struct BrandLogoMark: View {
+    let size: CGFloat
+
+    var body: some View {
+        if let image = NSImage(named: "loomola-logo-mark") {
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fit)
+                .frame(width: size, height: size)
+        } else {
+            ZStack {
+                RoundedRectangle(cornerRadius: size * 0.24)
+                    .fill(.linearGradient(
+                        colors: [.blue.opacity(0.92), .green.opacity(0.86)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ))
+                Image(systemName: "waveform.and.video")
+                    .font(.system(size: size * 0.45, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+            .frame(width: size, height: size)
+        }
+    }
+}
+

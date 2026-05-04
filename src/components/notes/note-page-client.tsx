@@ -487,18 +487,18 @@ export function NotePageClient({
           </div>
         </div>
 
-        <section className="mt-12">
+        <section className="mt-6">
           <input
             value={title}
             onChange={(event) => setTitle(event.target.value)}
             onBlur={saveTitle}
             placeholder="New note"
             className={cn(
-              "w-full border-none bg-transparent px-0 text-[2.35rem] font-semibold leading-tight tracking-normal text-text outline-none placeholder:font-serif placeholder:italic placeholder:text-text-subtle sm:text-[2.7rem]",
+              "w-full border-none bg-transparent px-0 text-[1.5rem] font-semibold leading-tight tracking-normal text-text outline-none placeholder:font-serif placeholder:italic placeholder:text-text-subtle sm:text-[1.75rem]",
               !title.trim() && "italic text-text-subtle"
             )}
           />
-          <div className="mt-5 flex flex-wrap items-center gap-2 text-sm text-text-muted">
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-text-muted">
             <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border bg-bg-subtle/80 px-3">
               <Calendar className="h-3.5 w-3.5" />
               {meetingDate}
@@ -527,7 +527,7 @@ export function NotePageClient({
           />
         </section>
 
-        <section className="mt-11 flex-1">
+        <section className="mt-6 flex-1">
           {viewMode === "enhanced" && enhancedSummary ? (
             <EnhancedMarkdown markdown={enhancedSummary} />
           ) : (

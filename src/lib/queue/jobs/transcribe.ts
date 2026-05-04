@@ -1,6 +1,6 @@
 import { getDeepgramClient } from "@/lib/deepgram/client";
 import { presignGet } from "@/lib/r2/presigned-get";
-import { signRecordingId } from "@/lib/deepgram/callback-signature";
+import { issueDeepgramCallbackToken } from "@/lib/deepgram/callback-signature";
 import { db } from "@/db";
 import { mediaObjects } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -35,8 +35,10 @@ export async function runTranscribeJob(data: TranscribeJobData): Promise<void> {
   if (!appUrl) throw new Error("NEXT_PUBLIC_APP_URL is not set");
 
   const audioUrl = await presignGet(sourceKey);
-  const sig = signRecordingId(mediaObjectId);
-  const callbackUrl = `${appUrl}/api/webhooks/deepgram/${mediaObjectId}/${sig}`;
+  const { nonce, sig } = await issueDeepgramCallbackToken({
+    recordingId: mediaObjectId,
+  });
+  const callbackUrl = `${appUrl}/api/webhooks/deepgram/${mediaObjectId}/${nonce}/${sig}`;
   const keywords = await getDeepgramKeywords(mediaObjectId);
 
   const dg = getDeepgramClient();

@@ -24,7 +24,10 @@ export const enhancedNotesSchema = z.object({
   summary: z
     .string()
     .min(10)
-    .max(6000)
+    // Sized for the longest practical use case — 5-6 hour event recordings
+    // can produce ~50-80 KB of structured markdown notes. The cap is a
+    // sanity guard against runaway generations, not a content limit.
+    .max(200000)
     .describe("Polished markdown meeting notes generated from raw notes and transcript context."),
 });
 
@@ -75,3 +78,30 @@ export const actionItemsSchema = z.object({
 });
 
 export type ActionItems = z.infer<typeof actionItemsSchema>;
+
+// ---------------------------------------------------------------------------
+// Folder-suggestion classifier — picks one of the user's existing folders
+// for a newly-processed note, or null. The worker gates on confidence ===
+// 'high' and rejects hallucinated folder ids server-side.
+// ---------------------------------------------------------------------------
+
+export const folderSuggestionSchema = z.object({
+  folderId: z
+    .string()
+    .uuid()
+    .nullable()
+    .describe(
+      "The single best-fit folder id from the supplied USER'S FOLDERS list, or null if no folder clearly fits."
+    ),
+  confidence: z
+    .enum(["low", "medium", "high"])
+    .describe(
+      "Use 'high' only when you are sure. False matches are worse than no match."
+    ),
+  reason: z
+    .string()
+    .max(200)
+    .describe("One short sentence explaining the choice (or why none fit)."),
+});
+
+export type FolderSuggestion = z.infer<typeof folderSuggestionSchema>;
