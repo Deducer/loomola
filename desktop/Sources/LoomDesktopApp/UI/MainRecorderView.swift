@@ -54,6 +54,9 @@ struct MainRecorderView: View {
         .onChange(of: viewModel.audioTitle) { _, _ in
             updateAudioRecordingWindow()
         }
+        .onChange(of: viewModel.audioLevel) { _, _ in
+            updateAudioRecordingWindow()
+        }
         .onChange(of: viewModel.includeMicInAudioNote) { _, _ in
             updateMeetingPromptWindow()
         }
@@ -162,8 +165,8 @@ struct MainRecorderView: View {
         audioRecordingWindow.show(
             title: viewModel.audioTitle,
             startedAt: startedAt,
-            stop: { viewModel.stopAudioNoteRecordingAndUpload() },
-            discard: { viewModel.cancelAudioNoteRecording() }
+            audioLevel: viewModel.audioLevel,
+            stop: { viewModel.stopAudioNoteRecordingAndUpload() }
         )
     }
 }

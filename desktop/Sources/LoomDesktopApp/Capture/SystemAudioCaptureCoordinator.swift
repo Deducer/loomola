@@ -5,6 +5,8 @@ import ScreenCaptureKit
 
 @available(macOS 14.0, *)
 final class SystemAudioCaptureCoordinator: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
+    var onLevel: ((Double) -> Void)?
+
     private var stream: SCStream?
     private var writer: AudioAssetWriter?
     private let sampleQueue = DispatchQueue(label: "cloud.dissonance.loom.desktop.system-audio-samples")
@@ -52,6 +54,9 @@ final class SystemAudioCaptureCoordinator: NSObject, SCStreamOutput, SCStreamDel
     ) {
         guard type == .audio else { return }
         try? writer?.append(sampleBuffer)
+        if let level = AudioLevelSampler.linearLevel(from: sampleBuffer) {
+            onLevel?(level)
+        }
     }
 }
 

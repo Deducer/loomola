@@ -15,6 +15,7 @@ final class RecorderViewModel: ObservableObject {
     @Published private(set) var configuration: DesktopAuthConfiguration?
     @Published private(set) var activeRecordingKind: DesktopRecordingKind?
     @Published private(set) var activeAudioRecordingStartedAt: Date?
+    @Published private(set) var audioLevel = 0.0
     @Published private(set) var meetingContext: MeetingContext?
     @Published private(set) var meetingPromptContext: MeetingContext?
     @Published private(set) var nativeMessagingStatus = "Chrome bridge can be installed after the extension is loaded."
@@ -38,6 +39,7 @@ final class RecorderViewModel: ObservableObject {
     private var obsidianSyncInFlight = false
     private var dismissedMeetingContext: MeetingContext?
     private var autoSuggestedAudioTitle: String?
+    private var lastAudioLevelUpdate = Date.distantPast
     private let captureSourceProvider: CaptureSourceProvider?
     private let screenCaptureCoordinator: ScreenCaptureCoordinator?
     private let nativeMessagingInstaller = NativeMessagingHostInstaller()
@@ -65,7 +67,15 @@ final class RecorderViewModel: ObservableObject {
                 }
                 return token
             }
-            audioNoteRecorder = backendClient.map { AudioNoteRecorder(backend: $0) }
+            audioNoteRecorder = backendClient.map {
+                let recorder = AudioNoteRecorder(backend: $0)
+                recorder.onAudioLevel = { [weak self] level in
+                    Task { @MainActor in
+                        self?.recordAudioLevel(level)
+                    }
+                }
+                return recorder
+            }
             obsidianExportWriter = backendClient.map { ObsidianExportWriter(backend: $0) }
             obsidianRealtimeSubscriber = ObsidianRealtimeSubscriber(configuration: config) { [weak self] in
                 guard let token = await self?.currentAccessToken() else {
@@ -126,6 +136,7 @@ final class RecorderViewModel: ObservableObject {
             meetingPromptContext = nil
             dismissedMeetingContext = nil
             autoSuggestedAudioTitle = nil
+            audioLevel = 0
             try? await authService.signOut()
             accessToken = nil
             activeRecordingKind = nil
@@ -409,6 +420,7 @@ final class RecorderViewModel: ObservableObject {
                 )
                 activeRecordingKind = .audio
                 activeAudioRecordingStartedAt = Date()
+                audioLevel = 0
                 state = .recording
                 statusMessage = "Recording audio note with \(session.tracks.count) track(s)."
             } catch {
@@ -430,11 +442,13 @@ final class RecorderViewModel: ObservableObject {
                 let complete = try await audioNoteRecorder.stopAndUpload()
                 activeRecordingKind = nil
                 activeAudioRecordingStartedAt = nil
+                audioLevel = 0
                 state = .complete(slug: complete.slug)
                 statusMessage = "Uploaded audio note. Slug: \(complete.slug)"
             } catch {
                 activeRecordingKind = nil
                 activeAudioRecordingStartedAt = nil
+                audioLevel = 0
                 state = .failed(message: error.localizedDescription)
                 statusMessage = "Audio note upload failed: \(error.localizedDescription)"
             }
@@ -449,6 +463,7 @@ final class RecorderViewModel: ObservableObject {
             await audioNoteRecorder.cancel()
             activeRecordingKind = nil
             activeAudioRecordingStartedAt = nil
+            audioLevel = 0
             state = .signedInIdle
             statusMessage = "Audio note discarded."
         }
@@ -496,6 +511,13 @@ final class RecorderViewModel: ObservableObject {
         startObsidianAutoSync()
         startObsidianRealtimeSync(userId: session.user.id)
         startMeetingWatch()
+    }
+
+    private func recordAudioLevel(_ level: Double) {
+        let now = Date()
+        guard now.timeIntervalSince(lastAudioLevelUpdate) >= 0.08 else { return }
+        lastAudioLevelUpdate = now
+        audioLevel = min(1, max(0, level))
     }
 
     private func startObsidianAutoSync() {

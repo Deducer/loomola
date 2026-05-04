@@ -2,6 +2,8 @@ import Foundation
 
 @MainActor
 final class AudioNoteRecorder {
+    var onAudioLevel: ((Double) -> Void)?
+
     private let backend: BackendClient
     private let microphoneCapture = MicrophoneCaptureCoordinator()
     private let systemAudioCapture: SystemAudioCaptureCoordinator?
@@ -32,6 +34,14 @@ final class AudioNoteRecorder {
         if includeSystemAudio { tracks.insert(.systemAudio) }
         guard !tracks.isEmpty else {
             throw AudioNoteRecorderError.noTracksSelected
+        }
+
+        let audioLevelSink = onAudioLevel
+        microphoneCapture.onLevel = { level in
+            audioLevelSink?(level)
+        }
+        systemAudioCapture?.onLevel = { level in
+            audioLevelSink?(level)
         }
 
         let directory = try Self.createSessionDirectory()

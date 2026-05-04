@@ -4,35 +4,34 @@ import SwiftUI
 @MainActor
 final class AudioRecordingWindowController {
     private var panel: NSPanel?
+    private let state = AudioRecordingWindowState()
 
     func show(
         title: String,
         startedAt: Date,
-        stop: @escaping () -> Void,
-        discard: @escaping () -> Void
+        audioLevel: Double,
+        stop: @escaping () -> Void
     ) {
-        let content = AudioRecordingPanelView(
-            title: title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Audio note" : title,
-            startedAt: startedAt,
-            stop: { [weak self] in
-                self?.hide()
-                stop()
-            },
-            discard: { [weak self] in
-                self?.hide()
-                discard()
-            }
-        )
-        let hostingView = NSHostingView(rootView: content)
+        state.title = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Audio note" : title
+        state.startedAt = startedAt
+        state.audioLevel = audioLevel
+        state.stop = { [weak self] in
+            self?.hide()
+            stop()
+        }
+
         let size = NSSize(width: 74, height: 138)
 
+        let isNewPanel = panel == nil
         let panel = panel ?? NSPanel(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
-        panel.contentView = hostingView
+        if panel.contentView == nil {
+            panel.contentView = NSHostingView(rootView: AudioRecordingPanelView(state: state))
+        }
         panel.setContentSize(size)
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -41,7 +40,9 @@ final class AudioRecordingWindowController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
         panel.hidesOnDeactivate = false
         panel.isMovableByWindowBackground = true
-        panel.setFrameOrigin(Self.topRightOrigin(for: size))
+        if isNewPanel {
+            panel.setFrameOrigin(Self.topRightOrigin(for: size))
+        }
         panel.orderFrontRegardless()
         self.panel = panel
     }
@@ -59,22 +60,25 @@ final class AudioRecordingWindowController {
     }
 }
 
+@MainActor
+private final class AudioRecordingWindowState: ObservableObject {
+    @Published var title = "Audio note"
+    @Published var startedAt = Date()
+    @Published var audioLevel = 0.0
+    var stop: () -> Void = {}
+}
+
 private struct AudioRecordingPanelView: View {
-    let title: String
-    let startedAt: Date
-    let stop: () -> Void
-    let discard: () -> Void
+    @ObservedObject var state: AudioRecordingWindowState
     @State private var hovering = false
 
     var body: some View {
         VStack(spacing: 9) {
-            Image(systemName: "waveform.circle.fill")
-                .font(.system(size: 27, weight: .semibold))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.white.opacity(0.84))
+            AudioLevelBars(level: state.audioLevel)
+                .frame(width: 36, height: 28)
                 .padding(.top, 10)
 
-            TimelineView(.periodic(from: startedAt, by: 1)) { timeline in
+            TimelineView(.periodic(from: state.startedAt, by: 1)) { timeline in
                 Text(elapsedText(now: timeline.date))
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.54))
@@ -83,26 +87,20 @@ private struct AudioRecordingPanelView: View {
             Spacer(minLength: 0)
 
             if hovering {
-                HStack(spacing: 7) {
-                    Button(action: stop) {
-                        Image(systemName: "stop.fill")
-                            .font(.system(size: 10, weight: .bold))
-                    }
-                    .help("Stop and upload audio note")
-
-                    Button(action: discard) {
-                        Image(systemName: "trash")
-                            .font(.system(size: 10, weight: .bold))
-                    }
-                    .help("Discard audio note")
+                Button(action: state.stop) {
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .frame(width: 30, height: 30)
+                        .background(Color.white.opacity(0.12), in: Circle())
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.white.opacity(0.8))
+                .help("Stop and upload audio note")
                 .transition(.opacity.combined(with: .scale(scale: 0.92)))
             } else {
-                LiveDots()
+                LiveDots(level: state.audioLevel)
                     .transition(.opacity.combined(with: .scale(scale: 0.92)))
-                    .help(title)
+                    .help(state.title)
             }
 
             Spacer(minLength: 0)
@@ -126,21 +124,51 @@ private struct AudioRecordingPanelView: View {
     }
 
     private func elapsedText(now: Date) -> String {
-        let elapsed = max(0, Int(now.timeIntervalSince(startedAt)))
+        let elapsed = max(0, Int(now.timeIntervalSince(state.startedAt)))
         let minutes = elapsed / 60
         let seconds = elapsed % 60
         return String(format: "%02d:%02d", minutes, seconds)
     }
 }
 
-private struct LiveDots: View {
+private struct AudioLevelBars: View {
+    let level: Double
+
     var body: some View {
-        HStack(spacing: 5) {
-            ForEach(0..<3) { _ in
-                Circle()
-                    .fill(Color(red: 0.48, green: 0.9, blue: 0.08))
-                    .frame(width: 4, height: 4)
+        TimelineView(.animation(minimumInterval: 0.1)) { timeline in
+            HStack(alignment: .center, spacing: 3) {
+                ForEach(0..<5) { index in
+                    Capsule()
+                        .fill(Color(red: 0.48, green: 0.9, blue: 0.08))
+                        .frame(width: 4, height: barHeight(index: index, date: timeline.date))
+                }
             }
         }
+        .accessibilityLabel("Live audio level")
+    }
+
+    private func barHeight(index: Int, date: Date) -> CGFloat {
+        let pulse = (sin(date.timeIntervalSinceReferenceDate * 8 + Double(index)) + 1) / 2
+        let floor = 5.0
+        let scaled = floor + min(1, max(0, level)) * (8 + pulse * 14)
+        return CGFloat(scaled)
+    }
+}
+
+private struct LiveDots: View {
+    let level: Double
+
+    var body: some View {
+        HStack(spacing: 5) {
+            ForEach(0..<3) { index in
+                Circle()
+                    .fill(Color(red: 0.48, green: 0.9, blue: 0.08))
+                    .frame(width: dotSize(index: index), height: dotSize(index: index))
+            }
+        }
+    }
+
+    private func dotSize(index: Int) -> CGFloat {
+        CGFloat(4 + min(1, max(0, level)) * Double(index + 1) * 1.4)
     }
 }

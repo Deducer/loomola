@@ -565,7 +565,7 @@ A **"+ Quick note"** button in the top-right (matching Granola's image 5) create
 
 This is the heart of the product. The layout intentionally mirrors Granola's app screen for screen.
 
-Granola also treats dragged images as first-class visual context for a note. Dropping an image over the canvas should attach it to the current note, show an image thumbnail as the attachment icon instead of the generic file icon, and make that image available to the later AI enhancement prompt as visual context. This is not required for the first notes canvas milestone, but it must be preserved in the product shape so screenshots, whiteboards, slide captures, and UI bugs can enrich the generated notes later.
+Granola also treats dragged images as first-class visual context for a note. This is now a V1 requirement for the notes canvas: dropping an image over the canvas attaches it to the current note, shows a real image thumbnail instead of the generic file icon, and makes the image available to the later AI enhancement prompt as visual context. This covers screenshots of slides, whiteboards, product screens, UI bugs, diagrams, and anything else that would otherwise be lost in an audio-only transcript.
 
 Visual direction: stay close to Granola's restrained grey/white interface. The notes list and canvas should feel quiet, compact, and editorial: subtle borders, dark neutral surfaces, small icon tiles, high-contrast white text in dark mode, and no decorative gradients.
 
@@ -1096,9 +1096,13 @@ NotebookLM via `.md` export is the interim.
 
 ### 6. Periodic screenshots (Shadow-style) (~1 week)
 
-New pg-boss job `screenshot_capture` fires every N seconds during recording. Desktop app captures via ScreenCaptureKit (image, not video), uploads to R2. Stored as `screenshots` table linked to media_object + timestamp.
+This should be a desktop-owned capture loop, not a server-owned worker. The desktop app can see the user's screen; pg-boss cannot. During an audio note, the desktop app optionally captures a downscaled still image via ScreenCaptureKit every N seconds, uploads it to R2, and records it as visual context linked to the `media_object` and timestamp.
 
-UX: small thumbnail strip at the top of the floating transcript card, click to expand. Future: AI-generated captions per screenshot for searchability.
+Recommended default: off until the user opts in, then 30-60 seconds between captures with a small cap per meeting. Store both thumbnail and original-ish compressed image; keep memory use low by writing each screenshot directly to a temp file/upload stream and releasing it immediately.
+
+AI integration: do not send every screenshot blindly. First pass should include manual attachments always, then a small selected set of auto screenshots or generated captions. Future: caption screenshots with a cheaper vision-capable model for searchability, then pass the captions into the notes prompt and include only the most relevant images when a multimodal model is needed.
+
+UX: small thumbnail strip at the top of the floating transcript card, click to expand.
 
 ### 6b. "Coming up" calendar block on dashboard (depends on calendar integration, ~1 day on top)
 

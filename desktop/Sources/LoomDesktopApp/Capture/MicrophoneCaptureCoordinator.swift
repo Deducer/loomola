@@ -2,6 +2,8 @@ import AVFoundation
 import Foundation
 
 final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, @unchecked Sendable {
+    var onLevel: ((Double) -> Void)?
+
     private var session: AVCaptureSession?
     private var writer: AudioAssetWriter?
     private let sampleQueue = DispatchQueue(label: "cloud.dissonance.loom.desktop.mic-samples")
@@ -45,6 +47,12 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
         from connection: AVCaptureConnection
     ) {
         try? writer?.append(sampleBuffer)
+        let level = connection.audioChannels
+            .map { AudioLevelSampler.linearLevel(fromDecibels: $0.averagePowerLevel) }
+            .max()
+        if let level {
+            onLevel?(level)
+        }
     }
 
     private static func audioDevice(id: String?) throws -> AVCaptureDevice {
