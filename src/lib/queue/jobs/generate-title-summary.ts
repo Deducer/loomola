@@ -16,6 +16,7 @@ export type TitleSummaryJobData = { mediaObjectId: string };
 
 export function buildAudioNotesEnhancementPrompt(params: {
   title: string | null;
+  sourceContextHint?: string | null;
   rawNotes: string;
   transcript: string;
 }): string {
@@ -33,6 +34,7 @@ export function buildAudioNotesEnhancementPrompt(params: {
     "- Match the user's apparent voice: terse notes stay terse; detailed notes can become detailed.",
     "",
     `Current title: ${params.title?.trim() || "Untitled note"}`,
+    `Source context: ${params.sourceContextHint?.trim() || "Unknown"}`,
     "",
     "# Raw notes",
     params.rawNotes.trim() || "(No raw notes were typed.)",
@@ -54,7 +56,11 @@ export async function runTitleSummaryJob(
 
   const text = transcript.fullText.trim();
   const [media] = await db
-    .select({ type: mediaObjects.type, title: mediaObjects.title })
+    .select({
+      type: mediaObjects.type,
+      title: mediaObjects.title,
+      sourceContextHint: mediaObjects.sourceContextHint,
+    })
     .from(mediaObjects)
     .where(eq(mediaObjects.id, data.mediaObjectId))
     .limit(1);
@@ -75,6 +81,7 @@ export async function runTitleSummaryJob(
       schemaName: "EnhancedNotes",
       prompt: buildAudioNotesEnhancementPrompt({
         title: media.title,
+        sourceContextHint: media.sourceContextHint,
         rawNotes: note?.body ?? "",
         transcript: text,
       }),

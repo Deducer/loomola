@@ -5,6 +5,7 @@ struct MainRecorderView: View {
     @StateObject private var viewModel = RecorderViewModel()
     @State private var meetingPromptWindow = MeetingPromptWindowController()
     @State private var audioRecordingWindow = AudioRecordingWindowController()
+    @State private var captureMode: CaptureMode = .audio
     @FocusState private var focusedField: FocusedField?
 
     var body: some View {
@@ -37,6 +38,11 @@ struct MainRecorderView: View {
         }
         .onChange(of: viewModel.meetingPromptContext) { _, _ in
             updateMeetingPromptWindow()
+        }
+        .onChange(of: viewModel.meetingContext) { _, context in
+            if context != nil && viewModel.activeRecordingKind == nil {
+                captureMode = .audio
+            }
         }
         .onChange(of: viewModel.activeRecordingKind) { _, _ in
             updateMeetingPromptWindow()
@@ -73,37 +79,22 @@ struct MainRecorderView: View {
                         )
                     }
 
-                    LazyVGrid(
-                        columns: [
-                            GridItem(.flexible(minimum: 320), spacing: 16),
-                            GridItem(.flexible(minimum: 320), spacing: 16),
-                        ],
-                        alignment: .leading,
-                        spacing: 16
-                    ) {
-                        LoomCard(
-                            state: viewModel.state,
-                            activeRecordingKind: viewModel.activeRecordingKind,
-                            start: { viewModel.startLocalRecording() },
-                            stop: { viewModel.stopLocalRecordingAndUpload() },
-                            test: { viewModel.startAndAbortBackendHandshake() }
-                        )
-
-                        GranolaCard(
-                            title: $viewModel.audioTitle,
-                            includeMic: $viewModel.includeMicInAudioNote,
-                            includeSystemAudio: $viewModel.includeSystemAudioInAudioNote,
-                            state: viewModel.state,
-                            activeRecordingKind: viewModel.activeRecordingKind,
-                            meetingContext: viewModel.meetingContext,
-                            startDisabled: audioStartDisabled,
-                            start: { viewModel.startAudioNoteRecording() },
-                            stop: { viewModel.stopAudioNoteRecordingAndUpload() },
-                            discard: { viewModel.cancelAudioNoteRecording() },
-                            test: { viewModel.startAndAbortAudioBackendHandshake() },
-                            checkMeeting: { viewModel.checkMeetingContext() }
-                        )
-                    }
+                    CaptureCard(
+                        mode: $captureMode,
+                        title: $viewModel.audioTitle,
+                        includeMic: $viewModel.includeMicInAudioNote,
+                        includeSystemAudio: $viewModel.includeSystemAudioInAudioNote,
+                        state: viewModel.state,
+                        activeRecordingKind: viewModel.activeRecordingKind,
+                        meetingContext: viewModel.meetingContext,
+                        audioStartDisabled: audioStartDisabled,
+                        startVideo: { viewModel.startLocalRecording() },
+                        stopVideo: { viewModel.stopLocalRecordingAndUpload() },
+                        startAudio: { viewModel.startAudioNoteRecording() },
+                        stopAudio: { viewModel.stopAudioNoteRecordingAndUpload() },
+                        discardAudio: { viewModel.cancelAudioNoteRecording() },
+                        checkMeeting: { viewModel.checkMeetingContext() }
+                    )
 
                     IntegrationsCard(
                         nativeMessagingStatus: viewModel.nativeMessagingStatus,
@@ -111,6 +102,13 @@ struct MainRecorderView: View {
                         installChromeBridge: { viewModel.installNativeMessagingHost() },
                         showExtensionFolder: { viewModel.openExtensionFolder() },
                         syncObsidian: { viewModel.syncPendingObsidianNotes() }
+                    )
+
+                    DiagnosticsCard(
+                        state: viewModel.state,
+                        activeRecordingKind: viewModel.activeRecordingKind,
+                        testVideoBackend: { viewModel.startAndAbortBackendHandshake() },
+                        testAudioBackend: { viewModel.startAndAbortAudioBackendHandshake() }
                     )
 
                     CaptureSourcesView(snapshot: viewModel.captureSources)
@@ -173,6 +171,41 @@ struct MainRecorderView: View {
 private enum FocusedField: Hashable {
     case email
     case password
+}
+
+private extension DesktopRecordingKind {
+    var label: String {
+        switch self {
+        case .video: return "Video recording"
+        case .audio: return "Audio recording"
+        }
+    }
+}
+
+private enum CaptureMode: String, CaseIterable, Hashable {
+    case video
+    case audio
+
+    var title: String {
+        switch self {
+        case .video: return "Video"
+        case .audio: return "Audio note"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .video: return "video.fill"
+        case .audio: return "waveform.circle.fill"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .video: return .blue
+        case .audio: return .green
+        }
+    }
 }
 
 private struct AppHeader: View {
@@ -248,129 +281,155 @@ private struct SignedOutView: View {
     }
 }
 
-private struct LoomCard: View {
-    let state: RecorderState
-    let activeRecordingKind: DesktopRecordingKind?
-    let start: () -> Void
-    let stop: () -> Void
-    let test: () -> Void
-
-    var body: some View {
-        ProductCard(
-            title: "Loom",
-            subtitle: "Screen recording",
-            symbol: "video.fill",
-            tint: .blue
-        ) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 10) {
-                    Button {
-                        start()
-                    } label: {
-                        Label("Start Video", systemImage: "record.circle")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut("r", modifiers: [.command])
-                    .disabled(state == .signedOut || activeRecordingKind != nil)
-
-                    Button {
-                        stop()
-                    } label: {
-                        Label("Stop", systemImage: "stop.fill")
-                    }
-                    .disabled(activeRecordingKind != .video)
-                }
-
-                Button {
-                    test()
-                } label: {
-                    Label("Test Video Backend", systemImage: "checkmark.seal")
-                }
-                .disabled(state == .signedOut)
-            }
-        }
-    }
-}
-
-private struct GranolaCard: View {
+private struct CaptureCard: View {
+    @Binding var mode: CaptureMode
     @Binding var title: String
     @Binding var includeMic: Bool
     @Binding var includeSystemAudio: Bool
     let state: RecorderState
     let activeRecordingKind: DesktopRecordingKind?
     let meetingContext: MeetingContext?
-    let startDisabled: Bool
-    let start: () -> Void
-    let stop: () -> Void
-    let discard: () -> Void
-    let test: () -> Void
+    let audioStartDisabled: Bool
+    let startVideo: () -> Void
+    let stopVideo: () -> Void
+    let startAudio: () -> Void
+    let stopAudio: () -> Void
+    let discardAudio: () -> Void
     let checkMeeting: () -> Void
 
     var body: some View {
-        ProductCard(
-            title: "Granola",
-            subtitle: meetingContext == nil ? "Audio notes" : "Meeting detected",
-            symbol: "waveform.circle.fill",
-            tint: .green
-        ) {
-            VStack(alignment: .leading, spacing: 12) {
-                TextField("Optional title", text: $title)
-                    .textFieldStyle(.roundedBorder)
-
-                HStack(spacing: 14) {
-                    Toggle("Mic", isOn: $includeMic)
-                    Toggle("System audio", isOn: $includeSystemAudio)
+        Card {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 12) {
+                    Label("Capture", systemImage: "record.circle")
+                        .font(.headline)
+                    Spacer()
+                    if let activeRecordingKind {
+                        Label(activeRecordingKind.label, systemImage: "dot.radiowaves.left.and.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
-                if let meetingContext {
-                    Label(meetingContext.sourceContextHint, systemImage: "person.2.wave.2")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
+                CaptureModeSelector(mode: $mode, disabled: activeRecordingKind != nil)
 
-                HStack(spacing: 10) {
-                    Button {
-                        start()
-                    } label: {
-                        Label("Start Note", systemImage: "waveform")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.green)
-                    .disabled(startDisabled)
-
-                    Button {
-                        stop()
-                    } label: {
-                        Label("Stop", systemImage: "stop.fill")
-                    }
-                    .disabled(activeRecordingKind != .audio)
-
-                    Button {
-                        discard()
-                    } label: {
-                        Label("Discard", systemImage: "trash")
-                    }
-                    .disabled(activeRecordingKind != .audio)
-                }
-
-                HStack(spacing: 10) {
-                    Button {
-                        checkMeeting()
-                    } label: {
-                        Label("Check Meeting", systemImage: "sparkle.magnifyingglass")
-                    }
-                    .disabled(state == .signedOut)
-
-                    Button {
-                        test()
-                    } label: {
-                        Label("Test Audio Backend", systemImage: "checkmark.seal")
-                    }
-                    .disabled(state == .signedOut)
+                if mode == .video {
+                    videoControls
+                } else {
+                    audioControls
                 }
             }
         }
+    }
+
+    private var videoControls: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                if activeRecordingKind == .video {
+                    Button {
+                        stopVideo()
+                    } label: {
+                        Label("Stop Video", systemImage: "stop.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                } else {
+                    Button {
+                        startVideo()
+                    } label: {
+                        Label("Start Video Recording", systemImage: "video.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut("r", modifiers: [.command])
+                    .disabled(state == .signedOut || activeRecordingKind != nil)
+                }
+            }
+        }
+    }
+
+    private var audioControls: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            TextField(meetingContext?.suggestedTitle ?? "Auto-title after processing", text: $title)
+                .textFieldStyle(.roundedBorder)
+
+            HStack(spacing: 14) {
+                Toggle("Mic", isOn: $includeMic)
+                Toggle("System audio", isOn: $includeSystemAudio)
+            }
+
+            if let meetingContext {
+                Label(meetingContext.sourceContextHint, systemImage: "person.2.wave.2")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            HStack(spacing: 10) {
+                if activeRecordingKind == .audio {
+                    Button {
+                        stopAudio()
+                    } label: {
+                        Label("Stop Audio", systemImage: "stop.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Button {
+                        discardAudio()
+                    } label: {
+                        Label("Discard", systemImage: "trash")
+                    }
+                } else {
+                    Button {
+                        startAudio()
+                    } label: {
+                        Label("Start Audio Note", systemImage: "waveform")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.green)
+                    .keyboardShortcut("r", modifiers: [.command])
+                    .disabled(audioStartDisabled)
+                }
+
+                Button {
+                    checkMeeting()
+                } label: {
+                    Label("Check Meeting", systemImage: "sparkle.magnifyingglass")
+                }
+                .disabled(state == .signedOut || activeRecordingKind != nil)
+            }
+        }
+    }
+}
+
+private struct CaptureModeSelector: View {
+    @Binding var mode: CaptureMode
+    let disabled: Bool
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(CaptureMode.allCases, id: \.self) { option in
+                Button {
+                    mode = option
+                } label: {
+                    Label(option.title, systemImage: option.symbol)
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 7)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(mode == option ? option.tint : .secondary)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(mode == option ? Color(nsColor: .controlBackgroundColor) : .clear)
+                )
+            }
+        }
+        .padding(4)
+        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        )
+        .disabled(disabled)
     }
 }
 
@@ -460,6 +519,38 @@ private struct IntegrationBlock: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct DiagnosticsCard: View {
+    let state: RecorderState
+    let activeRecordingKind: DesktopRecordingKind?
+    let testVideoBackend: () -> Void
+    let testAudioBackend: () -> Void
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Diagnostics", systemImage: "wrench.and.screwdriver")
+                    .font(.headline)
+
+                HStack(spacing: 10) {
+                    Button {
+                        testVideoBackend()
+                    } label: {
+                        Label("Test Video Backend", systemImage: "checkmark.seal")
+                    }
+                    .disabled(state == .signedOut || activeRecordingKind != nil)
+
+                    Button {
+                        testAudioBackend()
+                    } label: {
+                        Label("Test Audio Backend", systemImage: "checkmark.seal")
+                    }
+                    .disabled(state == .signedOut || activeRecordingKind != nil)
+                }
+            }
+        }
     }
 }
 
@@ -588,39 +679,6 @@ private struct FooterBar: View {
         .padding(.horizontal, 24)
         .padding(.vertical, 14)
         .background(.bar)
-    }
-}
-
-private struct ProductCard<Content: View>: View {
-    let title: String
-    let subtitle: String
-    let symbol: String
-    let tint: Color
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        Card {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 12) {
-                    Image(systemName: symbol)
-                        .font(.system(size: 24, weight: .semibold))
-                        .foregroundStyle(tint)
-                        .frame(width: 34, height: 34)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(title)
-                            .font(.title3.weight(.semibold))
-                        Text(subtitle)
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer()
-                }
-
-                content
-            }
-        }
     }
 }
 

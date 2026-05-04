@@ -204,7 +204,7 @@ final class RecorderViewModel: ObservableObject {
     func startAndAbortAudioBackendHandshake() {
         guard let backendClient else { return }
         state = .uploading(progress: 0)
-        statusMessage = "Creating a Granola audio recording row..."
+        statusMessage = "Creating an audio recording row..."
         Task {
             do {
                 let response = try await backendClient.startRecording(
@@ -280,9 +280,7 @@ final class RecorderViewModel: ObservableObject {
     }
 
     func startDetectedMeetingAudioNote() {
-        if audioTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-           let suggested = meetingPromptContext?.suggestedTitle ?? meetingContext?.suggestedTitle {
-            audioTitle = suggested
+        if let suggested = meetingPromptContext?.suggestedTitle ?? meetingContext?.suggestedTitle {
             autoSuggestedAudioTitle = suggested
         }
         meetingPromptContext = nil
@@ -389,8 +387,14 @@ final class RecorderViewModel: ObservableObject {
     func startAudioNoteRecording() {
         guard let audioNoteRecorder else { return }
         state = .preparingPermissions
-        statusMessage = "Starting Granola audio note..."
-        let title = audioTitle
+        statusMessage = "Starting audio note..."
+        let trimmedTitle = audioTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title: String?
+        if trimmedTitle.isEmpty || trimmedTitle == autoSuggestedAudioTitle {
+            title = nil
+        } else {
+            title = trimmedTitle
+        }
         let includeMic = includeMicInAudioNote
         let includeSystemAudio = includeSystemAudioInAudioNote
         let meetingContext = meetingContext
@@ -566,14 +570,17 @@ final class RecorderViewModel: ObservableObject {
         guard let context else {
             meetingPromptContext = nil
             dismissedMeetingContext = nil
+            if audioTitle == autoSuggestedAudioTitle {
+                audioTitle = ""
+            }
+            autoSuggestedAudioTitle = nil
             return
         }
 
-        if audioTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-            audioTitle == autoSuggestedAudioTitle {
-            audioTitle = context.suggestedTitle
-            autoSuggestedAudioTitle = context.suggestedTitle
+        if audioTitle == autoSuggestedAudioTitle {
+            audioTitle = ""
         }
+        autoSuggestedAudioTitle = context.suggestedTitle
 
         if dismissedMeetingContext != context && activeRecordingKind == nil {
             meetingPromptContext = context
