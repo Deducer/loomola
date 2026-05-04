@@ -4,11 +4,9 @@
 @MainActor
 final class BubbleOverlayWindowController {
     /// Read-only access to the live bubble placement. The Phase 1
-    /// `CompositeRecorder` will read from this on every screen frame to
-    /// project the bubble into captured pixels at the user's last drag
-    /// position. Today no consumer reads it, but every drag tick already
-    /// publishes a fresh `BubblePlacement`, so the wiring is in place
-    /// once the compositor lands.
+    /// `CompositeRecorder` reads from this on every screen frame to
+    /// project the bubble into captured pixels at the user's last
+    /// drag position.
     let positionController: BubblePositionController
 
     /// Shape used both for the on-screen panel mask and the placement
@@ -19,11 +17,10 @@ final class BubbleOverlayWindowController {
     }
 
     /// Shared camera session. When provided, the bubble overlay uses
-    /// the coordinator's session for its preview layer AND the future
+    /// the coordinator's session for its preview layer AND the
     /// CompositeRecorder samples from the same coordinator's
-    /// `latestPixelBuffer()` — so we never run two camera sessions on
-    /// the same device. When nil, the overlay falls back to a private
-    /// inline session (M1 behavior, kept for backward compatibility).
+    /// `latestPixelBuffer()` — so we never run two camera sessions
+    /// on the same device.
     let cameraCoordinator: CameraCaptureCoordinator?
 
     private var panel: NSPanel?
@@ -46,24 +43,24 @@ final class BubbleOverlayWindowController {
     }
 
     func showPlaceholder() {
+        // Camera coordinator is started on every show, not just the
+        // first — hide() stops the session and the early-return below
+        // for an existing panel must not skip the restart.
+        // requestPermissionAndStart is idempotent (no-op when already
+        // running with the same device).
+        cameraCoordinator?.requestPermissionAndStart(deviceID: nil)
+
         if let panel {
             panel.makeKeyAndOrderFront(nil)
+            publishCurrentPlacement()
             return
-        }
-
-        // If a shared coordinator is provided, kick off camera capture
-        // through it (idempotent + handles permission internally). The
-        // bubble's preview layer attaches to the coordinator's session
-        // below.
-        if let cameraCoordinator {
-            cameraCoordinator.requestPermissionAndStart(deviceID: nil)
         }
 
         let contentView = CameraBubbleView(
             frame: NSRect(x: 0, y: 0, width: 180, height: 180),
             sharedSession: cameraCoordinator?.session
         )
-        let panel = NSPanel(
+        let panel = BubblePanel(
             contentRect: NSRect(x: 320, y: 320, width: 180, height: 180),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
@@ -72,14 +69,30 @@ final class BubbleOverlayWindowController {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
-        panel.level = .floating
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        // .popUpMenu sits above .floating and above Stage Manager's
+        // window-snap UI. Combined with .transient + .stationary +
+        // .ignoresCycle, the panel doesn't appear in Mission Control,
+        // doesn't trigger window-arrangement HUDs, and doesn't show
+        // up in ⌘` cycling.
+        panel.level = .popUpMenu
+        panel.collectionBehavior = [
+            .canJoinAllSpaces,
+            .fullScreenAuxiliary,
+            .transient,
+            .stationary,
+            .ignoresCycle,
+        ]
         panel.contentView = contentView
-        panel.isMovableByWindowBackground = true
-        // Hide from ScreenCaptureKit so the compositor's screen capture is
-        // "naked" of the overlay — the bubble is composited independently
-        // at the user's BubblePlacement, so capturing the overlay too
-        // would draw it twice in the export.
+        // We implement custom drag in BubblePanel's mouseDown/Dragged
+        // handlers — bypassing AppKit's standard window drag avoids
+        // triggering Stage Manager / Chrome's split-view snap zones,
+        // which fire on any window dragged near a screen edge.
+        panel.isMovableByWindowBackground = false
+        panel.isMovable = false
+        // Hide from ScreenCaptureKit so the compositor's screen
+        // capture is "naked" of the overlay — bubble is composited
+        // independently at the user's BubblePlacement; capturing it
+        // too would draw it twice.
         panel.sharingType = .none
         panel.orderFrontRegardless()
         self.panel = panel
@@ -91,10 +104,6 @@ final class BubbleOverlayWindowController {
     func hide() {
         panel?.orderOut(nil)
         positionController.set(nil)
-        // Stop the shared camera session when the bubble is hidden — no
-        // visible consumer + no compositor running today = camera
-        // shouldn't be drawing power. When the compositor lands and is
-        // active, it'll keep the coordinator started independently.
         cameraCoordinator?.stop()
     }
 
@@ -113,11 +122,6 @@ final class BubbleOverlayWindowController {
     // MARK: - Position publishing
 
     private func observeMoves(of panel: NSPanel) {
-        // The drag is owned by AppKit (isMovableByWindowBackground); we
-        // just observe the resulting frame change. didMoveNotification
-        // fires after every drag tick, which is what we want — the
-        // compositor reads the latest value at draw time, no per-pixel
-        // burst overhead from this side.
         if let moveObservation {
             NotificationCenter.default.removeObserver(moveObservation)
         }
@@ -143,6 +147,41 @@ final class BubbleOverlayWindowController {
                 shape: shape
             )
         )
+    }
+}
+
+/// NSPanel subclass that handles its own drag rather than relying on
+/// AppKit's `isMovableByWindowBackground` machinery — that machinery
+/// integrates with Stage Manager, the macOS window-arrangement HUDs,
+/// and Chrome's split-view snap zones, all of which fire whenever a
+/// window crosses a screen edge. A bubble overlay isn't a window in
+/// the user's mental model, so we sidestep that whole UI by setting
+/// the panel frame programmatically each mouseDragged tick.
+private final class BubblePanel: NSPanel {
+    private var dragMouseDownInScreen: NSPoint?
+    private var dragInitialOrigin: NSPoint?
+
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+
+    override func mouseDown(with event: NSEvent) {
+        dragMouseDownInScreen = NSEvent.mouseLocation
+        dragInitialOrigin = frame.origin
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let downAt = dragMouseDownInScreen,
+              let initialOrigin = dragInitialOrigin
+        else { return }
+        let now = NSEvent.mouseLocation
+        let dx = now.x - downAt.x
+        let dy = now.y - downAt.y
+        setFrameOrigin(NSPoint(x: initialOrigin.x + dx, y: initialOrigin.y + dy))
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        dragMouseDownInScreen = nil
+        dragInitialOrigin = nil
     }
 }
 
