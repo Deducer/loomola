@@ -11,7 +11,7 @@ final class RecorderViewModel: ObservableObject {
     @Published var audioTitle = ""
     @Published var includeMicInAudioNote = true
     @Published var includeSystemAudioInAudioNote = true
-    @Published private(set) var statusMessage = "Set LOOM_SUPABASE_URL and LOOM_SUPABASE_ANON_KEY, then sign in."
+    @Published private(set) var statusMessage = "Sign in to capture with Loomola."
     @Published private(set) var configuration: DesktopAuthConfiguration?
     @Published private(set) var activeRecordingKind: DesktopRecordingKind?
     @Published private(set) var activeAudioRecordingStartedAt: Date?

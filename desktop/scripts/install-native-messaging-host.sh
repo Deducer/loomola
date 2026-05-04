@@ -3,14 +3,22 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_ROOT="$(cd "$ROOT_DIR/.." && pwd)"
-EXTENSION_DIR="$REPO_ROOT/extension"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -d "$SCRIPT_DIR/extension" ]]; then
+  EXTENSION_DIR="$SCRIPT_DIR/extension"
+else
+  EXTENSION_DIR="$REPO_ROOT/extension"
+fi
 HOST_NAME="com.dissonance.loom_desktop"
 EXTENSION_IDS=("$@")
+STABLE_EXTENSION_ID="fhlommkndlhemikefocglkknpofgkfkj"
+BUNDLED_HOST_PATH="$SCRIPT_DIR/LoomDesktopNativeHost"
 
 if [[ ${#EXTENSION_IDS[@]} -eq 0 ]]; then
-  while IFS= read -r id; do
-    [[ -n "$id" ]] && EXTENSION_IDS+=("$id")
-  done < <(node - "$EXTENSION_DIR" <<'NODE'
+  if command -v node >/dev/null 2>&1; then
+    while IFS= read -r id; do
+      [[ -n "$id" ]] && EXTENSION_IDS+=("$id")
+    done < <(node - "$EXTENSION_DIR" <<'NODE'
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
@@ -73,7 +81,12 @@ for (const root of browserRoots) {
 
 for (const id of ids) console.log(id);
 NODE
-  )
+    )
+  fi
+fi
+
+if [[ ${#EXTENSION_IDS[@]} -eq 0 ]]; then
+  EXTENSION_IDS=("$STABLE_EXTENSION_ID")
 fi
 
 if [[ ${#EXTENSION_IDS[@]} -eq 0 ]]; then
@@ -90,9 +103,20 @@ for id in "${EXTENSION_IDS[@]}"; do
   fi
 done
 
-swift build --package-path "$ROOT_DIR" --product LoomDesktopNativeHost
+if [[ -x "$BUNDLED_HOST_PATH" ]]; then
+  HOST_PATH="$BUNDLED_HOST_PATH"
+else
+  swift build --package-path "$ROOT_DIR" --product LoomDesktopNativeHost
+  HOST_PATH="$ROOT_DIR/.build/debug/LoomDesktopNativeHost"
+fi
 
-HOST_PATH="$ROOT_DIR/.build/debug/LoomDesktopNativeHost"
+json_escape() {
+  printf '%s' "$1" \
+    | sed \
+      -e 's/\\/\\\\/g' \
+      -e 's/"/\\"/g'
+}
+
 HOST_DIRS=(
   "$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts"
   "$HOME/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts"
@@ -113,20 +137,26 @@ for host_dir in "${HOST_DIRS[@]}"; do
 
   mkdir -p "$host_dir"
   host_manifest_path="$host_dir/$HOST_NAME.json"
-  node - "$host_manifest_path" "$HOST_NAME" "$HOST_PATH" "${EXTENSION_IDS[@]}" <<'NODE'
-const fs = require("fs");
+  allowed_origins=""
+  for id in "${EXTENSION_IDS[@]}"; do
+    origin="chrome-extension://$id/"
+    if [[ -n "$allowed_origins" ]]; then
+      allowed_origins="$allowed_origins,"
+    fi
+    allowed_origins="$allowed_origins
+    \"$(json_escape "$origin")\""
+  done
 
-const [manifestPath, name, hostPath, ...ids] = process.argv.slice(2);
-const manifest = {
-  name,
-  description: "Loom Desktop Granola meeting signal bridge",
-  path: hostPath,
-  type: "stdio",
-  allowed_origins: ids.map((id) => `chrome-extension://${id}/`),
-};
-
-fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-NODE
+  cat > "$host_manifest_path" <<JSON
+{
+  "name": "$(json_escape "$HOST_NAME")",
+  "description": "Loomola meeting signal bridge",
+  "path": "$(json_escape "$HOST_PATH")",
+  "type": "stdio",
+  "allowed_origins": [$allowed_origins
+  ]
+}
+JSON
   echo "Installed native messaging host: $host_manifest_path"
   INSTALLED=$((INSTALLED + 1))
 done

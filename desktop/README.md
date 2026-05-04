@@ -1,6 +1,6 @@
-# Loom Desktop
+# Loomola Desktop
 
-Native macOS companion app scaffold for Loom Clone.
+Native macOS companion app scaffold for Loomola.
 
 This app is intentionally a thin record-and-upload client. It should not own metadata, comments, AI features, branding, editing, or analytics. Those stay in the existing web app at `https://loom.dissonance.cloud`.
 
@@ -49,6 +49,45 @@ The build plan lives at:
 docs/superpowers/plans/2026-04-27-macos-desktop-app.md
 ```
 
+## Install Locally Like a Mac App
+
+For your own Mac, use the local installer:
+
+```bash
+cd /Users/iancross/Development/03Utilities/Loom_Clone/desktop
+./scripts/install-local-app.sh
+```
+
+That script builds a release app bundle, ad-hoc signs it, copies it to
+`/Applications/Loomola.app`, removes any local quarantine flag, and launches it.
+An app bundle is the normal `.app` folder macOS treats as an application.
+Ad-hoc signing means "signed by this Mac for local use"; it is enough for local
+Finder/Dock launching and stable Keychain access, but it is not the same as
+Apple notarization for public downloads.
+
+The installed app does not read terminal-only environment variables. During the
+build, the installer reads public client config from `desktop/.env.local` or the
+repo-root `.env.local`, then bundles it into
+`Contents/Resources/DesktopConfig.plist`. These values are the Supabase URL,
+Supabase anon key, and API base URL. They are public client settings, not
+service-role secrets. The installed app defaults to `https://loom.dissonance.cloud`
+for API calls; use `LOOM_DESKTOP_API_BASE_URL` only when you intentionally want a
+locally installed app to talk to another backend.
+
+To make a local drag-to-Applications disk image:
+
+```bash
+cd /Users/iancross/Development/03Utilities/Loom_Clone/desktop
+./scripts/package-local-dmg.sh
+```
+
+The DMG is written to `output/desktop/`. DMG means "disk image," the standard
+Mac installer window where you drag the app into Applications.
+
+This is still a local build. A public downloadable DMG needs an Apple Developer
+ID certificate and notarization; notarization is Apple's automated malware check
+that lets other Macs open the app without scary warnings.
+
 ## Build and Run for Development
 
 From this directory:
@@ -67,12 +106,12 @@ cp .env.example .env.local
 ./scripts/run-dev.sh
 ```
 
-The helper builds `desktop/.build/LoomDesktop.app`, copies the SwiftPM binary into
-that app bundle, includes `App/Info.plist`, ad-hoc signs it with
-`App/LoomDesktop.entitlements`, and launches the bundled executable with your
-environment variables intact. That gives macOS a stable bundle identifier and
-privacy usage strings during development, while still letting Doppler/env config
-flow into the process.
+The helper builds `desktop/.build/LoomDesktop.app`, copies the SwiftPM binaries
+into that app bundle, includes `App/Info.plist`, bundles the Chrome bridge
+resources, ad-hoc signs it with `App/LoomDesktop.entitlements`, and launches the
+bundled executable with your environment variables intact. That gives macOS a
+stable bundle identifier and privacy usage strings during development, while
+still letting Doppler/env config flow into the process.
 
 The helper also falls back to the repo-root `.env.local` Supabase names used by the web app (`NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`), so an existing local web-app env file is enough for a development run. API calls default to `https://loom.dissonance.cloud`; set `LOOM_API_BASE_URL=http://localhost:3000` only when you intentionally want the desktop app to talk to a locally running Next.js server.
 
@@ -133,7 +172,7 @@ shape than a raw command-line executable.
 
 Recommended app settings:
 
-- Product name: `Loom Desktop`
+- Product name: `Loomola`
 - Bundle identifier: `cloud.dissonance.loom.desktop`
 - Minimum macOS: `14.0`
 - Team: Ian's Apple Developer team once available

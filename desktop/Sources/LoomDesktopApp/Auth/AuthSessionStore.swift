@@ -14,24 +14,49 @@ struct DesktopAuthConfiguration: Sendable {
     let supabaseURL: URL
     let anonKey: String
 
-    static func fromEnvironment(_ environment: [String: String] = ProcessInfo.processInfo.environment) throws -> DesktopAuthConfiguration {
-        let apiBase = environment["LOOM_API_BASE_URL"] ?? "https://loom.dissonance.cloud"
+    static func fromEnvironment(
+        _ environment: [String: String] = ProcessInfo.processInfo.environment,
+        bundle: Bundle = .main
+    ) throws -> DesktopAuthConfiguration {
+        let bundled = bundledConfiguration(from: bundle)
+        let apiBase = environment["LOOM_API_BASE_URL"]
+            ?? environment["NEXT_PUBLIC_APP_URL"]
+            ?? bundled["LOOM_API_BASE_URL"]
+            ?? "https://loom.dissonance.cloud"
         guard let apiBaseURL = URL(string: apiBase) else {
             throw DesktopConfigurationError.invalidURL("LOOM_API_BASE_URL")
         }
         let supabaseRaw = environment["LOOM_SUPABASE_URL"]
             ?? environment["NEXT_PUBLIC_SUPABASE_URL"]
             ?? environment["SUPABASE_URL"]
+            ?? bundled["LOOM_SUPABASE_URL"]
         guard let supabaseRaw, let supabaseURL = URL(string: supabaseRaw) else {
             throw DesktopConfigurationError.missingOrInvalid("LOOM_SUPABASE_URL")
         }
         let anonKey = environment["LOOM_SUPABASE_ANON_KEY"]
             ?? environment["NEXT_PUBLIC_SUPABASE_ANON_KEY"]
             ?? environment["SUPABASE_ANON_KEY"]
+            ?? bundled["LOOM_SUPABASE_ANON_KEY"]
         guard let anonKey, !anonKey.isEmpty else {
             throw DesktopConfigurationError.missingOrInvalid("LOOM_SUPABASE_ANON_KEY")
         }
         return DesktopAuthConfiguration(apiBaseURL: apiBaseURL, supabaseURL: supabaseURL, anonKey: anonKey)
+    }
+
+    private static func bundledConfiguration(from bundle: Bundle) -> [String: String] {
+        guard let url = bundle.url(forResource: "DesktopConfig", withExtension: "plist"),
+              let data = try? Data(contentsOf: url),
+              let plist = try? PropertyListSerialization.propertyList(
+                from: data,
+                options: [],
+                format: nil
+              ),
+              let dictionary = plist as? [String: String]
+        else {
+            return [:]
+        }
+
+        return dictionary
     }
 }
 
@@ -197,7 +222,7 @@ enum DesktopConfigurationError: LocalizedError, Equatable {
         case .invalidURL(let key):
             return "\(key) is not a valid URL."
         case .missingOrInvalid(let key):
-            return "\(key) is missing or invalid."
+            return "\(key) is missing or invalid. Rebuild the app with desktop/scripts/install-local-app.sh or set it in the environment."
         }
     }
 }

@@ -8,19 +8,60 @@ CONTENTS_DIR="$APP_PATH/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
 EXECUTABLE_PATH="$MACOS_DIR/LoomDesktop"
+NATIVE_HOST_PATH="$RESOURCES_DIR/LoomDesktopNativeHost"
+BUILD_CONFIGURATION="${LOOM_DESKTOP_BUILD_CONFIGURATION:-debug}"
 
 LOGO_SOURCE="$REPO_ROOT/public/branding/loomola-logo-mark.png"
+EXTENSION_SOURCE="$REPO_ROOT/extension"
 
-swift build --package-path "$ROOT_DIR" --product LoomDesktop
-BIN_DIR="$(swift build --package-path "$ROOT_DIR" --show-bin-path)"
+swift build --package-path "$ROOT_DIR" --configuration "$BUILD_CONFIGURATION" --product LoomDesktop
+swift build --package-path "$ROOT_DIR" --configuration "$BUILD_CONFIGURATION" --product LoomDesktopNativeHost
+BIN_DIR="$(swift build --package-path "$ROOT_DIR" --configuration "$BUILD_CONFIGURATION" --show-bin-path)"
 
 rm -rf "$APP_PATH"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 
 cp "$BIN_DIR/LoomDesktop" "$EXECUTABLE_PATH"
+cp "$BIN_DIR/LoomDesktopNativeHost" "$NATIVE_HOST_PATH"
+cp "$ROOT_DIR/scripts/install-native-messaging-host.sh" "$RESOURCES_DIR/install-native-messaging-host.sh"
 cp "$ROOT_DIR/App/Info.plist" "$CONTENTS_DIR/Info.plist"
 printf 'APPL????' > "$CONTENTS_DIR/PkgInfo"
 chmod +x "$EXECUTABLE_PATH"
+chmod +x "$NATIVE_HOST_PATH" "$RESOURCES_DIR/install-native-messaging-host.sh"
+
+if [[ -d "$EXTENSION_SOURCE" ]]; then
+  ditto "$EXTENSION_SOURCE" "$RESOURCES_DIR/extension"
+fi
+
+xml_escape() {
+  printf '%s' "$1" \
+    | sed \
+      -e 's/&/\&amp;/g' \
+      -e 's/</\&lt;/g' \
+      -e 's/>/\&gt;/g' \
+      -e 's/"/\&quot;/g' \
+      -e "s/'/\&apos;/g"
+}
+
+LOOM_API_BASE_URL="${LOOM_API_BASE_URL:-https://loom.dissonance.cloud}"
+if [[ -n "${LOOM_SUPABASE_URL:-}" && -n "${LOOM_SUPABASE_ANON_KEY:-}" ]]; then
+  cat > "$RESOURCES_DIR/DesktopConfig.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>LOOM_API_BASE_URL</key>
+	<string>$(xml_escape "$LOOM_API_BASE_URL")</string>
+	<key>LOOM_SUPABASE_URL</key>
+	<string>$(xml_escape "$LOOM_SUPABASE_URL")</string>
+	<key>LOOM_SUPABASE_ANON_KEY</key>
+	<string>$(xml_escape "$LOOM_SUPABASE_ANON_KEY")</string>
+</dict>
+</plist>
+PLIST
+else
+  echo "warning: LOOM_SUPABASE_URL or LOOM_SUPABASE_ANON_KEY missing; bundled app will require environment config"
+fi
 
 # Bundle the brand logo as a PNG resource for in-app use (menubar item,
 # header card). Loaded via NSImage(named: "loomola-logo-mark").
@@ -65,4 +106,4 @@ if command -v codesign >/dev/null 2>&1; then
     "$APP_PATH" >/dev/null
 fi
 
-echo "Built dev app bundle: $APP_PATH"
+echo "Built app bundle: $APP_PATH"

@@ -4,8 +4,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 if ps -ax -o comm= | grep -q '/LoomDesktop$'; then
-  echo "Loom Desktop is already running."
-  echo "Quit the existing Loom Desktop window before starting a new dev build."
+  echo "Loomola is already running."
+  echo "Quit the existing Loomola window before starting a new dev build."
   exit 1
 fi
 
@@ -72,9 +72,9 @@ if [[ -z "${LOOM_SUPABASE_URL:-}" || -z "${LOOM_SUPABASE_ANON_KEY:-}" ]]; then
 fi
 
 echo "Using API base: ${LOOM_API_BASE_URL}"
-echo "Building Loom Desktop dev app bundle..."
+echo "Building Loomola dev app bundle..."
 ./scripts/build-dev-app.sh
 
 APP_PATH="${LOOM_DESKTOP_APP_PATH:-"$PWD/.build/LoomDesktop.app"}"
-echo "Launching Loom Desktop dev app bundle..."
+echo "Launching Loomola dev app bundle..."
 exec "$APP_PATH/Contents/MacOS/LoomDesktop"

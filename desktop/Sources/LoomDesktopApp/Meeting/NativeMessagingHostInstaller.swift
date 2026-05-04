@@ -39,9 +39,13 @@ actor NativeMessagingHostInstaller {
 
     static func installerScriptURL(
         fileManager: FileManager = .default,
-        currentDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        currentDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+        bundle: Bundle = .main
     ) throws -> URL {
         guard let repoRoot = repoRootURL(fileManager: fileManager, currentDirectory: currentDirectory) else {
+            if let bundledScript = bundle.url(forResource: "install-native-messaging-host", withExtension: "sh") {
+                return bundledScript
+            }
             throw NativeMessagingHostInstallerError.missingInstaller
         }
         return repoRoot
@@ -52,10 +56,16 @@ actor NativeMessagingHostInstaller {
 
     static func extensionDirectoryURL(
         fileManager: FileManager = .default,
-        currentDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        currentDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+        bundle: Bundle = .main
     ) -> URL? {
-        repoRootURL(fileManager: fileManager, currentDirectory: currentDirectory)?
+        if let repoExtension = repoRootURL(fileManager: fileManager, currentDirectory: currentDirectory)?
             .appending(path: "extension", directoryHint: .isDirectory)
+        {
+            return repoExtension
+        }
+
+        return bundle.url(forResource: "extension", withExtension: nil)
     }
 
     static func repoRootURL(

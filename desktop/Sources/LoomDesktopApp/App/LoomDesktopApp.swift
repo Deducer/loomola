@@ -5,7 +5,7 @@ struct LoomDesktopApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        WindowGroup("Loom Desktop") {
+        WindowGroup("Loomola") {
             MainRecorderView()
                 .frame(minWidth: 760, minHeight: 620)
         }
