@@ -1,92 +1,296 @@
 import AVFoundation
+import CoreAudio
+import CoreMedia
 import Foundation
 
-final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, @unchecked Sendable {
+/// Captures microphone audio with macOS's built-in voice-processing chain
+/// (acoustic echo cancellation + noise suppression). When the user is on
+/// speakers (no headphones), AEC subtracts the system playback signal
+/// from the mic input so participants' voices don't echo back into the
+/// recording. Without this, mic + system-audio mixing produces a
+/// "doubled" participant voice on every recording made over speakers.
+///
+/// The previous implementation used `AVCaptureSession`, which doesn't
+/// expose the voice-processing audio unit. AVAudioEngine + an inputNode
+/// with `setVoiceProcessingEnabled(true)` is the standard macOS path for
+/// recording-quality VoIP-style audio.
+final class MicrophoneCaptureCoordinator: NSObject, @unchecked Sendable {
     var onLevel: ((Double) -> Void)?
 
-    private var session: AVCaptureSession?
+    private var engine: AVAudioEngine?
     private var writer: AudioAssetWriter?
-    private let sampleQueue = DispatchQueue(label: "cloud.dissonance.loom.desktop.mic-samples")
+    private var formatDescription: CMAudioFormatDescription?
 
     func start(deviceID: String?, outputURL: URL) throws {
-        let captureSession = AVCaptureSession()
-        let device = try Self.audioDevice(id: deviceID)
-        let input = try AVCaptureDeviceInput(device: device)
-        guard captureSession.canAddInput(input) else {
-            throw MicrophoneCaptureCoordinatorError.cannotAddInput
-        }
-        captureSession.addInput(input)
+        let engine = AVAudioEngine()
+        let inputNode = engine.inputNode
 
-        let output = AVCaptureAudioDataOutput()
-        output.setSampleBufferDelegate(self, queue: sampleQueue)
-        guard captureSession.canAddOutput(output) else {
-            throw MicrophoneCaptureCoordinatorError.cannotAddOutput
+        // Apply the chosen mic at the audio-unit level. Must happen
+        // before voice processing is enabled so the AEC reference signal
+        // pairs with the right input device.
+        if let deviceID {
+            try setInputDevice(on: inputNode, uniqueID: deviceID)
         }
-        captureSession.addOutput(output)
 
-        let writer = try AudioAssetWriter(outputURL: outputURL)
+        // Acoustic echo cancellation. macOS auto-uses the current system
+        // output as the reference signal — the audio coming out of the
+        // user's speakers gets subtracted from the mic input.
+        do {
+            try inputNode.setVoiceProcessingEnabled(true)
+        } catch {
+            // If voice processing can't be enabled (rare — usually means
+            // the input device doesn't support it), fall back to plain
+            // capture and log. The recording is still produced; just
+            // without AEC, so the user may hear participant echo.
+            print("[mic] voice processing unavailable, falling back: \(error)")
+        }
+
+        let format = inputNode.outputFormat(forBus: 0)
+        let writer = try AudioAssetWriter(
+            outputURL: outputURL,
+            sampleRate: format.sampleRate,
+            channelCount: Int(format.channelCount)
+        )
         try writer.start()
         self.writer = writer
-        session = captureSession
-        captureSession.startRunning()
+
+        // Cache the CMAudioFormatDescription so we don't rebuild it
+        // every tap callback.
+        self.formatDescription = try makeFormatDescription(from: format)
+
+        inputNode.installTap(onBus: 0, bufferSize: 4096, format: format) {
+            [weak self] buffer, time in
+            guard let self else { return }
+            self.handleTap(buffer: buffer, time: time)
+        }
+
+        try engine.start()
+        self.engine = engine
     }
 
     func stop() async throws -> URL {
-        guard let session, let writer else {
+        guard let engine, let writer else {
             throw MicrophoneCaptureCoordinatorError.notRecording
         }
-        session.stopRunning()
-        self.session = nil
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        self.engine = nil
         self.writer = nil
+        self.formatDescription = nil
         return try await writer.finish()
     }
 
-    func captureOutput(
-        _ output: AVCaptureOutput,
-        didOutput sampleBuffer: CMSampleBuffer,
-        from connection: AVCaptureConnection
-    ) {
-        try? writer?.append(sampleBuffer)
-        let level = connection.audioChannels
-            .map { AudioLevelSampler.linearLevel(fromDecibels: $0.averagePowerLevel) }
-            .max()
-        if let level {
+    private func handleTap(buffer: AVAudioPCMBuffer, time: AVAudioTime) {
+        if let formatDescription,
+           let sampleBuffer = makeSampleBuffer(
+               from: buffer,
+               at: time,
+               formatDescription: formatDescription
+           )
+        {
+            try? writer?.append(sampleBuffer)
+        }
+        if let level = peakLevel(of: buffer) {
             onLevel?(level)
         }
     }
+}
 
-    private static func audioDevice(id: String?) throws -> AVCaptureDevice {
-        let devices = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.microphone, .external],
-            mediaType: .audio,
-            position: .unspecified
-        ).devices
-        if let id, let device = devices.first(where: { $0.uniqueID == id }) {
-            return device
-        }
-        if let device = AVCaptureDevice.default(for: .audio) {
-            return device
-        }
-        throw MicrophoneCaptureCoordinatorError.noMicrophone
+// MARK: - Device selection
+
+private func setInputDevice(
+    on inputNode: AVAudioInputNode,
+    uniqueID: String
+) throws {
+    guard let audioUnit = inputNode.audioUnit else {
+        throw MicrophoneCaptureCoordinatorError.audioUnitUnavailable
+    }
+    var deviceID = try resolveAudioDeviceID(uniqueID: uniqueID)
+    let status = AudioUnitSetProperty(
+        audioUnit,
+        kAudioOutputUnitProperty_CurrentDevice,
+        kAudioUnitScope_Global,
+        0,
+        &deviceID,
+        UInt32(MemoryLayout<AudioDeviceID>.size)
+    )
+    if status != noErr {
+        throw MicrophoneCaptureCoordinatorError.cannotSetDevice(status)
     }
 }
 
+private func resolveAudioDeviceID(uniqueID: String) throws -> AudioDeviceID {
+    var propertyAddress = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDevices,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain
+    )
+    var dataSize: UInt32 = 0
+    var status = AudioObjectGetPropertyDataSize(
+        AudioObjectID(kAudioObjectSystemObject),
+        &propertyAddress,
+        0,
+        nil,
+        &dataSize
+    )
+    if status != noErr {
+        throw MicrophoneCaptureCoordinatorError.cannotEnumerateDevices(status)
+    }
+    let deviceCount = Int(dataSize) / MemoryLayout<AudioDeviceID>.size
+    var deviceIDs = [AudioDeviceID](repeating: 0, count: deviceCount)
+    status = AudioObjectGetPropertyData(
+        AudioObjectID(kAudioObjectSystemObject),
+        &propertyAddress,
+        0,
+        nil,
+        &dataSize,
+        &deviceIDs
+    )
+    if status != noErr {
+        throw MicrophoneCaptureCoordinatorError.cannotEnumerateDevices(status)
+    }
+
+    for deviceID in deviceIDs {
+        if let id = audioDeviceUID(deviceID), id == uniqueID {
+            return deviceID
+        }
+    }
+    throw MicrophoneCaptureCoordinatorError.deviceNotFound(uniqueID)
+}
+
+private func audioDeviceUID(_ deviceID: AudioDeviceID) -> String? {
+    var propertyAddress = AudioObjectPropertyAddress(
+        mSelector: kAudioDevicePropertyDeviceUID,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain
+    )
+    var dataSize: UInt32 = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+    var unmanaged: Unmanaged<CFString>?
+    let status = AudioObjectGetPropertyData(
+        deviceID,
+        &propertyAddress,
+        0,
+        nil,
+        &dataSize,
+        &unmanaged
+    )
+    if status != noErr { return nil }
+    return unmanaged?.takeRetainedValue() as String?
+}
+
+// MARK: - Buffer conversion
+
+private func makeFormatDescription(
+    from format: AVAudioFormat
+) throws -> CMAudioFormatDescription {
+    var asbd = format.streamDescription.pointee
+    var formatDescription: CMAudioFormatDescription?
+    let status = CMAudioFormatDescriptionCreate(
+        allocator: kCFAllocatorDefault,
+        asbd: &asbd,
+        layoutSize: 0,
+        layout: nil,
+        magicCookieSize: 0,
+        magicCookie: nil,
+        extensions: nil,
+        formatDescriptionOut: &formatDescription
+    )
+    if status != noErr {
+        throw MicrophoneCaptureCoordinatorError.cannotBuildFormat(status)
+    }
+    guard let formatDescription else {
+        throw MicrophoneCaptureCoordinatorError.cannotBuildFormat(status)
+    }
+    return formatDescription
+}
+
+private func makeSampleBuffer(
+    from buffer: AVAudioPCMBuffer,
+    at time: AVAudioTime,
+    formatDescription: CMAudioFormatDescription
+) -> CMSampleBuffer? {
+    let frameCount = CMItemCount(buffer.frameLength)
+    if frameCount == 0 { return nil }
+
+    let sampleRate = buffer.format.sampleRate
+    let pts = CMTime(
+        value: time.sampleTime,
+        timescale: CMTimeScale(sampleRate)
+    )
+    var timing = CMSampleTimingInfo(
+        duration: CMTime(value: 1, timescale: CMTimeScale(sampleRate)),
+        presentationTimeStamp: pts,
+        decodeTimeStamp: .invalid
+    )
+
+    var sampleBuffer: CMSampleBuffer?
+    let status = CMSampleBufferCreate(
+        allocator: kCFAllocatorDefault,
+        dataBuffer: nil,
+        dataReady: false,
+        makeDataReadyCallback: nil,
+        refcon: nil,
+        formatDescription: formatDescription,
+        sampleCount: frameCount,
+        sampleTimingEntryCount: 1,
+        sampleTimingArray: &timing,
+        sampleSizeEntryCount: 0,
+        sampleSizeArray: nil,
+        sampleBufferOut: &sampleBuffer
+    )
+    guard status == noErr, let sb = sampleBuffer else { return nil }
+
+    let setStatus = CMSampleBufferSetDataBufferFromAudioBufferList(
+        sb,
+        blockBufferAllocator: kCFAllocatorDefault,
+        blockBufferMemoryAllocator: kCFAllocatorDefault,
+        flags: 0,
+        bufferList: buffer.audioBufferList
+    )
+    if setStatus != noErr { return nil }
+
+    return sb
+}
+
+private func peakLevel(of buffer: AVAudioPCMBuffer) -> Double? {
+    guard let channelData = buffer.floatChannelData else { return nil }
+    let frameLength = Int(buffer.frameLength)
+    let channelCount = Int(buffer.format.channelCount)
+    if frameLength == 0 || channelCount == 0 { return nil }
+
+    var peak: Float = 0
+    for ch in 0..<channelCount {
+        let samples = channelData[ch]
+        for i in 0..<frameLength {
+            let sample = abs(samples[i])
+            if sample > peak { peak = sample }
+        }
+    }
+    return Double(min(max(peak, 0), 1))
+}
+
 enum MicrophoneCaptureCoordinatorError: LocalizedError {
-    case noMicrophone
-    case cannotAddInput
-    case cannotAddOutput
     case notRecording
+    case audioUnitUnavailable
+    case cannotSetDevice(OSStatus)
+    case cannotEnumerateDevices(OSStatus)
+    case deviceNotFound(String)
+    case cannotBuildFormat(OSStatus)
 
     var errorDescription: String? {
         switch self {
-        case .noMicrophone:
-            return "No microphone was available to record."
-        case .cannotAddInput:
-            return "The selected microphone could not be added to the capture session."
-        case .cannotAddOutput:
-            return "Microphone audio output could not be added to the capture session."
         case .notRecording:
             return "There is no active microphone recording to stop."
+        case .audioUnitUnavailable:
+            return "The microphone audio unit was not available."
+        case .cannotSetDevice(let status):
+            return "Could not select the chosen microphone (OSStatus \(status))."
+        case .cannotEnumerateDevices(let status):
+            return "Could not enumerate audio devices (OSStatus \(status))."
+        case .deviceNotFound(let id):
+            return "The selected microphone (id \(id)) was not found."
+        case .cannotBuildFormat(let status):
+            return "Could not build the audio format description (OSStatus \(status))."
         }
     }
 }

@@ -8,9 +8,11 @@ import type { RecordingWithBrand } from "@/db/queries/recordings";
 export function NotesList({
   notes,
   folders,
+  attachmentUrls = {},
 }: {
   notes: RecordingWithBrand[];
   folders: DbFolder[];
+  attachmentUrls?: Record<string, string[]>;
 }) {
   const folderNames = new Map(folders.map((folder) => [folder.id, folder.name]));
   const groups = groupNotesByDay(notes);
@@ -33,13 +35,10 @@ export function NotesList({
                   href={`/notes/${note.slug}`}
                   className="group grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 border-b border-border px-3 py-3 transition-colors last:border-b-0 hover:bg-bg-elevated/70 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:px-4"
                 >
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-bg-elevated text-emerald-400 transition-colors group-hover:border-emerald-500/25 group-hover:bg-emerald-500/10">
-                    {note.status === "ready" ? (
-                      <AudioWaveform className="h-4 w-4" />
-                    ) : (
-                      <FileAudio className="h-4 w-4" />
-                    )}
-                  </span>
+                  <NoteRowIcon
+                    status={note.status}
+                    attachments={attachmentUrls[note.id] ?? []}
+                  />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[15px] font-medium leading-5 text-text">
                       {title}
@@ -145,4 +144,56 @@ function attendeeLabel(value: unknown): string {
   if (names.length === 0) return "Me";
   if (names.length <= 2) return names.join(", ");
   return `${names.slice(0, 2).join(", ")} +${names.length - 2}`;
+}
+
+/**
+ * Row-leading icon for the notes list. When the note has 1+ attached
+ * images, render those instead of the generic waveform/file icon — 1
+ * image fills the box, 2 images split half-and-half, 3-4 images render
+ * a 2x2 grid. Mirrors how Granola previews attachments at a glance.
+ */
+function NoteRowIcon({
+  status,
+  attachments,
+}: {
+  status: RecordingWithBrand["status"];
+  attachments: ReadonlyArray<string>;
+}) {
+  if (attachments.length === 0) {
+    return (
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-bg-elevated text-emerald-400 transition-colors group-hover:border-emerald-500/25 group-hover:bg-emerald-500/10">
+        {status === "ready" ? (
+          <AudioWaveform className="h-4 w-4" />
+        ) : (
+          <FileAudio className="h-4 w-4" />
+        )}
+      </span>
+    );
+  }
+
+  const tiles = attachments.slice(0, 4);
+  const layoutClass =
+    tiles.length === 1
+      ? "grid-cols-1 grid-rows-1"
+      : tiles.length === 2
+        ? "grid-cols-2 grid-rows-1"
+        : "grid-cols-2 grid-rows-2";
+
+  return (
+    <span
+      className={`grid h-9 w-9 shrink-0 overflow-hidden rounded-md border border-border bg-bg-elevated transition-colors group-hover:border-emerald-500/25 ${layoutClass} gap-px`}
+      aria-hidden
+    >
+      {tiles.map((url, i) => (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          key={i}
+          src={url}
+          alt=""
+          loading="lazy"
+          className="h-full w-full object-cover"
+        />
+      ))}
+    </span>
+  );
 }

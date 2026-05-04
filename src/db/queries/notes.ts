@@ -7,7 +7,7 @@ import {
   notes,
   transcripts,
 } from "@/db/schema";
-import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { generateSlug } from "@/lib/slug";
 
 export type Note = typeof notes.$inferSelect;
@@ -118,6 +118,35 @@ export async function listNoteAttachments(
       )
     )
     .orderBy(desc(noteAttachments.createdAt));
+}
+
+/** Lookup the first ~4 image attachments for each of the supplied media
+ *  ids in one round trip. Used by the notes list to render attached-image
+ *  thumbnails in place of the generic waveform icon. Empty input → empty
+ *  output. Only image-kind attachments are returned. */
+export async function listImageAttachmentsForMediaIds(
+  mediaObjectIds: ReadonlyArray<string>,
+  ownerId: string
+): Promise<Map<string, NoteAttachment[]>> {
+  const result = new Map<string, NoteAttachment[]>();
+  if (mediaObjectIds.length === 0) return result;
+  const rows = await db
+    .select()
+    .from(noteAttachments)
+    .where(
+      and(
+        eq(noteAttachments.ownerId, ownerId),
+        inArray(noteAttachments.mediaObjectId, [...mediaObjectIds]),
+        eq(noteAttachments.kind, "image")
+      )
+    )
+    .orderBy(desc(noteAttachments.createdAt));
+  for (const row of rows) {
+    const list = result.get(row.mediaObjectId) ?? [];
+    if (list.length < 4) list.push(row);
+    result.set(row.mediaObjectId, list);
+  }
+  return result;
 }
 
 export async function listNoteAttachmentsForJob(

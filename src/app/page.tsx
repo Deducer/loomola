@@ -4,7 +4,10 @@ import { redirect } from "next/navigation";
 import { requireAuth } from "@/lib/require-auth";
 import { listBrandProfiles } from "@/db/queries/brand-profiles";
 import { listFoldersForOwner } from "@/db/queries/folders";
-import { createQuickAudioNote } from "@/db/queries/notes";
+import {
+  createQuickAudioNote,
+  listImageAttachmentsForMediaIds,
+} from "@/db/queries/notes";
 import { searchRecordings, type SearchSort } from "@/db/queries/search";
 import { presignGet } from "@/lib/r2/presigned-get";
 import { enableGranola } from "@/lib/feature-flags";
@@ -90,6 +93,21 @@ export default async function HomePage({
         if (r.status === "ready" && r.r2CompositeKey) {
           previewUrls[r.id] = await presignGet(r.r2CompositeKey);
         }
+      })
+    );
+  }
+
+  const noteAttachmentUrls: Record<string, string[]> = {};
+  if (activeTab === "notes" && mediaItems.length > 0) {
+    const attachmentsByMedia = await listImageAttachmentsForMediaIds(
+      mediaItems.map((r) => r.id),
+      user.id
+    );
+    await Promise.all(
+      Array.from(attachmentsByMedia.entries()).map(async ([mediaId, list]) => {
+        noteAttachmentUrls[mediaId] = await Promise.all(
+          list.map((a) => presignGet(a.r2Key))
+        );
       })
     );
   }
@@ -246,7 +264,11 @@ export default async function HomePage({
               )
             ) : (
               activeTab === "notes" ? (
-                <NotesList notes={mediaItems} folders={folders} />
+                <NotesList
+                  notes={mediaItems}
+                  folders={folders}
+                  attachmentUrls={noteAttachmentUrls}
+                />
               ) : (
                 <RecordingsGrid
                   recordings={mediaItems}

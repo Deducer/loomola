@@ -426,7 +426,7 @@ export function NotePageClient({
       )}
       <main className="mx-auto flex min-h-screen w-full max-w-[760px] flex-col px-4 py-4 sm:px-6 sm:py-7">
         <div className="sticky top-0 z-20 -mx-4 flex items-center justify-between border-b border-border/70 bg-bg/95 px-4 py-3 text-text-subtle backdrop-blur sm:-mx-6 sm:px-6">
-          <Link href="/" aria-label="Back to dashboard">
+          <Link href="/?tab=notes" aria-label="Back to notes">
             <Button
               variant="ghost"
               size="icon"
