@@ -71,6 +71,14 @@ final class BubbleOverlayWindowController {
         panel?.frame
     }
 
+    /// True when the overlay panel exists and is visible on screen.
+    /// Used by the menubar to decide whether to render "Show" or
+    /// "Hide" on the toggle item.
+    var isVisible: Bool {
+        guard let panel else { return false }
+        return panel.isVisible
+    }
+
     // MARK: - Position publishing
 
     private func observeMoves(of panel: NSPanel) {

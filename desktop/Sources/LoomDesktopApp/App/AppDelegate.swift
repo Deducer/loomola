@@ -30,7 +30,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Show Recorder", action: #selector(showRecorder), keyEquivalent: "r"))
-        menu.addItem(NSMenuItem(title: "Show Bubble Overlay", action: #selector(showBubbleOverlay), keyEquivalent: "b"))
+        // Title is updated dynamically in validateMenuItem to reflect the
+        // current overlay visibility — see toggleBubbleOverlay below.
+        menu.addItem(NSMenuItem(title: "Show Bubble Overlay", action: #selector(toggleBubbleOverlay), keyEquivalent: "b"))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Open Dashboard", action: #selector(openDashboard), keyEquivalent: "d"))
         menu.addItem(NSMenuItem.separator())
@@ -43,11 +45,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppActivation.bringRecorderToFront()
     }
 
-    @objc private func showBubbleOverlay() {
-        bubbleOverlay.showPlaceholder()
+    @objc private func toggleBubbleOverlay() {
+        if bubbleOverlay.isVisible {
+            bubbleOverlay.hide()
+        } else {
+            bubbleOverlay.showPlaceholder()
+        }
     }
 
     @objc private func openDashboard() {
         NSWorkspace.shared.open(URL(string: "https://loom.dissonance.cloud")!)
+    }
+}
+
+extension AppDelegate: NSMenuItemValidation {
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(toggleBubbleOverlay) {
+            menuItem.title = bubbleOverlay.isVisible
+                ? "Hide Bubble Overlay"
+                : "Show Bubble Overlay"
+        }
+        return true
     }
 }
