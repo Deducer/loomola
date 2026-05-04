@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type DragEvent,
   type ReactNode,
 } from "react";
 import Link from "next/link";
@@ -22,12 +23,14 @@ import {
   FileText,
   Folder,
   HardDriveDownload,
+  ImagePlus,
   LoaderCircle,
   MoreHorizontal,
   Pause,
   Play,
   RefreshCcw,
   Sparkles,
+  Trash2,
   Users,
   Volume2,
 } from "lucide-react";
@@ -55,6 +58,7 @@ type NotePageClientProps = {
   waveformUrl: string | null;
   transcriptText: string;
   transcriptWords: Word[];
+  initialAttachments: NoteAttachment[];
   initialEnhancedSummary: string | null;
   initialGenerationStatus: GenerationStatus;
   initialObsidianSaveState: ObsidianSaveState;
@@ -67,6 +71,16 @@ type SaveState = "idle" | "saving" | "saved" | "error";
 type GenerationStatus = "idle" | "pending" | "streaming" | "complete" | "failed";
 type NoteViewMode = "original" | "enhanced";
 type ObsidianSaveState = "idle" | "saving" | "queued" | "synced" | "error";
+type AttachmentSaveState = "idle" | "uploading" | "error";
+
+type NoteAttachment = {
+  id: string;
+  filename: string;
+  contentType: string;
+  byteSize: number;
+  createdAt: string;
+  url: string;
+};
 
 export function NotePageClient({
   mediaId,
@@ -81,6 +95,7 @@ export function NotePageClient({
   waveformUrl,
   transcriptText,
   transcriptWords,
+  initialAttachments,
   initialEnhancedSummary,
   initialGenerationStatus,
   initialObsidianSaveState,
@@ -112,6 +127,11 @@ export function NotePageClient({
   const [obsidianPath, setObsidianPath] = useState<string | null>(
     initialObsidianPath
   );
+  const [attachments, setAttachments] = useState(initialAttachments);
+  const [attachmentState, setAttachmentState] =
+    useState<AttachmentSaveState>("idle");
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [draggingAttachment, setDraggingAttachment] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [playing, setPlaying] = useState(false);
 
@@ -302,6 +322,71 @@ export function NotePageClient({
     }
   }
 
+  async function uploadAttachmentFiles(files: File[]) {
+    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+    if (imageFiles.length === 0) return;
+
+    setAttachmentState("uploading");
+    setAttachmentError(null);
+    try {
+      for (const file of imageFiles) {
+        const formData = new FormData();
+        formData.append("file", file);
+        const response = await fetch(`/api/notes/${mediaId}/attachments`, {
+          method: "POST",
+          body: formData,
+        });
+        const data = (await response.json().catch(() => ({}))) as {
+          attachment?: NoteAttachment;
+          error?: string;
+        };
+        if (!response.ok || !data.attachment) {
+          throw new Error(data.error ?? "attachment_upload_failed");
+        }
+        setAttachments((current) => [data.attachment!, ...current]);
+      }
+      setAttachmentState("idle");
+    } catch {
+      setAttachmentState("error");
+      setAttachmentError("Could not attach image.");
+    }
+  }
+
+  async function removeAttachment(attachmentId: string) {
+    const previous = attachments;
+    setAttachments((current) =>
+      current.filter((attachment) => attachment.id !== attachmentId)
+    );
+    try {
+      const response = await fetch(
+        `/api/notes/${mediaId}/attachments/${attachmentId}`,
+        { method: "DELETE" }
+      );
+      if (!response.ok) throw new Error("delete_failed");
+    } catch {
+      setAttachments(previous);
+      setAttachmentError("Could not remove image.");
+    }
+  }
+
+  function handleAttachmentDrag(event: DragEvent<HTMLElement>) {
+    if (!hasDraggedImage(event)) return;
+    event.preventDefault();
+    setDraggingAttachment(true);
+  }
+
+  function handleAttachmentDragLeave(event: DragEvent<HTMLElement>) {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    setDraggingAttachment(false);
+  }
+
+  function handleAttachmentDrop(event: DragEvent<HTMLElement>) {
+    if (!hasDraggedImage(event)) return;
+    event.preventDefault();
+    setDraggingAttachment(false);
+    void uploadAttachmentFiles(Array.from(event.dataTransfer.files));
+  }
+
   function seekTo(sec: number) {
     if (!audioRef.current) return;
     audioRef.current.currentTime = sec;
@@ -319,7 +404,26 @@ export function NotePageClient({
   }
 
   return (
-    <div className="min-h-screen bg-bg pb-32 text-text">
+    <div
+      className="min-h-screen bg-bg pb-32 text-text"
+      onDragEnter={handleAttachmentDrag}
+      onDragOver={handleAttachmentDrag}
+      onDragLeave={handleAttachmentDragLeave}
+      onDrop={handleAttachmentDrop}
+    >
+      {draggingAttachment && (
+        <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm">
+          <div className="rounded-2xl border border-dashed border-emerald-400/70 bg-bg-elevated/95 px-8 py-6 text-center shadow-2xl shadow-black/40">
+            <ImagePlus className="mx-auto h-7 w-7 text-emerald-400" />
+            <p className="mt-3 text-sm font-semibold text-text">
+              Drop images to attach
+            </p>
+            <p className="mt-1 text-xs text-text-subtle">
+              Screenshots, slides, whiteboards, and product screens become note context.
+            </p>
+          </div>
+        </div>
+      )}
       <main className="mx-auto flex min-h-screen w-full max-w-[760px] flex-col px-4 py-4 sm:px-6 sm:py-7">
         <div className="sticky top-0 z-20 -mx-4 flex items-center justify-between border-b border-border/70 bg-bg/95 px-4 py-3 text-text-subtle backdrop-blur sm:-mx-6 sm:px-6">
           <Link href="/" aria-label="Back to dashboard">
@@ -414,6 +518,13 @@ export function NotePageClient({
             )}
             <SaveIndicator state={titleState} />
           </div>
+          <NoteAttachments
+            attachments={attachments}
+            state={attachmentState}
+            error={attachmentError}
+            onUpload={uploadAttachmentFiles}
+            onRemove={removeAttachment}
+          />
         </section>
 
         <section className="mt-11 flex-1">
@@ -571,6 +682,77 @@ function SaveIndicator({ state }: { state: SaveState }) {
       <Check className="h-3 w-3" />
       Saved
     </span>
+  );
+}
+
+function NoteAttachments({
+  attachments,
+  state,
+  error,
+  onUpload,
+  onRemove,
+}: {
+  attachments: NoteAttachment[];
+  state: AttachmentSaveState;
+  error: string | null;
+  onUpload: (files: File[]) => void;
+  onRemove: (attachmentId: string) => void;
+}) {
+  return (
+    <div className="mt-6">
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-full border border-border bg-bg-subtle/80 px-3 text-sm font-medium text-text-muted transition-colors hover:bg-bg-elevated hover:text-text">
+          <ImagePlus className="h-4 w-4 text-emerald-400" />
+          {state === "uploading" ? "Attaching..." : "Attach images"}
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            multiple
+            className="sr-only"
+            onChange={(event) => {
+              const files = Array.from(event.currentTarget.files ?? []);
+              event.currentTarget.value = "";
+              onUpload(files);
+            }}
+          />
+        </label>
+        {error && <span className="text-xs text-red-400">{error}</span>}
+      </div>
+
+      {attachments.length > 0 && (
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {attachments.map((attachment) => (
+            <div
+              key={attachment.id}
+              className="group relative overflow-hidden rounded-lg border border-border bg-bg-subtle"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={attachment.url}
+                alt={attachment.filename}
+                className="aspect-[4/3] w-full object-cover"
+              />
+              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2">
+                <p className="truncate text-xs font-medium text-white">
+                  {attachment.filename}
+                </p>
+                <p className="text-[11px] text-white/60">
+                  {formatAttachmentSize(attachment.byteSize)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onRemove(attachment.id)}
+                className="absolute right-1.5 top-1.5 inline-flex h-7 w-7 items-center justify-center rounded-full bg-black/65 text-white opacity-0 transition-opacity hover:bg-red-500/80 group-hover:opacity-100"
+                aria-label={`Remove ${attachment.filename}`}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -775,4 +957,21 @@ function formatAudioTime(value: number): string {
   const minutes = Math.floor(seconds / 60);
   const remainder = seconds % 60;
   return `${minutes}:${String(remainder).padStart(2, "0")}`;
+}
+
+function formatAttachmentSize(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function hasDraggedImage(event: DragEvent<HTMLElement>): boolean {
+  const items = Array.from(event.dataTransfer.items);
+  if (items.length > 0) {
+    return items.some(
+      (item) => item.kind === "file" && item.type.startsWith("image/")
+    );
+  }
+  return Array.from(event.dataTransfer.files).some((file) =>
+    file.type.startsWith("image/")
+  );
 }

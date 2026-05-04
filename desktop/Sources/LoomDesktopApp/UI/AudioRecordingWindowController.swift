@@ -10,17 +10,24 @@ final class AudioRecordingWindowController {
         title: String,
         startedAt: Date,
         audioLevel: Double,
-        stop: @escaping () -> Void
+        openNote: @escaping () -> Void,
+        stop: @escaping () -> Void,
+        discard: @escaping () -> Void
     ) {
         state.title = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Audio note" : title
         state.startedAt = startedAt
         state.audioLevel = audioLevel
+        state.openNote = openNote
         state.stop = { [weak self] in
             self?.hide()
             stop()
         }
+        state.discard = { [weak self] in
+            self?.hide()
+            discard()
+        }
 
-        let size = NSSize(width: 74, height: 138)
+        let size = NSSize(width: 86, height: 166)
 
         let isNewPanel = panel == nil
         let panel = panel ?? NSPanel(
@@ -65,7 +72,9 @@ private final class AudioRecordingWindowState: ObservableObject {
     @Published var title = "Audio note"
     @Published var startedAt = Date()
     @Published var audioLevel = 0.0
+    var openNote: () -> Void = {}
     var stop: () -> Void = {}
+    var discard: () -> Void = {}
 }
 
 private struct AudioRecordingPanelView: View {
@@ -75,7 +84,7 @@ private struct AudioRecordingPanelView: View {
     var body: some View {
         VStack(spacing: 9) {
             AudioLevelBars(level: state.audioLevel)
-                .frame(width: 36, height: 28)
+                .frame(width: 40, height: 30)
                 .padding(.top, 10)
 
             TimelineView(.periodic(from: state.startedAt, by: 1)) { timeline in
@@ -87,15 +96,32 @@ private struct AudioRecordingPanelView: View {
             Spacer(minLength: 0)
 
             if hovering {
-                Button(action: state.stop) {
-                    Image(systemName: "stop.fill")
-                        .font(.system(size: 12, weight: .bold))
-                        .frame(width: 30, height: 30)
-                        .background(Color.white.opacity(0.12), in: Circle())
+                VStack(spacing: 9) {
+                    Button(action: state.stop) {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 13, weight: .bold))
+                            .frame(width: 34, height: 34)
+                            .background(Color.white.opacity(0.14), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.white.opacity(0.88))
+                    .help("Stop and upload audio note")
+
+                    Capsule()
+                        .fill(Color.white.opacity(0.2))
+                        .frame(width: 28, height: 3)
+                        .help("Drag to move")
+
+                    Button(action: state.discard) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 11, weight: .bold))
+                            .frame(width: 30, height: 30)
+                            .background(Color.red.opacity(0.14), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.red.opacity(0.82))
+                    .help("Discard audio note")
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.white.opacity(0.8))
-                .help("Stop and upload audio note")
                 .transition(.opacity.combined(with: .scale(scale: 0.92)))
             } else {
                 LiveDots(level: state.audioLevel)
@@ -106,7 +132,7 @@ private struct AudioRecordingPanelView: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 9)
-        .frame(width: 74, height: 138)
+        .frame(width: 86, height: 166)
         .background(
             Capsule()
                 .fill(Color(red: 0.12, green: 0.12, blue: 0.13).opacity(0.94))
@@ -119,6 +145,11 @@ private struct AudioRecordingPanelView: View {
         .onHover { isHovering in
             withAnimation(.easeOut(duration: 0.14)) {
                 hovering = isHovering
+            }
+        }
+        .onTapGesture {
+            if !hovering {
+                state.openNote()
             }
         }
     }

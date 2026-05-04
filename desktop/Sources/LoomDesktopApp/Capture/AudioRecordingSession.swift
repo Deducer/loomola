@@ -8,6 +8,7 @@ struct AudioRecordingSession: Equatable, Sendable {
     let tracks: Set<TrackKind>
     let meetingContext: MeetingContext?
     var backendRecordingId: String?
+    var backendSlug: String?
 
     init(
         id: UUID = UUID(),
@@ -16,7 +17,8 @@ struct AudioRecordingSession: Equatable, Sendable {
         title: String?,
         tracks: Set<TrackKind>,
         meetingContext: MeetingContext? = nil,
-        backendRecordingId: String? = nil
+        backendRecordingId: String? = nil,
+        backendSlug: String? = nil
     ) {
         self.id = id
         self.directory = directory
@@ -25,6 +27,7 @@ struct AudioRecordingSession: Equatable, Sendable {
         self.tracks = tracks
         self.meetingContext = meetingContext
         self.backendRecordingId = backendRecordingId
+        self.backendSlug = backendSlug
     }
 
     var startedAtISO8601: String {

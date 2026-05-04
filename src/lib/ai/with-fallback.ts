@@ -1,6 +1,16 @@
 import { generateObject } from "ai";
+import type { ModelMessage } from "ai";
 import type { z } from "zod";
 import { getLlm, getFallbackLlm } from "./client";
+
+type GenerateObjectWithFallbackArgs<T> = {
+  schema: z.ZodType<T>;
+  schemaName?: string;
+  schemaDescription?: string;
+} & (
+  | { prompt: string; messages?: never }
+  | { messages: ModelMessage[]; prompt?: never }
+);
 
 /**
  * Wraps `generateObject` with a one-shot fallback to OpenRouter when the
@@ -9,12 +19,9 @@ import { getLlm, getFallbackLlm } from "./client";
  * retryLimit/retryBackoff, so we only fall back when retrying the same
  * provider would be pointless.
  */
-export async function generateObjectWithFallback<T>(args: {
-  schema: z.ZodType<T>;
-  schemaName?: string;
-  schemaDescription?: string;
-  prompt: string;
-}): Promise<{ object: T }> {
+export async function generateObjectWithFallback<T>(
+  args: GenerateObjectWithFallbackArgs<T>
+): Promise<{ object: T }> {
   try {
     const result = await generateObject({ model: getLlm(), ...args });
     return { object: result.object as T };

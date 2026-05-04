@@ -113,6 +113,13 @@
       "when": 1777978000000,
       "tag": "0015_realtime_media_objects",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1777981600000,
+      "tag": "0016_note_attachments",
+      "breakpoints": true
     }
   ]
 }

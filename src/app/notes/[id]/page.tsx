@@ -2,7 +2,10 @@ import { notFound } from "next/navigation";
 import { requireAuth } from "@/lib/require-auth";
 import { enableGranola } from "@/lib/feature-flags";
 import { presignGet } from "@/lib/r2/presigned-get";
-import { getAudioNotePageData } from "@/db/queries/notes";
+import {
+  getAudioNotePageData,
+  listNoteAttachments,
+} from "@/db/queries/notes";
 import { listPeople } from "@/db/queries/people";
 import { listSpeakerAssignments } from "@/db/queries/speaker-assignments";
 import { NotePageClient } from "@/components/notes/note-page-client";
@@ -21,13 +24,14 @@ export default async function NotesPage({
   const data = await getAudioNotePageData(id, user.id);
   if (!data) notFound();
 
-  const [audioUrl, waveformUrl, people, speakerAssignments] = await Promise.all([
+  const [audioUrl, waveformUrl, people, speakerAssignments, attachments] = await Promise.all([
     data.media.r2MixedKey ? presignGet(data.media.r2MixedKey) : Promise.resolve(null),
     data.media.compositeThumbnailKey
       ? presignGet(data.media.compositeThumbnailKey)
       : Promise.resolve(null),
     listPeople(user.id),
     listSpeakerAssignments(data.media.id, user.id),
+    listNoteAttachments(data.media.id, user.id),
   ]);
   const initialObsidianStatus =
     data.media.obsidianSaveRequestedAt && !data.media.obsidianSyncedAt
@@ -50,6 +54,16 @@ export default async function NotesPage({
       waveformUrl={waveformUrl}
       transcriptText={data.transcript?.fullText ?? ""}
       transcriptWords={normalizeWords(data.transcript?.wordTimestamps)}
+      initialAttachments={await Promise.all(
+        attachments.map(async (attachment) => ({
+          id: attachment.id,
+          filename: attachment.filename,
+          contentType: attachment.contentType,
+          byteSize: attachment.byteSize,
+          createdAt: attachment.createdAt.toISOString(),
+          url: await presignGet(attachment.r2Key),
+        }))
+      )}
       initialEnhancedSummary={data.aiOutput?.summary ?? null}
       initialGenerationStatus={data.aiOutput?.generationStatusValue ?? "idle"}
       initialObsidianSaveState={initialObsidianStatus}

@@ -3,13 +3,15 @@ import {
   aiOutputs,
   brandProfiles,
   mediaObjects,
+  noteAttachments,
   notes,
   transcripts,
 } from "@/db/schema";
-import { and, eq, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
 import { generateSlug } from "@/lib/slug";
 
 export type Note = typeof notes.$inferSelect;
+export type NoteAttachment = typeof noteAttachments.$inferSelect;
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -100,6 +102,74 @@ export async function getNotesByMediaObjectForJob(
     .limit(1);
 
   return row ?? null;
+}
+
+export async function listNoteAttachments(
+  mediaObjectId: string,
+  ownerId: string
+): Promise<NoteAttachment[]> {
+  return db
+    .select()
+    .from(noteAttachments)
+    .where(
+      and(
+        eq(noteAttachments.mediaObjectId, mediaObjectId),
+        eq(noteAttachments.ownerId, ownerId)
+      )
+    )
+    .orderBy(desc(noteAttachments.createdAt));
+}
+
+export async function listNoteAttachmentsForJob(
+  mediaObjectId: string
+): Promise<NoteAttachment[]> {
+  return db
+    .select()
+    .from(noteAttachments)
+    .where(eq(noteAttachments.mediaObjectId, mediaObjectId))
+    .orderBy(desc(noteAttachments.createdAt));
+}
+
+export async function createNoteAttachment(params: {
+  mediaObjectId: string;
+  ownerId: string;
+  r2Key: string;
+  filename: string;
+  contentType: string;
+  byteSize: number;
+}): Promise<NoteAttachment> {
+  const [row] = await db
+    .insert(noteAttachments)
+    .values({
+      mediaObjectId: params.mediaObjectId,
+      ownerId: params.ownerId,
+      r2Key: params.r2Key,
+      filename: params.filename,
+      contentType: params.contentType,
+      byteSize: params.byteSize,
+    })
+    .returning();
+
+  return row;
+}
+
+export async function deleteNoteAttachment(params: {
+  id: string;
+  mediaObjectId: string;
+  ownerId: string;
+}): Promise<boolean> {
+  const rows = await db
+    .delete(noteAttachments)
+    .where(
+      and(
+        eq(noteAttachments.id, params.id),
+        eq(noteAttachments.mediaObjectId, params.mediaObjectId),
+        eq(noteAttachments.ownerId, params.ownerId)
+      )
+    )
+    .returning({ id: noteAttachments.id });
+
+  return rows.length > 0;
 }
 
 export async function getAudioNotePageData(

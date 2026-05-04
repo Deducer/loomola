@@ -166,7 +166,9 @@ struct MainRecorderView: View {
             title: viewModel.audioTitle,
             startedAt: startedAt,
             audioLevel: viewModel.audioLevel,
-            stop: { viewModel.stopAudioNoteRecordingAndUpload() }
+            openNote: { viewModel.openActiveAudioNote() },
+            stop: { viewModel.stopAudioNoteRecordingAndUpload() },
+            discard: { viewModel.cancelAudioNoteRecording() }
         )
     }
 }

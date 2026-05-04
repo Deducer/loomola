@@ -276,6 +276,35 @@ export const notes = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// note_attachments — image context attached to audio notes
+// ---------------------------------------------------------------------------
+
+export const noteAttachments = pgTable(
+  "note_attachments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    mediaObjectId: uuid("media_object_id")
+      .notNull()
+      .references(() => mediaObjects.id, { onDelete: "cascade" }),
+    ownerId: uuid("owner_id").notNull(),
+    kind: text("kind").notNull().default("image"),
+    r2Key: text("r2_key").notNull(),
+    filename: text("filename").notNull(),
+    contentType: text("content_type").notNull(),
+    byteSize: integer("byte_size").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    mediaObjectIdx: index("note_attachments_media_object_idx").on(
+      t.mediaObjectId
+    ),
+    ownerIdx: index("note_attachments_owner_idx").on(t.ownerId),
+  })
+);
+
+// ---------------------------------------------------------------------------
 // people — known meeting participants
 // ---------------------------------------------------------------------------
 

@@ -15,6 +15,7 @@ final class RecorderViewModel: ObservableObject {
     @Published private(set) var configuration: DesktopAuthConfiguration?
     @Published private(set) var activeRecordingKind: DesktopRecordingKind?
     @Published private(set) var activeAudioRecordingStartedAt: Date?
+    @Published private(set) var activeAudioRecordingSlug: String?
     @Published private(set) var audioLevel = 0.0
     @Published private(set) var meetingContext: MeetingContext?
     @Published private(set) var meetingPromptContext: MeetingContext?
@@ -136,6 +137,7 @@ final class RecorderViewModel: ObservableObject {
             meetingPromptContext = nil
             dismissedMeetingContext = nil
             autoSuggestedAudioTitle = nil
+            activeAudioRecordingSlug = nil
             audioLevel = 0
             try? await authService.signOut()
             accessToken = nil
@@ -420,6 +422,7 @@ final class RecorderViewModel: ObservableObject {
                 )
                 activeRecordingKind = .audio
                 activeAudioRecordingStartedAt = Date()
+                activeAudioRecordingSlug = session.backendSlug
                 audioLevel = 0
                 state = .recording
                 statusMessage = "Recording audio note with \(session.tracks.count) track(s)."
@@ -442,12 +445,14 @@ final class RecorderViewModel: ObservableObject {
                 let complete = try await audioNoteRecorder.stopAndUpload()
                 activeRecordingKind = nil
                 activeAudioRecordingStartedAt = nil
+                activeAudioRecordingSlug = nil
                 audioLevel = 0
                 state = .complete(slug: complete.slug)
                 statusMessage = "Uploaded audio note. Slug: \(complete.slug)"
             } catch {
                 activeRecordingKind = nil
                 activeAudioRecordingStartedAt = nil
+                activeAudioRecordingSlug = nil
                 audioLevel = 0
                 state = .failed(message: error.localizedDescription)
                 statusMessage = "Audio note upload failed: \(error.localizedDescription)"
@@ -463,6 +468,7 @@ final class RecorderViewModel: ObservableObject {
             await audioNoteRecorder.cancel()
             activeRecordingKind = nil
             activeAudioRecordingStartedAt = nil
+            activeAudioRecordingSlug = nil
             audioLevel = 0
             state = .signedInIdle
             statusMessage = "Audio note discarded."
@@ -511,6 +517,14 @@ final class RecorderViewModel: ObservableObject {
         startObsidianAutoSync()
         startObsidianRealtimeSync(userId: session.user.id)
         startMeetingWatch()
+    }
+
+    func openActiveAudioNote() {
+        guard let configuration else { return }
+        let url = activeAudioRecordingSlug
+            .map { configuration.apiBaseURL.appending(path: "notes").appending(path: $0) }
+            ?? configuration.apiBaseURL
+        NSWorkspace.shared.open(url)
     }
 
     private func recordAudioLevel(_ level: Double) {

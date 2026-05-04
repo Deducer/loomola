@@ -53,6 +53,7 @@ final class AudioNoteRecorder {
         )
         let response = try await backend.startRecording(nextSession.startRequest)
         nextSession.backendRecordingId = response.recordingId
+        nextSession.backendSlug = response.slug
         session = nextSession
 
         do {
