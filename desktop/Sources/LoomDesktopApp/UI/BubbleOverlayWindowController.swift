@@ -1,9 +1,39 @@
-import AppKit
+@preconcurrency import AppKit
 @preconcurrency import AVFoundation
 
 @MainActor
 final class BubbleOverlayWindowController {
+    /// Read-only access to the live bubble placement. The Phase 1
+    /// `CompositeRecorder` will read from this on every screen frame to
+    /// project the bubble into captured pixels at the user's last drag
+    /// position. Today no consumer reads it, but every drag tick already
+    /// publishes a fresh `BubblePlacement`, so the wiring is in place
+    /// once the compositor lands.
+    let positionController: BubblePositionController
+
+    /// Shape used both for the on-screen panel mask and the placement
+    /// published to `positionController`. Defaults to circle to match
+    /// the existing `CameraBubbleView` cornerRadius behavior.
+    var shape: BubbleShape {
+        didSet { publishCurrentPlacement() }
+    }
+
     private var panel: NSPanel?
+    private var moveObservation: NSObjectProtocol?
+
+    init(
+        positionController: BubblePositionController = BubblePositionController(),
+        shape: BubbleShape = .circle
+    ) {
+        self.positionController = positionController
+        self.shape = shape
+    }
+
+    deinit {
+        if let moveObservation {
+            NotificationCenter.default.removeObserver(moveObservation)
+        }
+    }
 
     func showPlaceholder() {
         if let panel {
@@ -27,14 +57,53 @@ final class BubbleOverlayWindowController {
         panel.isMovableByWindowBackground = true
         panel.orderFrontRegardless()
         self.panel = panel
+
+        observeMoves(of: panel)
+        publishCurrentPlacement()
     }
 
     func hide() {
         panel?.orderOut(nil)
+        positionController.set(nil)
     }
 
     var currentFrame: CGRect? {
         panel?.frame
+    }
+
+    // MARK: - Position publishing
+
+    private func observeMoves(of panel: NSPanel) {
+        // The drag is owned by AppKit (isMovableByWindowBackground); we
+        // just observe the resulting frame change. didMoveNotification
+        // fires after every drag tick, which is what we want — the
+        // compositor reads the latest value at draw time, no per-pixel
+        // burst overhead from this side.
+        if let moveObservation {
+            NotificationCenter.default.removeObserver(moveObservation)
+        }
+        moveObservation = NotificationCenter.default.addObserver(
+            forName: NSWindow.didMoveNotification,
+            object: panel,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.publishCurrentPlacement()
+            }
+        }
+    }
+
+    private func publishCurrentPlacement() {
+        guard let panel else {
+            positionController.set(nil)
+            return
+        }
+        positionController.set(
+            BubblePlacement(
+                frameInScreenPoints: panel.frame,
+                shape: shape
+            )
+        )
     }
 }
 
