@@ -352,6 +352,17 @@ final class RecorderViewModel: ObservableObject {
         }
     }
 
+    /// Returns the view model to idle after a successful upload. The
+    /// FinalizingHomeView keeps the success checkmark visible for ~1.5s
+    /// after state flips to .complete, then calls this so the router
+    /// swaps back to IdleHomeView and the new recording shows up in
+    /// the Recent strip.
+    func acknowledgeUploadComplete() {
+        guard case .complete = state else { return }
+        state = .signedInIdle
+        statusMessage = "Ready to record."
+    }
+
     func dismissMeetingPrompt() {
         dismissedMeetingContext = meetingPromptContext
         meetingPromptContext = nil
@@ -587,6 +598,13 @@ final class RecorderViewModel: ObservableObject {
         compositeMicCoordinator = nil
         activeVideoRecordingStartedAt = nil
 
+        // Clear activeRecordingKind IMMEDIATELY (instead of after the
+        // upload completes) so the router can swap RecordingHomeView
+        // out for the FinalizingHomeView right away. Without this,
+        // the user sees no feedback after clicking Stop & upload —
+        // the timer goes to 00:00 but the surface stays the same,
+        // and they re-click thinking the first click missed.
+        activeRecordingKind = nil
         state = .finalizing
         statusMessage = "Finalizing composite recording..."
 
@@ -628,7 +646,6 @@ final class RecorderViewModel: ObservableObject {
                         durationSeconds: durationSeconds
                     )
                 )
-                activeRecordingKind = nil
                 state = .complete(slug: complete.slug)
                 statusMessage = "Uploaded. Recording slug: \(complete.slug)"
                 // Refresh the Recent strip so the freshly-uploaded
@@ -636,7 +653,6 @@ final class RecorderViewModel: ObservableObject {
                 // for the 60-second polling tick.
                 _recentService?.refresh()
             } catch {
-                activeRecordingKind = nil
                 state = .failed(message: error.localizedDescription)
                 statusMessage = "Composite upload failed: \(error.localizedDescription)"
             }

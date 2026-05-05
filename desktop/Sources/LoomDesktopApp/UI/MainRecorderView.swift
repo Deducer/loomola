@@ -90,6 +90,17 @@ struct MainRecorderView: View {
         .onReceive(NotificationCenter.default.publisher(for: RecorderCommands.toggleRecording)) { _ in
             handleToggleRecording()
         }
+        .onChange(of: viewModel.state) { _, newState in
+            // After a successful upload, hold the "Uploaded" success
+            // surface for ~1.5s, then slide back to idle so the user
+            // can start the next recording.
+            if case .complete = newState {
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    viewModel.acknowledgeUploadComplete()
+                }
+            }
+        }
     }
 
     /// Bridges menubar / global-hotkey toggle requests to the view
@@ -135,12 +146,28 @@ struct MainRecorderView: View {
             )
         } else if viewModel.activeRecordingKind != nil {
             RecordingHomeView(viewModel: viewModel)
+        } else if isFinalizingOrUploading(viewModel.state) {
+            FinalizingHomeView(viewModel: viewModel)
         } else {
             IdleHomeView(
                 viewModel: viewModel,
                 recentService: viewModel.recentRecordings,
                 captureMode: $captureMode
             )
+        }
+    }
+
+    /// True for states that mean "the user already hit Stop and the
+    /// upload is in flight" — drives the FinalizingHomeView. Also
+    /// matches `.complete` briefly so the success checkmark gets a
+    /// moment on screen before we route back to idle (handled by a
+    /// .onChange auto-dismiss timer below).
+    private func isFinalizingOrUploading(_ state: RecorderState) -> Bool {
+        switch state {
+        case .finalizing, .uploading, .complete:
+            return true
+        default:
+            return false
         }
     }
 
