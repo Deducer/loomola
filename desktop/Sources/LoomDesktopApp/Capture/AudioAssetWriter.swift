@@ -11,12 +11,28 @@ final class AudioAssetWriter: @unchecked Sendable {
     init(outputURL: URL, sampleRate: Double = 48_000, channelCount: Int = 1) throws {
         self.outputURL = outputURL
         writer = try AVAssetWriter(outputURL: outputURL, fileType: .m4a)
+
+        // Sanitize. The caller usually passes
+        // `inputNode.outputFormat(forBus: 0)` values from
+        // AVAudioEngine, which can be degenerate before the engine
+        // has started — sample rate or channel count may be 0.
+        // Passing those to AVAssetWriterInput raises an ObjC
+        // NSException ("-[AVAssetWriterInput init...]") which Swift
+        // can't catch, causing an abort. Clamp to known-good AAC
+        // values so we always get a valid encoder.
+        //
+        // Behaviorally, AVFoundation transcodes from any input PCM
+        // format to the requested AAC settings, so hardcoding
+        // doesn't constrain the source.
+        let aacSampleRate = Self.aacSafeSampleRate(sampleRate)
+        let aacChannelCount = Self.aacSafeChannelCount(channelCount)
+
         input = AVAssetWriterInput(
             mediaType: .audio,
             outputSettings: [
                 AVFormatIDKey: kAudioFormatMPEG4AAC,
-                AVSampleRateKey: sampleRate,
-                AVNumberOfChannelsKey: channelCount,
+                AVSampleRateKey: aacSampleRate,
+                AVNumberOfChannelsKey: aacChannelCount,
                 AVEncoderBitRateKey: 128_000
             ]
         )
@@ -25,6 +41,28 @@ final class AudioAssetWriter: @unchecked Sendable {
             throw AudioAssetWriterError.cannotAddInput
         }
         writer.add(input)
+    }
+
+    /// AAC accepts a fixed set of sample rates: 8000, 11025, 12000,
+    /// 16000, 22050, 24000, 32000, 44100, 48000, 64000, 88200, 96000.
+    /// Snap any caller-supplied rate to the nearest one in that set,
+    /// defaulting to 48000 if input is non-positive.
+    private static func aacSafeSampleRate(_ rate: Double) -> Double {
+        let supported: [Double] = [
+            8000, 11025, 12000, 16000, 22050, 24000,
+            32000, 44100, 48000, 64000, 88200, 96000
+        ]
+        guard rate.isFinite, rate > 0 else { return 48_000 }
+        // Pick the closest supported rate.
+        return supported.min(by: { abs($0 - rate) < abs($1 - rate) }) ?? 48_000
+    }
+
+    /// AAC supports 1..8 channels. Anything ≤ 0 or > 8 falls back
+    /// to 1 (mono) — which is what voice-processing-enabled mic
+    /// capture produces anyway.
+    private static func aacSafeChannelCount(_ count: Int) -> Int {
+        guard count >= 1, count <= 8 else { return 1 }
+        return count
     }
 
     func start() throws {
