@@ -29,7 +29,6 @@ struct MainRecorderView: View {
                     .popover(isPresented: $showAccountMenu, arrowEdge: .top) {
                         AccountMenuPopover(
                             email: viewModel.email.isEmpty ? nil : viewModel.email,
-                            onOpenDashboard: openDashboard,
                             onOpenLibrary: openDashboard,
                             onSignOut: {
                                 showAccountMenu = false

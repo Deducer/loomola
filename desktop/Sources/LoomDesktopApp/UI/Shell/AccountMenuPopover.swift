@@ -1,11 +1,10 @@
 import SwiftUI
 
 /// Popover anchored to the title-bar account avatar. Shows the
-/// signed-in user's email + a small action menu (Open dashboard,
-/// Open library, Sign out).
+/// signed-in user's email + a small action menu (Open library,
+/// Sign out).
 struct AccountMenuPopover: View {
     let email: String?
-    let onOpenDashboard: () -> Void
     let onOpenLibrary: () -> Void
     let onSignOut: () -> Void
 
@@ -26,7 +25,6 @@ struct AccountMenuPopover: View {
 
             Divider().overlay(DSColor.Border.subtle)
 
-            menuRow(title: "Open dashboard", icon: "safari", action: onOpenDashboard)
             menuRow(title: "Open library", icon: "rectangle.stack", action: onOpenLibrary)
 
             Divider().overlay(DSColor.Border.subtle)

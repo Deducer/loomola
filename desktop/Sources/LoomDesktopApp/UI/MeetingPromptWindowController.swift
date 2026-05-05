@@ -66,46 +66,46 @@ private struct MeetingPromptPanelView: View {
     let dismiss: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: DSSpacing.md) {
             Image(systemName: "waveform.circle.fill")
                 .font(.system(size: 28, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(DSColor.State.success)
                 .padding(.top, 2)
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: DSSpacing.xs) {
                 Text("Meeting ready")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(DSFont.Body.lg())
                     .foregroundStyle(.white)
                 Text(context.suggestedTitle)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(DSFont.Body.md())
                     .foregroundStyle(.white.opacity(0.84))
                     .lineLimit(1)
                 Text(context.sourceContextHint)
-                    .font(.system(size: 11))
+                    .font(DSFont.Body.sm())
                     .foregroundStyle(.white.opacity(0.52))
                     .lineLimit(1)
 
-                HStack(spacing: 8) {
+                HStack(spacing: DSSpacing.sm) {
                     Button("Start note", action: start)
                         .disabled(startDisabled)
                     Button("Not now", action: dismiss)
                         .buttonStyle(.plain)
                         .foregroundStyle(.white.opacity(0.72))
                 }
-                .font(.system(size: 12, weight: .semibold))
-                .padding(.top, 4)
+                .font(DSFont.Body.sm())
+                .padding(.top, DSSpacing.xs)
             }
 
             Spacer(minLength: 0)
         }
-        .padding(14)
+        .padding(DSSpacing.lg)
         .frame(width: 360, height: 132)
         .background(
-            RoundedRectangle(cornerRadius: 14)
+            RoundedRectangle(cornerRadius: DSRadius.lg)
                 .fill(Color(red: 0.12, green: 0.12, blue: 0.13).opacity(0.96))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 14)
+            RoundedRectangle(cornerRadius: DSRadius.lg)
                 .stroke(Color.white.opacity(0.12), lineWidth: 1)
         )
     }

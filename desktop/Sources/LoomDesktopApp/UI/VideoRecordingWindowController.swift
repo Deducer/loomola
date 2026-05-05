@@ -107,12 +107,12 @@ private struct VideoRecordingPanelView: View {
             RecordingDot(reduceMotion: reduceMotion)
             VStack(alignment: .leading, spacing: 1) {
                 Text("REC")
-                    .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                    .font(DSFont.Mono.body())
                     .tracking(1.5)
                     .foregroundStyle(.white.opacity(0.55))
                 TimelineView(.periodic(from: state.startedAt, by: 1)) { timeline in
                     Text(elapsedText(now: timeline.date))
-                        .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                        .font(DSFont.Mono.body())
                         .foregroundStyle(.white)
                 }
             }
@@ -127,7 +127,7 @@ private struct VideoRecordingPanelView: View {
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.white)
                     .frame(width: 32, height: 32)
-                    .background(Color.red.opacity(0.85), in: Circle())
+                    .background(DSColor.State.recording.opacity(0.92), in: Circle())
             }
             .buttonStyle(.plain)
             .help("Stop and upload recording")
@@ -135,22 +135,22 @@ private struct VideoRecordingPanelView: View {
             Button(action: state.discard) {
                 Image(systemName: "trash")
                     .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(Color.red.opacity(0.82))
+                    .foregroundStyle(DSColor.State.recording.opacity(0.92))
                     .frame(width: 28, height: 28)
                     .background(Color.white.opacity(hovering ? 0.16 : 0.10), in: Circle())
             }
             .buttonStyle(.plain)
             .help("Discard recording")
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, DSSpacing.lg)
+        .padding(.vertical, DSSpacing.md)
         .frame(width: 280, height: 56)
         .background(
-            RoundedRectangle(cornerRadius: 14)
+            RoundedRectangle(cornerRadius: DSRadius.lg)
                 .fill(Color(red: 0.10, green: 0.10, blue: 0.11).opacity(0.94))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 14)
+            RoundedRectangle(cornerRadius: DSRadius.lg)
                 .stroke(Color.white.opacity(0.10), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.36), radius: 18, x: 0, y: 10)
@@ -175,13 +175,13 @@ private struct RecordingDot: View {
     var body: some View {
         if reduceMotion {
             Circle()
-                .fill(Color.red)
+                .fill(DSColor.State.recording)
                 .frame(width: 10, height: 10)
         } else {
             TimelineView(.animation(minimumInterval: 0.05)) { timeline in
                 let pulse = pulseAlpha(at: timeline.date)
                 Circle()
-                    .fill(Color.red.opacity(pulse))
+                    .fill(DSColor.State.recording.opacity(pulse))
                     .frame(width: 10, height: 10)
             }
         }
@@ -203,7 +203,7 @@ private struct VideoLevelBars: View {
             HStack(alignment: .center, spacing: 2.5) {
                 ForEach(0..<5) { index in
                     Capsule()
-                        .fill(Color(red: 0.48, green: 0.9, blue: 0.08))
+                        .fill(DSColor.State.success)
                         .frame(
                             width: 3.5,
                             height: barHeight(index: index, date: timeline.date)

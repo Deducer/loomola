@@ -217,7 +217,7 @@ struct SettingsSheet: View {
                     }
                 }
                 HStack(spacing: DSSpacing.sm) {
-                    SecondaryButton("Open dashboard", icon: "safari") {
+                    SecondaryButton("Open library", icon: "rectangle.stack") {
                         if let url = URL(string: "https://loom.dissonance.cloud") {
                             NSWorkspace.shared.open(url)
                         }

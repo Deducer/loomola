@@ -89,7 +89,7 @@ private struct AudioRecordingPanelView: View {
 
             TimelineView(.periodic(from: state.startedAt, by: 1)) { timeline in
                 Text(elapsedText(now: timeline.date))
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .font(DSFont.Mono.body())
                     .foregroundStyle(.white.opacity(0.54))
             }
 
@@ -116,10 +116,10 @@ private struct AudioRecordingPanelView: View {
                         Image(systemName: "trash")
                             .font(.system(size: 11, weight: .bold))
                             .frame(width: 30, height: 30)
-                            .background(Color.red.opacity(0.14), in: Circle())
+                            .background(DSColor.State.recording.opacity(0.18), in: Circle())
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(Color.red.opacity(0.82))
+                    .foregroundStyle(DSColor.State.recording.opacity(0.92))
                     .help("Discard audio note")
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.92)))
@@ -170,7 +170,7 @@ private struct AudioLevelBars: View {
             HStack(alignment: .center, spacing: 3) {
                 ForEach(0..<5) { index in
                     Capsule()
-                        .fill(Color(red: 0.48, green: 0.9, blue: 0.08))
+                        .fill(DSColor.State.success)
                         .frame(width: 4, height: barHeight(index: index, date: timeline.date))
                 }
             }
@@ -193,7 +193,7 @@ private struct LiveDots: View {
         HStack(spacing: 5) {
             ForEach(0..<3) { index in
                 Circle()
-                    .fill(Color(red: 0.48, green: 0.9, blue: 0.08))
+                    .fill(DSColor.State.success)
                     .frame(width: dotSize(index: index), height: dotSize(index: index))
             }
         }
