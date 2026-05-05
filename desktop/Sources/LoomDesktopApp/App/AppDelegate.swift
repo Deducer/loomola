@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         cameraCoordinator: CameraCaptureCoordinator.shared
     )
     private var bubbleHotkey: GlobalHotkey?
+    private var recordHotkey: GlobalHotkey?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         configureMenuBar()
@@ -27,15 +28,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// these always reach us regardless of which app has focus —
     /// the right primitive for a status-bar app.
     ///
-    /// Default: ⌥⇧B toggles the bubble overlay. Avoids ⌘B since
-    /// every browser, every text editor, and Slack all hook ⌘B for
-    /// other things, and a global ⌘B would conflict everywhere.
+    /// Defaults:
+    ///   ⌥⇧B — toggles the bubble overlay.
+    ///   ⌥⇧R — toggles composite recording (start if idle, stop +
+    ///         upload if recording). Routed to the view model via
+    ///         RecorderCommands.toggleRecording NotificationCenter
+    ///         broadcast.
+    /// Avoid ⌘-only modifiers since every browser, text editor,
+    /// and Slack hook them for other things.
     private func configureGlobalHotkeys() {
         bubbleHotkey = GlobalHotkey(
             keyCode: UInt32(kVK_ANSI_B),
             modifiers: UInt32(optionKey | shiftKey),
             handler: { [weak self] in
                 self?.toggleBubbleOverlay()
+            }
+        )
+        recordHotkey = GlobalHotkey(
+            keyCode: UInt32(kVK_ANSI_R),
+            modifiers: UInt32(optionKey | shiftKey),
+            handler: {
+                RecorderCommands.postToggleRecording()
             }
         )
     }
@@ -58,22 +71,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Show Recorder", action: #selector(showRecorder), keyEquivalent: ""))
-        // Title is updated dynamically in validateMenuItem to reflect the
-        // current overlay visibility — see toggleBubbleOverlay below.
-        // No keyEquivalent on this menu item — the real shortcut is the
-        // ⌥⇧B Carbon global hotkey registered in configureGlobalHotkeys.
-        // We surface the keystroke as a visible hint via setKeyEquivalent
-        // + setKeyEquivalentModifierMask below so users see "⌥⇧B" next
-        // to the menu label.
+
+        // Toggle Recording menu item — fires the same notification as
+        // the ⌥⇧R global hotkey. View model in MainRecorderView
+        // subscribes and decides start vs stop based on state.
+        let recordItem = NSMenuItem(title: "Start Recording", action: #selector(toggleRecording), keyEquivalent: "r")
+        recordItem.keyEquivalentModifierMask = [.option, .shift]
+        menu.addItem(recordItem)
+
+        // Bubble overlay toggle — title updates in validateMenuItem.
         let bubbleItem = NSMenuItem(title: "Show Bubble Overlay", action: #selector(toggleBubbleOverlay), keyEquivalent: "b")
         bubbleItem.keyEquivalentModifierMask = [.option, .shift]
         menu.addItem(bubbleItem)
+
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Open Dashboard", action: #selector(openDashboard), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         item.menu = menu
         statusItem = item
+    }
+
+    @objc private func toggleRecording() {
+        RecorderCommands.postToggleRecording()
     }
 
     @objc private func showRecorder() {

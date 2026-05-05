@@ -72,6 +72,27 @@ struct MainRecorderView: View {
             audioRecordingWindow.hide()
             videoRecordingWindow.hide()
         }
+        .onReceive(NotificationCenter.default.publisher(for: RecorderCommands.toggleRecording)) { _ in
+            handleToggleRecording()
+        }
+    }
+
+    /// Bridges menubar / global-hotkey toggle requests to the view
+    /// model. Decides start vs stop based on activeRecordingKind:
+    ///   - nil → startLocalRecording (composite video)
+    ///   - .video → stopLocalRecordingAndUpload
+    ///   - .audio → no-op (audio note has its own start/stop UX)
+    private func handleToggleRecording() {
+        switch viewModel.activeRecordingKind {
+        case nil:
+            viewModel.startLocalRecording()
+        case .some(.video):
+            viewModel.stopLocalRecordingAndUpload()
+        case .some(.audio):
+            // Audio note flow has its own controls; ignore global
+            // toggle while an audio note is recording.
+            break
+        }
     }
 
     private var signedInBody: some View {
