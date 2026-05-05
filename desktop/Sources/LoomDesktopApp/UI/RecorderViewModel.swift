@@ -787,6 +787,18 @@ final class RecorderViewModel: ObservableObject {
     private func startMeetingWatch() {
         guard meetingWatchTask == nil else { return }
         refreshChromeMeetingContext(showStatus: false)
+        // The idle meeting-watch loop is intentionally minimal: it
+        // only reads the Chrome extension's signal file from disk
+        // (~1ms). It used to also call SCShareableContent.current as
+        // a fallback for non-extension users — but that enumerates
+        // every window in the session (~10–50ms of WindowServer +
+        // kernel work, ~240 calls/hour), which is wasteful on a
+        // background-running app. SCShareableContent still runs on
+        // explicit user actions (Settings → Refresh Sources, or
+        // start-of-recording), and the heuristic detector via
+        // MeetingDetector.detect(from:) gets called on those refresh
+        // paths — so detection still works for non-Chrome users,
+        // just at user-driven cadence rather than every 15s.
         meetingWatchTask = Task { [weak self] in
             while !Task.isCancelled {
                 do {
@@ -795,9 +807,6 @@ final class RecorderViewModel: ObservableObject {
                     return
                 }
                 self?.refreshChromeMeetingContext(showStatus: false)
-                if self?.canListCaptureSourcesWithoutPrompt() == true {
-                    self?.refreshCaptureSources(showStatus: false)
-                }
             }
         }
     }
