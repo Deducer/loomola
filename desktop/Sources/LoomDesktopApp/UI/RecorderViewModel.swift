@@ -16,6 +16,11 @@ final class RecorderViewModel: ObservableObject {
     @Published private(set) var activeRecordingKind: DesktopRecordingKind?
     @Published private(set) var activeAudioRecordingStartedAt: Date?
     @Published private(set) var activeAudioRecordingSlug: String?
+    /// Backend media_object UUID for the active audio recording.
+    /// Used by the live-notes side panel to PUT the typed body to
+    /// /api/notes/<id> via debounced autosave. Cleared when the
+    /// recording stops.
+    @Published private(set) var activeAudioRecordingId: String?
     /// True while the audio note recording is paused. Drives the
     /// Pause↔Resume UI state in RecordingHomeView. Mirrors
     /// AudioNoteRecorder.isPaused but kept as an @Published mirror
@@ -214,6 +219,7 @@ final class RecorderViewModel: ObservableObject {
             dismissedMeetingContext = nil
             autoSuggestedAudioTitle = nil
             activeAudioRecordingSlug = nil
+            activeAudioRecordingId = nil
             audioLevel = 0
             try? await authService.signOut()
             accessToken = nil
@@ -723,6 +729,9 @@ final class RecorderViewModel: ObservableObject {
                 activeRecordingKind = .audio
                 activeAudioRecordingStartedAt = Date()
                 activeAudioRecordingSlug = session.backendSlug
+                activeAudioRecordingId = session.backendRecordingId
+                liveNotesBody = ""
+                startNotesAutosave()
                 audioLevel = 0
                 state = .recording
                 statusMessage = "Recording audio note with \(session.tracks.count) track(s)."
@@ -743,17 +752,34 @@ final class RecorderViewModel: ObservableObject {
         // recording surface would stay up while the upload runs in
         // the background and the user might re-click thinking
         // nothing happened.
+        notesAutosaveTask?.cancel()
+        notesAutosaveTask = nil
+        let pendingMediaId = activeAudioRecordingId
+        let pendingBody = liveNotesBody
         activeRecordingKind = nil
         activeAudioRecordingStartedAt = nil
         activeAudioRecordingSlug = nil
+        // Keep activeAudioRecordingId until after the final flush.
         audioLevel = 0
         isAudioNotePaused = false
         state = .finalizing
         statusMessage = "Finalizing audio note..."
         Task {
             do {
+                // Final notes flush BEFORE upload completes so the
+                // server-side regen (Phase E) sees the user's full
+                // typed content. Best-effort — failure here doesn't
+                // abort the upload.
+                if let mediaId = pendingMediaId, !pendingBody.isEmpty {
+                    try? await backendClient?.putNoteBody(
+                        mediaId: mediaId,
+                        body: pendingBody
+                    )
+                }
                 state = .uploading(progress: 0.2)
                 let complete = try await audioNoteRecorder.stopAndUpload()
+                activeAudioRecordingId = nil
+                liveNotesBody = ""
                 state = .complete(slug: complete.slug)
                 statusMessage = "Uploaded audio note. Slug: \(complete.slug)"
                 _recentService?.refresh()
@@ -761,6 +787,56 @@ final class RecorderViewModel: ObservableObject {
                 state = .failed(message: error.localizedDescription)
                 statusMessage = "Audio note upload failed: \(error.localizedDescription)"
             }
+        }
+    }
+
+    // MARK: - Live notes autosave
+
+    /// Background task that watches `liveNotesBody` for changes and
+    /// debounces a PUT /api/notes/<mediaId> for the active recording.
+    /// Lives only while an audio note is recording. Cancelled on
+    /// stop / cancel / signOut.
+    private var notesAutosaveTask: Task<Void, Never>?
+    /// Last body successfully synced to the server. Avoids
+    /// re-PUTting identical content on every debounce tick.
+    private var lastSyncedNotesBody: String = ""
+
+    private func startNotesAutosave() {
+        notesAutosaveTask?.cancel()
+        lastSyncedNotesBody = ""
+        notesAutosaveTask = Task { [weak self] in
+            // 2-second idle window: every time liveNotesBody
+            // changes, restart the wait. After 2s of no edits, push
+            // to the backend. The Combine-style "debounce" operator
+            // would be cleaner but we don't import Combine here.
+            var lastSeen: String = ""
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_000_000_000) // 1s tick
+                guard let self else { return }
+                let current = self.liveNotesBody
+                if current == lastSeen, current != self.lastSyncedNotesBody {
+                    // Two consecutive ticks (~2s) of no change AND
+                    // not yet synced → push to backend.
+                    await self.flushLiveNotes()
+                }
+                lastSeen = current
+            }
+        }
+    }
+
+    @discardableResult
+    private func flushLiveNotes() async -> Bool {
+        guard let backendClient,
+              let mediaId = activeAudioRecordingId
+        else { return false }
+        let body = liveNotesBody
+        do {
+            try await backendClient.putNoteBody(mediaId: mediaId, body: body)
+            lastSyncedNotesBody = body
+            return true
+        } catch {
+            print("[notes-autosave] PUT failed: \(error.localizedDescription)")
+            return false
         }
     }
 
@@ -784,6 +860,8 @@ final class RecorderViewModel: ObservableObject {
 
     func cancelAudioNoteRecording() {
         guard let audioNoteRecorder else { return }
+        notesAutosaveTask?.cancel()
+        notesAutosaveTask = nil
         state = .finalizing
         statusMessage = "Discarding audio note..."
         Task {
@@ -791,8 +869,10 @@ final class RecorderViewModel: ObservableObject {
             activeRecordingKind = nil
             activeAudioRecordingStartedAt = nil
             activeAudioRecordingSlug = nil
+            activeAudioRecordingId = nil
             audioLevel = 0
             isAudioNotePaused = false
+            liveNotesBody = ""
             state = .signedInIdle
             statusMessage = "Audio note discarded."
         }

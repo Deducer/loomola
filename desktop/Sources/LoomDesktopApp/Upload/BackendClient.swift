@@ -47,6 +47,17 @@ actor BackendClient {
         try await get(path: "/api/recordings/recent?limit=\(limit)")
     }
 
+    /// Persist the user's live-typed notes body for an audio
+    /// recording. Called from the desktop's NotesSidePanel via a
+    /// debounced autosave pipeline. Body is plain markdown; the
+    /// server upserts the notes row keyed by media_object id.
+    func putNoteBody(mediaId: String, body: String) async throws {
+        let _: EmptyResponse = try await put(
+            path: "/api/notes/\(mediaId)",
+            body: NoteBodyRequest(body: body)
+        )
+    }
+
     func markObsidianSynced(mediaId: String, filePath: String) async throws {
         let _: EmptyResponse = try await post(
             path: "/api/notes/\(mediaId)/obsidian-synced",
@@ -79,13 +90,28 @@ actor BackendClient {
         return data
     }
 
+    private func put<RequestBody: Encodable, ResponseBody: Decodable>(
+        path: String,
+        body: RequestBody
+    ) async throws -> ResponseBody {
+        try await jsonRequest(method: "PUT", path: path, body: body)
+    }
+
     private func post<RequestBody: Encodable, ResponseBody: Decodable>(
+        path: String,
+        body: RequestBody
+    ) async throws -> ResponseBody {
+        try await jsonRequest(method: "POST", path: path, body: body)
+    }
+
+    private func jsonRequest<RequestBody: Encodable, ResponseBody: Decodable>(
+        method: String,
         path: String,
         body: RequestBody
     ) async throws -> ResponseBody {
         let token = try await accessTokenProvider()
         var request = URLRequest(url: baseURL.appending(path: path))
-        request.httpMethod = "POST"
+        request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.httpBody = try JSONEncoder().encode(body)
@@ -244,6 +270,10 @@ struct RecentRecordingDTO: Decodable, Equatable, Sendable {
     let createdAt: String  // ISO 8601
     let durationSeconds: Double?
     let thumbnailUrl: String?
+}
+
+struct NoteBodyRequest: Encodable, Sendable {
+    let body: String
 }
 
 struct ObsidianSyncedRequest: Encodable, Sendable {
