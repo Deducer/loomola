@@ -20,7 +20,10 @@ let package = Package(
             dependencies: [
                 .product(name: "Supabase", package: "supabase-swift")
             ],
-            path: "Sources/LoomDesktopApp"
+            path: "Sources/LoomDesktopApp",
+            resources: [
+                .copy("Resources/Fonts")
+            ]
         ),
         .executableTarget(
             name: "LoomDesktopNativeHost",

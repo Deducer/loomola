@@ -4,6 +4,10 @@ import SwiftUI
 struct LoomDesktopApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
+    init() {
+        FontLoader.registerAll()
+    }
+
     var body: some Scene {
         WindowGroup("Loomola") {
             MainRecorderView()

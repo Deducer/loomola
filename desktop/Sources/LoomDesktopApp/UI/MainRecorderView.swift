@@ -867,13 +867,11 @@ private struct Card<Content: View>: View {
 
     var body: some View {
         content
-            .padding(16)
+            .padding(.horizontal, DSSpacing.xl)
+            .padding(.vertical, DSSpacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-            )
+            .background(DSColor.Bg.surface, in: RoundedRectangle(cornerRadius: DSRadius.lg))
+            .dsShadow(.subtle)
     }
 }
 
