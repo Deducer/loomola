@@ -9,13 +9,38 @@ struct MainRecorderView: View {
     @State private var permissionStatus: PermissionStatus = PermissionChecker.currentStatus()
     @State private var dismissedPreflight = false
     @State private var captureMode: CaptureMode = .audio
+    @State private var showSettings = false
+    @State private var showAccountMenu = false
     @FocusState private var focusedField: FocusedField?
 
     var body: some View {
         VStack(spacing: 0) {
-            AppHeader(state: viewModel.state)
+            CustomTitleBar(
+                userInitial: viewModel.email.first,
+                onSettings: { showSettings = true },
+                onAccount: { showAccountMenu.toggle() }
+            )
+            .overlay(alignment: .topTrailing) {
+                // Anchor for the popover. Empty view positioned where
+                // the avatar sits (~30pt from the right edge, at the
+                // title bar's vertical center).
+                Color.clear
+                    .frame(width: 30, height: 30)
+                    .padding(.trailing, DSSpacing.lg)
+                    .popover(isPresented: $showAccountMenu, arrowEdge: .top) {
+                        AccountMenuPopover(
+                            email: viewModel.email.isEmpty ? nil : viewModel.email,
+                            onOpenDashboard: openDashboard,
+                            onOpenLibrary: openDashboard,
+                            onSignOut: {
+                                showAccountMenu = false
+                                viewModel.signOut()
+                            }
+                        )
+                    }
+            }
 
-            Divider()
+            Divider().overlay(DSColor.Border.subtle)
 
             if viewModel.state == .signedOut {
                 SignedOutView(
@@ -28,7 +53,10 @@ struct MainRecorderView: View {
                 signedInBody
             }
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(DSColor.Bg.canvas)
+        .sheet(isPresented: $showSettings) {
+            SettingsSheet(onDismiss: { showSettings = false })
+        }
         .onAppear {
             AppActivation.bringRecorderToFront()
             focusDefaultField()
@@ -83,6 +111,13 @@ struct MainRecorderView: View {
     ///   - nil → startLocalRecording (composite video)
     ///   - .video → stopLocalRecordingAndUpload
     ///   - .audio → no-op (audio note has its own start/stop UX)
+    private func openDashboard() {
+        if let url = URL(string: "https://loom.dissonance.cloud") {
+            NSWorkspace.shared.open(url)
+        }
+        showAccountMenu = false
+    }
+
     private func handleToggleRecording() {
         switch viewModel.activeRecordingKind {
         case nil:
@@ -912,33 +947,5 @@ private struct DeveloperToolsDisclosure<Content: View>: View {
     }
 }
 
-/// Renders the loomola brand mark from the bundled PNG when available,
-/// falling back to a generic recording-themed system icon when running
-/// outside the .app bundle (e.g. raw `swift run` for fast iteration).
-private struct BrandLogoMark: View {
-    let size: CGFloat
-
-    var body: some View {
-        if let image = NSImage(named: "loomola-logo-mark") {
-            Image(nsImage: image)
-                .resizable()
-                .interpolation(.high)
-                .aspectRatio(contentMode: .fit)
-                .frame(width: size, height: size)
-        } else {
-            ZStack {
-                RoundedRectangle(cornerRadius: size * 0.24)
-                    .fill(.linearGradient(
-                        colors: [.blue.opacity(0.92), .green.opacity(0.86)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ))
-                Image(systemName: "waveform.and.video")
-                    .font(.system(size: size * 0.45, weight: .semibold))
-                    .foregroundStyle(.white)
-            }
-            .frame(width: size, height: size)
-        }
-    }
-}
+// BrandLogoMark moved to UI/Shell/CustomTitleBar.swift (M3 Phase 2).
 
