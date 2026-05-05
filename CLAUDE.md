@@ -134,6 +134,36 @@ After `generate_title_summary` finishes for any recording (Loom or Granola) that
 - **Cost:** ~$0.005 per note. Job is best-effort; failures never block the title/summary write.
 - **Realtime:** suggestions appear on next page load — no client-side realtime subscription on the dashboard yet. That's a follow-up polish.
 
+## Stage 4 — Desktop M2 (in progress)
+
+Premium recorder milestone for the macOS desktop app. Spec: [`docs/superpowers/specs/2026-05-04-desktop-app-m2-premium-recorder-design.md`](docs/superpowers/specs/2026-05-04-desktop-app-m2-premium-recorder-design.md).
+
+**Phase 0 (foundations) — shipped:** `BubblePlacement` value type with the full coordinate-projection math (Retina + multi-display + clamping + corner cases, 8 unit tests). `BubblePositionController` (NSLock-guarded thread-safe placement holder, 4 tests). `RecorderStateMachine` extracting transition table from `RecorderViewModel` (10 tests). All under `desktop/Sources/LoomDesktopApp/Models/` + `Capture/`.
+
+**Phase 1 (composite writer) — partial.** All inputs are wired:
+- `ScreenCaptureCoordinator.onScreenSampleBuffer` callback + `latestScreenPixelBuffer()` for frame access
+- New `CameraCaptureCoordinator` is the single source of truth for camera. AppDelegate creates one and shares it with `BubbleOverlayWindowController` for preview AND the future compositor for sampling. No more two-sessions-per-camera.
+- `MicrophoneCaptureCoordinator` rewritten on AVAudioEngine + `setVoiceProcessingEnabled(true)` for AEC, plus `onSampleBuffer` callback for the compositor
+- Bubble panel marked `sharingType = .none` so SCK excludes it from capture (compositor draws it independently)
+
+The real `CompositeRecorder` (AVAssetWriter + CIContext, screen + bubble compose with circle/rectangle alpha mask, AAC mic input) is built and callable, **but not yet wired into `RecorderViewModel`** — production recording still uses the M1 SCRecordingOutput path. The compositor compiles + has the right interface; end-to-end smoke comes when the wiring lands.
+
+**Bubble polish that landed along the way:**
+- Menubar Show/Hide toggle via `NSMenuItemValidation` updating the title.
+- Custom drag in `BubblePanel` (subclass of NSPanel) instead of `isMovableByWindowBackground` — bypasses AppKit's drag manager.
+- `.hudWindow + .popUpMenu + .transient + .stationary + .ignoresCycle` to opt out of Stage Manager / Mission Control / window cycling. **Caveat:** macOS native tiling and Chrome split-view snap zones may still flicker; the architectural fix (fullscreen overlay where the panel never moves) is in flight.
+- Scroll-wheel resizes the bubble (90–360 pt, ⌥/⇧ for slow/fine). No corner handle yet.
+- Dark `black @ 0.32` placeholder background instead of jarring purple flash on hide.
+
+**Sample-buffer plumbing convention:** capture coordinators have `nonisolated(unsafe)` `onXxxSampleBuffer` callback properties so the compositor can subscribe without touching the existing file-writer paths. Same pattern for screen frames + mic samples.
+
+## Recent web work (post-G-M13)
+
+- **G-M14 — Notes bulk select / delete / move:** notes list converted to a client component, mirrors `RecordingsGrid` UX (per-row checkbox on hover, shift-click range, bottom action bar). Reuses the existing type-agnostic `/api/recordings/bulk-delete` and `/api/recordings/[id]/folder` endpoints.
+- **G-M15 — Notes-list attachment thumbnails + back-to-tab:** notes with attached images render the images in the row icon (1 = full, 2 = halves, 3-4 = 2×2 grid). Note-detail back arrow returns to `/?tab=notes`. New `listImageAttachmentsForMediaIds` query is a single round trip per dashboard load.
+- **G-M16 — Desktop AEC for mic:** mic capture rewritten on AVAudioEngine + voice processing. macOS subtracts the system playback signal from mic input — no more participant-voice doubling when recording over speakers.
+- **G-M17 — AI notes scaling for hour+ to multi-hour meetings:** `enhancedNotesSchema.summary` cap raised 6000 → 200000 chars; `maxOutputTokens: 32000` on the audio enhance call. 5-6 hour event recordings render full structured notes instead of truncating mid-sentence. Note page title trimmed so body sits above the fold.
+
 ## Granola-alt (in progress)
 
 A second product (audio meeting notes) built on top of this same backend. Spec: [`docs/superpowers/specs/2026-04-28-granola-clone-design.md`](docs/superpowers/specs/2026-04-28-granola-clone-design.md).

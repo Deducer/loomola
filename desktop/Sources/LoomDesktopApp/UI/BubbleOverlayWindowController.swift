@@ -1,5 +1,6 @@
 @preconcurrency import AppKit
 @preconcurrency import AVFoundation
+import Foundation
 
 @MainActor
 final class BubbleOverlayWindowController {
@@ -9,22 +10,40 @@ final class BubbleOverlayWindowController {
     /// drag position.
     let positionController: BubblePositionController
 
-    /// Shape used both for the on-screen panel mask and the placement
-    /// published to `positionController`. Defaults to circle to match
-    /// the existing `CameraBubbleView` cornerRadius behavior.
+    /// Shape used both for the on-screen mask and the placement
+    /// published to `positionController`.
     var shape: BubbleShape {
-        didSet { publishCurrentPlacement() }
+        didSet {
+            bubbleView?.applyShape(shape)
+            publishCurrentPlacement()
+        }
     }
 
     /// Shared camera session. When provided, the bubble overlay uses
     /// the coordinator's session for its preview layer AND the
-    /// CompositeRecorder samples from the same coordinator's
+    /// `CompositeRecorder` samples from the same coordinator's
     /// `latestPixelBuffer()` — so we never run two camera sessions
     /// on the same device.
     let cameraCoordinator: CameraCaptureCoordinator?
 
-    private var panel: NSPanel?
-    private var moveObservation: NSObjectProtocol?
+    /// One stationary fullscreen panel hosts the bubble as a
+    /// subview. The panel itself never moves — that's the entire
+    /// point. macOS native tiling, Stage Manager, and Chrome's
+    /// split-view tab snap all fire on window-frame changes, so
+    /// keeping the panel parked at the screen frame avoids them
+    /// entirely. The bubble visually moves by repositioning its
+    /// subview within the container.
+    private var hostPanel: BubbleOverlayPanel?
+    private var bubbleView: CameraBubbleView?
+    private var hoverTimer: DispatchSourceTimer?
+    private weak var trackedScreen: NSScreen?
+
+    /// Bubble's current frame in **screen** coordinates (AppKit y-up).
+    /// This is the source of truth that drives `BubblePlacement` and
+    /// the bubble subview's frame within the container.
+    private var currentBubbleFrameInScreen: NSRect = NSRect(
+        x: 320, y: 320, width: 180, height: 180
+    )
 
     init(
         positionController: BubblePositionController = BubblePositionController(),
@@ -37,49 +56,35 @@ final class BubbleOverlayWindowController {
     }
 
     deinit {
-        if let moveObservation {
-            NotificationCenter.default.removeObserver(moveObservation)
-        }
+        hoverTimer?.cancel()
     }
 
     func showPlaceholder() {
-        // Camera coordinator is started on every show, not just the
-        // first — hide() stops the session and the early-return below
-        // for an existing panel must not skip the restart.
-        // requestPermissionAndStart is idempotent (no-op when already
-        // running with the same device).
+        // Idempotent camera start. hide() stops the coordinator, so
+        // every show must restart it.
         cameraCoordinator?.requestPermissionAndStart(deviceID: nil)
 
-        if let panel {
-            panel.makeKeyAndOrderFront(nil)
+        if let hostPanel {
+            hostPanel.makeKeyAndOrderFront(nil)
+            startHoverTracking()
             publishCurrentPlacement()
             return
         }
 
-        let contentView = CameraBubbleView(
-            frame: NSRect(x: 0, y: 0, width: 180, height: 180),
-            sharedSession: cameraCoordinator?.session
-        )
-        let panel = BubblePanel(
-            contentRect: NSRect(x: 320, y: 320, width: 180, height: 180),
-            // .hudWindow tells AppKit "this is a transient HUD-style
-            // overlay, not a regular window." Combined with the
-            // collectionBehavior flags below, it tells most window-
-            // management code (Stage Manager, Mission Control,
-            // window-arrangement HUDs) to leave us alone. Third-party
-            // tools that hook ALL window moves (Chrome's split-view
-            // tab snap, Magnet, Rectangle) may still flicker — those
-            // would require a non-AppKit overlay (CGS private APIs)
-            // to fully bypass.
+        guard let screen = NSScreen.main else { return }
+        trackedScreen = screen
+
+        // Fullscreen invisible panel. Stays parked at the screen
+        // frame for its entire lifetime.
+        let panel = BubbleOverlayPanel(
+            contentRect: screen.frame,
             styleMask: [.borderless, .nonactivatingPanel, .hudWindow],
             backing: .buffered,
             defer: false
         )
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = true
-        // .popUpMenu sits above .floating and above Stage Manager's
-        // window-snap UI.
+        panel.hasShadow = false
         panel.level = .popUpMenu
         panel.collectionBehavior = [
             .canJoinAllSpaces,
@@ -88,137 +93,211 @@ final class BubbleOverlayWindowController {
             .stationary,
             .ignoresCycle,
         ]
-        panel.contentView = contentView
-        panel.isMovableByWindowBackground = false
         panel.isMovable = false
+        panel.isMovableByWindowBackground = false
         panel.isExcludedFromWindowsMenu = true
-        // Hide from ScreenCaptureKit so the compositor's screen
-        // capture is "naked" of the overlay — bubble is composited
-        // independently at the user's BubblePlacement; capturing it
-        // too would draw it twice.
+        // Default: pass clicks through to the desktop. We flip this
+        // to false on hover-over-bubble in `updateHoverState()`.
+        panel.ignoresMouseEvents = true
+        // Don't capture this window in the screen-recording compositor.
         panel.sharingType = .none
-        panel.orderFrontRegardless()
-        self.panel = panel
 
-        observeMoves(of: panel)
+        let container = NSView(frame: NSRect(origin: .zero, size: screen.frame.size))
+        container.wantsLayer = true
+        panel.contentView = container
+
+        // The bubble subview lives inside the container at the
+        // bubble's screen coordinates relative to the container's
+        // origin (which equals the screen origin).
+        let bubble = CameraBubbleView(
+            frame: bubbleFrameInContainer(screen: screen),
+            sharedSession: cameraCoordinator?.session
+        )
+        bubble.applyShape(shape)
+        bubble.dragHandler = { [weak self] event in
+            self?.handleDrag(event: event)
+        }
+        bubble.scrollHandler = { [weak self] event in
+            self?.handleScroll(event: event)
+        }
+        container.addSubview(bubble)
+        bubbleView = bubble
+
+        panel.orderFrontRegardless()
+        hostPanel = panel
+
+        startHoverTracking()
         publishCurrentPlacement()
     }
 
     func hide() {
-        panel?.orderOut(nil)
+        hoverTimer?.cancel()
+        hoverTimer = nil
+        hostPanel?.orderOut(nil)
+        hostPanel?.ignoresMouseEvents = true
         positionController.set(nil)
         cameraCoordinator?.stop()
     }
 
     var currentFrame: CGRect? {
-        panel?.frame
+        hostPanel == nil ? nil : currentBubbleFrameInScreen
     }
 
     /// True when the overlay panel exists and is visible on screen.
     /// Used by the menubar to decide whether to render "Show" or
     /// "Hide" on the toggle item.
     var isVisible: Bool {
-        guard let panel else { return false }
-        return panel.isVisible
+        guard let hostPanel else { return false }
+        return hostPanel.isVisible
+    }
+
+    // MARK: - Drag
+
+    private func handleDrag(event: BubbleDragEvent) {
+        guard let bubbleView, let screen = trackedScreen else { return }
+        switch event.phase {
+        case .began, .changed:
+            // The bubble subview lives in container coordinates. The
+            // container is parked at the screen origin, so updating
+            // the subview's origin in container coords is the same as
+            // updating the bubble's screen-coord origin (modulo the
+            // container's flippedness — NSView default is y-up).
+            let newScreenOrigin = NSPoint(
+                x: event.bubbleScreenOriginAtMouseDown.x + event.deltaInScreen.dx,
+                y: event.bubbleScreenOriginAtMouseDown.y + event.deltaInScreen.dy
+            )
+            currentBubbleFrameInScreen = NSRect(
+                origin: newScreenOrigin,
+                size: currentBubbleFrameInScreen.size
+            )
+            bubbleView.frame = bubbleFrameInContainer(screen: screen)
+            publishCurrentPlacement()
+        case .ended:
+            publishCurrentPlacement()
+        }
+    }
+
+    private func handleScroll(event: NSEvent) {
+        guard let bubbleView, let screen = trackedScreen else { return }
+        let raw = event.scrollingDeltaY != 0 ? event.scrollingDeltaY : event.scrollingDeltaX
+        if raw == 0 { return }
+        let modifier = event.modifierFlags
+        let speed: CGFloat = modifier.contains(.shift) || modifier.contains(.option) ? 0.4 : 1.4
+        let delta = raw * speed
+        let currentSize = currentBubbleFrameInScreen.size.width
+        let newSide = max(90, min(360, currentSize + delta))
+        if abs(newSide - currentSize) < 0.5 { return }
+        // Keep center fixed.
+        let center = NSPoint(
+            x: currentBubbleFrameInScreen.midX,
+            y: currentBubbleFrameInScreen.midY
+        )
+        currentBubbleFrameInScreen = NSRect(
+            x: center.x - newSide / 2,
+            y: center.y - newSide / 2,
+            width: newSide,
+            height: newSide
+        )
+        bubbleView.frame = bubbleFrameInContainer(screen: screen)
+        publishCurrentPlacement()
+    }
+
+    // MARK: - Hover tracking
+
+    /// Polls `NSEvent.mouseLocation` at 60 Hz to decide whether the
+    /// cursor is over the bubble's circular hit region. When yes,
+    /// flips `ignoresMouseEvents = false` so the bubble subview
+    /// receives clicks + scroll. When no, flips back to true so
+    /// clicks pass through to whatever's beneath the desktop overlay.
+    /// This is the trick that lets a fullscreen invisible window
+    /// have per-region click-through without low-level CGEventTap
+    /// privileges.
+    private func startHoverTracking() {
+        hoverTimer?.cancel()
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now(), repeating: .milliseconds(16))
+        timer.setEventHandler { [weak self] in
+            self?.updateHoverState()
+        }
+        timer.resume()
+        hoverTimer = timer
+    }
+
+    private func updateHoverState() {
+        guard let panel = hostPanel, let bubbleView else { return }
+        // While dragging, never let clicks pass through — the user
+        // might overshoot the bubble while the cursor is moving.
+        if bubbleView.isDragging {
+            if panel.ignoresMouseEvents {
+                panel.ignoresMouseEvents = false
+            }
+            return
+        }
+        let cursor = NSEvent.mouseLocation
+        let inHit = isCursorInBubble(cursor: cursor)
+        if inHit && panel.ignoresMouseEvents {
+            panel.ignoresMouseEvents = false
+        } else if !inHit && !panel.ignoresMouseEvents {
+            panel.ignoresMouseEvents = true
+        }
+    }
+
+    private func isCursorInBubble(cursor: NSPoint) -> Bool {
+        let frame = currentBubbleFrameInScreen
+        // For circle, only count points inside the inscribed circle.
+        // For rectangle, just frame.contains.
+        switch shape {
+        case .circle:
+            let center = NSPoint(x: frame.midX, y: frame.midY)
+            let radius = min(frame.width, frame.height) / 2
+            let dx = cursor.x - center.x
+            let dy = cursor.y - center.y
+            return dx * dx + dy * dy <= radius * radius
+        case .rectangle:
+            return frame.contains(cursor)
+        }
     }
 
     // MARK: - Position publishing
 
-    private func observeMoves(of panel: NSPanel) {
-        if let moveObservation {
-            NotificationCenter.default.removeObserver(moveObservation)
-        }
-        moveObservation = NotificationCenter.default.addObserver(
-            forName: NSWindow.didMoveNotification,
-            object: panel,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.publishCurrentPlacement()
-            }
-        }
+    private func bubbleFrameInContainer(screen: NSScreen) -> NSRect {
+        // Container origin = screen.frame.origin (panel is at screen
+        // frame). Bubble screen origin minus container origin gives
+        // bubble origin in container coords.
+        let dx = currentBubbleFrameInScreen.origin.x - screen.frame.origin.x
+        let dy = currentBubbleFrameInScreen.origin.y - screen.frame.origin.y
+        return NSRect(
+            x: dx,
+            y: dy,
+            width: currentBubbleFrameInScreen.width,
+            height: currentBubbleFrameInScreen.height
+        )
     }
 
     private func publishCurrentPlacement() {
-        guard let panel else {
-            positionController.set(nil)
-            return
-        }
         positionController.set(
             BubblePlacement(
-                frameInScreenPoints: panel.frame,
+                frameInScreenPoints: currentBubbleFrameInScreen,
                 shape: shape
             )
         )
     }
 }
 
-/// NSPanel subclass that owns the bubble's drag + scroll-to-resize.
-/// Drag uses programmatic `setFrameOrigin` rather than AppKit's
-/// `isMovableByWindowBackground` machinery — that machinery hooks
-/// into more window-management UIs. Scroll-wheel scaling is the v1
-/// resize affordance (no Loom-style corner handle yet).
-private final class BubblePanel: NSPanel {
-    private var dragMouseDownInScreen: NSPoint?
-    private var dragInitialOrigin: NSPoint?
-
-    /// Bounds for scroll-wheel resize. Loom's bubble is roughly in
-    /// this range — small enough to corner-perch, big enough to read
-    /// expressions when centered.
-    private static let minSize: CGFloat = 90
-    private static let maxSize: CGFloat = 360
-
+/// NSPanel subclass — the only special behavior is `canBecomeKey =
+/// false` so the bubble never steals focus from the active app.
+private final class BubbleOverlayPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+}
 
-    override func mouseDown(with event: NSEvent) {
-        dragMouseDownInScreen = NSEvent.mouseLocation
-        dragInitialOrigin = frame.origin
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        guard let downAt = dragMouseDownInScreen,
-              let initialOrigin = dragInitialOrigin
-        else { return }
-        let now = NSEvent.mouseLocation
-        let dx = now.x - downAt.x
-        let dy = now.y - downAt.y
-        setFrameOrigin(NSPoint(x: initialOrigin.x + dx, y: initialOrigin.y + dy))
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        dragMouseDownInScreen = nil
-        dragInitialOrigin = nil
-    }
-
-    override func scrollWheel(with event: NSEvent) {
-        // Scroll wheel resizes the bubble, kept centered. Both axes
-        // contribute so trackpad users get the effect with horizontal
-        // or vertical scroll. Hold ⌥/⇧ to slow the resize down for
-        // fine adjustments.
-        let raw = event.scrollingDeltaY != 0 ? event.scrollingDeltaY : event.scrollingDeltaX
-        if raw == 0 { return }
-        let modifier = event.modifierFlags
-        let speed: CGFloat = modifier.contains(.shift) || modifier.contains(.option) ? 0.4 : 1.4
-        let delta = raw * speed
-        let currentSize = frame.size
-        let newSide = max(
-            Self.minSize,
-            min(Self.maxSize, currentSize.width + delta)
-        )
-        if abs(newSide - currentSize.width) < 0.5 { return }
-
-        // Keep the bubble centered on its current center while
-        // resizing — feels right for a circle.
-        let center = NSPoint(x: frame.midX, y: frame.midY)
-        let newFrame = NSRect(
-            x: center.x - newSide / 2,
-            y: center.y - newSide / 2,
-            width: newSide,
-            height: newSide
-        )
-        setFrame(newFrame, display: true)
-    }
+/// Drag event payload passed from the bubble subview to the
+/// controller's drag handler. All coordinates are in screen space.
+struct BubbleDragEvent {
+    enum Phase { case began, changed, ended }
+    let phase: Phase
+    let bubbleScreenOriginAtMouseDown: NSPoint
+    let deltaInScreen: (dx: CGFloat, dy: CGFloat)
 }
 
 private final class CameraBubbleView: NSView {
@@ -230,6 +309,13 @@ private final class CameraBubbleView: NSView {
     private let manageInputs: Bool
     private let sessionQueue = DispatchQueue(label: "cloud.dissonance.loom.desktop.camera-preview")
     private let previewLayer: AVCaptureVideoPreviewLayer
+
+    var dragHandler: ((BubbleDragEvent) -> Void)?
+    var scrollHandler: ((NSEvent) -> Void)?
+
+    private var dragMouseDownInScreen: NSPoint?
+    private var bubbleScreenOriginAtMouseDown: NSPoint?
+    private(set) var isDragging = false
 
     init(frame frameRect: NSRect, sharedSession: AVCaptureSession?) {
         if let sharedSession {
@@ -244,12 +330,10 @@ private final class CameraBubbleView: NSView {
         wantsLayer = true
         layer?.cornerRadius = frameRect.width / 2
         layer?.masksToBounds = true
-        // Subtle dark placeholder. The camera preview layer is on top
-        // and fills the bubble whenever frames are flowing; this
-        // background is only visible during the brief gap between
-        // session-start and first-frame, or when the camera is
-        // permission-denied. Previous "systemPurple" was jarringly
-        // visible in those frames.
+        // Subtle dark placeholder. The camera preview layer fills the
+        // bubble whenever frames are flowing; this background is
+        // only visible during the brief gap between session-start
+        // and first-frame, or when the camera is permission-denied.
         layer?.backgroundColor = NSColor.black.withAlphaComponent(0.32).cgColor
         previewLayer.videoGravity = .resizeAspectFill
         layer?.addSublayer(previewLayer)
@@ -265,8 +349,78 @@ private final class CameraBubbleView: NSView {
     override func layout() {
         super.layout()
         previewLayer.frame = bounds
+        // cornerRadius reflows when scroll-resize changes the frame.
         layer?.cornerRadius = min(bounds.width, bounds.height) / 2
     }
+
+    func applyShape(_ shape: BubbleShape) {
+        switch shape {
+        case .circle:
+            layer?.cornerRadius = min(bounds.width, bounds.height) / 2
+        case .rectangle:
+            layer?.cornerRadius = 12
+        }
+    }
+
+    // MARK: - Mouse
+
+    override func mouseDown(with event: NSEvent) {
+        dragMouseDownInScreen = NSEvent.mouseLocation
+        // Translate self.frame.origin (container coords) → screen
+        // coords by going through window.
+        if let window {
+            let viewOriginInWindow = self.frame.origin
+            let viewOriginInScreen = window.convertPoint(toScreen: viewOriginInWindow)
+            bubbleScreenOriginAtMouseDown = viewOriginInScreen
+        }
+        isDragging = true
+        if let bubbleScreenOriginAtMouseDown {
+            dragHandler?(
+                BubbleDragEvent(
+                    phase: .began,
+                    bubbleScreenOriginAtMouseDown: bubbleScreenOriginAtMouseDown,
+                    deltaInScreen: (0, 0)
+                )
+            )
+        }
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let downAt = dragMouseDownInScreen,
+              let initial = bubbleScreenOriginAtMouseDown
+        else { return }
+        let now = NSEvent.mouseLocation
+        let dx = now.x - downAt.x
+        let dy = now.y - downAt.y
+        dragHandler?(
+            BubbleDragEvent(
+                phase: .changed,
+                bubbleScreenOriginAtMouseDown: initial,
+                deltaInScreen: (dx, dy)
+            )
+        )
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if let initial = bubbleScreenOriginAtMouseDown {
+            dragHandler?(
+                BubbleDragEvent(
+                    phase: .ended,
+                    bubbleScreenOriginAtMouseDown: initial,
+                    deltaInScreen: (0, 0)
+                )
+            )
+        }
+        dragMouseDownInScreen = nil
+        bubbleScreenOriginAtMouseDown = nil
+        isDragging = false
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        scrollHandler?(event)
+    }
+
+    // MARK: - Camera
 
     private func startCameraPreview() {
         switch AVCaptureDevice.authorizationStatus(for: .video) {

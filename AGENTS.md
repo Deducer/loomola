@@ -127,6 +127,23 @@ After `generate_title_summary` finishes for any recording (Loom or Granola) that
 - **Classifier model:** `LLM_CLASSIFIER_MODEL` env var (defaults to `claude-haiku-4-5-20251001`).
 - **Cost:** ~$0.005 per note. Best-effort; failures never block the title/summary write.
 
+## Stage 4 — Desktop M2 (in progress)
+
+Premium recorder milestone. Spec: [`docs/superpowers/specs/2026-05-04-desktop-app-m2-premium-recorder-design.md`](docs/superpowers/specs/2026-05-04-desktop-app-m2-premium-recorder-design.md). Plan: [`docs/superpowers/plans/2026-05-04-desktop-app-m2-premium-recorder.md`](docs/superpowers/plans/2026-05-04-desktop-app-m2-premium-recorder.md).
+
+**Phase 0 (foundations) — shipped:** `BubblePlacement`, `BubblePositionController`, `RecorderStateMachine` under `desktop/Sources/LoomDesktopApp/Models/` + `Capture/`. 22 unit tests.
+
+**Phase 1 (composite writer) — partial.** All inputs wired: `ScreenCaptureCoordinator` exposes `onScreenSampleBuffer` callback + `latestScreenPixelBuffer()`; new `CameraCaptureCoordinator` is the single source of truth for camera (shared with bubble overlay AND future compositor); `MicrophoneCaptureCoordinator` rewritten on AVAudioEngine + voice processing for AEC + `onSampleBuffer` callback. Real `CompositeRecorder` (AVAssetWriter + CIContext) built and callable, **not yet wired into `RecorderViewModel`**.
+
+**Bubble polish shipped:** menubar Show/Hide toggle, custom drag in `BubblePanel` subclass, `.hudWindow + .popUpMenu + transient/stationary/ignoresCycle`, scroll-wheel resize (90–360 pt), dark `black @ 0.32` placeholder. Caveat: macOS native tiling + Chrome split-view zones may still flicker — fullscreen-overlay rewrite in flight.
+
+## Recent web work
+
+- G-M14 — Notes bulk select / delete / move. Mirrors `RecordingsGrid` UX. Reuses type-agnostic `/api/recordings/bulk-delete` and `/folder` endpoints.
+- G-M15 — Notes-list attachment thumbnails (1/2/2x2 grid), back-button → `?tab=notes`. New `listImageAttachmentsForMediaIds` query (single round trip).
+- G-M16 — Desktop AEC for mic via `AVAudioEngine.inputNode.setVoiceProcessingEnabled(true)`. No more participant-voice doubling when recording over speakers.
+- G-M17 — AI notes scaling for hour+ to multi-hour meetings. Schema cap raised, `maxOutputTokens: 32000`.
+
 ## Granola-alt (in progress)
 
 A second product (audio meeting notes) built on top of this same backend. Spec: [`docs/superpowers/specs/2026-04-28-granola-clone-design.md`](docs/superpowers/specs/2026-04-28-granola-clone-design.md).
