@@ -65,6 +65,12 @@ final class BubbleOverlayWindowController {
         cameraCoordinator?.requestPermissionAndStart(deviceID: nil)
 
         if let hostPanel {
+            // Reset transient state on re-show so a stale isDragging
+            // (e.g., a mouseDown that never received its mouseUp) can't
+            // pin ignoresMouseEvents=false and swallow clicks across
+            // the whole screen.
+            bubbleView?.resetTransientInputState()
+            hostPanel.ignoresMouseEvents = true
             hostPanel.makeKeyAndOrderFront(nil)
             startHoverTracking()
             publishCurrentPlacement()
@@ -224,15 +230,13 @@ final class BubbleOverlayWindowController {
     }
 
     private func updateHoverState() {
-        guard let panel = hostPanel, let bubbleView else { return }
-        // While dragging, never let clicks pass through — the user
-        // might overshoot the bubble while the cursor is moving.
-        if bubbleView.isDragging {
-            if panel.ignoresMouseEvents {
-                panel.ignoresMouseEvents = false
-            }
-            return
-        }
+        guard let panel = hostPanel, let _ = bubbleView else { return }
+        // Don't special-case isDragging. The bubble visually tracks
+        // the cursor during drag, so isCursorInBubble keeps the panel
+        // hot. Special-casing isDragging used to pin ignoresMouseEvents
+        // to false; if mouseUp ever failed to fire (rare but possible
+        // when the panel is hidden mid-click), the entire screen would
+        // start swallowing clicks until the bubble was toggled off.
         let cursor = NSEvent.mouseLocation
         let inHit = isCursorInBubble(cursor: cursor)
         if inHit && panel.ignoresMouseEvents {
@@ -411,6 +415,14 @@ private final class CameraBubbleView: NSView {
                 )
             )
         }
+        resetTransientInputState()
+    }
+
+    /// Force-clear in-flight drag state. Called from
+    /// `BubbleOverlayWindowController.showPlaceholder` on re-show so a
+    /// stale isDragging from a previous lifecycle can't pin the panel
+    /// hot.
+    func resetTransientInputState() {
         dragMouseDownInScreen = nil
         bubbleScreenOriginAtMouseDown = nil
         isDragging = false
