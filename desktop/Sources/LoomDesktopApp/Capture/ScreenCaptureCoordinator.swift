@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import CoreMedia
 import ScreenCaptureKit
@@ -47,9 +48,23 @@ final class ScreenCaptureCoordinator: NSObject, SCStreamOutput, SCStreamDelegate
             throw ScreenCaptureCoordinatorError.noDisplays
         }
 
+        // SCDisplay.width/height are in POINTS (logical resolution) —
+        // for a 4K Retina display this returns 1920x1080, not the
+        // native 3840x2160. SCStream then captures at that point
+        // count, which is half-resolution. The compositor's output
+        // frame size is in pixels (NSScreen.frame * backingScaleFactor),
+        // so without the multiplier here, the captured screen buffer
+        // ends up smaller than the output frame and gets anchored at
+        // the bottom-left of the y-up canvas, leaving the top + right
+        // black. Multiply by the matching display's backing scale
+        // factor so SCStream captures at native pixels.
+        let scale = Self.backingScaleFactor(for: display.displayID)
+        let pixelWidth = Int(Double(display.width) * scale)
+        let pixelHeight = Int(Double(display.height) * scale)
+
         let config = SCStreamConfiguration()
-        config.width = display.width
-        config.height = display.height
+        config.width = pixelWidth
+        config.height = pixelHeight
         config.minimumFrameInterval = CMTime(value: 1, timescale: 30)
         config.queueDepth = 5
         config.showsCursor = true
@@ -64,12 +79,31 @@ final class ScreenCaptureCoordinator: NSObject, SCStreamOutput, SCStreamDelegate
         frameCount = 0
         self.stream = stream
         isCapturing = true
+        capturedDisplaySizePixels = CGSize(width: pixelWidth, height: pixelHeight)
         return DisplaySource(
             id: display.displayID,
             name: "Display \(display.displayID)",
-            width: display.width,
-            height: display.height
+            width: pixelWidth,
+            height: pixelHeight
         )
+    }
+
+    /// Look up the AppKit `NSScreen` that corresponds to the given
+    /// CoreGraphics display ID and return its backingScaleFactor.
+    /// Used to upgrade SCStream's point-based capture dimensions to
+    /// native pixels. Falls back to 2.0 (the most common Retina
+    /// scale) if no matching screen is found — better than 1.0
+    /// because virtually every Mac mini / MacBook ships Retina now.
+    private static func backingScaleFactor(for displayID: CGDirectDisplayID) -> Double {
+        let key = NSDeviceDescriptionKey("NSScreenNumber")
+        for screen in NSScreen.screens {
+            if let id = screen.deviceDescription[key] as? CGDirectDisplayID,
+               id == displayID
+            {
+                return Double(screen.backingScaleFactor)
+            }
+        }
+        return Double(NSScreen.main?.backingScaleFactor ?? 2.0)
     }
 
     func startFirstDisplayRecording(outputURL: URL) async throws -> DisplaySource {
