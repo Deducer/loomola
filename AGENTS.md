@@ -141,6 +141,22 @@ Premium recorder milestone. Spec: [`docs/superpowers/specs/2026-05-04-desktop-ap
 
 **Pending:** user E2E smoke (record → stop → upload → playback on share page).
 
+## Stage 5 — Desktop M3 (✅ shipped 2026-05-04, visual restructure)
+
+Granola-grade shell. Spec: [`docs/superpowers/specs/2026-05-04-desktop-app-m3-visual-restructure-design.md`](docs/superpowers/specs/2026-05-04-desktop-app-m3-visual-restructure-design.md). Plan: [`docs/superpowers/plans/2026-05-04-desktop-app-m3-visual-restructure.md`](docs/superpowers/plans/2026-05-04-desktop-app-m3-visual-restructure.md). Phase-by-phase status in [`ROADMAP.md`](ROADMAP.md).
+
+**What landed:**
+- Design system under `UI/DesignSystem/`. Tokens: `DSColor` (light/dark RGB pairs), `DSSpacing` (4pt rhythm), `DSRadius`, `DSShadow`, `DSFont` (Inter + JetBrains Mono with system fallback), `LoomolaMotion`. Bundled fonts under `Resources/Fonts/`, registered at app init.
+- Branded controls (`UI/DesignSystem/Controls/`): `PrimaryButton`, `SecondaryButton`, `IconButton`, `SegmentedControl`, `Field`, `FieldPicker`, `Pill`, `StatusDot`. Replace every `.borderedProminent` / default Picker / system text input.
+- Custom title bar (`Shell/CustomTitleBar.swift`) — wordmark + settings gear + account avatar. System title hidden.
+- Per-state home views (`UI/Home/`): `IdleHomeView` (Capture headline + hero card with SegmentedControl + CTAs + inline mic/cam pickers + meeting prompt + Recent strip), `RecordingHomeView` (centered timer + waveform + Stop/Discard, replaces idle while recording), `PermissionsHomeView` (hero state for missing perms), `SignedOutHomeView` ("Capture you own." brand moment).
+- Settings sheet (`Shell/SettingsSheet.swift`) — Sources, Permissions (when needed), Integrations, Account, Diagnostics. Receives view model via `.environmentObject`.
+- Account popover (`Shell/AccountMenuPopover.swift`) — anchored to title-bar avatar.
+- Recent strip (`UI/Recent/`) — last 4 recordings/notes with thumbnails. New `GET /api/recordings/recent` web endpoint with inlined presigned thumbnail URLs (no N+1). Auto-refreshes on app activation, after upload, every 60s.
+- Router refactor: `MainRecorderView` 947 → 205 lines (78% cut). All M2-era inline private structs deleted.
+
+**Pending:** user E2E (cold-launch, idle home, start/stop video, start/stop audio, settings sheet, sign-out). Audio + video recording floating panels and meeting prompt window keep their M2 styling — small follow-up to retoken.
+
 ## Recent web work
 
 - G-M14 — Notes bulk select / delete / move. Mirrors `RecordingsGrid` UX. Reuses type-agnostic `/api/recordings/bulk-delete` and `/folder` endpoints.

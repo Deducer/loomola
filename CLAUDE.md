@@ -149,6 +149,31 @@ Premium recorder milestone for the macOS desktop app. Spec: [`docs/superpowers/s
 
 **Pending:** user-driven E2E smoke (record → stop → upload → playback on share page) on the next dogfood session.
 
+## Stage 5 — Desktop M3 (✅ shipped 2026-05-04, visual restructure)
+
+Granola-grade shell milestone. M2 made the recorder feel premium; M3 made the surrounding shell feel premium. Spec: [`docs/superpowers/specs/2026-05-04-desktop-app-m3-visual-restructure-design.md`](docs/superpowers/specs/2026-05-04-desktop-app-m3-visual-restructure-design.md). Plan: [`docs/superpowers/plans/2026-05-04-desktop-app-m3-visual-restructure.md`](docs/superpowers/plans/2026-05-04-desktop-app-m3-visual-restructure.md).
+
+**Design system (`UI/DesignSystem/`):**
+- **Tokens** (`Tokens/`): `DSColor` (light/dark RGB pairs for bg, text, border, accent, state), `DSSpacing` (4pt rhythm, xs..xxxl), `DSRadius` (sm/md/lg/xl/pill), `DSShadow` (subtle/raised/brand), `DSFont` (Display.xl/lg, Body.lg/md/sm, Mono.timer/body — Inter + JetBrains Mono with system fallback), `LoomolaMotion` (quick/medium/expressive curves, reduce-motion-aware at callsite).
+- **Bundled fonts:** Inter (variable, OFL) + JetBrains Mono (variable, OFL) under `Sources/LoomDesktopApp/Resources/Fonts/`. Registered at `LoomDesktopApp.init()` via `CTFontManagerRegisterFontsForURL`. `FontLoader.swift`.
+- **Controls** (`Controls/`): `PrimaryButton`, `SecondaryButton`, `IconButton`, `SegmentedControl` (sliding-thumb via `matchedGeometryEffect`), `Field` (branded text input with focused-accent border), `FieldPicker` (Menu + custom label, no system PopUpButton chrome), `Pill`, `StatusDot`. Replace every `.borderedProminent` / default Picker / system text input in the shell.
+
+**Shell + per-state home views:**
+- **Custom title bar** (`Shell/CustomTitleBar.swift`) — 40pt strip with traffic-light spacer + Loomola wordmark + settings gear `IconButton` + account avatar `IconButton`. System "Loomola Desktop" title hidden via `.windowStyle(.hiddenTitleBar)`.
+- **Settings sheet** (`Shell/SettingsSheet.swift`) — sheet from the gear, sections: Sources / Permissions (only when missing or denied) / Integrations / Account / Diagnostics (collapsed). Receives view model via `.environmentObject`.
+- **Account popover** (`Shell/AccountMenuPopover.swift`) — anchored to the avatar; email + Open dashboard + Open library + Sign out.
+- **`Home/IdleHomeView`** — 95% case. "Capture" headline + hero card (`HeroCaptureSection` with `SegmentedControl` for Video/Audio note + start/stop CTAs + inline mic/cam `FieldPicker`s) + optional meeting prompt card + Recent strip.
+- **`Home/RecordingHomeView`** — replaces idle while recording. Pulsing red dot, big headline, mono timer (handles hour-rollover), 8-bar accent meter, Stop & upload + Discard (+ Open note for audio).
+- **`Home/PermissionsHomeView`** — hero state when any required permission missing/denied. Per-row Pill + Request / Open Settings buttons. Auto-completes on grant via `NSWindow.didBecomeKeyNotification`.
+- **`Home/SignedOutHomeView`** — centered brand moment. Loomola glyph 64pt + "Capture you own." headline + Field inputs + full-width Sign in button.
+- **`Recent/RecentStrip`, `Recent/RecentCard`, `Recent/RecentRecordingsService`** — new strip showing last 4 recordings/notes. Backed by new `GET /api/recordings/recent` endpoint that returns slim DTOs with inlined presigned thumbnail URL (no N+1). Auto-refreshes on app activation, after upload completes, every 60s. Click → opens `/v/<slug>` or `/notes/<slug>` in default browser. Empty state: "Nothing recorded yet. Hit Start recording or press ⌥⇧R to begin."
+
+**Router:** `MainRecorderView.contentForCurrentState` routes by `(state, activeRecordingKind, permissions)` to one of four home views. File dropped from 947 → 205 lines (78% cut). Old `AppHeader / SignedOutView / CaptureCard / SourcePickerCard / IntegrationsCard / CaptureSourcesView / StatusCard / FooterBar / DeveloperToolsDisclosure / private Card / private CaptureMode / private FocusedField` all deleted. Old `PermissionsView.swift` (banner-style) deleted in favor of `PermissionsHomeView`.
+
+**Visual regression catch-all:** zero non-DesignSystem usages of `borderedProminent`, `windowBackgroundColor`, `controlBackgroundColor`, `Font.system`, or `Font.custom` in `UI/`. Verified via grep.
+
+**Pending:** user E2E (cold-launch sign-in, idle home with Recent, start/stop video, start/stop audio, settings sheet round-trip, account menu sign-out). Floating panels (audio recording / video recording / meeting prompt windows) keep their M2 styling — small follow-up to retoken.
+
 ## Recent web work (post-G-M13)
 
 - **G-M14 — Notes bulk select / delete / move:** notes list converted to a client component, mirrors `RecordingsGrid` UX (per-row checkbox on hover, shift-click range, bottom action bar). Reuses the existing type-agnostic `/api/recordings/bulk-delete` and `/api/recordings/[id]/folder` endpoints.
