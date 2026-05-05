@@ -116,6 +116,16 @@ struct MainRecorderView: View {
                         checkMeeting: { viewModel.checkMeetingContext() }
                     )
 
+                    SourcePickerCard(
+                        cameras: viewModel.captureSources.cameras,
+                        microphones: viewModel.captureSources.microphones,
+                        selectedCameraID: viewModel.selectedCameraDeviceID,
+                        selectedMicID: viewModel.selectedMicDeviceID,
+                        onSelectCamera: { id in viewModel.setSelectedCameraDevice(id: id) },
+                        onSelectMic: { id in viewModel.setSelectedMicDevice(id: id) },
+                        onRefresh: { viewModel.refreshCaptureSources() }
+                    )
+
                     IntegrationsCard(
                         nativeMessagingStatus: viewModel.nativeMessagingStatus,
                         isInstallingNativeMessagingHost: viewModel.isInstallingNativeMessagingHost,
@@ -657,6 +667,67 @@ private struct MeetingPromptView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(.green)
                 .disabled(startDisabled)
+            }
+        }
+    }
+}
+
+/// Camera + mic device pickers. Persists choice via the view model;
+/// the recording flow reads selectedCameraDeviceID / selectedMicDeviceID
+/// when starting a composite recording. Refresh button re-enumerates
+/// devices (useful when a device was just plugged in).
+private struct SourcePickerCard: View {
+    let cameras: [MediaDeviceSource]
+    let microphones: [MediaDeviceSource]
+    let selectedCameraID: String?
+    let selectedMicID: String?
+    let onSelectCamera: (String?) -> Void
+    let onSelectMic: (String?) -> Void
+    let onRefresh: () -> Void
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Label("Sources", systemImage: "camera.metering.spot")
+                        .font(.headline)
+                    Spacer()
+                    Button {
+                        onRefresh()
+                    } label: {
+                        Label("Refresh", systemImage: "arrow.clockwise")
+                            .labelStyle(.iconOnly)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Re-enumerate connected devices")
+                }
+                Picker("Camera", selection: Binding(
+                    get: { selectedCameraID ?? "__default__" },
+                    set: { value in
+                        onSelectCamera(value == "__default__" ? nil : value)
+                    }
+                )) {
+                    Text("System default").tag("__default__")
+                    ForEach(cameras) { device in
+                        Text(device.name).tag(device.id)
+                    }
+                }
+                .pickerStyle(.menu)
+                Picker("Microphone", selection: Binding(
+                    get: { selectedMicID ?? "__default__" },
+                    set: { value in
+                        onSelectMic(value == "__default__" ? nil : value)
+                    }
+                )) {
+                    Text("System default").tag("__default__")
+                    ForEach(microphones) { device in
+                        Text(device.name).tag(device.id)
+                    }
+                }
+                .pickerStyle(.menu)
+                Text("Camera change applies immediately. Mic change applies on the next recording.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }

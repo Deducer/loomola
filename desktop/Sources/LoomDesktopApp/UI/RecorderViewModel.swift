@@ -28,6 +28,12 @@ final class RecorderViewModel: ObservableObject {
         cameras: [],
         microphones: []
     )
+    /// User's chosen camera + mic device ids. nil means "system default."
+    /// Persisted to UserDefaults so the choice carries across launches.
+    @Published var selectedCameraDeviceID: String? = UserDefaults.standard
+        .string(forKey: "loomola.selectedCameraDeviceID")
+    @Published var selectedMicDeviceID: String? = UserDefaults.standard
+        .string(forKey: "loomola.selectedMicDeviceID")
 
     private var authService: DesktopAuthService?
     private var accessToken: String?
@@ -54,6 +60,34 @@ final class RecorderViewModel: ObservableObject {
     /// Separate from audioNoteRecorder so video + audio note flows don't
     /// share state. Stops on stopLocalRecordingAndUpload.
     private var compositeMicCoordinator: MicrophoneCaptureCoordinator?
+
+    /// Persist + apply the user's chosen camera device ID. Restarting
+    /// the shared camera coordinator with the new ID swaps the input
+    /// without tearing the session down.
+    func setSelectedCameraDevice(id: String?) {
+        selectedCameraDeviceID = id
+        if let id {
+            UserDefaults.standard.set(id, forKey: "loomola.selectedCameraDeviceID")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "loomola.selectedCameraDeviceID")
+        }
+        // If the camera is currently running (bubble visible or
+        // composite recording in progress), swap the input now.
+        CameraCaptureCoordinator.shared.requestPermissionAndStart(deviceID: id)
+    }
+
+    /// Persist the chosen mic ID. The active composite recording (if
+    /// any) keeps its current mic — the swap takes effect on the next
+    /// startLocalRecording call. We could swap mid-recording too but
+    /// it's surprising UX, so defer.
+    func setSelectedMicDevice(id: String?) {
+        selectedMicDeviceID = id
+        if let id {
+            UserDefaults.standard.set(id, forKey: "loomola.selectedMicDeviceID")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "loomola.selectedMicDeviceID")
+        }
+    }
     private let obsidianSyncIntervalNanoseconds: UInt64 = 30_000_000_000
     private let meetingWatchIntervalNanoseconds: UInt64 = 15_000_000_000
 
@@ -402,7 +436,7 @@ final class RecorderViewModel: ObservableObject {
             }
         }
         do {
-            try micCoordinator.start(deviceID: nil, outputURL: micURL)
+            try micCoordinator.start(deviceID: selectedMicDeviceID, outputURL: micURL)
         } catch {
             // Mic failure is non-fatal — recording continues with video
             // only. Log + statusMessage so user knows.
@@ -412,7 +446,9 @@ final class RecorderViewModel: ObservableObject {
         // Start the camera coordinator (idempotent — bubble overlay
         // may have already started it). Compositor reads from
         // CameraCaptureCoordinator.shared.latestPixelBuffer().
-        CameraCaptureCoordinator.shared.requestPermissionAndStart(deviceID: nil)
+        CameraCaptureCoordinator.shared.requestPermissionAndStart(
+            deviceID: selectedCameraDeviceID
+        )
 
         // Hook screen sample buffer → compositor.
         screenCaptureCoordinator.onScreenSampleBuffer = { [weak compositor] sampleBuffer in
