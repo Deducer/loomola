@@ -69,11 +69,35 @@ if [[ ! -d "$INSTALL_DIR" || ! -w "$INSTALL_DIR" ]]; then
   exit 1
 fi
 
-if pgrep -f "$INSTALLED_APP_PATH/Contents/MacOS/LoomDesktop" >/dev/null 2>&1; then
-  echo "Loomola is running from $INSTALLED_APP_PATH."
-  echo "Quit it, then run this installer again."
-  exit 1
+# Auto-quit any running Loomola (any LoomDesktop process, not just
+# the installed one) so the installer can replace the bundle. Used
+# to bail with "Quit it then re-run" — too easy to miss in a
+# scrollback. This is a clean Cmd-Q via AppleScript so the app's
+# normal shutdown path runs.
+if pgrep -f "LoomDesktop" >/dev/null 2>&1; then
+  echo "Loomola is running. Quitting it cleanly first..."
+  osascript -e 'quit app "Loomola"' >/dev/null 2>&1 || true
+  # Give it 3 seconds to wind down. If it's still alive, kill it.
+  for _ in 1 2 3; do
+    if ! pgrep -f "LoomDesktop" >/dev/null 2>&1; then break; fi
+    sleep 1
+  done
+  if pgrep -f "LoomDesktop" >/dev/null 2>&1; then
+    echo "  Forcing termination..."
+    pkill -f "LoomDesktop" || true
+    sleep 1
+  fi
 fi
+
+echo
+echo "===================================="
+echo "Loomola installer"
+HEAD_COMMIT="$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+HEAD_TITLE="$(git -C "$REPO_ROOT" log -1 --pretty=%s 2>/dev/null || echo)"
+echo "  About to install commit: $HEAD_COMMIT"
+echo "  ($HEAD_TITLE)"
+echo "===================================="
+echo
 
 # Bootstrap the stable signing identity once. This avoids the TCC
 # password-storm on every rebuild (Camera / Mic / Screen Recording
@@ -94,6 +118,18 @@ rm -rf "$INSTALLED_APP_PATH"
 ditto "$BUILD_APP_PATH" "$INSTALLED_APP_PATH"
 xattr -dr com.apple.quarantine "$INSTALLED_APP_PATH" 2>/dev/null || true
 
+# Verify the just-installed bundle's stamp matches HEAD. If it
+# doesn't, something cached or skipped a build step — print loud.
+INSTALLED_COMMIT="$(defaults read "$INSTALLED_APP_PATH/Contents/Resources/DesktopConfig.plist" LOOM_BUILD_COMMIT 2>/dev/null || echo unknown)"
+echo
+echo "===================================="
 echo "Installed $APP_NAME to $INSTALLED_APP_PATH"
+echo "  Bundle commit:  $INSTALLED_COMMIT"
+echo "  Source HEAD:    $HEAD_COMMIT"
+if [[ "$INSTALLED_COMMIT" != "$HEAD_COMMIT" && "$INSTALLED_COMMIT" != "unknown" ]]; then
+  echo "  ⚠️  MISMATCH — installed bundle does not match source HEAD"
+fi
+echo "===================================="
+echo
 echo "Launching $APP_NAME..."
 open "$INSTALLED_APP_PATH"
