@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -11,12 +12,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var bubbleOverlay = BubbleOverlayWindowController(
         cameraCoordinator: cameraCoordinator
     )
+    private var bubbleHotkey: GlobalHotkey?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         configureMenuBar()
+        configureGlobalHotkeys()
         Task { @MainActor in
             AppActivation.bringRecorderToFront()
         }
+    }
+
+    /// Register system-wide keyboard shortcuts via Carbon. Unlike menu
+    /// `keyEquivalent` (which only fires when the app is frontmost),
+    /// these always reach us regardless of which app has focus —
+    /// the right primitive for a status-bar app.
+    ///
+    /// Default: ⌥⇧B toggles the bubble overlay. Avoids ⌘B since
+    /// every browser, every text editor, and Slack all hook ⌘B for
+    /// other things, and a global ⌘B would conflict everywhere.
+    private func configureGlobalHotkeys() {
+        bubbleHotkey = GlobalHotkey(
+            keyCode: UInt32(kVK_ANSI_B),
+            modifiers: UInt32(optionKey | shiftKey),
+            handler: { [weak self] in
+                self?.toggleBubbleOverlay()
+            }
+        )
     }
 
     private func configureMenuBar() {
@@ -36,12 +57,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Show Recorder", action: #selector(showRecorder), keyEquivalent: "r"))
+        menu.addItem(NSMenuItem(title: "Show Recorder", action: #selector(showRecorder), keyEquivalent: ""))
         // Title is updated dynamically in validateMenuItem to reflect the
         // current overlay visibility — see toggleBubbleOverlay below.
-        menu.addItem(NSMenuItem(title: "Show Bubble Overlay", action: #selector(toggleBubbleOverlay), keyEquivalent: "b"))
+        // No keyEquivalent on this menu item — the real shortcut is the
+        // ⌥⇧B Carbon global hotkey registered in configureGlobalHotkeys.
+        // We surface the keystroke as a visible hint via setKeyEquivalent
+        // + setKeyEquivalentModifierMask below so users see "⌥⇧B" next
+        // to the menu label.
+        let bubbleItem = NSMenuItem(title: "Show Bubble Overlay", action: #selector(toggleBubbleOverlay), keyEquivalent: "b")
+        bubbleItem.keyEquivalentModifierMask = [.option, .shift]
+        menu.addItem(bubbleItem)
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Open Dashboard", action: #selector(openDashboard), keyEquivalent: "d"))
+        menu.addItem(NSMenuItem(title: "Open Dashboard", action: #selector(openDashboard), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         item.menu = menu
