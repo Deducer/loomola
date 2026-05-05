@@ -33,7 +33,11 @@ struct RecentStrip: View {
 
     @ViewBuilder
     private var content: some View {
-        if service.items.isEmpty && service.isLoading {
+        if !service.hasLoaded {
+            // Cold-launch skeleton. Once the first refresh
+            // completes (success OR error), never show this again
+            // — subsequent 60s refreshes update items in place
+            // without flashing.
             skeleton
         } else if service.items.isEmpty {
             emptyState

@@ -67,14 +67,24 @@ final class CompositeRecorder: @unchecked Sendable {
         // Video input: H.264, source pixel buffers in BGRA. Ample
         // bitrate budget for 1440p screen capture (real bitrate use is
         // much lower for typical desktop content).
+        // Scale bitrate by resolution. 12 Mbps was undersized for 4K
+        // (~8 Mp) — the encoder ran out of budget on motion regions
+        // and left visible compensation residual ("trails") behind
+        // moving content like a dragged camera bubble. Target ~0.6
+        // bits-per-pixel-frame at 30fps base, capped at 50 Mbps so
+        // even a 5K Studio Display doesn't blow up the file size.
+        let pixels = max(1, Int(frameSize.width) * Int(frameSize.height))
+        let scaledBitrate = min(50_000_000, max(8_000_000, Int(Double(pixels) * 6.0)))
+
         let videoSettings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: Int(frameSize.width),
             AVVideoHeightKey: Int(frameSize.height),
             AVVideoCompressionPropertiesKey: [
-                AVVideoAverageBitRateKey: 12_000_000,
+                AVVideoAverageBitRateKey: scaledBitrate,
                 AVVideoMaxKeyFrameIntervalKey: 60,
                 AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
+                AVVideoExpectedSourceFrameRateKey: 30,
             ],
         ]
         let videoInput = AVAssetWriterInput(

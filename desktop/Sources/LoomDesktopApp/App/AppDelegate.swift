@@ -20,12 +20,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         configureGlobalHotkeys()
         // Refresh menubar item titles when the recording state flips
         // so "Start Recording" ↔ "Stop Recording" tracks reality.
+        // Also auto-show the bubble overlay when video recording
+        // starts — that's the 95% case for what the user wants
+        // visible. We don't auto-hide on stop; the user knows ⌥⇧B.
         NotificationCenter.default.addObserver(
             forName: RecorderCommands.videoRecordingStateChanged,
             object: nil,
             queue: .main
         ) { [weak self] _ in
             self?.statusItem?.menu?.update()
+            if RecorderCommands.isVideoRecording, self?.bubbleOverlay.isVisible == false {
+                self?.bubbleOverlay.showPlaceholder()
+            }
         }
         Task { @MainActor in
             AppActivation.bringRecorderToFront()

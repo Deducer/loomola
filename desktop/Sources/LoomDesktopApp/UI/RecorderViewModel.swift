@@ -631,6 +631,10 @@ final class RecorderViewModel: ObservableObject {
                 activeRecordingKind = nil
                 state = .complete(slug: complete.slug)
                 statusMessage = "Uploaded. Recording slug: \(complete.slug)"
+                // Refresh the Recent strip so the freshly-uploaded
+                // recording appears immediately instead of waiting
+                // for the 60-second polling tick.
+                _recentService?.refresh()
             } catch {
                 activeRecordingKind = nil
                 state = .failed(message: error.localizedDescription)
@@ -719,6 +723,7 @@ final class RecorderViewModel: ObservableObject {
                 audioLevel = 0
                 state = .complete(slug: complete.slug)
                 statusMessage = "Uploaded audio note. Slug: \(complete.slug)"
+                _recentService?.refresh()
             } catch {
                 activeRecordingKind = nil
                 activeAudioRecordingStartedAt = nil

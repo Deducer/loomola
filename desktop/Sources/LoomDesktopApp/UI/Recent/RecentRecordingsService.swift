@@ -16,6 +16,12 @@ final class RecentRecordingsService: ObservableObject {
     @Published private(set) var items: [RecentRecording] = []
     @Published private(set) var isLoading = false
     @Published private(set) var lastError: String?
+    /// Flips to true after the first refresh attempt completes
+    /// (success OR failure). Used by RecentStrip to only render the
+    /// skeleton on cold launch — without this, every 60-second
+    /// refresh re-shows the skeleton briefly, which reads as a
+    /// distracting flash.
+    @Published private(set) var hasLoaded = false
 
     private let backend: BackendClient
     private let limit: Int
@@ -54,15 +60,21 @@ final class RecentRecordingsService: ObservableObject {
 
     private func performRefresh() async {
         isLoading = true
-        defer { isLoading = false }
+        defer {
+            isLoading = false
+            hasLoaded = true
+        }
         do {
             let response = try await backend.recentRecordings(limit: limit)
-            items = response.items.compactMap { RecentRecording(dto: $0) }
+            let mapped = response.items.compactMap { RecentRecording(dto: $0) }
+            items = mapped
             lastError = nil
+            print("[recent] fetched \(response.items.count) item(s); \(mapped.count) decoded")
         } catch {
             // Don't blank out items on error — keep showing the last
             // good list. Surface the error for debug.
             lastError = error.localizedDescription
+            print("[recent] refresh failed: \(error.localizedDescription)")
         }
     }
 
