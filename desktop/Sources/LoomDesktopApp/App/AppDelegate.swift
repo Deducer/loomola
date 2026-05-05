@@ -4,13 +4,13 @@ import Carbon.HIToolbox
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
-    /// Single shared camera session — fed both into the bubble overlay
-    /// preview AND (eventually) into the CompositeRecorder. Owning this
-    /// at AppDelegate guarantees one-session-per-camera even when
-    /// multiple consumers (overlay + compositor) are active.
-    private let cameraCoordinator = CameraCaptureCoordinator()
+    /// Bubble overlay wraps the shared camera + position-controller
+    /// singletons (CameraCaptureCoordinator.shared,
+    /// BubblePositionController.shared) so the RecorderViewModel's
+    /// composite recorder reads from the same instances.
     private lazy var bubbleOverlay = BubbleOverlayWindowController(
-        cameraCoordinator: cameraCoordinator
+        positionController: BubblePositionController.shared,
+        cameraCoordinator: CameraCaptureCoordinator.shared
     )
     private var bubbleHotkey: GlobalHotkey?
 

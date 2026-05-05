@@ -23,6 +23,11 @@ final class CameraCaptureCoordinator: NSObject, @unchecked Sendable {
     /// today; included so the API matches the audio coordinators.
     var onFrameDelivered: (() -> Void)?
 
+    /// One-per-process shared instance so the bubble overlay (in
+    /// AppDelegate) and the composite recorder (in RecorderViewModel)
+    /// see the same camera session — never two sessions on one device.
+    static let shared = CameraCaptureCoordinator()
+
     let session: AVCaptureSession
     private let videoOutput: AVCaptureVideoDataOutput
     private let sampleQueue = DispatchQueue(

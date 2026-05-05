@@ -45,6 +45,15 @@ final class RecorderViewModel: ObservableObject {
     private let screenCaptureCoordinator: ScreenCaptureCoordinator?
     private let nativeMessagingInstaller = NativeMessagingHostInstaller()
     private var activeRecordingURL: URL?
+    /// Composite recorder for the M2 video flow. Holds AVAssetWriter +
+    /// CIContext + sample-buffer plumbing for screen + bubble + mic.
+    /// nil when no composite recording is active.
+    private var compositeRecorder: Any? // CompositeRecorder gated on macOS 14
+    /// Mic coordinator dedicated to the active composite recording.
+    /// Separate from audioNoteRecorder so video + audio note flows don't
+    /// share state. Stops on stopLocalRecordingAndUpload.
+    private var compositeMicCoordinator: MicrophoneCaptureCoordinator?
+    private var compositeStartedAt: Date?
     private let obsidianSyncIntervalNanoseconds: UInt64 = 30_000_000_000
     private let meetingWatchIntervalNanoseconds: UInt64 = 15_000_000_000
 
@@ -333,35 +342,131 @@ final class RecorderViewModel: ObservableObject {
     }
 
     func startLocalRecording() {
+        guard #available(macOS 14.0, *) else {
+            statusMessage = "ScreenCaptureKit requires macOS 14 or newer."
+            return
+        }
         guard let screenCaptureCoordinator else {
             statusMessage = "ScreenCaptureKit requires macOS 14 or newer."
             return
         }
+        guard let screen = NSScreen.main else {
+            statusMessage = "No active display found."
+            return
+        }
+
+        // Composite output dimensions = screen dimensions in pixels.
+        let scale = screen.backingScaleFactor
+        let pixelSize = CGSize(
+            width: screen.frame.width * scale,
+            height: screen.frame.height * scale
+        )
+        let displayBounds = DisplayPixelBounds(
+            appKitOriginPoints: screen.frame.origin,
+            sizePoints: screen.frame.size,
+            backingScaleFactor: scale
+        )
+
         let outputURL = FileManager.default.temporaryDirectory
-            .appending(path: "loom-desktop-\(UUID().uuidString).mp4")
+            .appending(path: "loom-composite-\(UUID().uuidString).mp4")
+
+        // Build the composite recorder. Pulls camera frames + bubble
+        // placement from the shared singletons so the bubble overlay
+        // (in AppDelegate) and the compositor see the same state.
+        let compositor = CompositeRecorder(
+            bubbleController: BubblePositionController.shared,
+            cameraCoordinator: CameraCaptureCoordinator.shared,
+            displayBoundsProvider: { displayBounds }
+        )
+        do {
+            try compositor.prepare(outputURL: outputURL, frameSize: pixelSize)
+        } catch {
+            state = .failed(message: error.localizedDescription)
+            statusMessage = "Composite recorder setup failed: \(error.localizedDescription)"
+            return
+        }
+
+        // Mic capture with AEC. Writes its own M4A (we discard it for
+        // now — composite contains the mic audio); compositor uses the
+        // onSampleBuffer hook to mux mic samples into the MP4.
+        let micCoordinator = MicrophoneCaptureCoordinator()
+        let micURL = FileManager.default.temporaryDirectory
+            .appending(path: "loom-composite-mic-\(UUID().uuidString).m4a")
+        micCoordinator.onSampleBuffer = { [weak compositor] sampleBuffer in
+            compositor?.appendMicSample(sampleBuffer)
+        }
+        do {
+            try micCoordinator.start(deviceID: nil, outputURL: micURL)
+        } catch {
+            // Mic failure is non-fatal — recording continues with video
+            // only. Log + statusMessage so user knows.
+            print("[recorder] mic start failed: \(error.localizedDescription)")
+        }
+
+        // Start the camera coordinator (idempotent — bubble overlay
+        // may have already started it). Compositor reads from
+        // CameraCaptureCoordinator.shared.latestPixelBuffer().
+        CameraCaptureCoordinator.shared.requestPermissionAndStart(deviceID: nil)
+
+        // Hook screen sample buffer → compositor.
+        screenCaptureCoordinator.onScreenSampleBuffer = { [weak compositor] sampleBuffer in
+            compositor?.appendScreenFrame(sampleBuffer)
+        }
+
+        compositeRecorder = compositor
+        compositeMicCoordinator = micCoordinator
+        compositeStartedAt = Date()
         activeRecordingURL = outputURL
         activeRecordingKind = .video
         state = .recording
-        statusMessage = "Starting local MP4 recording..."
+        statusMessage = "Starting composite recording..."
+
         Task {
             do {
-                let display = try await screenCaptureCoordinator.startFirstDisplayRecording(outputURL: outputURL)
-                statusMessage = "Recording \(display.name) to a local MP4."
+                let display = try await screenCaptureCoordinator.startFirstDisplayCapture()
+                statusMessage = "Recording \(display.name) (composite with bubble)."
             } catch {
+                screenCaptureCoordinator.onScreenSampleBuffer = nil
+                _ = try? await micCoordinator.stop()
+                compositeRecorder = nil
+                compositeMicCoordinator = nil
+                compositeStartedAt = nil
                 activeRecordingKind = nil
                 state = .failed(message: error.localizedDescription)
-                statusMessage = "Local recording failed: \(error.localizedDescription)"
+                statusMessage = "Composite recording failed: \(error.localizedDescription)"
             }
         }
     }
 
     func stopLocalRecordingAndUpload() {
-        guard let screenCaptureCoordinator, let backendClient else { return }
+        guard #available(macOS 14.0, *) else { return }
+        guard let screenCaptureCoordinator,
+              let backendClient,
+              let compositor = compositeRecorder as? CompositeRecorder
+        else { return }
+        let micCoordinator = compositeMicCoordinator
+        let startedAt = compositeStartedAt ?? Date()
+        compositeRecorder = nil
+        compositeMicCoordinator = nil
+        compositeStartedAt = nil
+
         state = .finalizing
-        statusMessage = "Finalizing local MP4..."
+        statusMessage = "Finalizing composite recording..."
+
         Task {
             do {
-                let file = try await screenCaptureCoordinator.stopRecording()
+                // Stop screen capture first so no more frames arrive.
+                try? await screenCaptureCoordinator.stop()
+                screenCaptureCoordinator.onScreenSampleBuffer = nil
+
+                // Stop mic — fire-and-forget the file (compositor has
+                // the audio inline already).
+                _ = try? await micCoordinator?.stop()
+
+                // Finalize composite MP4.
+                let outputURL = try await compositor.finish()
+                let durationSeconds = max(Date().timeIntervalSince(startedAt), 1)
+
                 state = .uploading(progress: 0.1)
                 statusMessage = "Creating upload row..."
                 let start = try await backendClient.startRecording(
@@ -374,7 +479,7 @@ final class RecorderViewModel: ObservableObject {
                 let uploader = MultipartUploadCoordinator(backend: backendClient)
                 statusMessage = "Uploading composite MP4..."
                 let parts = try await uploader.uploadFile(
-                    url: file.url,
+                    url: outputURL,
                     recordingId: start.recordingId,
                     track: .composite
                 )
@@ -383,7 +488,7 @@ final class RecorderViewModel: ObservableObject {
                     recordingId: start.recordingId,
                     request: CompleteRecordingRequest(
                         tracks: [.composite: parts],
-                        durationSeconds: max(file.durationSeconds, 1)
+                        durationSeconds: durationSeconds
                     )
                 )
                 activeRecordingKind = nil
@@ -392,7 +497,7 @@ final class RecorderViewModel: ObservableObject {
             } catch {
                 activeRecordingKind = nil
                 state = .failed(message: error.localizedDescription)
-                statusMessage = "Recording upload failed: \(error.localizedDescription)"
+                statusMessage = "Composite upload failed: \(error.localizedDescription)"
             }
         }
     }
