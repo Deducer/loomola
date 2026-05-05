@@ -21,6 +21,11 @@ final class RecorderViewModel: ObservableObject {
     /// AudioNoteRecorder.isPaused but kept as an @Published mirror
     /// so SwiftUI re-renders on transition.
     @Published private(set) var isAudioNotePaused: Bool = false
+    /// Live-typed manual notes body for the active audio recording.
+    /// Bound to the NotesSidePanel textarea. Phase D wires
+    /// debounced backend autosave; for Phase C this is just a
+    /// @Published string the side panel reads/writes.
+    @Published var liveNotesBody: String = ""
     @Published private(set) var activeVideoRecordingStartedAt: Date?
     /// True while the composite recorder is being set up off the
     /// main actor. The Start button binds to !isStartingRecording so

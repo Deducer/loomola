@@ -6,6 +6,7 @@ struct MainRecorderView: View {
     @State private var meetingPromptWindow = MeetingPromptWindowController()
     @State private var audioRecordingWindow = AudioRecordingWindowController()
     @State private var videoRecordingWindow = VideoRecordingWindowController()
+    @State private var notesSidePanel = NotesSidePanelWindowController()
     @State private var permissionStatus: PermissionStatus = PermissionChecker.currentStatus()
     @State private var dismissedPreflight = false
     @State private var captureMode: CaptureMode = .video
@@ -65,6 +66,7 @@ struct MainRecorderView: View {
             updateMeetingPromptWindow()
             updateAudioRecordingWindow()
             updateVideoRecordingWindow()
+            updateNotesSidePanel()
             RecorderCommands.isVideoRecording = (kind == .video)
         }
         .onChange(of: viewModel.activeAudioRecordingStartedAt) { _, _ in
@@ -86,6 +88,7 @@ struct MainRecorderView: View {
             meetingPromptWindow.hide()
             audioRecordingWindow.hide()
             videoRecordingWindow.hide()
+            notesSidePanel.hide()
         }
         .onReceive(NotificationCenter.default.publisher(for: RecorderCommands.toggleRecording)) { _ in
             handleToggleRecording()
@@ -213,20 +216,24 @@ struct MainRecorderView: View {
     }
 
     private func updateAudioRecordingWindow() {
-        guard
-            viewModel.activeRecordingKind == .audio,
-            let startedAt = viewModel.activeAudioRecordingStartedAt
-        else {
-            audioRecordingWindow.hide()
-            return
+        // The Granola-style NotesSidePanel replaces the small
+        // floating capsule for audio note recordings — having both
+        // is redundant. Keep the capsule controller wired up but
+        // never show it for audio. (Video recording still uses
+        // VideoRecordingWindowController for its top-center HUD.)
+        audioRecordingWindow.hide()
+    }
+
+    /// Auto-summon the live-notes side panel when an audio note
+    /// recording is active; auto-dismiss when it ends. The panel's
+    /// content reads directly from the view model via @ObservedObject,
+    /// so pause/resume state, audio level, and timer all update
+    /// without explicit re-show calls.
+    private func updateNotesSidePanel() {
+        if viewModel.activeRecordingKind == .audio {
+            notesSidePanel.show(viewModel: viewModel)
+        } else {
+            notesSidePanel.hide()
         }
-        audioRecordingWindow.show(
-            title: viewModel.audioTitle,
-            startedAt: startedAt,
-            audioLevel: viewModel.audioLevel,
-            openNote: { viewModel.openActiveAudioNote() },
-            stop: { viewModel.stopAudioNoteRecordingAndUpload() },
-            discard: { viewModel.cancelAudioNoteRecording() }
-        )
     }
 }
