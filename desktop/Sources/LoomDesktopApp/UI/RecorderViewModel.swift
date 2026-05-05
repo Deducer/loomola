@@ -16,6 +16,7 @@ final class RecorderViewModel: ObservableObject {
     @Published private(set) var activeRecordingKind: DesktopRecordingKind?
     @Published private(set) var activeAudioRecordingStartedAt: Date?
     @Published private(set) var activeAudioRecordingSlug: String?
+    @Published private(set) var activeVideoRecordingStartedAt: Date?
     @Published private(set) var audioLevel = 0.0
     @Published private(set) var meetingContext: MeetingContext?
     @Published private(set) var meetingPromptContext: MeetingContext?
@@ -53,7 +54,6 @@ final class RecorderViewModel: ObservableObject {
     /// Separate from audioNoteRecorder so video + audio note flows don't
     /// share state. Stops on stopLocalRecordingAndUpload.
     private var compositeMicCoordinator: MicrophoneCaptureCoordinator?
-    private var compositeStartedAt: Date?
     private let obsidianSyncIntervalNanoseconds: UInt64 = 30_000_000_000
     private let meetingWatchIntervalNanoseconds: UInt64 = 15_000_000_000
 
@@ -415,7 +415,7 @@ final class RecorderViewModel: ObservableObject {
 
         compositeRecorder = compositor
         compositeMicCoordinator = micCoordinator
-        compositeStartedAt = Date()
+        activeVideoRecordingStartedAt = Date()
         activeRecordingURL = outputURL
         activeRecordingKind = .video
         state = .recording
@@ -430,7 +430,7 @@ final class RecorderViewModel: ObservableObject {
                 _ = try? await micCoordinator.stop()
                 compositeRecorder = nil
                 compositeMicCoordinator = nil
-                compositeStartedAt = nil
+                activeVideoRecordingStartedAt = nil
                 activeRecordingKind = nil
                 state = .failed(message: error.localizedDescription)
                 statusMessage = "Composite recording failed: \(error.localizedDescription)"
@@ -445,10 +445,10 @@ final class RecorderViewModel: ObservableObject {
               let compositor = compositeRecorder as? CompositeRecorder
         else { return }
         let micCoordinator = compositeMicCoordinator
-        let startedAt = compositeStartedAt ?? Date()
+        let startedAt = activeVideoRecordingStartedAt ?? Date()
         compositeRecorder = nil
         compositeMicCoordinator = nil
-        compositeStartedAt = nil
+        activeVideoRecordingStartedAt = nil
 
         state = .finalizing
         statusMessage = "Finalizing composite recording..."
@@ -498,6 +498,34 @@ final class RecorderViewModel: ObservableObject {
                 activeRecordingKind = nil
                 state = .failed(message: error.localizedDescription)
                 statusMessage = "Composite upload failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// Discard the active composite recording without uploading. Stops
+    /// capture, finalizes the writer (so resources release cleanly),
+    /// and best-effort deletes the temp file.
+    func cancelLocalRecording() {
+        guard #available(macOS 14.0, *) else { return }
+        guard let screenCaptureCoordinator,
+              let compositor = compositeRecorder as? CompositeRecorder
+        else { return }
+        let micCoordinator = compositeMicCoordinator
+        let outputURL = activeRecordingURL
+        compositeRecorder = nil
+        compositeMicCoordinator = nil
+        activeVideoRecordingStartedAt = nil
+        activeRecordingKind = nil
+        activeRecordingURL = nil
+        state = .signedInIdle
+        statusMessage = "Recording discarded."
+        Task {
+            try? await screenCaptureCoordinator.stop()
+            screenCaptureCoordinator.onScreenSampleBuffer = nil
+            _ = try? await micCoordinator?.stop()
+            _ = try? await compositor.finish()
+            if let outputURL {
+                try? FileManager.default.removeItem(at: outputURL)
             }
         }
     }

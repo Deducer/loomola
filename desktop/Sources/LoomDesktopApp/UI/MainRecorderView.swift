@@ -5,6 +5,7 @@ struct MainRecorderView: View {
     @StateObject private var viewModel = RecorderViewModel()
     @State private var meetingPromptWindow = MeetingPromptWindowController()
     @State private var audioRecordingWindow = AudioRecordingWindowController()
+    @State private var videoRecordingWindow = VideoRecordingWindowController()
     @State private var captureMode: CaptureMode = .audio
     @FocusState private var focusedField: FocusedField?
 
@@ -47,6 +48,7 @@ struct MainRecorderView: View {
         .onChange(of: viewModel.activeRecordingKind) { _, _ in
             updateMeetingPromptWindow()
             updateAudioRecordingWindow()
+            updateVideoRecordingWindow()
         }
         .onChange(of: viewModel.activeAudioRecordingStartedAt) { _, _ in
             updateAudioRecordingWindow()
@@ -54,8 +56,8 @@ struct MainRecorderView: View {
         .onChange(of: viewModel.audioTitle) { _, _ in
             updateAudioRecordingWindow()
         }
-        .onChange(of: viewModel.audioLevel) { _, _ in
-            updateAudioRecordingWindow()
+        .onChange(of: viewModel.audioLevel) { _, level in
+            handleAudioLevelChange(level: level)
         }
         .onChange(of: viewModel.includeMicInAudioNote) { _, _ in
             updateMeetingPromptWindow()
@@ -66,6 +68,7 @@ struct MainRecorderView: View {
         .onDisappear {
             meetingPromptWindow.hide()
             audioRecordingWindow.hide()
+            videoRecordingWindow.hide()
         }
     }
 
@@ -153,6 +156,27 @@ struct MainRecorderView: View {
             startDisabled: audioStartDisabled,
             start: { viewModel.startDetectedMeetingAudioNote() },
             dismiss: { viewModel.dismissMeetingPrompt() }
+        )
+    }
+
+    private func handleAudioLevelChange(level: Double) {
+        updateAudioRecordingWindow()
+        videoRecordingWindow.updateLevel(level)
+    }
+
+    private func updateVideoRecordingWindow() {
+        guard
+            viewModel.activeRecordingKind == .video,
+            let startedAt = viewModel.activeVideoRecordingStartedAt
+        else {
+            videoRecordingWindow.hide()
+            return
+        }
+        videoRecordingWindow.show(
+            startedAt: startedAt,
+            audioLevel: viewModel.audioLevel,
+            stop: { viewModel.stopLocalRecordingAndUpload() },
+            discard: { viewModel.cancelLocalRecording() }
         )
     }
 
