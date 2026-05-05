@@ -453,8 +453,12 @@ final class RecorderViewModel: ObservableObject {
 
         let outputURL = FileManager.default.temporaryDirectory
             .appending(path: "loom-composite-\(UUID().uuidString).mp4")
-        let micURL = FileManager.default.temporaryDirectory
-            .appending(path: "loom-composite-mic-\(UUID().uuidString).m4a")
+        // The composite recorder muxes mic audio into the MP4
+        // inline, so we don't need a separate per-mic .m4a file
+        // here. Passing nil to MicrophoneCaptureCoordinator.start
+        // skips its AudioAssetWriter construction — sidesteps the
+        // AVAssetWriterInput crash on macOS 26.4.1, and saves an
+        // unnecessary file write.
 
         // Optimistic UI state BEFORE the heavyweight setup. Lets
         // SwiftUI repaint (showing "Starting..." status + disabling
@@ -495,7 +499,7 @@ final class RecorderViewModel: ObservableObject {
             // Mic failure is non-fatal — record video only.
             let micCoordinator = MicrophoneCaptureCoordinator()
             do {
-                try micCoordinator.start(deviceID: micDeviceID, outputURL: micURL)
+                try micCoordinator.start(deviceID: micDeviceID, outputURL: nil)
             } catch {
                 print("[recorder] mic start failed: \(error.localizedDescription)")
             }

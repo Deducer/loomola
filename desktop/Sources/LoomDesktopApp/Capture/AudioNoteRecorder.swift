@@ -89,7 +89,14 @@ final class AudioNoteRecorder {
 
         var localFiles: [TrackKind: URL] = [:]
         if session.tracks.contains(.mic) {
-            localFiles[.mic] = try await microphoneCapture.stop()
+            // The audio-note flow always supplies a URL when calling
+            // start(deviceID:outputURL:), so stop() returns a non-nil
+            // URL. Force-unwrap is safe here; if it ever becomes nil
+            // the throw on the next branch (no completed tracks)
+            // surfaces the failure.
+            if let micURL = try await microphoneCapture.stop() {
+                localFiles[.mic] = micURL
+            }
         }
         if session.tracks.contains(.systemAudio), let systemAudioCapture {
             localFiles[.systemAudio] = try await systemAudioCapture.stop()

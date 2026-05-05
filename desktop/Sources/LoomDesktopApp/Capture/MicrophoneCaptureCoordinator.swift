@@ -27,7 +27,22 @@ final class MicrophoneCaptureCoordinator: NSObject, @unchecked Sendable {
     private var writer: AudioAssetWriter?
     private var formatDescription: CMAudioFormatDescription?
 
-    func start(deviceID: String?, outputURL: URL) throws {
+    /// Starts capturing mic audio with AEC. Two write modes:
+    ///
+    /// - When `outputURL` is non-nil, writes captured PCM to a
+    ///   .m4a file via AudioAssetWriter (the audio-note flow uses
+    ///   this; the resulting file is uploaded as the mic track).
+    /// - When `outputURL` is nil, skips file write entirely. The
+    ///   mic samples still flow through `onSampleBuffer` to whatever
+    ///   downstream consumer wired the callback (the composite
+    ///   recorder uses this — the audio gets muxed inline into the
+    ///   composite MP4, no separate file needed).
+    ///
+    /// The nil path was added after Ian saw a hard crash in
+    /// AVAssetWriterInput.init on macOS 26.4.1 — the composite flow
+    /// never used the .m4a anyway, so skipping the construction
+    /// sidesteps the crash entirely.
+    func start(deviceID: String?, outputURL: URL?) throws {
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
 
@@ -52,13 +67,18 @@ final class MicrophoneCaptureCoordinator: NSObject, @unchecked Sendable {
         }
 
         let format = inputNode.outputFormat(forBus: 0)
-        let writer = try AudioAssetWriter(
-            outputURL: outputURL,
-            sampleRate: format.sampleRate,
-            channelCount: Int(format.channelCount)
-        )
-        try writer.start()
-        self.writer = writer
+
+        // Optional file writer. nil URL = skip the AudioAssetWriter
+        // construction entirely (composite recording flow).
+        if let outputURL {
+            let writer = try AudioAssetWriter(
+                outputURL: outputURL,
+                sampleRate: format.sampleRate,
+                channelCount: Int(format.channelCount)
+            )
+            try writer.start()
+            self.writer = writer
+        }
 
         // Cache the CMAudioFormatDescription so we don't rebuild it
         // every tap callback.
@@ -74,16 +94,23 @@ final class MicrophoneCaptureCoordinator: NSObject, @unchecked Sendable {
         self.engine = engine
     }
 
-    func stop() async throws -> URL {
-        guard let engine, let writer else {
+    func stop() async throws -> URL? {
+        guard let engine else {
             throw MicrophoneCaptureCoordinatorError.notRecording
         }
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         self.engine = nil
-        self.writer = nil
         self.formatDescription = nil
-        return try await writer.finish()
+
+        // If the writer was set up (audio-note flow), finalize and
+        // return the resulting URL. If not (composite flow), there
+        // was no file to finalize — return nil.
+        if let writer = self.writer {
+            self.writer = nil
+            return try await writer.finish()
+        }
+        return nil
     }
 
     private func handleTap(buffer: AVAudioPCMBuffer, time: AVAudioTime) {
