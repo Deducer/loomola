@@ -388,12 +388,18 @@ final class RecorderViewModel: ObservableObject {
 
         // Mic capture with AEC. Writes its own M4A (we discard it for
         // now — composite contains the mic audio); compositor uses the
-        // onSampleBuffer hook to mux mic samples into the MP4.
+        // onSampleBuffer hook to mux mic samples into the MP4. onLevel
+        // feeds the recording HUD's level meter via recordAudioLevel.
         let micCoordinator = MicrophoneCaptureCoordinator()
         let micURL = FileManager.default.temporaryDirectory
             .appending(path: "loom-composite-mic-\(UUID().uuidString).m4a")
         micCoordinator.onSampleBuffer = { [weak compositor] sampleBuffer in
             compositor?.appendMicSample(sampleBuffer)
+        }
+        micCoordinator.onLevel = { [weak self] level in
+            Task { @MainActor in
+                self?.recordAudioLevel(level)
+            }
         }
         do {
             try micCoordinator.start(deviceID: nil, outputURL: micURL)

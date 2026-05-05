@@ -6,6 +6,8 @@ struct MainRecorderView: View {
     @State private var meetingPromptWindow = MeetingPromptWindowController()
     @State private var audioRecordingWindow = AudioRecordingWindowController()
     @State private var videoRecordingWindow = VideoRecordingWindowController()
+    @State private var permissionStatus: PermissionStatus = PermissionChecker.currentStatus()
+    @State private var dismissedPreflight = false
     @State private var captureMode: CaptureMode = .audio
     @FocusState private var focusedField: FocusedField?
 
@@ -76,6 +78,18 @@ struct MainRecorderView: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
+                    if !dismissedPreflight && permissionStatus.requiredMissing {
+                        PermissionsView(
+                            onComplete: {
+                                permissionStatus = PermissionChecker.currentStatus()
+                                dismissedPreflight = !permissionStatus.requiredMissing
+                            }
+                        )
+                        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+                            permissionStatus = PermissionChecker.currentStatus()
+                        }
+                    }
+
                     if let context = viewModel.meetingPromptContext {
                         MeetingPromptView(
                             context: context,
