@@ -17,6 +17,11 @@ final class RecorderViewModel: ObservableObject {
     @Published private(set) var activeAudioRecordingStartedAt: Date?
     @Published private(set) var activeAudioRecordingSlug: String?
     @Published private(set) var activeVideoRecordingStartedAt: Date?
+    /// True while the composite recorder is being set up off the
+    /// main actor. The Start button binds to !isStartingRecording so
+    /// double-clicks during cold-start can't re-enter and the UI
+    /// reads as "starting…" instead of dead.
+    @Published private(set) var isStartingRecording: Bool = false
     @Published private(set) var audioLevel = 0.0
     @Published private(set) var meetingContext: MeetingContext?
     @Published private(set) var meetingPromptContext: MeetingContext?
@@ -428,6 +433,11 @@ final class RecorderViewModel: ObservableObject {
             statusMessage = "No active display found."
             return
         }
+        guard activeRecordingKind == nil, !isStartingRecording else {
+            // Defensive: ignore double-clicks or re-entry while already
+            // setting up.
+            return
+        }
 
         // Composite output dimensions = screen dimensions in pixels.
         let scale = screen.backingScaleFactor
@@ -443,30 +453,84 @@ final class RecorderViewModel: ObservableObject {
 
         let outputURL = FileManager.default.temporaryDirectory
             .appending(path: "loom-composite-\(UUID().uuidString).mp4")
+        let micURL = FileManager.default.temporaryDirectory
+            .appending(path: "loom-composite-mic-\(UUID().uuidString).m4a")
 
-        // Build the composite recorder. Pulls camera frames + bubble
-        // placement from the shared singletons so the bubble overlay
-        // (in AppDelegate) and the compositor see the same state.
-        let compositor = CompositeRecorder(
-            bubbleController: BubblePositionController.shared,
-            cameraCoordinator: CameraCaptureCoordinator.shared,
-            displayBoundsProvider: { displayBounds }
-        )
-        do {
-            try compositor.prepare(outputURL: outputURL, frameSize: pixelSize)
-        } catch {
-            state = .failed(message: error.localizedDescription)
-            statusMessage = "Composite recorder setup failed: \(error.localizedDescription)"
+        // Optimistic UI state BEFORE the heavyweight setup. Lets
+        // SwiftUI repaint (showing "Starting..." status + disabling
+        // the Start button) before we hand off to a background task.
+        isStartingRecording = true
+        statusMessage = "Starting composite recording..."
+
+        let micDeviceID = selectedMicDeviceID
+        let camDeviceID = selectedCameraDeviceID
+
+        // Heavyweight setup OFF the main actor. Two operations here
+        // can each block for several seconds when cold:
+        //   - AVAssetWriter init in CompositeRecorder.prepare (disk
+        //     touch + encoder setup)
+        //   - inputNode.setVoiceProcessingEnabled(true) and
+        //     engine.start() in MicrophoneCaptureCoordinator.start
+        //     (Audio Unit voice processing cold-boot)
+        // Doing these on main wedged the UI for the duration —
+        // beach ball, click queue stalled, click delivery silently
+        // broken once it resumed. Off main, the UI stays responsive.
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let compositor = CompositeRecorder(
+                bubbleController: BubblePositionController.shared,
+                cameraCoordinator: CameraCaptureCoordinator.shared,
+                displayBoundsProvider: { displayBounds }
+            )
+            do {
+                try compositor.prepare(outputURL: outputURL, frameSize: pixelSize)
+            } catch {
+                await MainActor.run {
+                    self?.isStartingRecording = false
+                    self?.state = .failed(message: error.localizedDescription)
+                    self?.statusMessage = "Composite recorder setup failed: \(error.localizedDescription)"
+                }
+                return
+            }
+
+            // Mic failure is non-fatal — record video only.
+            let micCoordinator = MicrophoneCaptureCoordinator()
+            do {
+                try micCoordinator.start(deviceID: micDeviceID, outputURL: micURL)
+            } catch {
+                print("[recorder] mic start failed: \(error.localizedDescription)")
+            }
+
+            await self?.installLocalRecordingState(
+                compositor: compositor,
+                micCoordinator: micCoordinator,
+                outputURL: outputURL,
+                camDeviceID: camDeviceID
+            )
+        }
+    }
+
+    /// Main-actor tail of `startLocalRecording`. Wires callbacks,
+    /// flips activeRecordingKind, and kicks the (already-async)
+    /// screen capture. Split out so the off-main setup task can
+    /// hop back here cleanly.
+    @MainActor
+    private func installLocalRecordingState(
+        compositor: CompositeRecorder,
+        micCoordinator: MicrophoneCaptureCoordinator,
+        outputURL: URL,
+        camDeviceID: String?
+    ) async {
+        guard #available(macOS 14.0, *) else { return }
+        guard let screenCaptureCoordinator else { return }
+
+        // If the user discarded mid-setup, tear it back down.
+        guard isStartingRecording else {
+            try? await micCoordinator.stop()
+            try? await compositor.finish()
+            try? FileManager.default.removeItem(at: outputURL)
             return
         }
 
-        // Mic capture with AEC. Writes its own M4A (we discard it for
-        // now — composite contains the mic audio); compositor uses the
-        // onSampleBuffer hook to mux mic samples into the MP4. onLevel
-        // feeds the recording HUD's level meter via recordAudioLevel.
-        let micCoordinator = MicrophoneCaptureCoordinator()
-        let micURL = FileManager.default.temporaryDirectory
-            .appending(path: "loom-composite-mic-\(UUID().uuidString).m4a")
         micCoordinator.onSampleBuffer = { [weak compositor] sampleBuffer in
             compositor?.appendMicSample(sampleBuffer)
         }
@@ -475,22 +539,11 @@ final class RecorderViewModel: ObservableObject {
                 self?.recordAudioLevel(level)
             }
         }
-        do {
-            try micCoordinator.start(deviceID: selectedMicDeviceID, outputURL: micURL)
-        } catch {
-            // Mic failure is non-fatal — recording continues with video
-            // only. Log + statusMessage so user knows.
-            print("[recorder] mic start failed: \(error.localizedDescription)")
-        }
 
-        // Start the camera coordinator (idempotent — bubble overlay
-        // may have already started it). Compositor reads from
-        // CameraCaptureCoordinator.shared.latestPixelBuffer().
         CameraCaptureCoordinator.shared.requestPermissionAndStart(
-            deviceID: selectedCameraDeviceID
+            deviceID: camDeviceID
         )
 
-        // Hook screen sample buffer → compositor.
         screenCaptureCoordinator.onScreenSampleBuffer = { [weak compositor] sampleBuffer in
             compositor?.appendScreenFrame(sampleBuffer)
         }
@@ -501,22 +554,20 @@ final class RecorderViewModel: ObservableObject {
         activeRecordingURL = outputURL
         activeRecordingKind = .video
         state = .recording
-        statusMessage = "Starting composite recording..."
+        isStartingRecording = false
 
-        Task {
-            do {
-                let display = try await screenCaptureCoordinator.startFirstDisplayCapture()
-                statusMessage = "Recording \(display.name) (composite with bubble)."
-            } catch {
-                screenCaptureCoordinator.onScreenSampleBuffer = nil
-                _ = try? await micCoordinator.stop()
-                compositeRecorder = nil
-                compositeMicCoordinator = nil
-                activeVideoRecordingStartedAt = nil
-                activeRecordingKind = nil
-                state = .failed(message: error.localizedDescription)
-                statusMessage = "Composite recording failed: \(error.localizedDescription)"
-            }
+        do {
+            let display = try await screenCaptureCoordinator.startFirstDisplayCapture()
+            statusMessage = "Recording \(display.name) (composite with bubble)."
+        } catch {
+            screenCaptureCoordinator.onScreenSampleBuffer = nil
+            _ = try? await micCoordinator.stop()
+            compositeRecorder = nil
+            compositeMicCoordinator = nil
+            activeVideoRecordingStartedAt = nil
+            activeRecordingKind = nil
+            state = .failed(message: error.localizedDescription)
+            statusMessage = "Composite recording failed: \(error.localizedDescription)"
         }
     }
 

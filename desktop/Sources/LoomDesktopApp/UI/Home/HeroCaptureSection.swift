@@ -53,10 +53,14 @@ struct HeroCaptureSection: View {
             }
         } else {
             HStack(spacing: DSSpacing.md) {
-                PrimaryButton("Start recording", icon: "video.fill") {
+                PrimaryButton(
+                    viewModel.isStartingRecording ? "Starting…" : "Start recording",
+                    icon: "video.fill",
+                    isLoading: viewModel.isStartingRecording
+                ) {
                     viewModel.startLocalRecording()
                 }
-                .disabled(viewModel.state == .signedOut || viewModel.activeRecordingKind != nil)
+                .disabled(viewModel.state == .signedOut || viewModel.activeRecordingKind != nil || viewModel.isStartingRecording)
             }
         }
     }
