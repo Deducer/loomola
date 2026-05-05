@@ -8,9 +8,20 @@ import SwiftUI
 struct PermissionsHomeView: View {
     @State private var status: PermissionStatus = PermissionChecker.currentStatus()
     @State private var requesting: PermissionChecker.WhichPermission?
+    /// Snapshot of screen-recording state at view-init time. If the
+    /// user grants screen recording later (denied/notDetermined →
+    /// granted), the running process can't use it until restart —
+    /// macOS only re-evaluates at launch. We surface a Relaunch CTA
+    /// in that exact case.
+    @State private var screenRecordingAtLaunch: PermissionStatus.State =
+        PermissionChecker.currentStatus().screenRecording
 
     let onComplete: () -> Void
     let onSkip: () -> Void
+
+    private var needsRelaunchForScreenRecording: Bool {
+        screenRecordingAtLaunch != .granted && status.screenRecording == .granted
+    }
 
     var body: some View {
         ScrollView {
@@ -24,6 +35,10 @@ struct PermissionsHomeView: View {
                     Text("Loomola needs four permissions from macOS to record. We'll walk through them — granting opens the system prompt or jumps to System Settings, depending on what's available.")
                         .font(DSFont.Body.md())
                         .foregroundStyle(DSColor.Text.secondary)
+
+                    if needsRelaunchForScreenRecording {
+                        relaunchBanner
+                    }
 
                     VStack(spacing: DSSpacing.md) {
                         permissionRow(
@@ -90,6 +105,33 @@ struct PermissionsHomeView: View {
                 onComplete()
             }
         }
+    }
+
+    private var relaunchBanner: some View {
+        HStack(alignment: .center, spacing: DSSpacing.md) {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(DSColor.State.warning)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Restart needed for screen recording")
+                    .font(DSFont.Body.lg())
+                    .foregroundStyle(DSColor.Text.primary)
+                Text("macOS only re-evaluates Screen Recording access at app launch. Click Relaunch to pick up the change.")
+                    .font(DSFont.Body.sm())
+                    .foregroundStyle(DSColor.Text.secondary)
+            }
+            Spacer()
+            PrimaryButton("Relaunch", icon: "arrow.clockwise") {
+                AppRelauncher.relaunch()
+            }
+        }
+        .padding(.horizontal, DSSpacing.lg)
+        .padding(.vertical, DSSpacing.md)
+        .background(DSColor.State.warning.opacity(0.10), in: RoundedRectangle(cornerRadius: DSRadius.md))
+        .overlay(
+            RoundedRectangle(cornerRadius: DSRadius.md)
+                .strokeBorder(DSColor.State.warning.opacity(0.35), lineWidth: 1)
+        )
     }
 
     private func permissionRow(
