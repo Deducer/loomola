@@ -130,15 +130,15 @@ struct MainRecorderView: View {
     @ViewBuilder
     private var contentForCurrentState: some View {
         if viewModel.state == .signedOut {
-            SignedOutView(
-                email: $viewModel.email,
-                password: $viewModel.password,
-                signIn: { viewModel.signIn() },
-                focusedField: $focusedField
-            )
+            SignedOutHomeView(viewModel: viewModel)
         } else if !dismissedPreflight && permissionStatus.requiredMissing {
-            // Phase 5 replaces this with PermissionsHomeView.
-            signedInBody
+            PermissionsHomeView(
+                onComplete: {
+                    permissionStatus = PermissionChecker.currentStatus()
+                    dismissedPreflight = !permissionStatus.requiredMissing
+                },
+                onSkip: { dismissedPreflight = true }
+            )
         } else if viewModel.activeRecordingKind != nil {
             RecordingHomeView(viewModel: viewModel)
         } else {
