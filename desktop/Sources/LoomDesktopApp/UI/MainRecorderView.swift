@@ -8,7 +8,7 @@ struct MainRecorderView: View {
     @State private var videoRecordingWindow = VideoRecordingWindowController()
     @State private var permissionStatus: PermissionStatus = PermissionChecker.currentStatus()
     @State private var dismissedPreflight = false
-    @State private var captureMode: CaptureMode = .audio
+    @State private var captureMode: CaptureMode = .video
     @State private var showSettings = false
     @State private var showAccountMenu = false
     @FocusState private var focusedField: FocusedField?
@@ -42,16 +42,7 @@ struct MainRecorderView: View {
 
             Divider().overlay(DSColor.Border.subtle)
 
-            if viewModel.state == .signedOut {
-                SignedOutView(
-                    email: $viewModel.email,
-                    password: $viewModel.password,
-                    signIn: { viewModel.signIn() },
-                    focusedField: $focusedField
-                )
-            } else {
-                signedInBody
-            }
+            contentForCurrentState
         }
         .background(DSColor.Bg.canvas)
         .sheet(isPresented: $showSettings) {
@@ -128,6 +119,34 @@ struct MainRecorderView: View {
             // Audio note flow has its own controls; ignore global
             // toggle while an audio note is recording.
             break
+        }
+    }
+
+    /// Routes by (state, recordingKind, permissions) to the right
+    /// home view. Phase 3 lands the IdleHomeView; legacy `signedInBody`
+    /// is the temporary fallback for recording / permissions states
+    /// until Phases 4 + 5 swap them in.
+    @ViewBuilder
+    private var contentForCurrentState: some View {
+        if viewModel.state == .signedOut {
+            SignedOutView(
+                email: $viewModel.email,
+                password: $viewModel.password,
+                signIn: { viewModel.signIn() },
+                focusedField: $focusedField
+            )
+        } else if !dismissedPreflight && permissionStatus.requiredMissing {
+            // Phase 5 replaces this with PermissionsHomeView.
+            signedInBody
+        } else if viewModel.activeRecordingKind != nil {
+            // Phase 4 replaces this with RecordingHomeView.
+            signedInBody
+        } else {
+            IdleHomeView(
+                viewModel: viewModel,
+                recentService: viewModel.recentRecordings,
+                captureMode: $captureMode
+            )
         }
     }
 
@@ -294,31 +313,8 @@ private extension DesktopRecordingKind {
     }
 }
 
-private enum CaptureMode: String, CaseIterable, Hashable {
-    case video
-    case audio
-
-    var title: String {
-        switch self {
-        case .video: return "Video"
-        case .audio: return "Audio note"
-        }
-    }
-
-    var symbol: String {
-        switch self {
-        case .video: return "video.fill"
-        case .audio: return "waveform.circle.fill"
-        }
-    }
-
-    var tint: Color {
-        switch self {
-        case .video: return .blue
-        case .audio: return .green
-        }
-    }
-}
+// CaptureMode moved to UI/Home/HeroCaptureSection.swift (M3 Phase 3).
+// `tint` was unused outside the legacy CaptureCard private struct.
 
 private struct AppHeader: View {
     let state: RecorderState

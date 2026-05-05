@@ -43,6 +43,10 @@ actor BackendClient {
         return markdown
     }
 
+    func recentRecordings(limit: Int = 4) async throws -> RecentRecordingsResponse {
+        try await get(path: "/api/recordings/recent?limit=\(limit)")
+    }
+
     func markObsidianSynced(mediaId: String, filePath: String) async throws {
         let _: EmptyResponse = try await post(
             path: "/api/notes/\(mediaId)/obsidian-synced",
@@ -226,6 +230,20 @@ struct PendingObsidianNote: Decodable, Equatable, Sendable {
     let path: String
     let filename: String
     let exportUrl: String
+}
+
+struct RecentRecordingsResponse: Decodable, Equatable, Sendable {
+    let items: [RecentRecordingDTO]
+}
+
+struct RecentRecordingDTO: Decodable, Equatable, Sendable {
+    let id: String
+    let slug: String
+    let title: String
+    let kind: String  // "video" | "audio"
+    let createdAt: String  // ISO 8601
+    let durationSeconds: Double?
+    let thumbnailUrl: String?
 }
 
 struct ObsidianSyncedRequest: Encodable, Sendable {

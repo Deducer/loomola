@@ -35,9 +35,27 @@ final class RecorderViewModel: ObservableObject {
     @Published var selectedMicDeviceID: String? = UserDefaults.standard
         .string(forKey: "loomola.selectedMicDeviceID")
 
+    /// Lazily-built service powering the Recent strip on the idle
+    /// home view. Created on first access once the backend client
+    /// exists; nil on signed-out state. Read by MainRecorderView via
+    /// `recentRecordings` accessor.
+    private var _recentService: RecentRecordingsService?
+
+    var recentRecordings: RecentRecordingsService {
+        if let existing = _recentService { return existing }
+        // If the backend isn't ready yet, vend a dummy service that
+        // never fetches (it'll be replaced when the user signs in).
+        let backend = backendClient ?? BackendClient(
+            baseURL: configuration?.apiBaseURL ?? URL(string: "https://loom.dissonance.cloud")!
+        ) { throw RecorderViewModelError.missingAccessToken }
+        let service = RecentRecordingsService(backend: backend)
+        _recentService = service
+        return service
+    }
+
     private var authService: DesktopAuthService?
     private var accessToken: String?
-    private var backendClient: BackendClient?
+    private(set) var backendClient: BackendClient?
     private var audioNoteRecorder: AudioNoteRecorder?
     private var obsidianExportWriter: ObsidianExportWriter?
     private var obsidianRealtimeSubscriber: ObsidianRealtimeSubscriber?
