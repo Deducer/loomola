@@ -116,7 +116,10 @@ if command -v codesign >/dev/null 2>&1; then
   # rebuild, so warn the user.
   STABLE_CERT_CN="Loomola Local Signing"
   CODESIGN_IDENTITY="-"
-  if security find-identity -v -p codesigning 2>/dev/null \
+  # Drop -v: self-signed certs show as CSSMERR_TP_NOT_TRUSTED but
+  # codesign + TCC work fine with them. We just need the signature
+  # requirement to stay stable across rebuilds.
+  if security find-identity -p codesigning 2>/dev/null \
       | grep -q "$STABLE_CERT_CN"; then
     CODESIGN_IDENTITY="$STABLE_CERT_CN"
   else

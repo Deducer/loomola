@@ -15,7 +15,12 @@ set -euo pipefail
 CERT_CN="Loomola Local Signing"
 KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
 
-if security find-identity -v -p codesigning "$KEYCHAIN" 2>/dev/null \
+# Note: drop -v (valid-only) here. Self-signed certs without a
+# system trust anchor show as `CSSMERR_TP_NOT_TRUSTED` and `-v`
+# excludes them — but codesign + TCC don't actually require trust,
+# they key off the signature requirement (CDHash + cert public
+# key). So we accept any identity matching the CN, trusted or not.
+if security find-identity -p codesigning "$KEYCHAIN" 2>/dev/null \
     | grep -q "$CERT_CN"; then
   echo "✓ Signing identity '$CERT_CN' already exists. Nothing to do."
   exit 0
@@ -59,22 +64,36 @@ openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
   -config "$CONFIG_PATH" \
   >/dev/null 2>&1
 
-# Bundle key + cert into a PKCS12 file for keychain import. Empty
-# password is fine — the identity is local-only and the keychain
-# itself is the trust boundary.
+# Bundle key + cert into a PKCS12 file for keychain import.
+#
+# Forcing the legacy PBE algorithms (PBE-SHA1-3DES + SHA1 MAC) is
+# important: OpenSSL 3.x defaults to AES + SHA-256, which macOS's
+# Security framework PKCS12 reader rejects with "MAC verification
+# failed". The legacy params have been part of PKCS12 since the
+# original spec and macOS reads them reliably.
+#
+# Using a real (non-empty) password also avoids edge cases where
+# different empty-password encodings (UTF-8 vs UTF-16, with/without
+# null terminator) confuse the importer. The password is local-only
+# and lives in this script — it's not protecting anything that the
+# user's keychain isn't already protecting.
+P12_PASSWORD="loomola-local-tmp"
 openssl pkcs12 -export \
   -inkey "$KEY_PATH" \
   -in "$CERT_PATH" \
   -out "$P12_PATH" \
   -name "$CERT_CN" \
-  -password pass: \
+  -password "pass:${P12_PASSWORD}" \
+  -keypbe PBE-SHA1-3DES \
+  -certpbe PBE-SHA1-3DES \
+  -macalg SHA1 \
   >/dev/null 2>&1
 
 # Import. The -T /usr/bin/codesign flag pre-authorizes codesign so
 # you don't have to click "Always Allow" on every build.
 security import "$P12_PATH" \
   -k "$KEYCHAIN" \
-  -P "" \
+  -P "${P12_PASSWORD}" \
   -T /usr/bin/codesign \
   >/dev/null
 
@@ -86,18 +105,22 @@ echo
 echo "macOS may now ask for your login password (one time)."
 echo "Click 'Always Allow' if a keychain dialog appears."
 echo
+# set-key-partition-list silences the "codesign wants to access
+# your keychain" prompt that normally fires the first time a tool
+# uses an identity. Without -k LOGIN_PASSWORD it would prompt for
+# the user's password interactively; we let it fall through to a
+# manual one-time prompt rather than asking for the password here.
 security set-key-partition-list \
   -S "apple-tool:,apple:,codesign:" \
   -s \
-  -k "" \
   "$KEYCHAIN" \
   >/dev/null 2>&1 || {
     cat <<'WARN'
 
-Note: set-key-partition-list returned non-zero (this is normal if
-the keychain is locked or your login password is empty). Codesign
-will prompt the FIRST time it uses this identity; click
-"Always Allow" and it'll persist for future builds.
+Note: set-key-partition-list returned non-zero — this is normal
+when the keychain is locked. The first time codesign uses this
+identity, macOS will prompt; click "Always Allow" and it persists
+forever after.
 
 WARN
   }
