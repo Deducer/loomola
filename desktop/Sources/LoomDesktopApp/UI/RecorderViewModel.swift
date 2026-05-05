@@ -16,6 +16,11 @@ final class RecorderViewModel: ObservableObject {
     @Published private(set) var activeRecordingKind: DesktopRecordingKind?
     @Published private(set) var activeAudioRecordingStartedAt: Date?
     @Published private(set) var activeAudioRecordingSlug: String?
+    /// True while the audio note recording is paused. Drives the
+    /// Pause↔Resume UI state in RecordingHomeView. Mirrors
+    /// AudioNoteRecorder.isPaused but kept as an @Published mirror
+    /// so SwiftUI re-renders on transition.
+    @Published private(set) var isAudioNotePaused: Bool = false
     @Published private(set) var activeVideoRecordingStartedAt: Date?
     /// True while the composite recorder is being set up off the
     /// main actor. The Start button binds to !isStartingRecording so
@@ -727,28 +732,49 @@ final class RecorderViewModel: ObservableObject {
 
     func stopAudioNoteRecordingAndUpload() {
         guard let audioNoteRecorder else { return }
+        // Match the video Stop & upload pattern: clear
+        // activeRecordingKind immediately so the router swaps to
+        // FinalizingHomeView right away. Without this the audio
+        // recording surface would stay up while the upload runs in
+        // the background and the user might re-click thinking
+        // nothing happened.
+        activeRecordingKind = nil
+        activeAudioRecordingStartedAt = nil
+        activeAudioRecordingSlug = nil
+        audioLevel = 0
+        isAudioNotePaused = false
         state = .finalizing
         statusMessage = "Finalizing audio note..."
         Task {
             do {
                 state = .uploading(progress: 0.2)
                 let complete = try await audioNoteRecorder.stopAndUpload()
-                activeRecordingKind = nil
-                activeAudioRecordingStartedAt = nil
-                activeAudioRecordingSlug = nil
-                audioLevel = 0
                 state = .complete(slug: complete.slug)
                 statusMessage = "Uploaded audio note. Slug: \(complete.slug)"
                 _recentService?.refresh()
             } catch {
-                activeRecordingKind = nil
-                activeAudioRecordingStartedAt = nil
-                activeAudioRecordingSlug = nil
-                audioLevel = 0
                 state = .failed(message: error.localizedDescription)
                 statusMessage = "Audio note upload failed: \(error.localizedDescription)"
             }
         }
+    }
+
+    /// Pause the active audio note recording. Sample timestamps
+    /// are adjusted server-side (via PauseAdjuster in the capture
+    /// coordinators) so the resulting recording's duration reflects
+    /// active recording time only — the paused gap is removed.
+    func pauseAudioNoteRecording() {
+        guard let audioNoteRecorder, activeRecordingKind == .audio else { return }
+        audioNoteRecorder.pause()
+        isAudioNotePaused = true
+        statusMessage = "Recording paused."
+    }
+
+    func resumeAudioNoteRecording() {
+        guard let audioNoteRecorder, activeRecordingKind == .audio else { return }
+        audioNoteRecorder.resume()
+        isAudioNotePaused = false
+        statusMessage = "Recording resumed."
     }
 
     func cancelAudioNoteRecording() {
@@ -761,6 +787,7 @@ final class RecorderViewModel: ObservableObject {
             activeAudioRecordingStartedAt = nil
             activeAudioRecordingSlug = nil
             audioLevel = 0
+            isAudioNotePaused = false
             state = .signedInIdle
             statusMessage = "Audio note discarded."
         }
