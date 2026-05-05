@@ -47,10 +47,11 @@ struct MainRecorderView: View {
                 captureMode = .audio
             }
         }
-        .onChange(of: viewModel.activeRecordingKind) { _, _ in
+        .onChange(of: viewModel.activeRecordingKind) { _, kind in
             updateMeetingPromptWindow()
             updateAudioRecordingWindow()
             updateVideoRecordingWindow()
+            RecorderCommands.isVideoRecording = (kind == .video)
         }
         .onChange(of: viewModel.activeAudioRecordingStartedAt) { _, _ in
             updateAudioRecordingWindow()

@@ -18,6 +18,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         configureMenuBar()
         configureGlobalHotkeys()
+        // Refresh menubar item titles when the recording state flips
+        // so "Start Recording" ↔ "Stop Recording" tracks reality.
+        NotificationCenter.default.addObserver(
+            forName: RecorderCommands.videoRecordingStateChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.statusItem?.menu?.update()
+        }
         Task { @MainActor in
             AppActivation.bringRecorderToFront()
         }
@@ -119,6 +128,10 @@ extension AppDelegate: NSMenuItemValidation {
             menuItem.title = bubbleOverlay.isVisible
                 ? "Hide Bubble Overlay"
                 : "Show Bubble Overlay"
+        } else if menuItem.action == #selector(toggleRecording) {
+            menuItem.title = RecorderCommands.isVideoRecording
+                ? "Stop Recording"
+                : "Start Recording"
         }
         return true
     }

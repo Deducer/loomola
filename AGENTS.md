@@ -83,7 +83,7 @@ Stage 1 (M1–M11) + Stage 1.5a/b + Stage 1.6 + Stage 1.7 + Stage 1.8 all shippe
 - **Deploy flow:** push to `main` → Coolify rebuilds → migrations run automatically at container boot (`scripts/migrate.ts`).
 - **Migrations:** Drizzle-generated SQL in `drizzle/`. Never hand-edit committed migrations; create a new one. The journal at `drizzle/meta/_journal.json` must list every committed `.sql` file.
 - **Secrets:** Doppler `prd_loom`. Never put a secret in code, in Coolify env vars, or in `.env*` committed files.
-- **Tests:** unit must pass; the pre-existing `ai-schemas.test.ts > rejects negative timestamps` failure is unrelated to current work and tracked but not blocking. E2E requires the dev server running + `TEST_CREATOR_*` env vars.
+- **Tests:** unit must pass. E2E requires the dev server running + `TEST_CREATOR_*` env vars.
 - **Polymorphic media:** `media_objects.type` is `'video' | 'audio'`. Preserve this abstraction — it's what lets future audio products share infra.
 - **Code style:** existing surface uses CSS-var tokens (`--accent`, `--text`, `--bg-subtle`, etc.) — don't introduce ad-hoc hex colors. Components follow `class-variance-authority` for variant systems where useful.
 
@@ -104,7 +104,6 @@ When adding a new public-facing endpoint that accepts user input, default to `ch
 - **Chrome-only by design** — `getDisplayMedia` system-audio capture is Chrome-only; Document PiP is Chrome-only. Safari/Firefox would partially work (no system audio, no floating bubble).
 - **Recording the entire screen + bubble pip** — the bubble pip window is itself visible in a full-screen capture (along with Chrome's small window-chrome titlebar on the pip). For tab/window recordings it's invisible to the capture. The cleanest fix would be a Chrome extension that injects a true frameless circle bubble as a content-script DOM element in the captured tab — that's how Loom does it for the web.
 - **No adaptive bitrate** — R2 serves one composite file; mobile/cellular viewers eat the full bitrate. Deferred.
-- **`ai-schemas.test.ts > rejects negative timestamps`** — fails (pre-existing); minor schema gap, not blocking.
 - **Mobile** — designed desktop-first. No focused mobile pass yet; share page renders OK below 768px but not battle-tested.
 - **Brand `fontFamily` is Google Fonts only** — the share page injects `<link href="https://fonts.googleapis.com/css2?family=<name>:wght@400;500;600;700">` and applies the family page-wide. Foundry/commercial fonts (Söhne, TT Norms, Pangram Pangram "Test ..." trial fonts, etc.) silently 404 and fall back to the system sans. Custom-font upload (R2 + `@font-face`) is the right next step but not built yet.
 
