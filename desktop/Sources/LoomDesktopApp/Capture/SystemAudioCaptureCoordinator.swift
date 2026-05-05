@@ -105,6 +105,15 @@ final class SystemAudioCaptureCoordinator: NSObject, SCStreamOutput, SCStreamDel
 /// CMSampleBuffer to a new value. Returns a fresh sample buffer
 /// wrapping the same data + format. Used to subtract paused
 /// duration from system-audio samples coming out of SCStream.
+///
+/// IMPORTANT: when interfacing with C functions that expect a
+/// pointer to an array, use `withUnsafeMutableBufferPointer`
+/// rather than `&timings` directly. The latter creates an
+/// `inout` to a single element, not a buffer pointer — the C
+/// function then writes past that single element into adjacent
+/// heap memory. The corruption surfaces later as crashes in
+/// completely unrelated code (we hit one in Swift's executor
+/// metadata check during a SwiftUI button gesture).
 private func rewritePTS(of original: CMSampleBuffer, to newPTS: CMTime) -> CMSampleBuffer? {
     var count: CMItemCount = 0
     CMSampleBufferGetSampleTimingInfoArray(
@@ -114,16 +123,23 @@ private func rewritePTS(of original: CMSampleBuffer, to newPTS: CMTime) -> CMSam
         entriesNeededOut: &count
     )
     guard count > 0 else { return nil }
+
     var timings = [CMSampleTimingInfo](
         repeating: CMSampleTimingInfo(),
         count: count
     )
-    CMSampleBufferGetSampleTimingInfoArray(
-        original,
-        entryCount: count,
-        arrayToFill: &timings,
-        entriesNeededOut: nil
-    )
+
+    // Read existing timings into the buffer.
+    let readStatus: OSStatus = timings.withUnsafeMutableBufferPointer { buf in
+        guard let base = buf.baseAddress else { return -1 }
+        return CMSampleBufferGetSampleTimingInfoArray(
+            original,
+            entryCount: count,
+            arrayToFill: base,
+            entriesNeededOut: nil
+        )
+    }
+    guard readStatus == noErr else { return nil }
 
     // Shift the first entry's PTS to newPTS; preserve the rest's
     // relative offsets. For audio there's typically one timing
@@ -138,14 +154,17 @@ private func rewritePTS(of original: CMSampleBuffer, to newPTS: CMTime) -> CMSam
     }
 
     var rewritten: CMSampleBuffer?
-    let status = CMSampleBufferCreateCopyWithNewTiming(
-        allocator: kCFAllocatorDefault,
-        sampleBuffer: original,
-        sampleTimingEntryCount: count,
-        sampleTimingArray: &timings,
-        sampleBufferOut: &rewritten
-    )
-    return status == noErr ? rewritten : nil
+    let copyStatus: OSStatus = timings.withUnsafeBufferPointer { buf in
+        guard let base = buf.baseAddress else { return -1 }
+        return CMSampleBufferCreateCopyWithNewTiming(
+            allocator: kCFAllocatorDefault,
+            sampleBuffer: original,
+            sampleTimingEntryCount: count,
+            sampleTimingArray: base,
+            sampleBufferOut: &rewritten
+        )
+    }
+    return copyStatus == noErr ? rewritten : nil
 }
 
 @available(macOS 14.0, *)
