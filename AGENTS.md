@@ -127,15 +127,20 @@ After `generate_title_summary` finishes for any recording (Loom or Granola) that
 - **Classifier model:** `LLM_CLASSIFIER_MODEL` env var (defaults to `claude-haiku-4-5-20251001`).
 - **Cost:** ~$0.005 per note. Best-effort; failures never block the title/summary write.
 
-## Stage 4 — Desktop M2 (in progress)
+## Stage 4 — Desktop M2 (✅ shipped 2026-05-04)
 
-Premium recorder milestone. Spec: [`docs/superpowers/specs/2026-05-04-desktop-app-m2-premium-recorder-design.md`](docs/superpowers/specs/2026-05-04-desktop-app-m2-premium-recorder-design.md). Plan: [`docs/superpowers/plans/2026-05-04-desktop-app-m2-premium-recorder.md`](docs/superpowers/plans/2026-05-04-desktop-app-m2-premium-recorder.md).
+Premium recorder milestone. Spec: [`docs/superpowers/specs/2026-05-04-desktop-app-m2-premium-recorder-design.md`](docs/superpowers/specs/2026-05-04-desktop-app-m2-premium-recorder-design.md). Plan: [`docs/superpowers/plans/2026-05-04-desktop-app-m2-premium-recorder.md`](docs/superpowers/plans/2026-05-04-desktop-app-m2-premium-recorder.md). Phase-by-phase status in [`ROADMAP.md`](ROADMAP.md).
 
-**Phase 0 (foundations) — shipped:** `BubblePlacement`, `BubblePositionController`, `RecorderStateMachine` under `desktop/Sources/LoomDesktopApp/Models/` + `Capture/`. 22 unit tests.
+**What landed:**
+- **Composite recorder.** `CompositeRecorder` (AVAssetWriter + CIContext + CIBlendWithMask radial gradient for circle alpha) consumed by `RecorderViewModel.startLocalRecording` / `stopLocalRecordingAndUpload`. Composite MP4 uploads through the existing R2 multipart pipeline as the `composite` track. Inputs: `ScreenCaptureCoordinator.onScreenSampleBuffer`, `CameraCaptureCoordinator.shared` (single-source-of-truth camera), `MicrophoneCaptureCoordinator` on AVAudioEngine + `setVoiceProcessingEnabled(true)` (AEC).
+- **Recording HUD.** `VideoRecordingWindowController` floating top-center pill: pulsing red dot + REC label + mono elapsed timer + 5-bar live audio meter + stop + discard. `sharingType = .none`.
+- **Source picker.** `SourcePickerCard` exposes camera + mic device dropdowns, persisted via UserDefaults.
+- **Permissions preflight.** `PermissionChecker` + `PermissionsView` checklist (camera / mic / screen-recording / accessibility) with Granted/Denied/Not-asked pills + Request / Open Settings buttons. Auto-refresh on `NSWindow.didBecomeKeyNotification`.
+- **Global hotkeys.** Carbon `RegisterEventHotKey` wrapper. ⌥⇧B toggles bubble; ⌥⇧R toggles recording. Bridge: `RecorderCommands.toggleRecording` NotificationCenter broadcast. Menubar mirrors with `Start Recording` + `Show/Hide Bubble Overlay` items.
+- **Bubble overlay.** Fullscreen-overlay architecture (one stationary panel that NEVER moves; bubble is a moving subview; 60Hz cursor polling toggles `ignoresMouseEvents` over the circular hit region). Eliminates macOS native tiling + Chrome split-view snap zones. Scroll-wheel resize (90–360 pt, ⌥/⇧ for fine). `sharingType = .none`.
+- **Singletons** (`CameraCaptureCoordinator.shared`, `BubblePositionController.shared`) provide single-source state shared across AppDelegate (overlay) and RecorderViewModel (compositor).
 
-**Phase 1 (composite writer) — partial.** All inputs wired: `ScreenCaptureCoordinator` exposes `onScreenSampleBuffer` callback + `latestScreenPixelBuffer()`; new `CameraCaptureCoordinator` is the single source of truth for camera (shared with bubble overlay AND future compositor); `MicrophoneCaptureCoordinator` rewritten on AVAudioEngine + voice processing for AEC + `onSampleBuffer` callback. Real `CompositeRecorder` (AVAssetWriter + CIContext) built and callable, **not yet wired into `RecorderViewModel`**.
-
-**Bubble polish shipped:** menubar Show/Hide toggle, custom drag in `BubblePanel` subclass, `.hudWindow + .popUpMenu + transient/stationary/ignoresCycle`, scroll-wheel resize (90–360 pt), dark `black @ 0.32` placeholder. Caveat: macOS native tiling + Chrome split-view zones may still flicker — fullscreen-overlay rewrite in flight.
+**Pending:** user E2E smoke (record → stop → upload → playback on share page). Dynamic Start/Stop menu title deferred as polish (would need a state bus back from view model to AppDelegate).
 
 ## Recent web work
 

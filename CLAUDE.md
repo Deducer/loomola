@@ -134,28 +134,21 @@ After `generate_title_summary` finishes for any recording (Loom or Granola) that
 - **Cost:** ~$0.005 per note. Job is best-effort; failures never block the title/summary write.
 - **Realtime:** suggestions appear on next page load — no client-side realtime subscription on the dashboard yet. That's a follow-up polish.
 
-## Stage 4 — Desktop M2 (in progress)
+## Stage 4 — Desktop M2 (✅ shipped 2026-05-04)
 
-Premium recorder milestone for the macOS desktop app. Spec: [`docs/superpowers/specs/2026-05-04-desktop-app-m2-premium-recorder-design.md`](docs/superpowers/specs/2026-05-04-desktop-app-m2-premium-recorder-design.md).
+Premium recorder milestone for the macOS desktop app. Spec: [`docs/superpowers/specs/2026-05-04-desktop-app-m2-premium-recorder-design.md`](docs/superpowers/specs/2026-05-04-desktop-app-m2-premium-recorder-design.md). Detailed phase-by-phase status in [`ROADMAP.md`](ROADMAP.md).
 
-**Phase 0 (foundations) — shipped:** `BubblePlacement` value type with the full coordinate-projection math (Retina + multi-display + clamping + corner cases, 8 unit tests). `BubblePositionController` (NSLock-guarded thread-safe placement holder, 4 tests). `RecorderStateMachine` extracting transition table from `RecorderViewModel` (10 tests). All under `desktop/Sources/LoomDesktopApp/Models/` + `Capture/`.
+**What's there:**
+- **Composite recorder** — `CompositeRecorder` (AVAssetWriter + CIContext + CIBlendWithMask radial gradient for circle alpha) wired into `RecorderViewModel.startLocalRecording` / `stopLocalRecordingAndUpload`. Inputs: `ScreenCaptureCoordinator.onScreenSampleBuffer`, `CameraCaptureCoordinator.shared` (single-source camera shared with bubble overlay, no more two-sessions), `MicrophoneCaptureCoordinator` on AVAudioEngine + `setVoiceProcessingEnabled(true)` for AEC. Composite MP4 uploads through the existing R2 multipart pipeline as the `composite` track.
+- **Recording HUD** — floating top-center pill (`VideoRecordingWindowController`): pulsing red dot + REC label + mono elapsed timer + 5-bar live audio meter + stop + discard. `panel.sharingType = .none` keeps it out of the captured frame.
+- **Source picker** — `SourcePickerCard` in `MainRecorderView` with camera + mic device dropdowns, persisted to UserDefaults.
+- **Permissions preflight** — `PermissionChecker` + `PermissionsView` checklist (camera / mic / screen-recording / accessibility) with status pills + Request / Open System Settings buttons. Auto-refresh on `NSWindow.didBecomeKeyNotification`.
+- **Global hotkeys** — Carbon `RegisterEventHotKey` wrapper (`GlobalHotkey`). ⌥⇧B toggles bubble overlay. ⌥⇧R toggles recording (start if idle, stop+upload if recording). Bridge from AppDelegate to view model is `RecorderCommands.toggleRecording` NotificationCenter broadcast — view model subscribes via `.onReceive` and routes based on `activeRecordingKind`. Matching menubar items: `Start Recording` and `Show/Hide Bubble Overlay`.
+- **Bubble overlay** — fullscreen-overlay architecture (one stationary panel that NEVER moves, bubble is a moving subview, 60Hz `NSEvent.mouseLocation` polling toggles `ignoresMouseEvents` based on hover position over the circular hit region). Eliminates macOS native tiling + Chrome split-view snap zones during drag. Scroll-wheel resize (90–360 pt, ⌥/⇧ for slow/fine). `sharingType = .none` so SCK excludes it from capture (compositor draws bubble independently from `CameraCaptureCoordinator.shared.latestPixelBuffer()`).
+- **Singletons for cross-subsystem state:** `CameraCaptureCoordinator.shared`, `BubblePositionController.shared` — single source of truth for camera frames + bubble placement, accessible from both AppDelegate (overlay) and RecorderViewModel (compositor).
+- **Sample-buffer plumbing convention:** capture coordinators have `nonisolated(unsafe)` `onXxxSampleBuffer` callback properties so the compositor can subscribe without touching the existing file-writer paths.
 
-**Phase 1 (composite writer) — partial.** All inputs are wired:
-- `ScreenCaptureCoordinator.onScreenSampleBuffer` callback + `latestScreenPixelBuffer()` for frame access
-- New `CameraCaptureCoordinator` is the single source of truth for camera. AppDelegate creates one and shares it with `BubbleOverlayWindowController` for preview AND the future compositor for sampling. No more two-sessions-per-camera.
-- `MicrophoneCaptureCoordinator` rewritten on AVAudioEngine + `setVoiceProcessingEnabled(true)` for AEC, plus `onSampleBuffer` callback for the compositor
-- Bubble panel marked `sharingType = .none` so SCK excludes it from capture (compositor draws it independently)
-
-The real `CompositeRecorder` (AVAssetWriter + CIContext, screen + bubble compose with circle/rectangle alpha mask, AAC mic input) is built and callable, **but not yet wired into `RecorderViewModel`** — production recording still uses the M1 SCRecordingOutput path. The compositor compiles + has the right interface; end-to-end smoke comes when the wiring lands.
-
-**Bubble polish that landed along the way:**
-- Menubar Show/Hide toggle via `NSMenuItemValidation` updating the title.
-- Custom drag in `BubblePanel` (subclass of NSPanel) instead of `isMovableByWindowBackground` — bypasses AppKit's drag manager.
-- `.hudWindow + .popUpMenu + .transient + .stationary + .ignoresCycle` to opt out of Stage Manager / Mission Control / window cycling. **Caveat:** macOS native tiling and Chrome split-view snap zones may still flicker; the architectural fix (fullscreen overlay where the panel never moves) is in flight.
-- Scroll-wheel resizes the bubble (90–360 pt, ⌥/⇧ for slow/fine). No corner handle yet.
-- Dark `black @ 0.32` placeholder background instead of jarring purple flash on hide.
-
-**Sample-buffer plumbing convention:** capture coordinators have `nonisolated(unsafe)` `onXxxSampleBuffer` callback properties so the compositor can subscribe without touching the existing file-writer paths. Same pattern for screen frames + mic samples.
+**Pending:** user-driven E2E smoke (record → stop → upload → playback on share page) on the next dogfood session. Dynamic Start/Stop menu title (currently static "Start Recording" — flipping it requires a state bus from view model back to AppDelegate; deferred as polish).
 
 ## Recent web work (post-G-M13)
 
