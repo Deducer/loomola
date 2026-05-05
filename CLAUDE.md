@@ -174,6 +174,19 @@ Granola-grade shell milestone. M2 made the recorder feel premium; M3 made the su
 
 **Pending:** user E2E (cold-launch sign-in, idle home with Recent, start/stop video, start/stop audio, settings sheet round-trip, account menu sign-out).
 
+## Stage 6 — Live notes (Granola-shape side panel + pause/resume)
+
+For audio note recordings only (video flow unchanged). Six phases:
+
+- **Phase A — `PauseAdjuster`** (pure-logic struct, 7 unit tests) tracks pause/resume PTS arithmetic so paused gaps are removed from the output stream. Wired into `MicrophoneCaptureCoordinator` via `pause()` / `resume()` / `isPaused`. Sample tap reads adjusted PTS under an NSLock; sample-buffer construction stays off the hot path.
+- **Phase B — `SystemAudioCaptureCoordinator`** gets the same treatment (uses `CMSampleBufferCreateCopyWithNewTiming` since SCStream sample buffers are immutable). `AudioNoteRecorder.pause()/.resume()` pause both the mic + system audio in lockstep. `RecorderViewModel.pauseAudioNoteRecording()` / `resumeAudioNoteRecording()` + `@Published isAudioNotePaused`. `RecordingHomeView` shows Pause↔Resume toggle (replaces Discard); pulsing red dot becomes static warning-orange when paused; headline reads "Paused"; timer freezes. Discard moves into a `⋯` menu.
+- **Phase C — `NotesSidePanelWindowController`** floating ~380×full-visible-height NSPanel anchored to the right edge, mimicking Granola's footprint. Header + title field bound to `viewModel.audioTitle` + big `TextEditor` bound to new `@Published liveNotesBody` + bottom controls bar (state indicator, timer, Pause/Resume, Stop & upload, ⋯ menu). `level = .floating + .canJoinAllSpaces + .stationary` so it follows the user across spaces (Meet/Zoom often goes fullscreen). Auto-summons on audio note start, dismisses on stop. The small floating capsule (`AudioRecordingWindowController`) is suppressed for audio notes — having both is redundant.
+- **Phase D — debounced autosave to existing `PUT /api/notes/<mediaId>`.** Adds `BackendClient.putNoteBody(mediaId:body:)` and a `notesAutosaveTask` in the view model that watches `liveNotesBody` for ~2s of idle then PUTs. Final synchronous flush on Stop & upload before the upload kicks off so the AI pipeline sees the user's full content. Avoids re-PUTting unchanged content via `lastSyncedNotesBody`.
+- **Phase E — pause-aware regen trigger:** **no work needed.** `generate-title-summary.ts:128` already reads `notes.body` and feeds it as `rawNotes` to the LLM prompt alongside the Deepgram transcript. The existing pipeline picks up the user's typed notes automatically.
+- **Phase F — tests + smoke:** 7 PauseAdjuster unit tests cover the PTS math. Full E2E (start audio → type live → pause → type more → resume → stop → verify duration = active time, notes persisted, AI regen used both transcript + notes) pending Ian's next dogfood session.
+
+**Where the cloud-first architecture line sits:** Web stays the editor (rich formatting, AI Q&A, brand profiles, share links, going back to past notes). Desktop is capture + a focused live notepad. Notes typed live and notes edited on web both write to the same `notes.body` field — single source of truth. Don't try to rebuild the full notes editor on desktop.
+
 ## Recent web work (post-G-M13)
 
 - **G-M14 — Notes bulk select / delete / move:** notes list converted to a client component, mirrors `RecordingsGrid` UX (per-row checkbox on hover, shift-click range, bottom action bar). Reuses the existing type-agnostic `/api/recordings/bulk-delete` and `/api/recordings/[id]/folder` endpoints.
