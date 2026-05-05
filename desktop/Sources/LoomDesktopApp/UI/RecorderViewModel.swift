@@ -25,11 +25,9 @@ final class RecorderViewModel: ObservableObject {
     /// Pause↔Resume UI state in RecordingHomeView. Mirrors
     /// AudioNoteRecorder.isPaused but kept as an @Published mirror
     /// so SwiftUI re-renders on transition.
-    @Published private(set) var isAudioNotePaused: Bool = false
     /// Live-typed manual notes body for the active audio recording.
-    /// Bound to the NotesSidePanel textarea. Phase D wires
-    /// debounced backend autosave; for Phase C this is just a
-    /// @Published string the side panel reads/writes.
+    /// Bound to the NotesSidePanel textarea, debounced-saved to
+    /// /api/notes/<mediaId> while recording.
     @Published var liveNotesBody: String = ""
     @Published private(set) var activeVideoRecordingStartedAt: Date?
     /// True while the composite recorder is being set up off the
@@ -761,7 +759,6 @@ final class RecorderViewModel: ObservableObject {
         activeAudioRecordingSlug = nil
         // Keep activeAudioRecordingId until after the final flush.
         audioLevel = 0
-        isAudioNotePaused = false
         state = .finalizing
         statusMessage = "Finalizing audio note..."
         Task {
@@ -840,24 +837,6 @@ final class RecorderViewModel: ObservableObject {
         }
     }
 
-    /// Pause the active audio note recording. Sample timestamps
-    /// are adjusted server-side (via PauseAdjuster in the capture
-    /// coordinators) so the resulting recording's duration reflects
-    /// active recording time only — the paused gap is removed.
-    func pauseAudioNoteRecording() {
-        guard let audioNoteRecorder, activeRecordingKind == .audio else { return }
-        audioNoteRecorder.pause()
-        isAudioNotePaused = true
-        statusMessage = "Recording paused."
-    }
-
-    func resumeAudioNoteRecording() {
-        guard let audioNoteRecorder, activeRecordingKind == .audio else { return }
-        audioNoteRecorder.resume()
-        isAudioNotePaused = false
-        statusMessage = "Recording resumed."
-    }
-
     func cancelAudioNoteRecording() {
         guard let audioNoteRecorder else { return }
         notesAutosaveTask?.cancel()
@@ -871,7 +850,6 @@ final class RecorderViewModel: ObservableObject {
             activeAudioRecordingSlug = nil
             activeAudioRecordingId = nil
             audioLevel = 0
-            isAudioNotePaused = false
             liveNotesBody = ""
             state = .signedInIdle
             statusMessage = "Audio note discarded."

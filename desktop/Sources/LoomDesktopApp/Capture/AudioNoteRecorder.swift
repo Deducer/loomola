@@ -131,26 +131,6 @@ final class AudioNoteRecorder {
         return response
     }
 
-    /// Pause both the mic and system-audio capture in lockstep so
-    /// the resulting tracks stay in sync. Either source on its own
-    /// would diverge from the other on resume.
-    func pause() {
-        microphoneCapture.pause()
-        systemAudioCapture?.pause()
-    }
-
-    func resume() {
-        microphoneCapture.resume()
-        systemAudioCapture?.resume()
-    }
-
-    var isPaused: Bool {
-        // The two coordinators always pause/resume together, so
-        // either one's state is authoritative. Mic is the always-on
-        // one (system audio is optional).
-        microphoneCapture.isPaused
-    }
-
     func cancel() async {
         guard let session else { return }
         if session.tracks.contains(.mic) {

@@ -45,9 +45,7 @@ struct RecordingHomeView: View {
     private var pulsingDot: some View {
         TimelineView(.animation(minimumInterval: 0.05)) { context in
             Circle()
-                .fill(viewModel.isAudioNotePaused
-                    ? DSColor.State.warning
-                    : DSColor.State.recording.opacity(pulseAlpha(at: context.date)))
+                .fill(DSColor.State.recording.opacity(pulseAlpha(at: context.date)))
                 .frame(width: 14, height: 14)
         }
     }
@@ -59,9 +57,6 @@ struct RecordingHomeView: View {
     }
 
     private var headline: String {
-        if viewModel.isAudioNotePaused {
-            return "Paused"
-        }
         switch viewModel.activeRecordingKind {
         case .video: return "Recording"
         case .audio: return "Recording audio note"
@@ -82,20 +77,9 @@ struct RecordingHomeView: View {
         return viewModel.activeAudioRecordingStartedAt ?? Date()
     }
 
-    @ViewBuilder
     private var timer: some View {
-        if viewModel.isAudioNotePaused {
-            // Freeze the displayed elapsed time when paused. The
-            // TimelineView keeps ticking but the displayed value
-            // stays at whatever it was when pause hit. We track
-            // the pause boundary via the view-model's
-            // pausedElapsedSeconds (next phase), but for now just
-            // show "Paused" instead of a frozen time.
-            Text("Paused")
-        } else {
-            TimelineView(.periodic(from: startedAt, by: 1)) { ctx in
-                Text(elapsedString(now: ctx.date, startedAt: startedAt))
-            }
+        TimelineView(.periodic(from: startedAt, by: 1)) { ctx in
+            Text(elapsedString(now: ctx.date, startedAt: startedAt))
         }
     }
 
@@ -125,30 +109,12 @@ struct RecordingHomeView: View {
                 PrimaryButton("Stop & upload", icon: "stop.fill", kind: .destructive) {
                     viewModel.stopAudioNoteRecordingAndUpload()
                 }
-                if viewModel.isAudioNotePaused {
-                    SecondaryButton("Resume", icon: "play.fill") {
-                        viewModel.resumeAudioNoteRecording()
-                    }
-                } else {
-                    SecondaryButton("Pause", icon: "pause.fill") {
-                        viewModel.pauseAudioNoteRecording()
-                    }
+                SecondaryButton("Discard", icon: "trash") {
+                    viewModel.cancelAudioNoteRecording()
                 }
                 SecondaryButton("Open note", icon: "doc.text") {
                     viewModel.openActiveAudioNote()
                 }
-                Menu {
-                    Button("Discard recording", role: .destructive) {
-                        viewModel.cancelAudioNoteRecording()
-                    }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 16, weight: .semibold))
-                        .frame(width: 32, height: 32)
-                        .foregroundStyle(DSColor.Text.secondary)
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
             case nil:
                 EmptyView()
             }

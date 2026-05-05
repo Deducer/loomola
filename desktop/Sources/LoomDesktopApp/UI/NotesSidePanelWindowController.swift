@@ -175,24 +175,16 @@ private struct NotesSidePanelView: View {
     private var stateIndicator: some View {
         HStack(spacing: DSSpacing.sm) {
             Circle()
-                .fill(viewModel.isAudioNotePaused
-                    ? DSColor.State.warning
-                    : DSColor.State.recording)
+                .fill(DSColor.State.recording)
                 .frame(width: 8, height: 8)
-            Text(viewModel.isAudioNotePaused ? "Paused" : "Recording")
+            Text("Recording")
                 .font(DSFont.Body.sm())
                 .foregroundStyle(DSColor.Text.secondary)
             if let startedAt = viewModel.activeAudioRecordingStartedAt {
-                if viewModel.isAudioNotePaused {
-                    Text("—")
+                TimelineView(.periodic(from: startedAt, by: 1)) { ctx in
+                    Text(elapsedString(now: ctx.date, startedAt: startedAt))
                         .font(DSFont.Mono.body())
                         .foregroundStyle(DSColor.Text.tertiary)
-                } else {
-                    TimelineView(.periodic(from: startedAt, by: 1)) { ctx in
-                        Text(elapsedString(now: ctx.date, startedAt: startedAt))
-                            .font(DSFont.Mono.body())
-                            .foregroundStyle(DSColor.Text.tertiary)
-                    }
                 }
             }
         }
@@ -200,15 +192,6 @@ private struct NotesSidePanelView: View {
 
     private var controls: some View {
         HStack(spacing: DSSpacing.sm) {
-            if viewModel.isAudioNotePaused {
-                SecondaryButton("Resume", icon: "play.fill") {
-                    viewModel.resumeAudioNoteRecording()
-                }
-            } else {
-                SecondaryButton("Pause", icon: "pause.fill") {
-                    viewModel.pauseAudioNoteRecording()
-                }
-            }
             PrimaryButton("Stop & upload", icon: "stop.fill", kind: .destructive) {
                 viewModel.stopAudioNoteRecordingAndUpload()
             }

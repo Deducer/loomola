@@ -26,18 +26,6 @@ final class MicrophoneCaptureCoordinator: NSObject, @unchecked Sendable {
     private var engine: AVAudioEngine?
     private var writer: AudioAssetWriter?
     private var formatDescription: CMAudioFormatDescription?
-    /// Pause/resume PTS-adjustment state. Mutated from the audio
-    /// tap thread (in handleTap) AND from the controlling layer
-    /// (UI calling pause()/resume()), so guarded by an unfair lock.
-    /// Pure-logic struct PauseAdjuster is unit-tested in isolation;
-    /// here we just hold + lock-protect it.
-    private var pauseAdjuster = PauseAdjuster()
-    private let pauseLock = NSLock()
-    /// Tracks the most recent raw PTS we saw. Used as the reference
-    /// point when the user clicks Pause — we treat samples up to
-    /// this PTS as "kept", and samples from the next PTS onwards as
-    /// "dropped until resume".
-    private var lastSeenRawPTS: CMTime = .invalid
 
     /// Starts capturing mic audio with AEC. Two write modes:
     ///
@@ -128,64 +116,18 @@ final class MicrophoneCaptureCoordinator: NSObject, @unchecked Sendable {
     private func handleTap(buffer: AVAudioPCMBuffer, time: AVAudioTime) {
         guard let formatDescription else { return }
 
-        let rawPTS = CMTime(
-            value: time.sampleTime,
-            timescale: CMTimeScale(buffer.format.sampleRate)
-        )
-
-        // Compute the adjusted PTS under the lock, then drop the
-        // lock before any expensive work (sample buffer creation,
-        // file write, callback). Holding NSLock across CMSampleBuffer
-        // construction would serialize the audio thread unnecessarily.
-        pauseLock.lock()
-        lastSeenRawPTS = rawPTS
-        let adjustedPTS = pauseAdjuster.adjust(rawPTS: rawPTS)
-        pauseLock.unlock()
-
-        // Always emit the level (UI feedback even while paused —
-        // mic still picking up sound, user just sees that we're
-        // dropping it). Cheap.
         if let level = peakLevel(of: buffer) {
             onLevel?(level)
         }
 
-        // Paused → drop the sample.
-        guard let adjustedPTS else { return }
-
         if let sampleBuffer = makeSampleBuffer(
             from: buffer,
-            withPTS: adjustedPTS,
+            at: time,
             formatDescription: formatDescription
         ) {
             try? writer?.append(sampleBuffer)
             onSampleBuffer?(sampleBuffer)
         }
-    }
-
-    // MARK: - Pause / resume
-
-    /// Begin a pause. Subsequent samples are dropped from the
-    /// recording until `resume()` is called. The output file's
-    /// duration reflects only active recording time — paused gaps
-    /// are removed entirely.
-    func pause() {
-        pauseLock.lock()
-        defer { pauseLock.unlock() }
-        pauseAdjuster.pause(atRawPTS: lastSeenRawPTS)
-    }
-
-    /// End a pause. Samples flow again, with their PTS adjusted
-    /// to subtract the cumulative pause duration.
-    func resume() {
-        pauseLock.lock()
-        defer { pauseLock.unlock() }
-        pauseAdjuster.resume(atRawPTS: lastSeenRawPTS)
-    }
-
-    var isPaused: Bool {
-        pauseLock.lock()
-        defer { pauseLock.unlock() }
-        return pauseAdjuster.isPaused
     }
 }
 
@@ -299,13 +241,17 @@ private func makeFormatDescription(
 
 private func makeSampleBuffer(
     from buffer: AVAudioPCMBuffer,
-    withPTS pts: CMTime,
+    at time: AVAudioTime,
     formatDescription: CMAudioFormatDescription
 ) -> CMSampleBuffer? {
     let frameCount = CMItemCount(buffer.frameLength)
     if frameCount == 0 { return nil }
 
     let sampleRate = buffer.format.sampleRate
+    let pts = CMTime(
+        value: time.sampleTime,
+        timescale: CMTimeScale(sampleRate)
+    )
     var timing = CMSampleTimingInfo(
         duration: CMTime(value: 1, timescale: CMTimeScale(sampleRate)),
         presentationTimeStamp: pts,
