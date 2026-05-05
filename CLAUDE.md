@@ -172,7 +172,7 @@ Granola-grade shell milestone. M2 made the recorder feel premium; M3 made the su
 
 **Visual regression catch-all:** zero non-DesignSystem usages of `borderedProminent`, `windowBackgroundColor`, `controlBackgroundColor`, `Font.system`, or `Font.custom` in `UI/`. Verified via grep.
 
-**Pending:** user E2E (cold-launch sign-in, idle home with Recent, start/stop video, start/stop audio, settings sheet round-trip, account menu sign-out). Floating panels (audio recording / video recording / meeting prompt windows) keep their M2 styling — small follow-up to retoken.
+**Pending:** user E2E (cold-launch sign-in, idle home with Recent, start/stop video, start/stop audio, settings sheet round-trip, account menu sign-out).
 
 ## Recent web work (post-G-M13)
 

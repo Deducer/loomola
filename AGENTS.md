@@ -155,7 +155,7 @@ Granola-grade shell. Spec: [`docs/superpowers/specs/2026-05-04-desktop-app-m3-vi
 - Recent strip (`UI/Recent/`) — last 4 recordings/notes with thumbnails. New `GET /api/recordings/recent` web endpoint with inlined presigned thumbnail URLs (no N+1). Auto-refreshes on app activation, after upload, every 60s.
 - Router refactor: `MainRecorderView` 947 → 205 lines (78% cut). All M2-era inline private structs deleted.
 
-**Pending:** user E2E (cold-launch, idle home, start/stop video, start/stop audio, settings sheet, sign-out). Audio + video recording floating panels and meeting prompt window keep their M2 styling — small follow-up to retoken.
+**Pending:** user E2E (cold-launch, idle home, start/stop video, start/stop audio, settings sheet, sign-out).
 
 ## Recent web work
 
