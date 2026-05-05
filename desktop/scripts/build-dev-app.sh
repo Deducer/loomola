@@ -44,6 +44,13 @@ xml_escape() {
 }
 
 LOOM_API_BASE_URL="${LOOM_API_BASE_URL:-https://loom.dissonance.cloud}"
+
+# Build stamp so the running app can prove which commit it came
+# from (visible in Settings → Account). Falls back to "unknown" off
+# the git tree.
+BUILD_COMMIT="$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+BUILD_DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
 if [[ -n "${LOOM_SUPABASE_URL:-}" && -n "${LOOM_SUPABASE_ANON_KEY:-}" ]]; then
   cat > "$RESOURCES_DIR/DesktopConfig.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -56,6 +63,10 @@ if [[ -n "${LOOM_SUPABASE_URL:-}" && -n "${LOOM_SUPABASE_ANON_KEY:-}" ]]; then
 	<string>$(xml_escape "$LOOM_SUPABASE_URL")</string>
 	<key>LOOM_SUPABASE_ANON_KEY</key>
 	<string>$(xml_escape "$LOOM_SUPABASE_ANON_KEY")</string>
+	<key>LOOM_BUILD_COMMIT</key>
+	<string>$(xml_escape "$BUILD_COMMIT")</string>
+	<key>LOOM_BUILD_DATE</key>
+	<string>$(xml_escape "$BUILD_DATE")</string>
 </dict>
 </plist>
 PLIST
@@ -99,11 +110,31 @@ if [[ -f "$LOGO_SOURCE" ]] && command -v iconutil >/dev/null 2>&1; then
 fi
 
 if command -v codesign >/dev/null 2>&1; then
+  # Prefer the stable self-signed identity if it exists (set up via
+  # `desktop/scripts/setup-signing-identity.sh`). Without it, fall
+  # back to ad-hoc — but that means TCC permissions reset on every
+  # rebuild, so warn the user.
+  STABLE_CERT_CN="Loomola Local Signing"
+  CODESIGN_IDENTITY="-"
+  if security find-identity -v -p codesigning 2>/dev/null \
+      | grep -q "$STABLE_CERT_CN"; then
+    CODESIGN_IDENTITY="$STABLE_CERT_CN"
+  else
+    cat <<'WARN' >&2
+warning: ad-hoc signing — TCC permissions (Camera, Mic, Screen
+  Recording, Accessibility) will RESET on every rebuild. Run
+  desktop/scripts/setup-signing-identity.sh once to create a
+  stable self-signed identity. Permissions then persist.
+WARN
+  fi
+
   codesign \
     --force \
-    --sign - \
+    --sign "$CODESIGN_IDENTITY" \
     --entitlements "$ROOT_DIR/App/LoomDesktop.entitlements" \
     "$APP_PATH" >/dev/null
 fi
 
 echo "Built app bundle: $APP_PATH"
+echo "  Commit: $BUILD_COMMIT"
+echo "  Date:   $BUILD_DATE"

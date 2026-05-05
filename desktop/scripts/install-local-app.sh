@@ -75,6 +75,11 @@ if pgrep -f "$INSTALLED_APP_PATH/Contents/MacOS/LoomDesktop" >/dev/null 2>&1; th
   exit 1
 fi
 
+# Bootstrap the stable signing identity once. This avoids the TCC
+# password-storm on every rebuild (Camera / Mic / Screen Recording
+# / Accessibility grants persist when the code signature is stable).
+"$ROOT_DIR/scripts/setup-signing-identity.sh"
+
 echo "Building $APP_NAME for local installation..."
 LOOM_DESKTOP_APP_PATH="$BUILD_APP_PATH" \
 LOOM_DESKTOP_BUILD_CONFIGURATION="${LOOM_DESKTOP_BUILD_CONFIGURATION:-release}" \

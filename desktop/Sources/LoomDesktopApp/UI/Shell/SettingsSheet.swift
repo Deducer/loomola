@@ -227,6 +227,10 @@ struct SettingsSheet: View {
                         viewModel.signOut()
                     }
                 }
+                Text(BuildStamp.displayString)
+                    .font(DSFont.Mono.body())
+                    .foregroundStyle(DSColor.Text.tertiary)
+                    .padding(.top, DSSpacing.xs)
             }
         }
     }

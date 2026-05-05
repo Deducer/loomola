@@ -58,12 +58,33 @@ cd /Users/iancross/Development/03Utilities/Loom_Clone/desktop
 ./scripts/install-local-app.sh
 ```
 
-That script builds a release app bundle, ad-hoc signs it, copies it to
+That script builds a release app bundle, signs it (see below), copies it to
 `/Applications/Loomola.app`, removes any local quarantine flag, and launches it.
 An app bundle is the normal `.app` folder macOS treats as an application.
-Ad-hoc signing means "signed by this Mac for local use"; it is enough for local
-Finder/Dock launching and stable Keychain access, but it is not the same as
-Apple notarization for public downloads.
+
+### One-time signing identity (avoids the TCC password storm)
+
+By default the installer creates a self-signed code-signing identity called
+`Loomola Local Signing` in your login keychain on first run, then signs every
+subsequent build with it. Without that, every rebuild gets a fresh ad-hoc code
+signature, which macOS TCC treats as a brand-new app — meaning it forgets your
+Camera / Microphone / Screen Recording / Accessibility grants and prompts for
+your password 4–5 times per launch.
+
+The setup is automatic, but you can also run it standalone:
+
+```bash
+./scripts/setup-signing-identity.sh
+```
+
+Idempotent: re-running is safe, it'll detect the existing identity and exit.
+The first time codesign uses the identity, macOS may ask for your login
+password — click *Always Allow* and you'll never see it again.
+
+If the identity is missing for any reason (different machine, deleted
+keychain, etc.), the build script falls back to ad-hoc signing and prints a
+warning. TCC permissions will reset on every build until you run the setup
+again.
 
 The installed app does not read terminal-only environment variables. During the
 build, the installer reads public client config from `desktop/.env.local` or the
