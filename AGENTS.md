@@ -139,7 +139,7 @@ Premium recorder milestone. Spec: [`docs/superpowers/specs/2026-05-04-desktop-ap
 - **Bubble overlay.** Fullscreen-overlay architecture (one stationary panel that NEVER moves; bubble is a moving subview; 60Hz cursor polling toggles `ignoresMouseEvents` over the circular hit region). Eliminates macOS native tiling + Chrome split-view snap zones. Scroll-wheel resize (90–360 pt, ⌥/⇧ for fine). `sharingType = .none`.
 - **Singletons** (`CameraCaptureCoordinator.shared`, `BubblePositionController.shared`) provide single-source state shared across AppDelegate (overlay) and RecorderViewModel (compositor).
 
-**Pending:** user E2E smoke (record → stop → upload → playback on share page). Dynamic Start/Stop menu title deferred as polish (would need a state bus back from view model to AppDelegate).
+**Pending:** user E2E smoke (record → stop → upload → playback on share page).
 
 ## Recent web work
 

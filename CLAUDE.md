@@ -147,7 +147,7 @@ Premium recorder milestone for the macOS desktop app. Spec: [`docs/superpowers/s
 - **Singletons for cross-subsystem state:** `CameraCaptureCoordinator.shared`, `BubblePositionController.shared` — single source of truth for camera frames + bubble placement, accessible from both AppDelegate (overlay) and RecorderViewModel (compositor).
 - **Sample-buffer plumbing convention:** capture coordinators have `nonisolated(unsafe)` `onXxxSampleBuffer` callback properties so the compositor can subscribe without touching the existing file-writer paths.
 
-**Pending:** user-driven E2E smoke (record → stop → upload → playback on share page) on the next dogfood session. Dynamic Start/Stop menu title (currently static "Start Recording" — flipping it requires a state bus from view model back to AppDelegate; deferred as polish).
+**Pending:** user-driven E2E smoke (record → stop → upload → playback on share page) on the next dogfood session.
 
 ## Recent web work (post-G-M13)
 
