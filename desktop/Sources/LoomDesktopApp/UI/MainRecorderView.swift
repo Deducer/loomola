@@ -47,6 +47,7 @@ struct MainRecorderView: View {
         .background(DSColor.Bg.canvas)
         .sheet(isPresented: $showSettings) {
             SettingsSheet(onDismiss: { showSettings = false })
+                .environmentObject(viewModel)
         }
         .onAppear {
             AppActivation.bringRecorderToFront()
@@ -139,8 +140,7 @@ struct MainRecorderView: View {
             // Phase 5 replaces this with PermissionsHomeView.
             signedInBody
         } else if viewModel.activeRecordingKind != nil {
-            // Phase 4 replaces this with RecordingHomeView.
-            signedInBody
+            RecordingHomeView(viewModel: viewModel)
         } else {
             IdleHomeView(
                 viewModel: viewModel,
