@@ -32,10 +32,19 @@ struct SecondaryButton: View {
     }
 }
 
+/// See PrimaryButtonStyle — DynamicProperty wrappers in a
+/// ButtonStyle's makeBody are unsafe on macOS 26.4.1.
 private struct SecondaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        SecondaryButtonStyleBody(configuration: configuration)
+    }
+}
+
+private struct SecondaryButtonStyleBody: View {
+    let configuration: ButtonStyle.Configuration
     @Environment(\.isEnabled) private var isEnabled
 
-    func makeBody(configuration: Configuration) -> some View {
+    var body: some View {
         configuration.label
             .foregroundStyle(DSColor.Text.primary)
             .padding(.horizontal, DSSpacing.xl)

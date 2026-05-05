@@ -48,10 +48,24 @@ struct IconButton: View {
     }
 }
 
+/// `@State` inside a `ButtonStyle.makeBody` is undefined behavior in
+/// SwiftUI — `makeBody` is called fresh per-button and state isn't
+/// preserved per-button. On macOS 26.4.1 this manifests as a hard
+/// crash in `swift_task_isMainExecutorImpl` reading garbage class
+/// metadata when the button gesture dispatches. The proper fix is
+/// to extract the body into a real `View` struct that owns the
+/// `@State`, and instantiate it from `makeBody`.
 private struct IconButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        IconButtonStyleBody(configuration: configuration)
+    }
+}
+
+private struct IconButtonStyleBody: View {
+    let configuration: ButtonStyle.Configuration
     @State private var hovering = false
 
-    func makeBody(configuration: Configuration) -> some View {
+    var body: some View {
         configuration.label
             .background(
                 Circle().fill(hovering ? DSColor.Accent.muted : DSColor.Bg.subtle)

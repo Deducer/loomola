@@ -71,10 +71,20 @@ struct AccountMenuPopover: View {
     }
 }
 
+/// Same gotcha as IconButtonStyle — `@State` directly inside
+/// `ButtonStyle.makeBody` causes undefined behavior. Move it into
+/// a real `View` struct that owns the state.
 private struct MenuRowButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        MenuRowButtonStyleBody(configuration: configuration)
+    }
+}
+
+private struct MenuRowButtonStyleBody: View {
+    let configuration: ButtonStyle.Configuration
     @State private var hovering = false
 
-    func makeBody(configuration: Configuration) -> some View {
+    var body: some View {
         configuration.label
             .background(hovering ? DSColor.Accent.muted : Color.clear)
             .animation(LoomolaMotion.quick, value: hovering)

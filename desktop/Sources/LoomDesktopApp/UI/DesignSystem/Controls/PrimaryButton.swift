@@ -53,13 +53,32 @@ struct PrimaryButton: View {
     }
 }
 
+/// `ButtonStyle.makeBody` should not contain `@State` or really
+/// any DynamicProperty wrappers — even `@Environment`, while
+/// nominally supported, has surfaced as a runtime crash source on
+/// macOS 26.4.1. Extracting the body to a real `View` is the
+/// stable pattern.
 private struct PrimaryButtonStyle: ButtonStyle {
+    let kind: PrimaryButton.Kind
+    let isLoading: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        PrimaryButtonStyleBody(
+            configuration: configuration,
+            kind: kind,
+            isLoading: isLoading
+        )
+    }
+}
+
+private struct PrimaryButtonStyleBody: View {
+    let configuration: ButtonStyle.Configuration
     let kind: PrimaryButton.Kind
     let isLoading: Bool
 
     @Environment(\.isEnabled) private var isEnabled
 
-    func makeBody(configuration: Configuration) -> some View {
+    var body: some View {
         configuration.label
             .foregroundStyle(.white)
             .padding(.horizontal, DSSpacing.xl)
