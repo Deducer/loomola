@@ -9,6 +9,7 @@ final class MeetingPromptWindowController {
         context: MeetingContext,
         startDisabled: Bool,
         start: @escaping () -> Void,
+        join: @escaping () -> Void,
         dismiss: @escaping () -> Void
     ) {
         let content = MeetingPromptPanelView(
@@ -18,6 +19,7 @@ final class MeetingPromptWindowController {
                 self?.hide()
                 start()
             },
+            join: join,
             dismiss: { [weak self] in
                 self?.hide()
                 dismiss()
@@ -63,6 +65,7 @@ private struct MeetingPromptPanelView: View {
     let context: MeetingContext
     let startDisabled: Bool
     let start: () -> Void
+    let join: () -> Void
     let dismiss: () -> Void
 
     var body: some View {
@@ -88,6 +91,11 @@ private struct MeetingPromptPanelView: View {
                 HStack(spacing: DSSpacing.sm) {
                     Button("Start note", action: start)
                         .disabled(startDisabled)
+                    if context.joinURL != nil || context.bundleIdentifier != nil {
+                        Button(joinLabel, action: join)
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.white.opacity(0.92))
+                    }
                     Button("Not now", action: dismiss)
                         .buttonStyle(.plain)
                         .foregroundStyle(.white.opacity(0.72))
@@ -108,5 +116,15 @@ private struct MeetingPromptPanelView: View {
             RoundedRectangle(cornerRadius: DSRadius.lg)
                 .stroke(Color.white.opacity(0.12), lineWidth: 1)
         )
+    }
+
+    private var joinLabel: String {
+        switch context.detectedApp {
+        case "google-meet", "meet": return "Open Meet"
+        case "zoom": return "Open Zoom"
+        case "teams": return "Open Teams"
+        case "webex": return "Open Webex"
+        default: return "Open meeting"
+        }
     }
 }

@@ -34,4 +34,38 @@ final class MeetingDetectorTests: XCTestCase {
             "Google Meet"
         )
     }
+
+    func testExtractsMeetURLFromWindowTitle() {
+        XCTAssertEqual(
+            MeetingDetector.extractMeetURL(from: "Sprint planning - meet.google.com/abc-defg-hij"),
+            URL(string: "https://meet.google.com/abc-defg-hij")
+        )
+    }
+
+    func testExtractMeetURLReturnsNilForNonMeetTitle() {
+        XCTAssertNil(
+            MeetingDetector.extractMeetURL(from: "Daily Standup - Microsoft Teams")
+        )
+    }
+
+    func testGoogleMeetContextIncludesJoinURLAndBundleID() {
+        let context = MeetingDetector.detect(
+            applicationName: "Google Chrome",
+            title: "Weekly Sync - meet.google.com/abc-defg-hij"
+        )
+        XCTAssertEqual(
+            context?.joinURL,
+            URL(string: "https://meet.google.com/abc-defg-hij")
+        )
+        XCTAssertEqual(context?.bundleIdentifier, "com.google.Chrome")
+    }
+
+    func testZoomContextHasNoJoinURLButHasBundleID() {
+        let context = MeetingDetector.detect(
+            applicationName: "zoom.us",
+            title: "Zoom Meeting"
+        )
+        XCTAssertNil(context?.joinURL)
+        XCTAssertEqual(context?.bundleIdentifier, "us.zoom.xos")
+    }
 }

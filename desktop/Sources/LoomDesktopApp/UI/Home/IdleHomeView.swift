@@ -64,6 +64,11 @@ struct IdleHomeView: View {
                 PrimaryButton("Start audio") {
                     viewModel.startDetectedMeetingAudioNote()
                 }
+                if context.joinURL != nil || context.bundleIdentifier != nil {
+                    SecondaryButton(joinLabel(for: context)) {
+                        viewModel.joinDetectedMeeting()
+                    }
+                }
                 SecondaryButton("Dismiss") {
                     viewModel.dismissMeetingPrompt()
                 }
@@ -73,5 +78,15 @@ struct IdleHomeView: View {
         .padding(.vertical, DSSpacing.lg)
         .background(DSColor.Bg.surface, in: RoundedRectangle(cornerRadius: DSRadius.lg))
         .dsShadow(.subtle)
+    }
+
+    private func joinLabel(for context: MeetingContext) -> String {
+        switch context.detectedApp {
+        case "google-meet", "meet": return "Open Meet"
+        case "zoom": return "Open Zoom"
+        case "teams": return "Open Teams"
+        case "webex": return "Open Webex"
+        default: return "Open meeting"
+        }
     }
 }

@@ -361,6 +361,28 @@ final class RecorderViewModel: ObservableObject {
         startAudioNoteRecording()
     }
 
+    /// Open the detected meeting — direct URL when we have one (Meet
+    /// or any Chrome-extension-supplied source), or activate the host
+    /// app's bundle as a fallback (Zoom, Teams, Webex desktop clients).
+    /// Doesn't dismiss the prompt — the user might want to also start
+    /// a note after joining.
+    func joinDetectedMeeting() {
+        let context = meetingPromptContext ?? meetingContext
+        guard let context else { return }
+        if let url = context.joinURL {
+            NSWorkspace.shared.open(url)
+            return
+        }
+        if let bundleID = context.bundleIdentifier,
+           let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first {
+            app.activate(options: [.activateAllWindows])
+            return
+        }
+        // Last-ditch: try opening the bundle ID as a URL via NSWorkspace
+        // (e.g., x-zoom-call://). Most call apps register a scheme.
+        statusMessage = "Couldn't bring the meeting forward — open it manually from your dock."
+    }
+
     func startScreenPreview() {
         guard let screenCaptureCoordinator else {
             statusMessage = "ScreenCaptureKit requires macOS 14 or newer."

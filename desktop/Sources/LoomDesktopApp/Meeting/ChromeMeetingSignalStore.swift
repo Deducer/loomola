@@ -40,10 +40,15 @@ enum ChromeMeetingSignalStore {
             let trimmed = part?.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed?.isEmpty == false ? trimmed : nil
         }
+        let joinURL = signal.tabUrl.flatMap { URL(string: $0) }
         return MeetingContext(
             detectedApp: signal.source,
             sourceContextHint: hintParts.joined(separator: ": "),
-            suggestedTitle: title
+            suggestedTitle: title,
+            joinURL: joinURL,
+            // Chrome signals always come from a browser tab, so Chrome
+            // is the right activation fallback when we have no URL.
+            bundleIdentifier: joinURL == nil ? "com.google.Chrome" : nil
         )
     }
 

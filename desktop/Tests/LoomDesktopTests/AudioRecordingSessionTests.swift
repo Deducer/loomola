@@ -41,7 +41,9 @@ final class AudioRecordingSessionTests: XCTestCase {
             meetingContext: MeetingContext(
                 detectedApp: "google-meet",
                 sourceContextHint: "Chrome: meet.google.com",
-                suggestedTitle: "Weekly Sync"
+                suggestedTitle: "Weekly Sync",
+                joinURL: URL(string: "https://meet.google.com/abc-defg-hij"),
+                bundleIdentifier: "com.google.Chrome"
             )
         )
 
