@@ -9,6 +9,40 @@ final class AudioNoteRecorder {
     private let systemAudioCapture: SystemAudioCaptureCoordinator?
     private var session: AudioRecordingSession?
 
+    /// True when a session exists in any state (recording or
+    /// post-stop-failure). Used by orphan-rescue to detect that there
+    /// is local data still on disk that wasn't uploaded.
+    var hasActiveSession: Bool { session != nil }
+
+    /// Read-only view of the active session for orphan recovery.
+    /// Returns nil after a successful stopAndUpload (the session is
+    /// torn down) or before any start. Stays valid after a failed
+    /// stopAndUpload — that's the whole point.
+    var currentSessionSnapshot: AudioRecordingSessionSnapshot? {
+        guard let session else { return nil }
+        return AudioRecordingSessionSnapshot(
+            directory: session.directory,
+            tracks: session.tracks,
+            title: session.title,
+            startedAt: session.startedAt,
+            backendRecordingId: session.backendRecordingId,
+            backendSlug: session.backendSlug,
+            meetingContext: session.meetingContext
+        )
+    }
+
+    /// Forget the in-memory session pointer without trying to abort
+    /// or clean up files on disk. Used after we've successfully
+    /// copied the local files into the orphan store — the session
+    /// is now persisted somewhere durable, the recorder doesn't
+    /// need to keep referencing it. The /var/folders dir stays put;
+    /// macOS will purge it eventually. The orphan store is the
+    /// authoritative copy from now on.
+    func detachSessionAfterOrphanSave() {
+        session = nil
+        microphoneCapture = nil
+    }
+
     init(backend: BackendClient) {
         self.backend = backend
         if #available(macOS 14.0, *) {

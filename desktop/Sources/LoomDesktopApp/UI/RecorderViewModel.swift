@@ -947,7 +947,12 @@ final class RecorderViewModel: ObservableObject {
         audioLevel = 0
         state = .finalizing
         statusMessage = "Finalizing audio note..."
-        Task {
+        Task { [audioNoteRecorder] in
+            // Snapshot the session BEFORE attempting the upload so
+            // that on failure we still have a reference to the local
+            // files (the recorder retains session through a thrown
+            // stopAndUpload — it only clears on success).
+            let preSnapshot = audioNoteRecorder.currentSessionSnapshot
             do {
                 // Final notes flush BEFORE upload completes so the
                 // server-side regen (Phase E) sees the user's full
@@ -967,8 +972,36 @@ final class RecorderViewModel: ObservableObject {
                 statusMessage = "Uploaded audio note. Slug: \(complete.slug)"
                 _recentService?.refresh()
             } catch {
-                state = .failed(message: error.localizedDescription)
-                statusMessage = "Audio note upload failed: \(error.localizedDescription)"
+                // The upload failed (network, brownout, server error).
+                // The recorder kept session.directory intact and left
+                // the local files on disk in /var/folders. Copy them
+                // somewhere durable BEFORE telling the user, so the
+                // recovery offer in `state.failed` is real.
+                let snapshot = audioNoteRecorder.currentSessionSnapshot ?? preSnapshot
+                var captured: OrphanedRecording?
+                if let snapshot {
+                    let duration = max(Date().timeIntervalSince(snapshot.startedAt), 1)
+                    do {
+                        captured = try OrphanedRecordingStore.shared.capture(
+                            from: snapshot,
+                            durationSeconds: duration,
+                            lastError: error.localizedDescription
+                        )
+                        // Detach the in-memory session — the orphan
+                        // store owns the durable copy now.
+                        audioNoteRecorder.detachSessionAfterOrphanSave()
+                    } catch {
+                        // Capture itself failed (very unusual — no
+                        // disk space?). Surface but don't stomp the
+                        // original upload error.
+                        recorderLog.error("orphan capture failed: \(error.localizedDescription, privacy: .public)")
+                    }
+                }
+                let recoveryHint = captured == nil
+                    ? error.localizedDescription
+                    : "\(error.localizedDescription) Recording saved locally — open Settings → Recovery to retry."
+                state = .failed(message: recoveryHint)
+                statusMessage = "Audio note upload failed: \(recoveryHint)"
             }
         }
     }
@@ -1039,6 +1072,56 @@ final class RecorderViewModel: ObservableObject {
             liveNotesBody = ""
             state = .signedInIdle
             statusMessage = "Audio note discarded."
+        }
+    }
+
+    // MARK: - Orphan recovery
+
+    /// While a retry is running we expose its orphan id so the UI
+    /// can dim the row's Retry button. Nil between retries.
+    @Published var orphanRetryInProgress: UUID?
+
+    /// Re-runs the upload pipeline for an orphaned recording. Calls
+    /// the same /api/recordings/start → multipart → /complete sequence
+    /// the live flow uses, but driven from the durable on-disk copies
+    /// of mic.m4a / system-audio.m4a in the orphan store.
+    func retryOrphan(_ orphan: OrphanedRecording) {
+        guard let backendClient else {
+            statusMessage = "Cannot retry: not signed in."
+            return
+        }
+        guard orphanRetryInProgress == nil else { return }
+        orphanRetryInProgress = orphan.id
+        statusMessage = "Retrying orphaned upload..."
+        Task {
+            let coordinator = OrphanRetryCoordinator(backend: backendClient)
+            do {
+                let outcome = try await coordinator.retry(orphan)
+                try? OrphanedRecordingStore.shared.markRescued(
+                    orphan,
+                    rescuedSlug: outcome.slug
+                )
+                statusMessage = "Recovered audio note uploaded as \(outcome.slug)."
+                _recentService?.refresh()
+            } catch {
+                try? OrphanedRecordingStore.shared.updateError(
+                    orphan,
+                    error: error.localizedDescription
+                )
+                statusMessage = "Retry failed: \(error.localizedDescription)"
+            }
+            orphanRetryInProgress = nil
+        }
+    }
+
+    /// Permanently remove an orphan from the store + delete its local
+    /// audio files. Caller is responsible for confirming rescue first.
+    func discardOrphan(_ orphan: OrphanedRecording) {
+        do {
+            try OrphanedRecordingStore.shared.discard(orphan)
+            statusMessage = "Discarded orphaned recording."
+        } catch {
+            statusMessage = "Could not discard recording: \(error.localizedDescription)"
         }
     }
 

@@ -54,6 +54,10 @@ actor BackendClient {
         try await get(path: "/api/folders")
     }
 
+    func listNoteTemplates() async throws -> NoteTemplatesResponse {
+        try await get(path: "/api/note-templates")
+    }
+
     func assignRecordingToFolder(recordingId: String, folderId: String?) async throws {
         let _: EmptyResponse = try await jsonRequest(
             method: "PATCH",
@@ -99,6 +103,18 @@ actor BackendClient {
         return response.body ?? ""
     }
 
+    func getNote(mediaId: String) async throws -> NoteBodyResponse {
+        try await get(path: "/api/notes/\(mediaId)")
+    }
+
+    func setNoteTemplate(mediaId: String, templateId: String) async throws {
+        let _: EmptyResponse = try await jsonRequest(
+            method: "PATCH",
+            path: "/api/notes/\(mediaId)/template",
+            body: NoteTemplateSelectionRequest(templateId: templateId)
+        )
+    }
+
     /// List image attachments for a note. Returns presigned URLs
     /// the desktop can render directly; expires in ~1 hour.
     func listNoteAttachments(mediaId: String) async throws -> [NoteAttachmentDTO] {
@@ -141,6 +157,9 @@ actor BackendClient {
             throw BackendClientError.nonHTTPResponse(path: "/api/notes/\(mediaId)/attachments")
         }
         log.notice("POST attachment → \(http.statusCode, privacy: .public) (\(responseData.count, privacy: .public) bytes)")
+        if let serviceErr = detectServiceUnavailable(data: responseData, response: http, path: "/api/notes/\(mediaId)/attachments") {
+            throw serviceErr
+        }
         guard (200..<300).contains(http.statusCode) else {
             let bodyPreview = String(data: responseData.prefix(400), encoding: .utf8) ?? "<binary>"
             log.error("POST attachment → \(http.statusCode, privacy: .public) body=\(bodyPreview, privacy: .public)")
@@ -166,6 +185,9 @@ actor BackendClient {
         guard let http = response as? HTTPURLResponse else {
             throw BackendClientError.nonHTTPResponse(path: "/api/notes/\(mediaId)/attachments/\(attachmentId)")
         }
+        if let serviceErr = detectServiceUnavailable(data: data, response: http, path: "/api/notes/\(mediaId)/attachments/\(attachmentId)") {
+            throw serviceErr
+        }
         guard (200..<300).contains(http.statusCode) else {
             throw BackendClientError.badStatus(
                 statusCode: http.statusCode,
@@ -178,16 +200,20 @@ actor BackendClient {
     /// Trigger AI re-enhancement for an audio note (Granola's
     /// "Generate notes" button). Returns 202 — the work runs as
     /// a pg-boss job. Poll `getEnhancementStatus` for completion.
-    func enhanceNote(mediaId: String) async throws {
+    func enhanceNote(mediaId: String, templateId: String?) async throws {
         let token = try await accessTokenProvider()
         let url = makeURL(path: "/api/notes/\(mediaId)/enhance")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(EnhanceNoteRequest(templateId: templateId))
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw BackendClientError.nonHTTPResponse(path: "/api/notes/\(mediaId)/enhance")
+        }
+        if let serviceErr = detectServiceUnavailable(data: data, response: http, path: "/api/notes/\(mediaId)/enhance") {
+            throw serviceErr
         }
         guard (200..<300).contains(http.statusCode) else {
             throw BackendClientError.badStatus(
@@ -226,6 +252,30 @@ actor BackendClient {
         BackendURLBuilder.makeURL(path: path, baseURL: baseURL)
     }
 
+    /// Recognises the HTML brownout page pattern. Production sits behind
+    /// Traefik on Coolify; during a deploy/restart loop Traefik returns
+    /// its fallback page (occasionally with 200 OK, more often 502/503).
+    /// Without this check the desktop's JSON decoder explodes deep in
+    /// the call site with a misleading "couldn't read backend JSON"
+    /// error — masking the real problem (service unavailable). On
+    /// 2026-05-06 a 72-min audio note was lost because the multipart
+    /// upload hit this case mid-flight and the desktop interpreted it
+    /// as a generic decode failure.
+    private func detectServiceUnavailable(
+        data: Data, response: HTTPURLResponse, path: String
+    ) -> BackendClientError? {
+        let contentType = (response.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased()
+        if contentType.contains("text/html") {
+            return .serviceUnavailable(path: path, statusCode: response.statusCode)
+        }
+        let bodyPrefix = String(data: data.prefix(32), encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        if bodyPrefix.hasPrefix("<!doctype") || bodyPrefix.hasPrefix("<html") {
+            return .serviceUnavailable(path: path, statusCode: response.statusCode)
+        }
+        return nil
+    }
+
     private func get<ResponseBody: Decodable>(path: String) async throws -> ResponseBody {
         let data = try await getData(path: path)
         do {
@@ -249,6 +299,10 @@ actor BackendClient {
             throw BackendClientError.nonHTTPResponse(path: path)
         }
         log.notice("GET \(url.absoluteString, privacy: .public) → \(http.statusCode, privacy: .public) (\(data.count, privacy: .public) bytes)")
+        if let serviceErr = detectServiceUnavailable(data: data, response: http, path: path) {
+            log.error("GET \(path, privacy: .public) — service unavailable (HTML brownout, status=\(http.statusCode, privacy: .public))")
+            throw serviceErr
+        }
         guard (200..<300).contains(http.statusCode) else {
             let bodyPreview = String(data: data.prefix(400), encoding: .utf8) ?? "<binary>"
             log.error("GET \(path, privacy: .public) → \(http.statusCode, privacy: .public) body=\(bodyPreview, privacy: .public)")
@@ -286,6 +340,9 @@ actor BackendClient {
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw BackendClientError.nonHTTPResponse(path: path)
+        }
+        if let serviceErr = detectServiceUnavailable(data: data, response: http, path: path) {
+            throw serviceErr
         }
         guard (200..<300).contains(http.statusCode) else {
             throw BackendClientError.badStatus(statusCode: http.statusCode, path: path, body: data)
@@ -490,6 +547,42 @@ struct NoteBodyRequest: Encodable, Sendable {
 
 struct NoteBodyResponse: Decodable, Sendable {
     let body: String?
+    let templateId: String?
+}
+
+struct NoteTemplateSelectionRequest: Encodable, Sendable {
+    let templateId: String
+}
+
+struct EnhanceNoteRequest: Encodable, Sendable {
+    let templateId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case templateId
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(templateId, forKey: .templateId)
+    }
+}
+
+struct NoteTemplatesResponse: Decodable, Sendable {
+    let templates: [NoteTemplateDTO]
+}
+
+struct NoteTemplateDTO: Decodable, Equatable, Sendable, Identifiable {
+    struct Section: Decodable, Equatable, Sendable {
+        let title: String
+        let prompt: String
+    }
+
+    let id: String
+    let name: String
+    let category: String
+    let description: String
+    let meetingContext: String
+    let sections: [Section]
 }
 
 struct NoteAttachmentDTO: Decodable, Equatable, Sendable, Identifiable {
@@ -516,6 +609,7 @@ struct CreateAttachmentResponse: Decodable, Sendable {
 struct EnhanceStatusResponse: Decodable, Sendable {
     let titleSuggested: String?
     let summary: String?
+    let templateId: String?
     let generationStatus: String  // "pending" | "streaming" | "complete" | "failed"
 }
 
@@ -531,6 +625,13 @@ enum BackendClientError: LocalizedError {
     case badStatus(statusCode: Int, path: String, body: Data)
     case decodingFailed(path: String, body: Data, underlyingError: Error)
     case invalidTextResponse(path: String)
+    /// The server returned an HTML error / maintenance page instead of
+    /// the JSON we expected. Traefik / Coolify brownouts emit their
+    /// fallback HTML page (sometimes with 200, sometimes 5xx) — either
+    /// way the right answer is "service is unavailable, please retry,"
+    /// not "decoder failed on bad JSON." Detected by content-type or
+    /// body prefix in `BackendClient.detectServiceUnavailable`.
+    case serviceUnavailable(path: String, statusCode: Int)
 
     var errorDescription: String? {
         switch self {
@@ -552,6 +653,19 @@ enum BackendClientError: LocalizedError {
             return "Could not read backend JSON for \(path): \(underlyingError.localizedDescription)."
         case .invalidTextResponse(let path):
             return "Backend returned non-text content for \(path)."
+        case .serviceUnavailable(let path, let statusCode):
+            return "Loomola is temporarily unavailable (\(statusCode)) at \(path). Wait a moment and try again."
+        }
+    }
+
+    /// True when the failure is something a retry might fix on its own
+    /// (transient outage, brownout). Callers can use this to decide
+    /// whether to show "retry" UI vs a hard failure.
+    var isTransient: Bool {
+        switch self {
+        case .serviceUnavailable: return true
+        case .badStatus(let code, _, _): return code == 502 || code == 503 || code == 504
+        default: return false
         }
     }
 }

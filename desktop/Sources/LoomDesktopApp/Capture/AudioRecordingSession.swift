@@ -67,3 +67,30 @@ private extension Set where Element == TrackKind {
         [.mic, .systemAudio].filter { contains($0) }
     }
 }
+
+/// Read-only export of the session state. Lives separately from
+/// AudioRecordingSession so the recorder can hand a value out without
+/// exposing mutable internals (e.g., backendRecordingId, which the
+/// recorder mutates after the start handshake). Used by orphan
+/// recovery to capture everything we need to copy local files
+/// somewhere durable + retry the upload later.
+struct AudioRecordingSessionSnapshot: Sendable {
+    let directory: URL
+    let tracks: Set<TrackKind>
+    let title: String?
+    let startedAt: Date
+    let backendRecordingId: String?
+    let backendSlug: String?
+    let meetingContext: MeetingContext?
+
+    func localFileURL(for track: TrackKind) -> URL? {
+        switch track {
+        case .mic where tracks.contains(.mic):
+            return directory.appending(path: "mic.m4a")
+        case .systemAudio where tracks.contains(.systemAudio):
+            return directory.appending(path: "system-audio.m4a")
+        default:
+            return nil
+        }
+    }
+}

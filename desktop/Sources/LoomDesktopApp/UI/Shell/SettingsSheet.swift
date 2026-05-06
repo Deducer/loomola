@@ -10,6 +10,7 @@ struct SettingsSheet: View {
     let onDismiss: () -> Void
 
     @EnvironmentObject private var viewModel: RecorderViewModel
+    @ObservedObject private var orphanStore = OrphanedRecordingStore.shared
     @State private var permissionStatus: PermissionStatus = PermissionChecker.currentStatus()
     @State private var diagnosticsExpanded = false
 
@@ -27,6 +28,9 @@ struct SettingsSheet: View {
                         permissionsSection
                     }
                     integrationsSection
+                    if !orphanStore.orphans.isEmpty {
+                        recoverySection
+                    }
                     accountSection
                     diagnosticsSection
                 }
@@ -233,6 +237,82 @@ struct SettingsSheet: View {
                     .padding(.top, DSSpacing.xs)
             }
         }
+    }
+
+    // MARK: - Recovery
+
+    private var recoverySection: some View {
+        Section(
+            title: "Recovery",
+            subtitle: "Audio recordings whose upload failed. Retry uploads to the cloud, or discard once you've verified a successful retry."
+        ) {
+            VStack(alignment: .leading, spacing: DSSpacing.md) {
+                ForEach(orphanStore.orphans) { orphan in
+                    orphanRow(orphan)
+                    if orphan.id != orphanStore.orphans.last?.id {
+                        Divider().overlay(DSColor.Border.subtle)
+                    }
+                }
+            }
+        }
+    }
+
+    private func orphanRow(_ orphan: OrphanedRecording) -> some View {
+        let isRetrying = viewModel.orphanRetryInProgress == orphan.id
+        return VStack(alignment: .leading, spacing: DSSpacing.sm) {
+            HStack(spacing: DSSpacing.md) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(orphan.title?.isEmpty == false ? orphan.title! : "Untitled audio recording")
+                        .font(DSFont.Body.lg())
+                        .foregroundStyle(DSColor.Text.primary)
+                    Text(orphanSubtitle(orphan))
+                        .font(DSFont.Body.sm())
+                        .foregroundStyle(DSColor.Text.secondary)
+                }
+                Spacer()
+                if let rescuedSlug = orphan.rescuedSlug {
+                    Pill("Rescued", kind: .success)
+                    SecondaryButton("Open", icon: "arrow.up.right.square") {
+                        if let url = URL(string: "https://loom.dissonance.cloud/notes/\(rescuedSlug)") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                }
+            }
+            if let lastError = orphan.lastError, !lastError.isEmpty, orphan.rescuedSlug == nil {
+                Text("Last error: \(lastError)")
+                    .font(DSFont.Body.sm())
+                    .foregroundStyle(DSColor.Text.tertiary)
+                    .lineLimit(2)
+            }
+            HStack(spacing: DSSpacing.sm) {
+                if orphan.rescuedSlug == nil {
+                    PrimaryButton(
+                        isRetrying ? "Uploading…" : "Retry upload",
+                        icon: isRetrying ? "arrow.up.circle" : "arrow.up.circle.fill"
+                    ) {
+                        viewModel.retryOrphan(orphan)
+                    }
+                    .disabled(isRetrying)
+                }
+                SecondaryButton("Reveal in Finder", icon: "folder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([orphan.storageDirectory])
+                }
+                SecondaryButton("Discard", icon: "trash") {
+                    viewModel.discardOrphan(orphan)
+                }
+                .disabled(isRetrying)
+            }
+        }
+        .padding(.vertical, DSSpacing.xs)
+    }
+
+    private func orphanSubtitle(_ orphan: OrphanedRecording) -> String {
+        let mins = Int(orphan.durationSeconds / 60)
+        let secs = Int(orphan.durationSeconds.truncatingRemainder(dividingBy: 60))
+        let date = orphan.capturedAt.formatted(date: .abbreviated, time: .shortened)
+        let mb = Double(orphan.totalBytes()) / 1024 / 1024
+        return String(format: "%d:%02d • %.1f MB • captured %@", mins, secs, mb, date)
     }
 
     // MARK: - Diagnostics
