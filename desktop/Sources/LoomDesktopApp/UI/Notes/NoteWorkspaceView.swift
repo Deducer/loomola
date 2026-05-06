@@ -77,6 +77,12 @@ struct NoteWorkspaceView: View {
     /// attachment.
     @State private var toastMessage: String? = nil
 
+    /// True while the cursor is anywhere over the workspace body
+    /// — drives the appearance of the top-right `⋯` menu button.
+    /// Granola pattern: keep the chrome out of the way until the
+    /// user moves the mouse to do something.
+    @State private var workspaceHovering = false
+
     /// When non-nil, shows a fullscreen preview overlay for the
     /// supplied attachment. Click outside / Escape dismisses.
     @State private var previewedAttachment: NoteAttachmentDTO? = nil
@@ -212,33 +218,50 @@ struct NoteWorkspaceView: View {
             }
         }
         .toolbar {
-            // Home button + ⋯ live in the unified system NSToolbar
-            // so they sit inline with the macOS traffic lights AND
-            // are clickable. SwiftUI hoists these items into the
-            // window's NSToolbar; declared here (not in
-            // MainRecorderView) so the workspace's per-mode menu
-            // logic stays close to its state.
+            // Home button lives in the unified system NSToolbar
+            // (inline with the macOS traffic lights). The ⋯ menu
+            // does NOT — placing it as a `.primaryAction` toolbar
+            // item visually grouped it with the home button (both
+            // ended up on the left of the toolbar). The ⋯ now
+            // renders as a hover-revealed overlay at the top-right
+            // of the workspace body (see `workspaceHovering` /
+            // `.overlay(alignment: .topTrailing)` below) — Granola
+            // pattern, matches what was there before the toolbar
+            // refactor.
             ToolbarItem(placement: .navigation) {
                 HomeBackButton(action: onClose)
                     .help(isRecording ? "Hide" : "Close")
             }
-            ToolbarItem(placement: .primaryAction) {
-                Button { showRowMenu.toggle() } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(DSColor.Text.tertiary)
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
+        }
+        .onContinuousHover { phase in
+            switch phase {
+            case .active:
+                workspaceHovering = true
+            case .ended:
+                workspaceHovering = false
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            // Hover-only ellipsis. Sits in the top-right corner of
+            // the workspace body, ~12pt from each edge — same
+            // position the workspace's internal title-bar HStack
+            // had before the Stage-8 toolbar-items refactor.
+            if workspaceHovering || showRowMenu {
+                GhostEllipsisButton {
+                    showRowMenu.toggle()
                 }
-                .buttonStyle(.plain)
                 .popover(isPresented: $showRowMenu, arrowEdge: .top) {
                     rowMenu
                 }
+                .padding(.top, DSSpacing.md)
+                .padding(.trailing, DSSpacing.lg)
+                .transition(.opacity)
             }
         }
         .animation(LoomolaMotion.quick, value: isDropTargeted)
         .animation(LoomolaMotion.medium, value: toastMessage)
         .animation(LoomolaMotion.quick, value: previewedAttachment)
+        .animation(LoomolaMotion.quick, value: workspaceHovering)
         .onAppear { handleAppear() }
         .onDisappear {
             reviewAutosaveTask?.cancel()
