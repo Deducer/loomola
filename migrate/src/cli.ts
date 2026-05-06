@@ -40,8 +40,12 @@ function help(): string {
   return `loomola-migrate granola [options]
 
 Auth & target:
-  --server <url>          (default: https://loom.dissonance.cloud)
-  --token <jwt>           (or env LOOMOLA_TOKEN)
+  --server <url>            (default: https://loom.dissonance.cloud)
+  --token <jwt>             (or env LOOMOLA_TOKEN)
+  --granola-api-key <key>   (or env GRANOLA_API_KEY)
+                            When set, uses Granola's official Business
+                            API. When unset, reads the local Granola
+                            desktop cache (cache-v3/v4 plaintext only).
 
 Scope:
   --since <iso-date>      Only import notes created on/after this date
@@ -92,6 +96,10 @@ async function main(): Promise<number> {
     resume: !!args.resume,
     fresh: !!args.fresh,
     retryFailed: !!args["retry-failed"],
+    granolaApiKey:
+      (args["granola-api-key"] as string) ||
+      process.env.GRANOLA_API_KEY ||
+      undefined,
   };
   return await runGranolaImport(cliArgs);
 }
