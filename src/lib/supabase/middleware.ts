@@ -39,17 +39,26 @@ export async function updateSession(request: NextRequest) {
   // origin embedding), so it must be reachable without auth — the camera
   // permission is granted by the user inside the iframe at first use.
   const isBubbleIframe = url.pathname === "/bubble";
-  const isBearerRecordingApi =
-    url.pathname.startsWith("/api/recordings/") &&
-    /^Bearer\s+.+/i.test(request.headers.get("authorization") ?? "");
-  const isBearerNotesApi =
-    url.pathname.startsWith("/api/notes/") &&
-    /^Bearer\s+.+/i.test(request.headers.get("authorization") ?? "");
-  const isBearerExportApi =
-    url.pathname.startsWith("/api/export/") &&
+  // Native clients (the macOS desktop app, future iOS, the
+  // INTEGRATION_API_TOKEN holders) authenticate every API call
+  // with `Authorization: Bearer ...`. Their requests don't carry
+  // session cookies, so `supabase.auth.getUser()` above sees
+  // `user === null` and the redirect-to-/login path below would
+  // bounce them to an HTML page. Each route's `requireAuth(request)`
+  // does the actual bearer validation, so we can safely bypass the
+  // cookie-session check for any /api/ path that carries a Bearer
+  // header — invalid tokens still get rejected at the route level.
+  //
+  // Previously this bypass was hardcoded to /api/recordings/,
+  // /api/notes/, /api/export/ — adding a new bearer-callable route
+  // (e.g. /api/folders) silently broke until someone noticed the
+  // 307→HTML response in a strict client. The general predicate
+  // prevents that class of bug.
+  const isBearerApi =
+    url.pathname.startsWith("/api/") &&
     /^Bearer\s+.+/i.test(request.headers.get("authorization") ?? "");
 
-  if (!user && !isAuthRoute && !isApiHealth && !isPublicShare && !isPublicViewerApi && !isWebhook && !isBubbleIframe && !isBearerRecordingApi && !isBearerNotesApi && !isBearerExportApi) {
+  if (!user && !isAuthRoute && !isApiHealth && !isPublicShare && !isPublicViewerApi && !isWebhook && !isBubbleIframe && !isBearerApi) {
     url.pathname = "/login";
     return NextResponse.redirect(url);
   }
