@@ -68,15 +68,8 @@ actor BackendClient {
         )
     }
 
-    /// Build the request URL from `baseURL` + a path that may
-    /// include a query string. Using `URL.appending(path:)` here
-    /// would percent-encode the `?`, turning `/foo?x=1` into
-    /// `/foo%3Fx=1` (server then routes to `/foo` with no query
-    /// or 404s). `URL(string:relativeTo:)` parses path + query
-    /// the way HTTP expects.
     private func makeURL(path: String) -> URL {
-        URL(string: path, relativeTo: baseURL)?.absoluteURL
-            ?? baseURL.appending(path: path)
+        BackendURLBuilder.makeURL(path: path, baseURL: baseURL)
     }
 
     private func get<ResponseBody: Decodable>(path: String) async throws -> ResponseBody {
@@ -276,6 +269,22 @@ struct PendingObsidianNote: Decodable, Equatable, Sendable {
     let path: String
     let filename: String
     let exportUrl: String
+}
+
+/// Builds request URLs from a base + a path that may include a
+/// query string. Lifted out of BackendClient so unit tests can
+/// hit it without going through actor isolation.
+///
+/// Why not `baseURL.appending(path: path)` directly: that helper
+/// percent-encodes `?`, turning `/foo?x=1` into `/foo%3Fx=1` (the
+/// server then routes to `/foo` with no query, or 404s on the
+/// literal `%3F` path). `URL(string:relativeTo:)` parses path +
+/// query the way HTTP expects.
+enum BackendURLBuilder {
+    static func makeURL(path: String, baseURL: URL) -> URL {
+        URL(string: path, relativeTo: baseURL)?.absoluteURL
+            ?? baseURL.appending(path: path)
+    }
 }
 
 struct RecentRecordingsResponse: Decodable, Equatable, Sendable {
