@@ -1,5 +1,8 @@
 import AppKit
 import Foundation
+import OSLog
+
+private let log = Logger(subsystem: "cloud.dissonance.loom.desktop", category: "recent")
 
 /// Loomola desktop's "Recent" data source. Fetches the last few
 /// recordings from the existing `/api/recordings/recent` endpoint
@@ -50,7 +53,11 @@ final class RecentRecordingsService: ObservableObject {
     /// Force an immediate refresh. Coalesces with any in-flight
     /// refresh — the in-flight task wins and a stale call is a no-op.
     func refresh() {
-        guard refreshTask == nil else { return }
+        guard refreshTask == nil else {
+            log.notice("refresh() — skipped, already in flight")
+            return
+        }
+        log.notice("refresh() — starting")
         let task = Task { @MainActor in
             await performRefresh()
             self.refreshTask = nil
@@ -69,12 +76,15 @@ final class RecentRecordingsService: ObservableObject {
             let mapped = response.items.compactMap { RecentRecording(dto: $0) }
             items = mapped
             lastError = nil
-            print("[recent] fetched \(response.items.count) item(s); \(mapped.count) decoded")
+            log.notice("fetched \(response.items.count, privacy: .public) item(s); \(mapped.count, privacy: .public) decoded")
+            for (i, item) in response.items.enumerated() {
+                log.notice("  item[\(i, privacy: .public)] id=\(item.id, privacy: .public) kind=\(item.kind, privacy: .public) slug=\(item.slug, privacy: .public)")
+            }
         } catch {
             // Don't blank out items on error — keep showing the last
             // good list. Surface the error for debug.
             lastError = error.localizedDescription
-            print("[recent] refresh failed: \(error.localizedDescription)")
+            log.error("refresh failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 

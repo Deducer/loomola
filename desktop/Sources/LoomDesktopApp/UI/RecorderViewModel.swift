@@ -1,7 +1,10 @@
 import AppKit
 import CoreGraphics
 import Foundation
+import OSLog
 import Supabase
+
+private let recorderLog = Logger(subsystem: "cloud.dissonance.loom.desktop", category: "recorder")
 
 @MainActor
 final class RecorderViewModel: ObservableObject {
@@ -63,10 +66,12 @@ final class RecorderViewModel: ObservableObject {
         if let existing = _recentService { return existing }
         // If the backend isn't ready yet, vend a dummy service that
         // never fetches (it'll be replaced when the user signs in).
+        let usingRealBackend = backendClient != nil
         let backend = backendClient ?? BackendClient(
             baseURL: configuration?.apiBaseURL ?? URL(string: "https://loom.dissonance.cloud")!
         ) { throw RecorderViewModelError.missingAccessToken }
         let service = RecentRecordingsService(backend: backend)
+        recorderLog.notice("recentRecordings — created service (real backend: \(usingRealBackend, privacy: .public))")
         _recentService = service
         return service
     }
@@ -175,14 +180,22 @@ final class RecorderViewModel: ObservableObject {
     }
 
     func restoreSession() async {
-        guard let authService else { return }
+        guard let authService else {
+            recorderLog.notice("restoreSession — no authService configured (env missing?)")
+            return
+        }
+        recorderLog.notice("restoreSession — attempting Keychain restore")
         do {
             if let session = try await authService.restoreSession() {
                 apply(session: session)
                 statusMessage = "Signed in from Keychain."
+                recorderLog.notice("restoreSession — succeeded, applied session")
+            } else {
+                recorderLog.notice("restoreSession — returned nil (no saved session)")
             }
         } catch {
             statusMessage = "Saved session could not be restored. Sign in again."
+            recorderLog.error("restoreSession — failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -1023,6 +1036,7 @@ final class RecorderViewModel: ObservableObject {
 
     private func apply(session: Session) {
         accessToken = session.accessToken
+        recorderLog.notice("apply(session:) — accessToken set, state → signedInIdle")
         state = .signedInIdle
         if email.isEmpty {
             email = session.user.email ?? ""

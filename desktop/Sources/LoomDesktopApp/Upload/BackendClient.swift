@@ -1,4 +1,7 @@
 import Foundation
+import OSLog
+
+private let log = Logger(subsystem: "cloud.dissonance.loom.desktop", category: "backend")
 
 actor BackendClient {
     private let baseURL: URL
@@ -87,15 +90,21 @@ actor BackendClient {
 
     private func getData(path: String) async throws -> Data {
         let token = try await accessTokenProvider()
-        var request = URLRequest(url: makeURL(path: path))
+        let url = makeURL(path: path)
+        var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        log.notice("GET \(url.absoluteString, privacy: .public) (token \(token.prefix(8), privacy: .public)…)")
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else {
+            log.error("GET \(path, privacy: .public) — non-HTTP response")
             throw BackendClientError.nonHTTPResponse(path: path)
         }
+        log.notice("GET \(url.absoluteString, privacy: .public) → \(http.statusCode, privacy: .public) (\(data.count, privacy: .public) bytes)")
         guard (200..<300).contains(http.statusCode) else {
+            let bodyPreview = String(data: data.prefix(400), encoding: .utf8) ?? "<binary>"
+            log.error("GET \(path, privacy: .public) → \(http.statusCode, privacy: .public) body=\(bodyPreview, privacy: .public)")
             throw BackendClientError.badStatus(statusCode: http.statusCode, path: path, body: data)
         }
         return data

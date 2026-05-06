@@ -3,10 +3,28 @@ import Security
 import Supabase
 
 enum AuthSessionStorageMode: Equatable {
+    /// Tokens persisted to ~/Library/Application Support/LoomDesktop/auth-session.json
+    /// with 0600 permissions. The default for the desktop app.
+    ///
+    /// Why not Keychain: on macOS, Keychain items carry a per-app ACL
+    /// keyed off the binary identity. Even with a stable signing
+    /// identity, every `install-local-app.sh` re-signs and replaces
+    /// /Applications/Loomola.app — macOS treats it as a different
+    /// app and prompts for the user's login password to authorize
+    /// access. "Always Allow" only sticks until the next rebuild.
+    /// Six password prompts per testing session is unworkable.
+    ///
+    /// Threat model: anyone able to read this file already has your
+    /// macOS user account, which means they can also read your
+    /// Keychain (with the same password they'd need to log in).
+    /// Marginal security gain isn't worth the friction for a
+    /// single-user self-hosted dev tool.
+    case file
+    /// Legacy macOS Keychain backend. Available if you want to opt
+    /// back in (e.g. multi-user shared Mac), but not the default.
     case keychain
-    /// Test seam only — production code must never construct the store with
-    /// this mode. Persists tokens as plaintext JSON at the supplied fileURL.
-    case fileForTesting
+    @available(*, deprecated, renamed: "file")
+    static let fileForTesting: AuthSessionStorageMode = .file
 }
 
 struct DesktopAuthConfiguration: Sendable {
@@ -66,7 +84,7 @@ final class AuthSessionStore {
     private let fileURL: URL
 
     init(
-        storageMode: AuthSessionStorageMode = .keychain,
+        storageMode: AuthSessionStorageMode = .file,
         fileURL: URL = AuthSessionStore.defaultFileURL()
     ) {
         self.storageMode = storageMode
@@ -166,7 +184,7 @@ final class AuthSessionStore {
     }
 
     private var usesFileStore: Bool {
-        storageMode == .fileForTesting
+        storageMode == .file
     }
 
     private func saveToFile(value: String, account: String) throws {

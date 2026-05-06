@@ -1,5 +1,8 @@
 import AppKit
 import Carbon.HIToolbox
+import OSLog
+
+private let bootLog = Logger(subsystem: "cloud.dissonance.loom.desktop", category: "boot")
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -16,6 +19,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var recordHotkey: GlobalHotkey?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        bootLog.notice("applicationDidFinishLaunching — Loomola booted, OSLog plumbing alive")
+        NSLog("[loomola] applicationDidFinishLaunching — boot")
         configureMenuBar()
         configureGlobalHotkeys()
         // Refresh menubar item titles when the recording state flips
@@ -28,9 +33,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.statusItem?.menu?.update()
-            if RecorderCommands.isVideoRecording, self?.bubbleOverlay.isVisible == false {
-                self?.bubbleOverlay.showPlaceholder()
+            Task { @MainActor in
+                self?.statusItem?.menu?.update()
+                if RecorderCommands.isVideoRecording, self?.bubbleOverlay.isVisible == false {
+                    self?.bubbleOverlay.showPlaceholder()
+                }
             }
         }
         Task { @MainActor in
@@ -56,7 +63,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             keyCode: UInt32(kVK_ANSI_B),
             modifiers: UInt32(optionKey | shiftKey),
             handler: { [weak self] in
-                self?.toggleBubbleOverlay()
+                Task { @MainActor in
+                    self?.toggleBubbleOverlay()
+                }
             }
         )
         recordHotkey = GlobalHotkey(
