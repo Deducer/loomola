@@ -186,7 +186,14 @@ struct MainRecorderView: View {
                 },
                 onSkip: { dismissedPreflight = true }
             )
-        } else if viewModel.activeRecordingKind != nil {
+        } else if viewModel.activeRecordingKind == .video {
+            // Video keeps its dedicated full-window recording surface
+            // (no workspace exists for video). Audio is intentionally
+            // not handled here — during an audio recording the
+            // Granola-shape workspace panel IS the recording UI, and
+            // the main window stays on IdleHomeView so the user can
+            // continue to browse Recent / start a new video note in
+            // parallel without three competing recording screens.
             RecordingHomeView(viewModel: viewModel)
         } else if isFinalizingOrUploading(viewModel.state) {
             FinalizingHomeView(viewModel: viewModel)

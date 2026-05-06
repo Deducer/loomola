@@ -198,11 +198,24 @@ struct NoteWorkspaceView: View {
                 pasteboard.clearContents()
                 pasteboard.setString(currentBody, forType: .string)
             }
-            menuItem(label: "Open on web", icon: "arrow.up.right.square", tint: DSColor.Text.primary) {
-                showRowMenu = false
-                if case .reviewing(let recording) = target,
-                   let url = URL(string: "https://loom.dissonance.cloud/notes/\(recording.slug)") {
-                    NSWorkspace.shared.open(url)
+            if case .reviewing = target {
+                menuItem(label: "Open on web", icon: "arrow.up.right.square", tint: DSColor.Text.primary) {
+                    showRowMenu = false
+                    if case .reviewing(let recording) = target,
+                       let url = URL(string: "https://loom.dissonance.cloud/notes/\(recording.slug)") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+            }
+            if isRecording {
+                Divider().overlay(DSColor.Border.subtle)
+                // Granola pattern: Discard is a destructive action
+                // that doesn't compete with the prominent Stop pill —
+                // tucked in the ⋯ menu, one click away.
+                menuItem(label: "Discard recording", icon: "trash", tint: DSColor.State.danger) {
+                    showRowMenu = false
+                    viewModel.cancelAudioNoteRecording()
+                    onClose()
                 }
             }
             if case .reviewing = target {
@@ -218,7 +231,7 @@ struct NoteWorkspaceView: View {
                 }
             }
         }
-        .frame(width: 200)
+        .frame(width: 220)
         .background(DSColor.Bg.surfaceRaised)
     }
 

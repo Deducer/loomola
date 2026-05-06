@@ -68,36 +68,30 @@ struct HeroCaptureSection: View {
     @ViewBuilder
     private var audioActions: some View {
         if viewModel.activeRecordingKind == .audio {
+            // While an audio note is recording the workspace panel
+            // owns the recording UI — the main window stays on the
+            // home view. Show nothing here so we don't duplicate
+            // Stop/Discard.
+            EmptyView()
+        } else {
+            // Title input was removed in 1f98c3e — the workspace's
+            // title editor is the single source of truth. Cleaner;
+            // matches Granola.
             HStack(spacing: DSSpacing.md) {
                 PrimaryButton(
-                    "Stop & upload",
-                    icon: "stop.fill",
-                    kind: .destructive
-                ) { viewModel.stopAudioNoteRecordingAndUpload() }
-                SecondaryButton("Discard", icon: "trash") {
-                    viewModel.cancelAudioNoteRecording()
+                    viewModel.isStartingRecording ? "Starting…" : "Start audio note",
+                    icon: "waveform.circle.fill",
+                    isLoading: viewModel.isStartingRecording
+                ) {
+                    viewModel.startAudioNoteRecording()
                 }
-            }
-        } else {
-            VStack(alignment: .leading, spacing: DSSpacing.md) {
-                Field(placeholder: "Audio note title (optional)", text: $viewModel.audioTitle)
-                    .frame(maxWidth: 420)
-                HStack(spacing: DSSpacing.md) {
-                    PrimaryButton(
-                        viewModel.isStartingRecording ? "Starting…" : "Start audio note",
-                        icon: "waveform.circle.fill",
-                        isLoading: viewModel.isStartingRecording
-                    ) {
-                        viewModel.startAudioNoteRecording()
-                    }
-                    .disabled(audioStartDisabled)
-                    Toggle("Mic", isOn: $viewModel.includeMicInAudioNote)
-                        .toggleStyle(.checkbox)
-                        .font(DSFont.Body.sm())
-                    Toggle("System audio", isOn: $viewModel.includeSystemAudioInAudioNote)
-                        .toggleStyle(.checkbox)
-                        .font(DSFont.Body.sm())
-                }
+                .disabled(audioStartDisabled)
+                Toggle("Mic", isOn: $viewModel.includeMicInAudioNote)
+                    .toggleStyle(.checkbox)
+                    .font(DSFont.Body.sm())
+                Toggle("System audio", isOn: $viewModel.includeSystemAudioInAudioNote)
+                    .toggleStyle(.checkbox)
+                    .font(DSFont.Body.sm())
             }
         }
     }
