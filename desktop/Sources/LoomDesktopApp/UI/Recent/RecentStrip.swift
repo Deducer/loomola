@@ -85,7 +85,7 @@ struct RecentStrip: View {
                 ForEach(0..<3, id: \.self) { _ in
                     RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
                         .fill(DSColor.Bg.subtle)
-                        .frame(width: 240, height: 180)
+                        .frame(width: 320, height: 180)
                 }
                 Spacer()
             }

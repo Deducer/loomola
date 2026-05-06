@@ -15,8 +15,8 @@ struct RecentCard: View {
 
     @State private var hovering = false
 
-    private let cardWidth: CGFloat = 240
-    private let thumbnailHeight: CGFloat = 135  // 16:9
+    private let cardWidth: CGFloat = 320
+    private let thumbnailHeight: CGFloat = 180  // 16:9
 
     var body: some View {
         VStack(alignment: .leading, spacing: DSSpacing.sm) {

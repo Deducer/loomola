@@ -1069,6 +1069,15 @@ final class RecorderViewModel: ObservableObject {
         if email.isEmpty {
             email = session.user.email ?? ""
         }
+        // Eagerly construct the recent service so the fetch is already
+        // in flight by the time the user lands on IdleHomeView. Without
+        // this, the service is built lazily when the home view renders;
+        // if a permissions preflight sits between sign-in and idle home
+        // (often ~30s), the user reaches the home view, sees an empty
+        // strip, and waits another 200ms-1s for the request to land.
+        // The discard underscore is intentional — we want the side
+        // effect (service init → refresh()) more than the value.
+        _ = recentRecordings
         refreshChromeMeetingContext(showStatus: false)
         if canListCaptureSourcesWithoutPrompt() {
             refreshCaptureSources()
