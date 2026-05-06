@@ -2,8 +2,33 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Granola-shape note workspace. Lives inside the right-anchored
-/// NSPanel hosted by `NotesSidePanelWindowController`.
+/// AI-enhance state machine for the Generate-notes pill in the
+/// workspace's review mode. Mirrors the server's
+/// `ai_outputs.generation_status` plus an idle default.
+enum EnhanceStatus: Equatable {
+    case idle
+    case running
+    case complete
+    case failed
+}
+
+/// What the workspace is showing. Drives the bottom-bar render and
+/// whether the body fetches a saved body on appear.
+enum NoteWorkspaceTarget: Equatable {
+    /// Active live recording bound to the view-model's recording
+    /// state. Title and body pull from `audioTitle` / `liveNotesBody`;
+    /// timer + level pull from the recorder. Bottom bar shows
+    /// audio-level meter + timer + Pause/Resume + Stop & upload.
+    case recording
+
+    /// Reviewing a past recording (clicked from Recent). Body is
+    /// fetched from `/api/notes/<id>` on appear; saves go through
+    /// the existing PUT autosave pipeline (debounced).
+    case reviewing(recording: RecentRecording)
+}
+
+/// Granola-shape note workspace, embedded directly in the main
+/// window when `MainRecorderView.noteTarget != nil`.
 ///
 /// Layout (top to bottom):
 ///   - Custom title strip: Home/Back button (left) + ⋯ menu (right)
@@ -120,6 +145,13 @@ struct NoteWorkspaceView: View {
                     pillRow
                     bodyEditor
                 }
+                // Cap the readable column at ~640pt and center
+                // horizontally so the editor doesn't sprawl across
+                // a 1080+pt wide main window. Granola pattern —
+                // narrow windows still fill, wide windows give a
+                // comfortable reading width with margin.
+                .frame(maxWidth: 640, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.horizontal, DSSpacing.xl)
                 .padding(.top, DSSpacing.lg)
                 .padding(.bottom, DSSpacing.xxl)
@@ -143,6 +175,8 @@ struct NoteWorkspaceView: View {
             // distract from the user's typing flow. Granola pattern.
             if !attachments.isEmpty || uploadingCount > 0 {
                 attachmentsStrip
+                    .frame(maxWidth: 640, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.horizontal, DSSpacing.xl)
                     .padding(.top, DSSpacing.sm)
                     .padding(.bottom, isRecording ? DSSpacing.sm : DSSpacing.lg)
@@ -151,6 +185,8 @@ struct NoteWorkspaceView: View {
             if isRecording {
                 // No divider — Granola's restraint pattern.
                 recordingControlBar
+                    .frame(maxWidth: 480)
+                    .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.horizontal, DSSpacing.lg)
                     .padding(.bottom, DSSpacing.lg)
             } else {

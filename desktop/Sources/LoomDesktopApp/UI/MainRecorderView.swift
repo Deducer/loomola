@@ -6,7 +6,6 @@ struct MainRecorderView: View {
     @State private var meetingPromptWindow = MeetingPromptWindowController()
     @State private var audioRecordingWindow = AudioRecordingWindowController()
     @State private var videoRecordingWindow = VideoRecordingWindowController()
-    @State private var notesSidePanel = NotesSidePanelWindowController()
     @State private var permissionStatus: PermissionStatus = PermissionChecker.currentStatus()
     @State private var dismissedPreflight = false
     @State private var captureMode: CaptureMode = .video
@@ -15,36 +14,50 @@ struct MainRecorderView: View {
     @State private var sidebarOpen = false
     @State private var sidebarQuery = ""
     @State private var folderFilterId: String? = nil
+    /// Granola-shape one-window note workspace. When non-nil, the
+    /// main window swaps its content for the workspace UI; nil
+    /// shows the home shell (sidebar + capture / Recent strip).
+    /// Single window means the user can move it between desktops
+    /// in Mission Control — the previous floating-NSPanel approach
+    /// (canJoinAllSpaces + stationary) was painted on every space
+    /// and could not be dragged.
+    @State private var noteTarget: NoteWorkspaceTarget? = nil
 
     var body: some View {
         VStack(spacing: 0) {
-            CustomTitleBar(
-                userInitial: viewModel.email.first,
-                sidebarOpen: sidebarOpen,
-                onToggleSidebar: { withAnimation(LoomolaMotion.quick) { sidebarOpen.toggle() } },
-                onSettings: { showSettings = true },
-                onAccount: { showAccountMenu.toggle() }
-            )
-            .overlay(alignment: .topTrailing) {
-                // Anchor for the popover. Empty view positioned where
-                // the avatar sits (~30pt from the right edge, at the
-                // title bar's vertical center).
-                Color.clear
-                    .frame(width: 30, height: 30)
-                    .padding(.trailing, DSSpacing.lg)
-                    .popover(isPresented: $showAccountMenu, arrowEdge: .top) {
-                        AccountMenuPopover(
-                            email: viewModel.email.isEmpty ? nil : viewModel.email,
-                            onOpenLibrary: openDashboard,
-                            onSignOut: {
-                                showAccountMenu = false
-                                viewModel.signOut()
-                            }
-                        )
-                    }
-            }
+            // In note-workspace mode the workspace's own home/⋯ row
+            // (rendered inline with the macOS traffic lights via
+            // `.ignoresSafeArea(.all, edges: .top)`) replaces this
+            // chrome — Granola pattern, single top bar.
+            if noteTarget == nil {
+                CustomTitleBar(
+                    userInitial: viewModel.email.first,
+                    sidebarOpen: sidebarOpen,
+                    onToggleSidebar: { withAnimation(LoomolaMotion.quick) { sidebarOpen.toggle() } },
+                    onSettings: { showSettings = true },
+                    onAccount: { showAccountMenu.toggle() }
+                )
+                .overlay(alignment: .topTrailing) {
+                    // Anchor for the popover. Empty view positioned where
+                    // the avatar sits (~30pt from the right edge, at the
+                    // title bar's vertical center).
+                    Color.clear
+                        .frame(width: 30, height: 30)
+                        .padding(.trailing, DSSpacing.lg)
+                        .popover(isPresented: $showAccountMenu, arrowEdge: .top) {
+                            AccountMenuPopover(
+                                email: viewModel.email.isEmpty ? nil : viewModel.email,
+                                onOpenLibrary: openDashboard,
+                                onSignOut: {
+                                    showAccountMenu = false
+                                    viewModel.signOut()
+                                }
+                            )
+                        }
+                }
 
-            Divider().overlay(DSColor.Border.subtle)
+                Divider().overlay(DSColor.Border.subtle)
+            }
 
             ZStack(alignment: .leading) {
                 contentForCurrentState
@@ -105,7 +118,7 @@ struct MainRecorderView: View {
             updateMeetingPromptWindow()
             updateAudioRecordingWindow()
             updateVideoRecordingWindow()
-            updateNotesSidePanel()
+            updateNoteTarget()
             RecorderCommands.isVideoRecording = (kind == .video)
         }
         .onChange(of: viewModel.activeAudioRecordingStartedAt) { _, _ in
@@ -127,7 +140,6 @@ struct MainRecorderView: View {
             meetingPromptWindow.hide()
             audioRecordingWindow.hide()
             videoRecordingWindow.hide()
-            notesSidePanel.hide()
         }
         .onReceive(NotificationCenter.default.publisher(for: RecorderCommands.toggleRecording)) { _ in
             handleToggleRecording()
@@ -170,13 +182,19 @@ struct MainRecorderView: View {
         }
     }
 
-    /// Routes by (state, recordingKind, permissions) to the right
-    /// home view. Phase 3 lands the IdleHomeView; legacy `signedInBody`
-    /// is the temporary fallback for recording / permissions states
-    /// until Phases 4 + 5 swap them in.
+    /// Routes by (workspace, state, recordingKind, permissions) to
+    /// the right view. The workspace check comes first — when the
+    /// user is reviewing or live-authoring a note, that surface
+    /// owns the whole window.
     @ViewBuilder
     private var contentForCurrentState: some View {
-        if viewModel.state == .signedOut {
+        if let target = noteTarget {
+            NoteWorkspaceView(
+                viewModel: viewModel,
+                target: target,
+                onClose: { noteTarget = nil }
+            )
+        } else if viewModel.state == .signedOut {
             SignedOutHomeView(viewModel: viewModel)
         } else if !dismissedPreflight && permissionStatus.requiredMissing {
             PermissionsHomeView(
@@ -187,13 +205,7 @@ struct MainRecorderView: View {
                 onSkip: { dismissedPreflight = true }
             )
         } else if viewModel.activeRecordingKind == .video {
-            // Video keeps its dedicated full-window recording surface
-            // (no workspace exists for video). Audio is intentionally
-            // not handled here — during an audio recording the
-            // Granola-shape workspace panel IS the recording UI, and
-            // the main window stays on IdleHomeView so the user can
-            // continue to browse Recent / start a new video note in
-            // parallel without three competing recording screens.
+            // Video keeps its dedicated full-window recording surface.
             RecordingHomeView(viewModel: viewModel)
         } else if isFinalizingOrUploading(viewModel.state) {
             FinalizingHomeView(viewModel: viewModel)
@@ -204,24 +216,9 @@ struct MainRecorderView: View {
                 captureMode: $captureMode,
                 folderFilterId: $folderFilterId,
                 onOpenAudioNote: { recording in
-                    notesSidePanel.show(
-                        viewModel: viewModel,
-                        target: .reviewing(recording: recording)
-                    )
+                    noteTarget = .reviewing(recording: recording)
                 }
             )
-            // Hiding here is the safety net — when SwiftUI rebuilds
-            // the IdleHomeView (no active recording, no reviewing
-            // target requested), make sure any stale workspace
-            // panel from a prior `onOpenAudioNote` is torn down.
-            // Without this the panel can sit on top of the
-            // Capture screen at the right edge and intercept
-            // clicks meant for the Audio note start button.
-            .onAppear {
-                if viewModel.activeRecordingKind == nil {
-                    notesSidePanel.hide()
-                }
-            }
         }
     }
 
@@ -290,27 +287,19 @@ struct MainRecorderView: View {
         audioRecordingWindow.hide()
     }
 
-    /// Auto-summon the live-notes side panel when an audio note
-    /// recording is active; auto-dismiss when it ends. The panel's
-    /// content reads directly from the view model via @ObservedObject,
-    /// so pause/resume state, audio level, and timer all update
-    /// without explicit re-show calls.
-    private func updateNotesSidePanel() {
+    /// Auto-swap the main window into note-workspace mode when an
+    /// audio note recording starts; on stop, swap back to the home
+    /// shell so the user can browse Recent / start the next note.
+    /// In review mode (user clicked an audio row in Recent), the
+    /// target is set explicitly via `onOpenAudioNote`; this helper
+    /// only handles the recording-mode auto-swap.
+    private func updateNoteTarget() {
         if viewModel.activeRecordingKind == .audio {
-            Task { @MainActor in
-                await Task.yield()
-                guard viewModel.activeRecordingKind == .audio else { return }
-                notesSidePanel.show(viewModel: viewModel, target: .recording)
-            }
-        } else {
-            notesSidePanel.hide()
+            noteTarget = .recording
+        } else if case .recording = noteTarget {
+            // Active recording ended (Stop & upload, or Discard).
+            // Tear the workspace down so the user lands on home.
+            noteTarget = nil
         }
-    }
-
-    /// Open the workspace bound to a past audio note (clicked from
-    /// Recent). Hides the main window's role here — the workspace
-    /// becomes the primary surface until the user closes it.
-    func openAudioNoteInWorkspace(_ recording: RecentRecording) {
-        notesSidePanel.show(viewModel: viewModel, target: .reviewing(recording: recording))
     }
 }
