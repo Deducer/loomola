@@ -110,9 +110,6 @@ struct NoteWorkspaceView: View {
                     titleEditor
                     pillRow
                     bodyEditor
-                    if !attachments.isEmpty {
-                        attachmentsStrip
-                    }
                 }
                 .padding(.horizontal, DSSpacing.xl)
                 .padding(.top, 8)
@@ -130,6 +127,18 @@ struct NoteWorkspaceView: View {
                         .transition(.opacity)
                 }
             }
+
+            // Attachments strip pinned to the bottom of the
+            // workspace, above the recording control bar. Keeps
+            // images out of the title/body area so they never
+            // distract from the user's typing flow. Granola pattern.
+            if !attachments.isEmpty || uploadingCount > 0 {
+                attachmentsStrip
+                    .padding(.horizontal, DSSpacing.xl)
+                    .padding(.top, DSSpacing.sm)
+                    .padding(.bottom, isRecording ? DSSpacing.sm : DSSpacing.lg)
+            }
+
             if isRecording {
                 // No divider — Granola's restraint pattern.
                 recordingControlBar
