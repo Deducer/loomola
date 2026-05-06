@@ -184,15 +184,43 @@ final class RecorderViewModel: ObservableObject {
             recorderLog.notice("restoreSession — no authService configured (env missing?)")
             return
         }
-        recorderLog.notice("restoreSession — attempting Keychain restore")
+        recorderLog.notice("restoreSession — attempting restore (10s timeout)")
         do {
-            if let session = try await authService.restoreSession() {
+            // Wrap in a continuation-based race so a hung
+            // Supabase `client.auth.setSession(...)` (which we've
+            // empirically seen never return on this user's setup)
+            // doesn't pin the user on the signed-out screen with
+            // a hidden task spinning forever. A regular task-group
+            // timeout doesn't help because cancelling the network
+            // task waits for it to exit, which it won't. Detached
+            // tasks + a one-shot resolver = no waiting for the
+            // hung task to acknowledge cancellation; it leaks
+            // until the process exits, which is fine.
+            let session: Session? = try await withCheckedThrowingContinuation { continuation in
+                let resolver = RestoreResolver(continuation)
+                Task {
+                    do {
+                        let result = try await authService.restoreSession()
+                        resolver.resolve(.success(result))
+                    } catch {
+                        resolver.resolve(.failure(error))
+                    }
+                }
+                Task {
+                    try? await Task.sleep(nanoseconds: 10_000_000_000)
+                    resolver.resolve(.failure(RestoreSessionError.timedOut))
+                }
+            }
+            if let session {
                 apply(session: session)
-                statusMessage = "Signed in from Keychain."
+                statusMessage = "Signed in from saved session."
                 recorderLog.notice("restoreSession — succeeded, applied session")
             } else {
                 recorderLog.notice("restoreSession — returned nil (no saved session)")
             }
+        } catch RestoreSessionError.timedOut {
+            statusMessage = "Couldn't restore session within 10s. Sign in again."
+            recorderLog.error("restoreSession — timed out after 10s (Supabase setSession hung)")
         } catch {
             statusMessage = "Saved session could not be restored. Sign in again."
             recorderLog.error("restoreSession — failed: \(error.localizedDescription, privacy: .public)")
@@ -1215,4 +1243,34 @@ enum DesktopRecordingKind: Equatable {
 
 enum RecorderViewModelError: Error {
     case missingAccessToken
+}
+
+enum RestoreSessionError: Error {
+    case timedOut
+}
+
+/// One-shot resolver for the restoreSession timeout race. The first
+/// caller wins; subsequent calls are silently ignored. Lock-protected
+/// so the two racing tasks don't double-resume the continuation.
+private final class RestoreResolver: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Session?, Error>?
+
+    init(_ continuation: CheckedContinuation<Session?, Error>) {
+        self.continuation = continuation
+    }
+
+    func resolve(_ result: Result<Session?, Error>) {
+        lock.lock()
+        guard let continuation else {
+            lock.unlock()
+            return
+        }
+        self.continuation = nil
+        lock.unlock()
+        switch result {
+        case .success(let value): continuation.resume(returning: value)
+        case .failure(let error): continuation.resume(throwing: error)
+        }
+    }
 }
