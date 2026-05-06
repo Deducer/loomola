@@ -867,11 +867,16 @@ final class RecorderViewModel: ObservableObject {
     }
 
     func startAudioNoteRecording() {
+        recorderLog.notice("startAudioNoteRecording — entered (isStartingRecording=\(self.isStartingRecording, privacy: .public), activeRecordingKind=\(String(describing: self.activeRecordingKind), privacy: .public))")
         guard !isStartingRecording else {
+            recorderLog.error("startAudioNoteRecording — blocked: isStartingRecording=true")
             statusMessage = "Another recording is still starting. Wait a moment, then try again."
             return
         }
-        guard let audioNoteRecorder else { return }
+        guard let audioNoteRecorder else {
+            recorderLog.error("startAudioNoteRecording — blocked: audioNoteRecorder is nil")
+            return
+        }
         // SCStream + backend.startRecording can take 3-4 seconds.
         // Flip isStartingRecording so the button shows "Starting…"
         // and disables — without this the click looked dead.
@@ -890,8 +895,10 @@ final class RecorderViewModel: ObservableObject {
         let meetingContext = meetingContext
         let microphoneDeviceID = selectedMicDeviceID
         meetingPromptContext = nil
+        recorderLog.notice("startAudioNoteRecording — Task launching (mic=\(includeMic, privacy: .public), sys=\(includeSystemAudio, privacy: .public))")
         Task {
             do {
+                recorderLog.notice("startAudioNoteRecording — calling audioNoteRecorder.start")
                 let session = try await audioNoteRecorder.start(
                     title: title,
                     includeMic: includeMic,
@@ -899,6 +906,7 @@ final class RecorderViewModel: ObservableObject {
                     meetingContext: meetingContext,
                     microphoneDeviceID: microphoneDeviceID
                 )
+                recorderLog.notice("startAudioNoteRecording — succeeded (backendId=\(session.backendRecordingId ?? "nil", privacy: .public), slug=\(session.backendSlug ?? "nil", privacy: .public), tracks=\(session.tracks.count, privacy: .public))")
                 activeRecordingKind = .audio
                 activeAudioRecordingStartedAt = Date()
                 activeAudioRecordingSlug = session.backendSlug
@@ -910,6 +918,7 @@ final class RecorderViewModel: ObservableObject {
                 statusMessage = "Recording audio note with \(session.tracks.count) track(s)."
                 isStartingRecording = false
             } catch {
+                recorderLog.error("startAudioNoteRecording — FAILED: \(error.localizedDescription, privacy: .public) (\(String(describing: error), privacy: .public))")
                 activeRecordingKind = nil
                 activeAudioRecordingStartedAt = nil
                 state = .failed(message: error.localizedDescription)

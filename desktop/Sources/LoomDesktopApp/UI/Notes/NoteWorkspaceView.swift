@@ -35,6 +35,7 @@ struct NoteWorkspaceView: View {
     @State private var showFolderPicker = false
     @State private var showRowMenu = false
     @State private var loadingBody = false
+    @FocusState private var bodyFocused: Bool
 
     private var isRecording: Bool {
         if case .recording = target { return true }
@@ -304,6 +305,12 @@ struct NoteWorkspaceView: View {
                 .background(Color.clear)
                 .frame(minHeight: 320)
                 .tint(DSColor.Accent.primary)
+                .focused($bodyFocused)
+                // SwiftUI TextEditor adds ~5pt of internal leading
+                // padding around the text storage that the title
+                // row above doesn't have. Pull the editor 5pt back
+                // so the text origin lines up with the title.
+                .padding(.leading, -5)
             if bodyBinding.wrappedValue.isEmpty && !loadingBody {
                 Text("Write notes")
                     .font(DSFont.Body.md())
@@ -384,6 +391,12 @@ struct NoteWorkspaceView: View {
     // MARK: - Lifecycle
 
     private func handleAppear() {
+        // Auto-focus the body editor so the user can start typing
+        // immediately — Granola does this. Slight delay so the
+        // SwiftUI focus system has time to wire up after appear.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            bodyFocused = true
+        }
         switch target {
         case .recording:
             break

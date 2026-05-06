@@ -203,6 +203,18 @@ struct MainRecorderView: View {
                     )
                 }
             )
+            // Hiding here is the safety net — when SwiftUI rebuilds
+            // the IdleHomeView (no active recording, no reviewing
+            // target requested), make sure any stale workspace
+            // panel from a prior `onOpenAudioNote` is torn down.
+            // Without this the panel can sit on top of the
+            // Capture screen at the right edge and intercept
+            // clicks meant for the Audio note start button.
+            .onAppear {
+                if viewModel.activeRecordingKind == nil {
+                    notesSidePanel.hide()
+                }
+            }
         }
     }
 
