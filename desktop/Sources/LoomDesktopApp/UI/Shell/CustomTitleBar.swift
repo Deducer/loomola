@@ -20,13 +20,10 @@ struct CustomTitleBar: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            // Reserve space for the macOS traffic lights. They sit at
-            // ~12pt from the left edge with ~14pt diameter; 78pt total
-            // clears them comfortably across all macOS versions.
-            Spacer().frame(width: 78)
-
             // Sidebar toggle — Granola's left-of-wordmark button.
-            // Filled when open, outlined when closed. ⌘S elsewhere.
+            // The system title bar above (unified 52pt via
+            // WindowChrome) holds the macOS traffic lights, so we
+            // no longer need a fake spacer here.
             IconButton(
                 icon: sidebarOpen ? "sidebar.left" : "sidebar.left",
                 size: 26,
@@ -52,9 +49,9 @@ struct CustomTitleBar: View {
                     action: onAccount
                 )
             }
-            .padding(.trailing, DSSpacing.lg)
         }
-        .frame(height: 52)
+        .padding(.horizontal, DSSpacing.lg)
+        .frame(height: 44)
         .frame(maxWidth: .infinity)
         .background(DSColor.Bg.canvas)
     }

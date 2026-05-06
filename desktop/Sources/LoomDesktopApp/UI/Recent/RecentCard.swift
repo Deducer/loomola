@@ -15,8 +15,12 @@ struct RecentCard: View {
 
     @State private var hovering = false
 
-    private let cardWidth: CGFloat = 320
-    private let thumbnailHeight: CGFloat = 180  // 16:9
+    // 16:9 cards sized so 3 fit comfortably in the default 1080pt
+    // window AND don't overflow at the 920pt min width: 3 × 264 +
+    // 2 × 16 (lg gap) + 64 (xxl horizontal padding × 2) = 824pt
+    // content vs. 920–1080pt window → 96–256pt margin on each side.
+    private let cardWidth: CGFloat = 264
+    private let thumbnailHeight: CGFloat = 148  // 16:9 (264 × 9/16 ≈ 148.5)
 
     var body: some View {
         VStack(alignment: .leading, spacing: DSSpacing.sm) {

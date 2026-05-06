@@ -114,7 +114,7 @@ struct RecentStrip: View {
     }
 
     private var videoGrid: some View {
-        HStack(alignment: .top, spacing: DSSpacing.xl) {
+        HStack(alignment: .top, spacing: DSSpacing.lg) {
             ForEach(filteredItems.prefix(3)) { recording in
                 RecentCard(recording: recording) { open(recording: recording) }
             }

@@ -25,11 +25,11 @@ struct MainRecorderView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Both modes draw their top row inline with the macOS
-            // traffic lights inside the unified 52pt title bar.
-            // `.ignoresSafeArea(.all, edges: .top)` on this VStack
-            // lets the row sit at y=0 instead of being pushed below
-            // the system chrome — Granola pattern.
+            // Both modes render their top row BELOW the system title
+            // bar. The window has a unified 52pt title bar
+            // (WindowChrome) so the macOS traffic lights have
+            // breathing room above, and our row sits cleanly below
+            // — clickable, no z-order conflict with the toolbar.
             if noteTarget == nil {
                 CustomTitleBar(
                     userInitial: viewModel.email.first,
@@ -88,8 +88,8 @@ struct MainRecorderView: View {
                 }
             }
         }
-        .ignoresSafeArea(.all, edges: .top)
         .background(DSColor.Bg.canvas)
+        .toolbarBackground(.hidden, for: .windowToolbar)
         .background(
             WindowAccessor { window in
                 WindowChrome.applyTallTitleBar(to: window)

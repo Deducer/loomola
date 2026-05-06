@@ -205,10 +205,6 @@ struct NoteWorkspaceView: View {
                     .transition(.opacity)
             }
         }
-        // Extend SwiftUI content under the macOS title bar so our
-        // title-bar HStack can sit inline with the traffic lights
-        // instead of pushed down by the default safe-area inset.
-        .ignoresSafeArea(.all, edges: .top)
         .overlay(alignment: .bottom) {
             if let toastMessage {
                 attachmentToast(message: toastMessage)
@@ -232,15 +228,11 @@ struct NoteWorkspaceView: View {
     // MARK: - Title bar
 
     private var titleBar: some View {
-        // Inline with the macOS traffic lights inside the unified
-        // 52pt title bar (`WindowChrome.applyTallTitleBar`). 52pt
-        // frame centers our home/⋯ buttons at the same vertical
-        // axis as the lights with breathing room above and below.
+        // Sits BELOW the unified system title bar (52pt) — the
+        // traffic lights breathe up there, our row breathes here.
+        // 44pt frame with horizontal padding gives the home/⋯
+        // buttons room from the window edge.
         HStack(spacing: 0) {
-            // 78pt traffic-light spacer + extra breathing room
-            // after the lights so HomeBackButton doesn't crowd
-            // the green button.
-            Spacer().frame(width: 78 + DSSpacing.md)
             HomeBackButton(action: onClose)
                 .help(isRecording ? "Hide (panel reappears on next event)" : "Close")
             Spacer()
@@ -250,9 +242,9 @@ struct NoteWorkspaceView: View {
             .popover(isPresented: $showRowMenu, arrowEdge: .top) {
                 rowMenu
             }
-            .padding(.trailing, DSSpacing.lg)
         }
-        .frame(height: 52)
+        .padding(.horizontal, DSSpacing.lg)
+        .frame(height: 44)
     }
 
     private var rowMenu: some View {
