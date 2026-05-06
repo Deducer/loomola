@@ -61,7 +61,7 @@ struct RecentStrip: View {
 
     private var noteList: some View {
         VStack(alignment: .leading, spacing: DSSpacing.lg) {
-            ForEach(groupedByDate(filteredItems), id: \.label) { group in
+            ForEach(RecentDateGrouping.grouped(filteredItems), id: \.label) { group in
                 VStack(alignment: .leading, spacing: DSSpacing.xs) {
                     Text(group.label)
                         .font(DSFont.Body.sm())
@@ -169,60 +169,4 @@ struct RecentStrip: View {
         }
     }
 
-    // MARK: - Date grouping
-
-    private struct DateGroup {
-        let label: String
-        let items: [RecentRecording]
-    }
-
-    private func groupedByDate(_ items: [RecentRecording]) -> [DateGroup] {
-        let calendar = Calendar.current
-        let now = Date()
-        let today = calendar.startOfDay(for: now)
-        let yesterday = calendar.date(byAdding: .day, value: -1, to: today) ?? today
-
-        // Insertion-ordered buckets so the output preserves the
-        // reverse-chronological item order (newest groups first).
-        var labels: [String] = []
-        var bucket: [String: [RecentRecording]] = [:]
-
-        for item in items.sorted(by: { $0.createdAt > $1.createdAt }) {
-            let label = labelFor(
-                date: item.createdAt,
-                today: today,
-                yesterday: yesterday,
-                now: now,
-                calendar: calendar
-            )
-            if bucket[label] == nil {
-                bucket[label] = []
-                labels.append(label)
-            }
-            bucket[label]?.append(item)
-        }
-
-        return labels.map { DateGroup(label: $0, items: bucket[$0] ?? []) }
-    }
-
-    private func labelFor(
-        date: Date,
-        today: Date,
-        yesterday: Date,
-        now: Date,
-        calendar: Calendar
-    ) -> String {
-        if calendar.isDate(date, inSameDayAs: today) { return "Today" }
-        if calendar.isDate(date, inSameDayAs: yesterday) { return "Yesterday" }
-        let daysAgo = calendar.dateComponents([.day], from: calendar.startOfDay(for: date), to: today).day ?? 0
-        let formatter = DateFormatter()
-        if daysAgo < 7 {
-            formatter.dateFormat = "EEE, MMM d"   // "Mon, May 4"
-        } else if calendar.isDate(date, equalTo: now, toGranularity: .year) {
-            formatter.dateFormat = "MMM d"        // "Apr 30"
-        } else {
-            formatter.dateFormat = "MMM d, yyyy"  // "Dec 12, 2025"
-        }
-        return formatter.string(from: date)
-    }
 }
