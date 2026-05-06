@@ -69,14 +69,14 @@ This repo hosts **two products on one codebase**, gated by a single env flag:
 
 ## Milestones (live status: see [`ROADMAP.md`](ROADMAP.md))
 
-Stage 1 (M1–M11) + Stage 1.5a/b + Stage 1.6 + Stage 1.7 + Stage 1.8 all shipped. Big-picture surface area:
+Stage 1 (M1–M11) + Stages 1.5–1.10 + 1.99 + Stage 2 (G-M1–M17, except v2 voice biometrics) + Stage 3 (security) + Stage 4 (desktop M2 premium recorder) + Stage 5 (desktop M3 visual restructure) + Stage 6 (live notes) + Stage 7 (stability + Granola UX + multi-folder Phase 1) all shipped. Big-picture surface area:
 
 - `/` — dashboard with folder sidebar, search, sort/filter, drag-and-drop card-to-folder, hover card menu (Edit / Move / Delete). Cards click into the **edit** page (creator-first), not the share page.
 - `/record` — recording flow: pre-record form → preparing (permissions) → 3-2-1 countdown → recording → uploading → finished. The bubble is rendered by the Chrome extension companion (`extension/`), which injects a frameless `/bubble` iframe into every tab the user is on. Drag updates the iframe's `left/top` and posts a fractional position back to /record via the extension's message bridge; that position is also persisted in `chrome.storage.session` so the iframe respawns at the same spot when the user switches tabs.
 - `/v/:slug` — visitor share page. Watch-first: title → player (Loom-style chapter segments + hover-scrub thumbnails) → AI summary → action items → chapters list → tabs (Transcript · Comments). Brand-themed when a brand profile is assigned (logo + accent + tagline + custom Google Font + CTA pill + footer text).
 - `/recordings/[id]/edit` — creator console. Sticky preview on the left, settings + trim + downloads + analytics + danger-zone on the right (capped at 360px so the video gets the lion's share of the page).
 - `/brands` — brand profile CRUD with full Layer 2 theming fields.
-- `desktop/` — native macOS companion app early dev build. It can sign in, list capture sources, show a live camera bubble, and upload a first-display MP4 as the `composite` track through the existing backend. It does **not** yet composite the bubble into exported video or upload raw tracks. Spec: [`docs/superpowers/specs/2026-04-27-macos-desktop-app-design.md`](docs/superpowers/specs/2026-04-27-macos-desktop-app-design.md). Plan: [`docs/superpowers/plans/2026-04-27-macos-desktop-app.md`](docs/superpowers/plans/2026-04-27-macos-desktop-app.md).
+- `desktop/` — native macOS companion app, **production-grade**. Stages 4 (premium recorder), 5 (Granola-grade visual shell), 6 (live notes side panel + pause/resume), 7 (stability + Granola UX) all shipped. Builds via `desktop/scripts/install-local-app.sh` (release `.app` → ad-hoc signed → `/Applications/Loomola.app`). Composite recorder via AVAssetWriter + CIContext. Audio note flow uses AVAudioFile (post-Stage-7 rewrite — bypasses an AVFCore bug on macOS 26.4.1). Auth tokens in file storage by default (Stage 7). Logger-based observability (`subsystem: cloud.dissonance.loom.desktop`). Specs: [`2026-04-27-macos-desktop-app-design.md`](docs/superpowers/specs/2026-04-27-macos-desktop-app-design.md), [`2026-05-04-desktop-app-m2-premium-recorder-design.md`](docs/superpowers/specs/2026-05-04-desktop-app-m2-premium-recorder-design.md), [`2026-05-04-desktop-app-m3-visual-restructure-design.md`](docs/superpowers/specs/2026-05-04-desktop-app-m3-visual-restructure-design.md).
 
 ## Conventions
 
@@ -95,7 +95,7 @@ Stage 3 (security hardening pack, shipped 2026-05-04) brought the app to a postu
 - **Time-bound unlock cookies.** `src/lib/viewer/unlock-cookie.ts` signs `slug:passwordHash:issuedAt` and rejects > 24 h old, future-dated, tampered, or empty.
 - **Deepgram callback nonce.** Single-use nonces persisted in `webhook_nonces`, atomically consumed via `UPDATE ... WHERE consumed_at IS NULL AND expires_at > now()`. Webhook URL shape: `/api/webhooks/deepgram/[recordingId]/[nonce]/[sig]`. Tests cover replay rejection, expiry, tamper, mismatched recording id, never-issued nonce.
 - **Persistent rate limits.** `src/lib/rate-limit/check.ts` (sliding-window over `rate_limit_events`) is shared by comment posts (3/5min/visitor) and password unlock attempts (5/5min/visitor). The pure decision lives in `src/lib/rate-limit/evaluate.ts` for testability. Opportunistic 1%-of-allowed cleanup keeps the table small without a cron.
-- **Desktop Keychain-only.** `desktop/Sources/LoomDesktopApp/Auth/AuthSessionStore.swift` no longer falls back to plaintext-file storage based on bundle path. `.fileForTesting` mode survives only as a unit-test seam.
+- **Desktop auth storage — file by default, Keychain on opt-in (revised in Stage 7, 2026-05-06).** Stage 3 originally locked production to Keychain; six install/relaunch cycles per testing session re-prompted for the macOS login password every time, which made iteration unworkable. The default flipped from `.keychain` → `.file` (`~/Library/Application Support/LoomDesktop/auth-session.json`, 0600 perms). Threat-model wise this is no weaker than Keychain for a single-user dev tool — anyone with the macOS account can read the Keychain anyway. The Stage-3 reasoning that mattered (no path-based silent fallback based on bundle path) still holds: file is now the explicit default, not a heuristic. Mode is selectable via `AuthSessionStore(storageMode: .keychain)` if a future multi-user Mac scenario calls for it.
 
 When adding a new public-facing endpoint that accepts user input, default to `checkRateLimit({ scope: '<endpoint>:visitor', key: hashVisitor(req), max, windowSec })`.
 
@@ -191,8 +191,35 @@ For audio note recordings only (video flow unchanged). Six phases:
 
 - **G-M14 — Notes bulk select / delete / move:** notes list converted to a client component, mirrors `RecordingsGrid` UX (per-row checkbox on hover, shift-click range, bottom action bar). Reuses the existing type-agnostic `/api/recordings/bulk-delete` and `/api/recordings/[id]/folder` endpoints.
 - **G-M15 — Notes-list attachment thumbnails + back-to-tab:** notes with attached images render the images in the row icon (1 = full, 2 = halves, 3-4 = 2×2 grid). Note-detail back arrow returns to `/?tab=notes`. New `listImageAttachmentsForMediaIds` query is a single round trip per dashboard load.
-- **G-M16 — Desktop AEC for mic:** mic capture rewritten on AVAudioEngine + voice processing. macOS subtracts the system playback signal from mic input — no more participant-voice doubling when recording over speakers.
+- **G-M16 — Desktop AEC for mic:** mic capture rewritten on AVAudioEngine + voice processing. macOS subtracts the system playback signal from mic input — no more participant-voice doubling when recording over speakers. *Stage 7 update (2026-05-06):* VPIO is now disabled by default because it ducks system audio output for the recording's duration (Zoom/Meet/music goes silent). Mic + system audio are still captured as separate tracks; server-side mix-audio job can dedup if echo ever shows up. Headphone users (the typical recording-a-call setup) have no acoustic feedback path so no echo to begin with.
 - **G-M17 — AI notes scaling for hour+ to multi-hour meetings:** `enhancedNotesSchema.summary` cap raised 6000 → 200000 chars; `maxOutputTokens: 32000` on the audio enhance call. 5-6 hour event recordings render full structured notes instead of truncating mid-sentence. Note page title trimmed so body sits above the fold.
+
+## Stage 6 — Live notes (✅ shipped 2026-05-05)
+
+Granola-shape side panel + pause/resume for audio note recordings. Six phases (A-F):
+- `PauseAdjuster` (pure logic, 7 unit tests) tracks pause/resume PTS arithmetic so paused gaps are removed from the output.
+- `MicrophoneCaptureCoordinator` + `SystemAudioCaptureCoordinator` pause in lockstep via `AudioNoteRecorder.pause()/.resume()`.
+- `NotesSidePanelWindowController` floating ~380×full-visible-height NSPanel anchored to the right, follows across spaces (`canJoinAllSpaces + stationary`), auto-summons on audio note start.
+- `liveNotesBody` debounced autosave to `PUT /api/notes/<mediaId>` (~2s idle window). Final synchronous flush on Stop & upload before the upload fires so the AI pipeline sees the user's full content.
+- Pause-aware regen: `generate-title-summary.ts` already reads `notes.body`, no further work needed.
+
+**Web stays the editor; desktop is capture + focused live notepad. Notes typed live and notes edited on web both write the same `notes.body` field — single source of truth.**
+
+## Stage 7 — Desktop stability sprint + Granola UX + multi-folder Phase 1 (✅ shipped 2026-05-06)
+
+A high-density bug-fix + polish day after the M3 dogfood surfaced multiple sharp edges. See ROADMAP.md for the full table; key items:
+
+- **Audio note crash fixed.** `AudioAssetWriter` rewritten from `AVAssetWriter + AVAssetWriterInput` (which throws an uncatchable NSException from inside AVFCore on macOS 26.4.1) to `AVAudioFile` (different orchestration layer via ExtAudioFile, same AAC m4a output). Mic flow now passes the engine tap's PCM buffer directly to the writer.
+- **VPIO disabled by default** (see G-M16 update above) so Zoom/Meet/music doesn't go silent during recording.
+- **`URL.appending(path:)` percent-encoding fix.** The Recent strip silently never populated because `?` got encoded to `%3F`. Switched to `URL(string:relativeTo:)` and lifted to `BackendURLBuilder` with regression tests.
+- **Auth tokens flipped to file storage by default** (see Security posture update).
+- **Logger-based observability.** Switched the desktop's print statements to `Logger(subsystem: "cloud.dissonance.loom.desktop", category: ...)` at `.notice` level. Categories: `boot`, `recorder`, `recent`, `backend`. Visible in `log show --predicate 'subsystem == "cloud.dissonance.loom.desktop"'`.
+- **`durationSeconds` JSON shape coercion.** Drizzle `numeric` columns arrive as JS strings; the `/api/recordings/recent` route now coerces to Number before serializing so Swift's strict JSONDecoder accepts it.
+- **`restoreSession` 10s timeout.** Supabase's `setSession` can hang forever on macOS 26.4.1; wrapped in a continuation-based race so the user is never pinned on a frozen sign-in screen.
+- **Recent populate-on-launch race fixed.** `apply(session:)` now explicitly calls `_recentService?.refresh()` after setting accessToken — covers the `.preparingPermissions → .signedInIdle` transition that was creating the service before the token landed.
+- **Granola-style Recent rows.** Folder pill (right side, hidden when unfiled + not hovering) → folder picker popover with checkmark on current. Time-of-day in mono-digit right column (replaces relative timestamps; date already established by section header). Hover bg highlight. Date grouping (Today / Yesterday / Mon, May 4 / Apr 28).
+- **Recent video cards bumped to 320×180** (true triple from the original 140×84). 1px border + `.dsShadow(.subtle)` at rest, `.raised` on hover. 3 cards per row.
+- **Multi-folder Phase 1.** New `media_folder_assignments` join table + dual-write semantics in `moveRecordingToFolder` and `acceptPendingSuggestion`. New endpoints: `GET/POST /api/recordings/{id}/folders`, `DELETE /api/recordings/{id}/folders/{folderId}`. Reads still go through legacy `media_objects.folder_id`. Phase 2 (read flip) and Phase 3 (drop column) deferred — Phase 2 needs UI work + desktop verification. Spec: [`docs/superpowers/specs/2026-05-06-multi-folder-assignments-design.md`](docs/superpowers/specs/2026-05-06-multi-folder-assignments-design.md).
 
 ## Granola-alt (in progress)
 
@@ -207,14 +234,19 @@ A second product (audio meeting notes) built on top of this same backend. Spec: 
 
 ## Out-of-Stage-1 Scope (deferred, separate spec when picked up)
 
-- macOS menubar / desktop app implementation (native, ScreenCaptureKit on macOS) — spec + scaffold exist under `docs/superpowers/specs/2026-04-27-macos-desktop-app-design.md`, `docs/superpowers/plans/2026-04-27-macos-desktop-app.md`, and `desktop/`.
-- iOS / Android apps
-- Multi-tenant / team invites
-- Custom domains per brand (Layer 2 follow-up)
-- AI Q&A chat on a recording
-- Emoji reactions
-- Outbound webhooks
-- Granola-alt (audio capture) — reuses the polymorphic media_objects table
+- ~~**macOS desktop app**~~ — ✅ shipped Stage 4 (premium recorder) + Stage 5 (visual restructure) + Stage 7 (stability + Granola UX).
+- ~~**Granola-alt (audio capture)**~~ — ✅ Stage 2 shipped G-M1 through G-M17 (everything except speaker recognition v2).
+- **iOS / Android apps** — ReplayKit on iOS, similar capture flow. Single-user-account v1.
+- **Native Windows app** — direct gap to Loom (which has Windows). Lower priority than iOS for this user base.
+- **Multi-tenant / team invites** — single-user product today; team accounts is a major schema + auth surface.
+- **Custom domains per brand** — `videos.acme.com` CNAME → VPS, served as the brand's share-page surface. Pairs with Brand Layer 2.
+- **AI Q&A chat** on a single recording / note (transcript + summary embeddings exist; surface UI is the missing piece).
+- **AI Q&A across the entire library** (semantic search + chat).
+- **Note templates** — Granola's 30+ template library that shapes the AI title/summary prompt.
+- **Folder customization** — color + emoji icon per folder (Granola pattern).
+- **Emoji reactions** on share pages.
+- **Outbound webhooks** for automations.
+- **Multi-folder Phase 2 + 3** — read flip then drop legacy `folder_id` column. Phase 1 (schema + dual-write) shipped 2026-05-06; spec: [`docs/superpowers/specs/2026-05-06-multi-folder-assignments-design.md`](docs/superpowers/specs/2026-05-06-multi-folder-assignments-design.md).
 
 ## Working with Claude Code on this repo
 
