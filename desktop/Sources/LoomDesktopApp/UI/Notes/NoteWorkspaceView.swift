@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Granola-shape note workspace. Lives inside the right-anchored
 /// NSPanel hosted by `NotesSidePanelWindowController`.
@@ -36,6 +37,20 @@ struct NoteWorkspaceView: View {
     @State private var showRowMenu = false
     @State private var loadingBody = false
     @FocusState private var bodyFocused: Bool
+
+    /// Image attachments associated with the note. Populated from
+    /// `/api/notes/<id>/attachments` on appear (review mode) and
+    /// extended by drag-and-drop uploads.
+    @State private var attachments: [NoteAttachmentDTO] = []
+    /// True while the user is dragging file(s) over the body —
+    /// drives the centered "Attach images" overlay.
+    @State private var isDropTargeted = false
+    /// Number of in-flight uploads. Drives the "still processing"
+    /// state on attachment thumbnails.
+    @State private var uploadingCount = 0
+    /// Bottom-anchored toast that fades in/out on successful
+    /// attachment.
+    @State private var toastMessage: String? = nil
 
     private var isRecording: Bool {
         if case .recording = target { return true }
@@ -78,6 +93,15 @@ struct NoteWorkspaceView: View {
         }
     }
 
+    /// Backing media-object id (also the noteId) for whichever
+    /// note this workspace is showing. Used by attachment uploads.
+    private var noteId: String? {
+        switch target {
+        case .recording: return viewModel.activeAudioRecordingId
+        case .reviewing(let recording): return recording.id
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             titleBar
@@ -86,20 +110,43 @@ struct NoteWorkspaceView: View {
                     titleEditor
                     pillRow
                     bodyEditor
+                    if !attachments.isEmpty {
+                        attachmentsStrip
+                    }
                 }
                 .padding(.horizontal, DSSpacing.xl)
                 .padding(.top, 8)
                 .padding(.bottom, DSSpacing.xxl)
             }
+            // Drag images anywhere over the editor area. Whole-body
+            // drop target — no precise hit zone needed (Granola
+            // accepts drops over the entire note workspace).
+            .onDrop(of: [.fileURL, .image], isTargeted: $isDropTargeted) { providers in
+                handleDrop(providers: providers)
+            }
+            .overlay {
+                if isDropTargeted {
+                    dropTargetOverlay
+                        .transition(.opacity)
+                }
+            }
             if isRecording {
-                // No divider — Granola's restraint pattern. The pill
-                // floats at the bottom with vertical padding only.
+                // No divider — Granola's restraint pattern.
                 recordingControlBar
                     .padding(.horizontal, DSSpacing.lg)
                     .padding(.bottom, DSSpacing.lg)
             }
         }
         .background(DSColor.Bg.canvas)
+        .overlay(alignment: .bottom) {
+            if let toastMessage {
+                attachmentToast(message: toastMessage)
+                    .padding(.bottom, isRecording ? 80 : DSSpacing.xl)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(LoomolaMotion.quick, value: isDropTargeted)
+        .animation(LoomolaMotion.medium, value: toastMessage)
         .onAppear { handleAppear() }
         .onDisappear {
             reviewAutosaveTask?.cancel()
@@ -382,12 +429,167 @@ struct NoteWorkspaceView: View {
 
     // MARK: - Lifecycle
 
+    // MARK: - Drop target overlay
+
+    /// Granola-shape "Attach images" overlay that appears while the
+    /// user is dragging a file over the body. Centered camera-stack
+    /// glyph with a headline + subhead beneath.
+    private var dropTargetOverlay: some View {
+        ZStack {
+            DSColor.Bg.canvas.opacity(0.92)
+                .ignoresSafeArea()
+            VStack(spacing: DSSpacing.sm) {
+                Image(systemName: "photo.on.rectangle.angled")
+                    .font(.system(size: 56, weight: .light))
+                    .foregroundStyle(DSColor.Text.tertiary)
+                    .padding(.bottom, 4)
+                Text("Attach images")
+                    .font(DSFont.Display.lg())
+                    .foregroundStyle(DSColor.Text.primary)
+                Text("Enhance your notes with visual context")
+                    .font(DSFont.Body.md())
+                    .foregroundStyle(DSColor.Text.secondary)
+            }
+        }
+    }
+
+    // MARK: - Attachments strip
+
+    /// Bottom-of-body row showing attached image thumbnails plus a
+    /// "Attached images" header. Granola pattern: a small paperclip
+    /// glyph + label, then a row of 64×48 rounded thumbs that
+    /// expand to a preview on click (preview is a future polish).
+    private var attachmentsStrip: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 4) {
+                Image(systemName: "paperclip")
+                    .font(.system(size: 11, weight: .medium))
+                Text("Attached images")
+                    .font(DSFont.Body.sm())
+            }
+            .foregroundStyle(DSColor.Text.secondary)
+
+            HStack(spacing: 8) {
+                ForEach(attachments) { attachment in
+                    AttachmentThumbnail(attachment: attachment)
+                }
+                if uploadingCount > 0 {
+                    UploadingThumbnailPlaceholder()
+                }
+                Spacer()
+            }
+        }
+        .padding(.top, DSSpacing.md)
+    }
+
+    // MARK: - Toast
+
+    /// Bottom-anchored confirmation pill. Auto-dismisses after ~2.5s.
+    private func attachmentToast(message: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(DSColor.State.success)
+            Text(message)
+                .font(DSFont.Body.md())
+                .foregroundStyle(DSColor.Text.primary)
+        }
+        .padding(.horizontal, DSSpacing.lg)
+        .padding(.vertical, 10)
+        .background(
+            Capsule().fill(DSColor.Bg.surfaceRaised)
+        )
+        .overlay {
+            Capsule().strokeBorder(DSColor.Border.subtle, lineWidth: 1)
+        }
+        .dsShadow(.raised)
+    }
+
+    // MARK: - Drop handling
+
+    /// Validates and uploads each dropped image. Returns true to
+    /// signal SwiftUI we accepted the drop (drives the green "+"
+    /// indicator on the macOS drag cursor).
+    private func handleDrop(providers: [NSItemProvider]) -> Bool {
+        guard let noteId else { return false }
+        var accepted = 0
+        for provider in providers {
+            let typeIdentifier: String
+            if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                typeIdentifier = UTType.fileURL.identifier
+            } else if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
+                typeIdentifier = UTType.image.identifier
+            } else {
+                continue
+            }
+            accepted += 1
+            uploadingCount += 1
+            provider.loadItem(forTypeIdentifier: typeIdentifier, options: nil) { item, _ in
+                let resolvedURL: URL? = {
+                    if let url = item as? URL { return url }
+                    if let data = item as? Data {
+                        return URL(dataRepresentation: data, relativeTo: nil)
+                    }
+                    return nil
+                }()
+                Task { @MainActor in
+                    defer { uploadingCount = max(0, uploadingCount - 1) }
+                    guard let url = resolvedURL else {
+                        showToast(message: "Couldn't read dropped file")
+                        return
+                    }
+                    await uploadAttachment(noteId: noteId, fileURL: url)
+                }
+            }
+        }
+        return accepted > 0
+    }
+
+    private func uploadAttachment(noteId: String, fileURL: URL) async {
+        guard let backend = viewModel.backendClient else { return }
+        do {
+            let attachment = try await backend.uploadNoteAttachment(
+                mediaId: noteId,
+                fileURL: fileURL
+            )
+            attachments.append(attachment)
+            showToast(message: "File attached to note")
+        } catch {
+            showToast(message: "Couldn't attach \(fileURL.lastPathComponent)")
+        }
+    }
+
+    private func showToast(message: String) {
+        toastMessage = message
+        let token = message
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            // Only clear if no newer toast replaced it.
+            if toastMessage == token {
+                toastMessage = nil
+            }
+        }
+    }
+
     private func handleAppear() {
         // Auto-focus the body editor so the user can start typing
         // immediately — Granola does this. Slight delay so the
         // SwiftUI focus system has time to wire up after appear.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             bodyFocused = true
+        }
+        // Fetch attachments for whichever note is loaded. For
+        // recording mode the active recording's id; for reviewing
+        // the clicked recording's id. Both populate the bottom
+        // attachments strip on first paint.
+        if let noteId {
+            Task {
+                if let backend = viewModel.backendClient {
+                    if let list = try? await backend.listNoteAttachments(mediaId: noteId) {
+                        await MainActor.run { attachments = list }
+                    }
+                }
+            }
         }
         switch target {
         case .recording:
@@ -610,6 +812,70 @@ private struct AudioLevelMeter: View {
         let maxH = 18.0
         let scaled = amplified * multipliers[index]
         return CGFloat(minH + (maxH - minH) * scaled)
+    }
+}
+
+// MARK: - Attachment thumbnails
+
+private struct AttachmentThumbnail: View {
+    let attachment: NoteAttachmentDTO
+    @State private var hovering = false
+
+    var body: some View {
+        ZStack {
+            if let url = URL(string: attachment.url) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().scaledToFill()
+                    default:
+                        placeholder
+                    }
+                }
+            } else {
+                placeholder
+            }
+        }
+        .frame(width: 72, height: 54)
+        .clipShape(RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous)
+                .strokeBorder(DSColor.Border.subtle, lineWidth: 1)
+        }
+        .scaleEffect(hovering ? 1.04 : 1.0)
+        .onHover { hovering = $0 }
+        .animation(LoomolaMotion.quick, value: hovering)
+        .help(attachment.filename)
+    }
+
+    private var placeholder: some View {
+        ZStack {
+            Rectangle().fill(DSColor.Bg.subtle)
+            Image(systemName: "photo")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(DSColor.Text.tertiary)
+        }
+    }
+}
+
+/// Granola-shape "still uploading" placeholder. Shown next to the
+/// successfully-uploaded thumbnails while one or more uploads are
+/// still in flight; replaced by the real thumbnail when the POST
+/// returns. Mirrors the loading-circle spinner pattern Granola uses.
+private struct UploadingThumbnailPlaceholder: View {
+    var body: some View {
+        ZStack {
+            Rectangle().fill(DSColor.Bg.subtle)
+            ProgressView()
+                .controlSize(.small)
+                .tint(DSColor.Text.secondary)
+        }
+        .frame(width: 72, height: 54)
+        .clipShape(RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous)
+                .strokeBorder(DSColor.Border.subtle, lineWidth: 1)
+        }
     }
 }
 

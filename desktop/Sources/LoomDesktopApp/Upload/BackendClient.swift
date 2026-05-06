@@ -99,6 +99,71 @@ actor BackendClient {
         return response.body ?? ""
     }
 
+    /// List image attachments for a note. Returns presigned URLs
+    /// the desktop can render directly; expires in ~1 hour.
+    func listNoteAttachments(mediaId: String) async throws -> [NoteAttachmentDTO] {
+        let response: ListAttachmentsResponse = try await get(
+            path: "/api/notes/\(mediaId)/attachments"
+        )
+        return response.attachments
+    }
+
+    /// Upload an image to a note as an attachment.
+    /// Server constraints: 12 MB max, png/jpeg/webp/gif.
+    /// Returns the new attachment with presigned URL.
+    func uploadNoteAttachment(mediaId: String, fileURL: URL) async throws -> NoteAttachmentDTO {
+        let data = try Data(contentsOf: fileURL)
+        let filename = fileURL.lastPathComponent
+        let contentType = inferContentType(for: fileURL)
+
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var body = Data()
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: \(contentType)\r\n\r\n".data(using: .utf8)!)
+        body.append(data)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+
+        let token = try await accessTokenProvider()
+        let url = makeURL(path: "/api/notes/\(mediaId)/attachments")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue(
+            "multipart/form-data; boundary=\(boundary)",
+            forHTTPHeaderField: "Content-Type"
+        )
+        request.httpBody = body
+        log.notice("POST \(url.absoluteString, privacy: .public) (multipart, \(data.count, privacy: .public) bytes)")
+
+        let (responseData, response) = try await session.upload(for: request, from: body)
+        guard let http = response as? HTTPURLResponse else {
+            throw BackendClientError.nonHTTPResponse(path: "/api/notes/\(mediaId)/attachments")
+        }
+        log.notice("POST attachment → \(http.statusCode, privacy: .public) (\(responseData.count, privacy: .public) bytes)")
+        guard (200..<300).contains(http.statusCode) else {
+            let bodyPreview = String(data: responseData.prefix(400), encoding: .utf8) ?? "<binary>"
+            log.error("POST attachment → \(http.statusCode, privacy: .public) body=\(bodyPreview, privacy: .public)")
+            throw BackendClientError.badStatus(
+                statusCode: http.statusCode,
+                path: "/api/notes/\(mediaId)/attachments",
+                body: responseData
+            )
+        }
+        let envelope = try JSONDecoder().decode(CreateAttachmentResponse.self, from: responseData)
+        return envelope.attachment
+    }
+
+    private func inferContentType(for url: URL) -> String {
+        switch url.pathExtension.lowercased() {
+        case "png": return "image/png"
+        case "jpg", "jpeg": return "image/jpeg"
+        case "webp": return "image/webp"
+        case "gif": return "image/gif"
+        default: return "application/octet-stream"
+        }
+    }
+
     func markObsidianSynced(mediaId: String, filePath: String) async throws {
         let _: EmptyResponse = try await post(
             path: "/api/notes/\(mediaId)/obsidian-synced",
@@ -374,6 +439,23 @@ struct NoteBodyRequest: Encodable, Sendable {
 
 struct NoteBodyResponse: Decodable, Sendable {
     let body: String?
+}
+
+struct NoteAttachmentDTO: Decodable, Equatable, Sendable, Identifiable {
+    let id: String
+    let filename: String
+    let contentType: String
+    let byteSize: Int
+    let createdAt: String
+    let url: String
+}
+
+struct ListAttachmentsResponse: Decodable, Sendable {
+    let attachments: [NoteAttachmentDTO]
+}
+
+struct CreateAttachmentResponse: Decodable, Sendable {
+    let attachment: NoteAttachmentDTO
 }
 
 struct ObsidianSyncedRequest: Encodable, Sendable {
