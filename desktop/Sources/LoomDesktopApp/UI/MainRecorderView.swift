@@ -195,7 +195,13 @@ struct MainRecorderView: View {
                 viewModel: viewModel,
                 recentService: viewModel.recentRecordings,
                 captureMode: $captureMode,
-                folderFilterId: $folderFilterId
+                folderFilterId: $folderFilterId,
+                onOpenAudioNote: { recording in
+                    notesSidePanel.show(
+                        viewModel: viewModel,
+                        target: .reviewing(recording: recording)
+                    )
+                }
             )
         }
     }
@@ -275,10 +281,17 @@ struct MainRecorderView: View {
             Task { @MainActor in
                 await Task.yield()
                 guard viewModel.activeRecordingKind == .audio else { return }
-                notesSidePanel.show(viewModel: viewModel)
+                notesSidePanel.show(viewModel: viewModel, target: .recording)
             }
         } else {
             notesSidePanel.hide()
         }
+    }
+
+    /// Open the workspace bound to a past audio note (clicked from
+    /// Recent). Hides the main window's role here — the workspace
+    /// becomes the primary surface until the user closes it.
+    func openAudioNoteInWorkspace(_ recording: RecentRecording) {
+        notesSidePanel.show(viewModel: viewModel, target: .reviewing(recording: recording))
     }
 }

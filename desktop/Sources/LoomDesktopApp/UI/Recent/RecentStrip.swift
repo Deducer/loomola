@@ -25,6 +25,11 @@ struct RecentStrip: View {
     /// Callback invoked when the user clicks the "✕" on the active
     /// folder header — clears the filter back to all.
     let onClearFolderFilter: () -> Void
+    /// Callback invoked when the user clicks an audio note row.
+    /// The host (MainRecorderView) opens the desktop-native note
+    /// workspace for the recording. Video rows still go to the
+    /// browser (sharing-driven).
+    let onOpenAudioNote: (RecentRecording) -> Void
 
     /// Set of selected note IDs across the visible rows. Living on
     /// the strip (not the service) so it resets when the user
@@ -363,9 +368,19 @@ struct RecentStrip: View {
     }
 
     private func open(recording: RecentRecording) {
-        let path = recording.kind == .audio ? "/notes/\(recording.slug)" : "/v/\(recording.slug)"
-        if let url = URL(string: "https://loom.dissonance.cloud" + path) {
-            NSWorkspace.shared.open(url)
+        switch recording.kind {
+        case .audio:
+            // Audio notes open in the desktop-native workspace.
+            // The user's daily-driver flow stays in-app.
+            onOpenAudioNote(recording)
+        case .video:
+            // Video Looms open in the browser. The share page IS
+            // the canonical viewer (visitors can't have the desktop
+            // app), so duplicating it locally would just route the
+            // user to the browser anyway when they want to share.
+            if let url = URL(string: "https://loom.dissonance.cloud/v/\(recording.slug)") {
+                NSWorkspace.shared.open(url)
+            }
         }
     }
 

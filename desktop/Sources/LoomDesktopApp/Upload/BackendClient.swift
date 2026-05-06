@@ -88,6 +88,17 @@ actor BackendClient {
         )
     }
 
+    /// Fetch a note's body for the workspace's review-mode flow
+    /// (clicking an audio note from Recent). The endpoint returns
+    /// `{ body: "..." }` (or `{ body: "" }` if the note row hasn't
+    /// been written yet).
+    func getNoteBody(mediaId: String) async throws -> String {
+        let response: NoteBodyResponse = try await get(
+            path: "/api/notes/\(mediaId)"
+        )
+        return response.body ?? ""
+    }
+
     func markObsidianSynced(mediaId: String, filePath: String) async throws {
         let _: EmptyResponse = try await post(
             path: "/api/notes/\(mediaId)/obsidian-synced",
@@ -359,6 +370,10 @@ struct BulkDeleteRequest: Encodable, Sendable {
 
 struct NoteBodyRequest: Encodable, Sendable {
     let body: String
+}
+
+struct NoteBodyResponse: Decodable, Sendable {
+    let body: String?
 }
 
 struct ObsidianSyncedRequest: Encodable, Sendable {

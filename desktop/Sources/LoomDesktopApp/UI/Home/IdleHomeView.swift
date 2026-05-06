@@ -7,6 +7,7 @@ struct IdleHomeView: View {
     @ObservedObject var recentService: RecentRecordingsService
     @Binding var captureMode: CaptureMode
     @Binding var folderFilterId: String?
+    let onOpenAudioNote: (RecentRecording) -> Void
 
     private var activeFolderName: String? {
         guard let folderFilterId else { return nil }
@@ -32,7 +33,8 @@ struct IdleHomeView: View {
                     captureMode: captureMode,
                     folderFilterId: folderFilterId,
                     activeFolderName: activeFolderName,
-                    onClearFolderFilter: { folderFilterId = nil }
+                    onClearFolderFilter: { folderFilterId = nil },
+                    onOpenAudioNote: onOpenAudioNote
                 )
                 .padding(.top, DSSpacing.lg)
             }
