@@ -20,6 +20,7 @@ import { Breadcrumbs } from "@/components/dashboard/breadcrumbs";
 import { RecordingsGrid } from "@/components/dashboard/recordings-grid";
 import { DashboardTabs } from "@/components/dashboard/dashboard-tabs";
 import { NotesList } from "@/components/dashboard/notes-list";
+import { GranolaMigrateBanner } from "@/components/dashboard/granola-migrate-banner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 
@@ -216,6 +217,9 @@ export default async function HomePage({
           </div>
 
           <div className="mt-8">
+            {granolaEnabled && mediaItems.length === 0 && !query ? (
+              <GranolaMigrateBanner ownerId={user.id} />
+            ) : null}
             {mediaItems.length === 0 ? (
               query ? (
                 <div className="rounded-xl border border-dashed border-border bg-bg-subtle/40 p-12 text-center">
