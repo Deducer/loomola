@@ -116,7 +116,7 @@ migrate/
 
 ## Server-side changes
 
-### Schema migration `0020_import_metadata.sql`
+### Schema migration `0022_import_metadata.sql`
 
 ```sql
 ALTER TABLE media_objects
@@ -125,21 +125,21 @@ ALTER TABLE media_objects
   ADD CONSTRAINT media_objects_import_source_check
     CHECK (import_source IS NULL OR import_source IN ('loom', 'granola'));
 CREATE UNIQUE INDEX media_objects_import_source_uniq
-  ON media_objects (user_id, import_source, import_source_id)
+  ON media_objects (owner_id, import_source, import_source_id)
   WHERE import_source IS NOT NULL;
 
 ALTER TABLE people
   ADD COLUMN import_source TEXT,
   ADD COLUMN import_source_id TEXT;
 CREATE UNIQUE INDEX people_import_source_uniq
-  ON people (user_id, import_source, import_source_id)
+  ON people (owner_id, import_source, import_source_id)
   WHERE import_source IS NOT NULL;
 
 ALTER TABLE folders
   ADD COLUMN import_source TEXT,
   ADD COLUMN import_source_id TEXT;
 CREATE UNIQUE INDEX folders_import_source_uniq
-  ON folders (user_id, import_source, import_source_id)
+  ON folders (owner_id, import_source, import_source_id)
   WHERE import_source IS NOT NULL;
 ```
 
@@ -159,7 +159,7 @@ Single endpoint, single transaction per note. Body is Zod-validated. Gated by:
 type GranolaNoteImportPayload = {
   granolaId: string;            // doc.id, → media_objects.import_source_id
   title: string;
-  createdAt: string;            // ISO; → media_objects.recorded_at
+  createdAt: string;            // ISO; → media_objects.meeting_started_at_local
   durationSeconds: number | null;
   notesBody: string;            // Markdown (CLI converts from ProseMirror)
   aiSummary: string;            // doc.summary, → ai_outputs.summary
@@ -196,19 +196,21 @@ type GranolaNoteImportResult = {
 ```
 
 **Server-side write order (single transaction):**
-1. Resolve `is_self` person: find existing `people WHERE user_id=? AND is_self=true`. If absent and any attendee has `isSelf=true`, the matching attendee will be created as is_self.
-2. Upsert each attendee `people` row by `(user_id, 'granola', granolaPersonId)`. Merge fields with `COALESCE(target, source)` — never overwrite.
-3. Upsert each list as a `folders` row by `(user_id, 'granola', granolaListId)`. No hierarchy; all top-level. **Name collisions with existing user-created folders are NOT auto-merged** — they remain separate rows distinguished by `import_source`.
-4. Upsert `media_objects` row by `(user_id, 'granola', granolaId)`, type=`'audio'`, all R2 keys NULL. Merge fields with `COALESCE`. Set `media_objects.attendees` jsonb to the array of resolved Loomola person UUIDs.
+1. Resolve `is_self` person: find existing `people WHERE owner_id=? AND is_self=true`. If absent and any attendee has `isSelf=true`, the matching attendee will be created as is_self.
+2. Upsert each attendee `people` row by `(owner_id, 'granola', granolaPersonId)`. Merge fields with `COALESCE(target, source)` — never overwrite.
+3. Upsert each list as a `folders` row by `(owner_id, 'granola', granolaListId)`. No hierarchy; all top-level. **Name collisions with existing user-created folders are NOT auto-merged** — they remain separate rows distinguished by `import_source`.
+4. Upsert `media_objects` row by `(owner_id, 'granola', granolaId)`, type=`'audio'`, all R2 keys NULL. Merge fields with `COALESCE`. Set `media_objects.attendees` jsonb to the array of resolved Loomola person UUIDs.
 5. Upsert `notes` row (one per media_object) with `body = COALESCE(target.body, source.body)`.
 6. Insert `transcripts` row if not present, `provider='granola'`. Content is normalized to the Deepgram-compatible paragraph shape (see Transcript normalization below).
 7. Insert `speaker_assignments` rows from the speaker mapping (see Speaker indexing below). `is_suggestion=false`, `accepted_at=now()`. Skipped if any rows already exist for this `media_object_id` (merge idempotency at the child-row level).
 8. Insert `media_folder_assignments` rows for each list mapping. Idempotent — skipped if `(media_object_id, folder_id)` already present.
 9. Dual-write legacy `media_objects.folder_id`: if currently NULL, set it to the first list's folder_id (matches the multi-folder Phase 1 dual-write convention).
-10. Upsert `ai_outputs` row: `title`, `summary`, `chapters=[]`, `action_items=[]`, `generation_status_value='complete'`, `provider='granola'`. Merge fields with `COALESCE`.
+10. Upsert `ai_outputs` row: `title_suggested`, `summary`, `chapters=[]`, `action_items=[]`, `generation_status_value='complete'`, `llm_model='granola'`, `template_id='granola-import'`. Merge fields with `COALESCE`.
 
 **After commit, outside the transaction:**
-- If the `media_objects` row has no `folder_id` AND no rows in `media_folder_assignments`, queue `suggest_folder` pg-boss job with the standard `{ media_object_id, user_id, language: 'en' }` payload.
+- If the `media_objects` row has no `folder_id` AND no rows in `media_folder_assignments`, queue `suggest_folder` pg-boss job with the standard `{ media_object_id, owner_id, language: 'en' }` payload.
+
+**`transcripts.word_timestamps` is NOT NULL.** Granola transcripts are segment-level, not word-level. We pass `[]` for `word_timestamps` on imported transcripts. Word-level UI features (per-word click-to-seek) won't work on imported notes; paragraph-level rendering still does. Documented limitation, not a tooling gap.
 
 ### Transcript normalization (Granola segments → Loomola transcript shape)
 
@@ -238,7 +240,7 @@ Per imported note:
 ### `is_self` resolution
 
 The CLI sets `isSelf: true` on exactly the attendee whose `granolaPersonId` matches `self.id` from `/v2/get-me`. Server logic:
-- If `people WHERE user_id=? AND is_self=true` already exists, the matching Granola attendee's row is merged into that existing row (granolaPersonId becomes the existing row's `import_source_id` — that field is currently null for natively-created people).
+- If `people WHERE owner_id=? AND is_self=true` already exists, the matching Granola attendee's row is merged into that existing row (granolaPersonId becomes the existing row's `import_source_id` — that field is currently null for natively-created people).
 - If no `is_self` person exists yet, the matching Granola attendee is created with `is_self=true`.
 - If no attendee carries `isSelf=true` (rare — meeting where you're somehow not in the attendee list), no `is_self` row is touched. The note still imports correctly.
 
@@ -406,7 +408,7 @@ For each child row type (transcripts, speaker_assignments, media_folder_assignme
 - Insert only if no matching row exists for the parent.
 - Never delete or overwrite existing child rows.
 
-For folders & people: dedup on `(user_id, import_source, import_source_id)`. Name changes from Granola side do NOT update the row's name on re-run (would overwrite a user-edited folder name).
+For folders & people: dedup on `(owner_id, import_source, import_source_id)`. Name changes from Granola side do NOT update the row's name on re-run (would overwrite a user-edited folder name).
 
 This rule guarantees:
 - Running twice produces the same database state as running once (assuming Granola hasn't added new data).
