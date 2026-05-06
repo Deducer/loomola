@@ -47,47 +47,24 @@ struct AccountMenuPopover: View {
         kind: RowKind = .standard,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
-            HStack(spacing: DSSpacing.sm) {
-                Image(systemName: icon)
-                    .font(.system(size: 13, weight: .medium))
-                    .frame(width: 18)
-                Text(title)
-                    .font(DSFont.Body.md())
-                Spacer()
-            }
-            .foregroundStyle(kind == .destructive ? DSColor.State.recording : DSColor.Text.primary)
-            .padding(.horizontal, DSSpacing.lg)
-            .padding(.vertical, DSSpacing.sm)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
+        HStack(spacing: DSSpacing.sm) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .medium))
+                .frame(width: 18)
+            Text(title)
+                .font(DSFont.Body.md())
+            Spacer()
         }
-        .buttonStyle(MenuRowButtonStyle())
+        .foregroundStyle(kind == .destructive ? DSColor.State.recording : DSColor.Text.primary)
+        .padding(.horizontal, DSSpacing.lg)
+        .padding(.vertical, DSSpacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .overlay { ActionHitArea(action: action) }
     }
 
     private enum RowKind {
         case standard
         case destructive
-    }
-}
-
-/// Same gotcha as IconButtonStyle — `@State` directly inside
-/// `ButtonStyle.makeBody` causes undefined behavior. Move it into
-/// a real `View` struct that owns the state.
-private struct MenuRowButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        MenuRowButtonStyleBody(configuration: configuration)
-    }
-}
-
-private struct MenuRowButtonStyleBody: View {
-    let configuration: ButtonStyle.Configuration
-    @State private var hovering = false
-
-    var body: some View {
-        configuration.label
-            .background(hovering ? DSColor.Accent.muted : Color.clear)
-            .animation(LoomolaMotion.quick, value: hovering)
-            .onHover { hovering = $0 }
     }
 }

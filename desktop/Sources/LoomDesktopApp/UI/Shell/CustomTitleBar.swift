@@ -13,6 +13,8 @@ import SwiftUI
 /// system title strip doesn't double up.
 struct CustomTitleBar: View {
     let userInitial: Character?
+    let sidebarOpen: Bool
+    let onToggleSidebar: () -> Void
     let onSettings: () -> Void
     let onAccount: () -> Void
 
@@ -22,6 +24,16 @@ struct CustomTitleBar: View {
             // ~12pt from the left edge with ~14pt diameter; 78pt total
             // clears them comfortably across all macOS versions.
             Spacer().frame(width: 78)
+
+            // Sidebar toggle — Granola's left-of-wordmark button.
+            // Filled when open, outlined when closed. ⌘S elsewhere.
+            IconButton(
+                icon: sidebarOpen ? "sidebar.left" : "sidebar.left",
+                size: 26,
+                action: onToggleSidebar
+            )
+            .help(sidebarOpen ? "Close sidebar (⌘S)" : "Open sidebar (⌘S)")
+            .padding(.trailing, DSSpacing.sm)
 
             HStack(spacing: DSSpacing.sm) {
                 BrandLogoMark(size: 22)

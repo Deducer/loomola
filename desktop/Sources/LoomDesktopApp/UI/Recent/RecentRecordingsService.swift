@@ -100,6 +100,34 @@ final class RecentRecordingsService: ObservableObject {
         }
     }
 
+    /// Create a new folder and append it to the published list.
+    /// Used by the folder picker's inline "+ New folder" action.
+    /// Returns the new folder so the caller can immediately assign
+    /// the recording to it.
+    func createFolder(name: String) async throws -> FolderDTO {
+        let folder = try await backend.createFolder(name: name)
+        folders = (folders + [folder])
+            .sorted { $0.name.localizedCompare($1.name) == .orderedAscending }
+        log.notice("created folder id=\(folder.id, privacy: .public) name=\(folder.name, privacy: .public)")
+        return folder
+    }
+
+    /// Soft-delete a batch of recordings via the existing
+    /// `/api/recordings/bulk-delete` endpoint. Optimistically wipes
+    /// them from the local items array; reverts on failure.
+    func bulkDelete(ids: Set<String>) async {
+        guard !ids.isEmpty else { return }
+        let snapshot = items
+        items = items.filter { !ids.contains($0.id) }
+        do {
+            try await backend.bulkDelete(ids: Array(ids))
+            log.notice("bulk-deleted \(ids.count, privacy: .public) recording(s)")
+        } catch {
+            items = snapshot
+            log.error("bulk-delete failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     /// Optimistically update a recording's folder assignment in the
     /// local items array, then persist. The view's folder pill
     /// updates immediately; if the server call fails, we revert and

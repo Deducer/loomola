@@ -85,6 +85,14 @@ enum DSColor {
             light: Color(red: 0.839, green: 0.620, blue: 0.180), // #D69E2E
             dark: Color(red: 0.965, green: 0.678, blue: 0.333)   // #F6AD55
         )
+        /// Destructive actions — Delete, Discard, irreversible
+        /// confirms. Distinct from `recording` (which is the live
+        /// red HUD dot) so a refactor to either doesn't drag the
+        /// other along.
+        static let danger = Color.dynamic(
+            light: Color(red: 0.847, green: 0.220, blue: 0.220), // #D83838
+            dark: Color(red: 0.965, green: 0.404, blue: 0.404)   // #F66767
+        )
     }
 }
 

@@ -6,6 +6,12 @@ struct IdleHomeView: View {
     @ObservedObject var viewModel: RecorderViewModel
     @ObservedObject var recentService: RecentRecordingsService
     @Binding var captureMode: CaptureMode
+    @Binding var folderFilterId: String?
+
+    private var activeFolderName: String? {
+        guard let folderFilterId else { return nil }
+        return recentService.folders.first(where: { $0.id == folderFilterId })?.name
+    }
 
     var body: some View {
         ScrollView {
@@ -21,8 +27,14 @@ struct IdleHomeView: View {
                     meetingPromptCard(context: context)
                 }
 
-                RecentStrip(service: recentService, captureMode: captureMode)
-                    .padding(.top, DSSpacing.lg)
+                RecentStrip(
+                    service: recentService,
+                    captureMode: captureMode,
+                    folderFilterId: folderFilterId,
+                    activeFolderName: activeFolderName,
+                    onClearFolderFilter: { folderFilterId = nil }
+                )
+                .padding(.top, DSSpacing.lg)
             }
             .padding(.horizontal, DSSpacing.xxl)
             .padding(.bottom, DSSpacing.xxl)

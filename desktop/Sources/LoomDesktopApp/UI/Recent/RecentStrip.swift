@@ -5,25 +5,70 @@ import SwiftUI
 ///
 /// - Video selected → 3 thumbnail-prominent cards (visual scan).
 /// - Audio note selected → all of the user's notes, Granola-style
-///   vertical rows grouped by date ("Today", "Yesterday",
-///   "Mon May 4", "Apr 30"...). Compact and scannable by title.
+///   vertical rows grouped by date (Today / Yesterday / Mon, May 4 /
+///   Apr 28 / Dec 12, 2025). Compact and scannable by title.
+///
+/// Audio rows support per-row hover ⋯ menu (Move to folder /
+/// Delete) and bulk-select via a hover-revealed checkbox; ticking
+/// any checkbox surfaces the floating action bar at the bottom of
+/// the strip with Move / Delete / Cancel.
 struct RecentStrip: View {
     @ObservedObject var service: RecentRecordingsService
     let captureMode: CaptureMode
+    /// When set, filters the strip to recordings filed in that
+    /// folder. Driven by the sidebar's space selection. Nil = "all"
+    /// (the default Home view).
+    let folderFilterId: String?
+    /// Display name of the folder filter, when active. Nil if no
+    /// filter or if the folder isn't in the service's loaded list.
+    let activeFolderName: String?
+    /// Callback invoked when the user clicks the "✕" on the active
+    /// folder header — clears the filter back to all.
+    let onClearFolderFilter: () -> Void
+
+    /// Set of selected note IDs across the visible rows. Living on
+    /// the strip (not the service) so it resets when the user
+    /// switches capture modes or the strip rebuilds; bulk operations
+    /// invoke the service.
+    @State private var selectedIds: Set<String> = []
+    @State private var showBulkPicker = false
+    @State private var showDeleteConfirm = false
 
     private var filteredItems: [RecentRecording] {
         let target: RecentRecording.Kind = (captureMode == .video) ? .video : .audio
-        return service.items.filter { $0.kind == target }
+        let kindFiltered = service.items.filter { $0.kind == target }
+        if let folderFilterId {
+            return kindFiltered.filter { $0.folderId == folderFilterId }
+        }
+        return kindFiltered
+    }
+
+    private var selectedRecordings: [RecentRecording] {
+        filteredItems.filter { selectedIds.contains($0.id) }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: DSSpacing.lg) {
-            HStack(alignment: .firstTextBaseline) {
+            HStack(alignment: .firstTextBaseline, spacing: DSSpacing.sm) {
                 Text(headerTitle)
                     .font(DSFont.Display.lg())
                     .foregroundStyle(DSColor.Text.primary)
+                if activeFolderName != nil {
+                    HStack(spacing: 4) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(DSColor.Text.tertiary)
+                    }
+                    .padding(6)
+                    .background(
+                        Circle().fill(DSColor.Bg.subtle)
+                    )
+                    .contentShape(Circle())
+                    .overlay { ActionHitArea(action: onClearFolderFilter) }
+                    .help("Show all")
+                }
                 Spacer()
-                if !filteredItems.isEmpty {
+                if !filteredItems.isEmpty && captureMode == .video {
                     Text("View all")
                         .font(DSFont.Body.sm())
                         .foregroundStyle(DSColor.Accent.primary)
@@ -33,6 +78,19 @@ struct RecentStrip: View {
             }
 
             content
+        }
+        .overlay(alignment: .bottom) {
+            if captureMode == .audio && !selectedIds.isEmpty {
+                bulkActionBar
+                    .padding(.bottom, DSSpacing.lg)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(LoomolaMotion.quick, value: selectedIds.isEmpty)
+        .onChange(of: captureMode) { _, _ in
+            // Switching modes drops any in-progress selection — the
+            // checkboxes belong to one mode at a time.
+            selectedIds.removeAll()
         }
     }
 
@@ -72,13 +130,33 @@ struct RecentStrip: View {
                             RecentNoteRow(
                                 recording: recording,
                                 folders: service.folders,
+                                isSelected: selectedIds.contains(recording.id),
+                                selectionActive: !selectedIds.isEmpty,
                                 onOpen: { open(recording: recording) },
+                                onToggleSelected: { toggleSelected(recording.id) },
                                 onAssignFolder: { newFolderId in
                                     Task {
                                         await service.assignFolder(
                                             recordingId: recording.id,
                                             folderId: newFolderId
                                         )
+                                    }
+                                },
+                                onCreateFolder: { name in
+                                    do {
+                                        let folder = try await service.createFolder(name: name)
+                                        await service.assignFolder(
+                                            recordingId: recording.id,
+                                            folderId: folder.id
+                                        )
+                                        return folder
+                                    } catch {
+                                        return nil
+                                    }
+                                },
+                                onDelete: {
+                                    Task {
+                                        await service.bulkDelete(ids: [recording.id])
                                     }
                                 }
                             )
@@ -87,7 +165,132 @@ struct RecentStrip: View {
                 }
             }
         }
+        // Bottom padding so the floating action bar doesn't overlap
+        // the last row when the selection has any items.
+        .padding(.bottom, selectedIds.isEmpty ? 0 : 64)
     }
+
+    private func toggleSelected(_ id: String) {
+        if selectedIds.contains(id) {
+            selectedIds.remove(id)
+        } else {
+            selectedIds.insert(id)
+        }
+    }
+
+    // MARK: - Bulk action bar
+
+    private var bulkActionBar: some View {
+        HStack(spacing: DSSpacing.md) {
+            Text("\(selectedIds.count) selected")
+                .font(DSFont.Body.md())
+                .foregroundStyle(DSColor.Text.primary)
+
+            Spacer()
+
+            Button {
+                showBulkPicker = true
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "folder")
+                        .font(.system(size: 11, weight: .medium))
+                    Text("Move")
+                        .font(DSFont.Body.sm())
+                }
+                .padding(.horizontal, DSSpacing.md)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: DSRadius.sm)
+                        .fill(DSColor.Bg.surface)
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: DSRadius.sm)
+                        .strokeBorder(DSColor.Border.subtle, lineWidth: 1)
+                }
+                .foregroundStyle(DSColor.Text.primary)
+            }
+            .buttonStyle(.plain)
+            .popover(isPresented: $showBulkPicker, arrowEdge: .bottom) {
+                FolderPickerPopover(
+                    folders: service.folders,
+                    selectedFolderId: nil,
+                    onSelect: { folderId in
+                        showBulkPicker = false
+                        let ids = Array(selectedIds)
+                        Task {
+                            for id in ids {
+                                await service.assignFolder(recordingId: id, folderId: folderId)
+                            }
+                            selectedIds.removeAll()
+                        }
+                    },
+                    onCreate: { name in
+                        try? await service.createFolder(name: name)
+                    }
+                )
+            }
+
+            Button {
+                showDeleteConfirm = true
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 11, weight: .medium))
+                    Text("Delete")
+                        .font(DSFont.Body.sm())
+                }
+                .padding(.horizontal, DSSpacing.md)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: DSRadius.sm)
+                        .fill(DSColor.State.danger.opacity(0.08))
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: DSRadius.sm)
+                        .strokeBorder(DSColor.State.danger.opacity(0.4), lineWidth: 1)
+                }
+                .foregroundStyle(DSColor.State.danger)
+            }
+            .buttonStyle(.plain)
+            .alert("Delete \(selectedIds.count) note\(selectedIds.count == 1 ? "" : "s")?", isPresented: $showDeleteConfirm) {
+                Button("Cancel", role: .cancel) {}
+                Button("Delete", role: .destructive) {
+                    let ids = selectedIds
+                    Task {
+                        await service.bulkDelete(ids: ids)
+                        selectedIds.removeAll()
+                    }
+                }
+            } message: {
+                Text("This can't be undone from the desktop app. You can recover via the dashboard's trash within 30 days.")
+            }
+
+            Button {
+                selectedIds.removeAll()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .padding(8)
+                    .foregroundStyle(DSColor.Text.tertiary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, DSSpacing.lg)
+        .padding(.vertical, DSSpacing.sm)
+        .background(
+            RoundedRectangle(cornerRadius: DSRadius.lg)
+                .fill(DSColor.Bg.surfaceRaised)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: DSRadius.lg)
+                .strokeBorder(DSColor.Border.subtle, lineWidth: 1)
+        }
+        .dsShadow(.raised)
+        .frame(maxWidth: 520)
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    // MARK: - Skeleton + empty + nav
 
     @ViewBuilder
     private var skeleton: some View {
@@ -129,6 +332,9 @@ struct RecentStrip: View {
     }
 
     private var headerTitle: String {
+        if let activeFolderName {
+            return activeFolderName
+        }
         switch captureMode {
         case .video: return "Recent recordings"
         case .audio: return "Recent notes"
@@ -168,5 +374,4 @@ struct RecentStrip: View {
             NSWorkspace.shared.open(url)
         }
     }
-
 }

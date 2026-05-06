@@ -12,11 +12,16 @@ struct MainRecorderView: View {
     @State private var captureMode: CaptureMode = .video
     @State private var showSettings = false
     @State private var showAccountMenu = false
+    @State private var sidebarOpen = false
+    @State private var sidebarQuery = ""
+    @State private var folderFilterId: String? = nil
 
     var body: some View {
         VStack(spacing: 0) {
             CustomTitleBar(
                 userInitial: viewModel.email.first,
+                sidebarOpen: sidebarOpen,
+                onToggleSidebar: { withAnimation(LoomolaMotion.quick) { sidebarOpen.toggle() } },
                 onSettings: { showSettings = true },
                 onAccount: { showAccountMenu.toggle() }
             )
@@ -41,9 +46,43 @@ struct MainRecorderView: View {
 
             Divider().overlay(DSColor.Border.subtle)
 
-            contentForCurrentState
+            ZStack(alignment: .leading) {
+                contentForCurrentState
+
+                // Dim layer over the content when sidebar is open;
+                // tapping it closes the sidebar.
+                if sidebarOpen {
+                    Color.black.opacity(0.25)
+                        .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            withAnimation(LoomolaMotion.quick) { sidebarOpen = false }
+                        }
+                        .transition(.opacity)
+                }
+
+                if sidebarOpen {
+                    SidebarPanel(
+                        folders: viewModel.recentRecordings.folders,
+                        query: $sidebarQuery,
+                        selectedFolderId: $folderFilterId,
+                        onClose: {
+                            withAnimation(LoomolaMotion.quick) { sidebarOpen = false }
+                        }
+                    )
+                    .transition(.move(edge: .leading))
+                }
+            }
         }
         .background(DSColor.Bg.canvas)
+        .background(
+            // ⌘S to toggle the sidebar — Granola convention.
+            Button("") {
+                withAnimation(LoomolaMotion.quick) { sidebarOpen.toggle() }
+            }
+            .keyboardShortcut("s", modifiers: .command)
+            .opacity(0)
+        )
         .sheet(isPresented: $showSettings) {
             SettingsSheet(onDismiss: { showSettings = false })
                 .environmentObject(viewModel)
@@ -155,7 +194,8 @@ struct MainRecorderView: View {
             IdleHomeView(
                 viewModel: viewModel,
                 recentService: viewModel.recentRecordings,
-                captureMode: $captureMode
+                captureMode: $captureMode,
+                folderFilterId: $folderFilterId
             )
         }
     }
@@ -177,6 +217,7 @@ struct MainRecorderView: View {
     private var audioStartDisabled: Bool {
         viewModel.state == .signedOut ||
             viewModel.activeRecordingKind != nil ||
+            viewModel.isStartingRecording ||
             (!viewModel.includeMicInAudioNote && !viewModel.includeSystemAudioInAudioNote)
     }
 
@@ -231,7 +272,11 @@ struct MainRecorderView: View {
     /// without explicit re-show calls.
     private func updateNotesSidePanel() {
         if viewModel.activeRecordingKind == .audio {
-            notesSidePanel.show(viewModel: viewModel)
+            Task { @MainActor in
+                await Task.yield()
+                guard viewModel.activeRecordingKind == .audio else { return }
+                notesSidePanel.show(viewModel: viewModel)
+            }
         } else {
             notesSidePanel.hide()
         }

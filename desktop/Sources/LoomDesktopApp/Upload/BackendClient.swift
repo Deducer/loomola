@@ -62,6 +62,21 @@ actor BackendClient {
         )
     }
 
+    func createFolder(name: String, parentId: String? = nil) async throws -> FolderDTO {
+        let response: CreateFolderResponse = try await post(
+            path: "/api/folders",
+            body: CreateFolderRequest(name: name, parentId: parentId)
+        )
+        return response.folder
+    }
+
+    func bulkDelete(ids: [String]) async throws {
+        let _: EmptyResponse = try await post(
+            path: "/api/recordings/bulk-delete",
+            body: BulkDeleteRequest(ids: ids)
+        )
+    }
+
     /// Persist the user's live-typed notes body for an audio
     /// recording. Called from the desktop's NotesSidePanel via a
     /// debounced autosave pipeline. Body is plain markdown; the
@@ -327,6 +342,19 @@ struct FolderDTO: Decodable, Equatable, Sendable, Identifiable {
 
 struct AssignFolderRequest: Encodable, Sendable {
     let folderId: String?
+}
+
+struct CreateFolderRequest: Encodable, Sendable {
+    let name: String
+    let parentId: String?
+}
+
+struct CreateFolderResponse: Decodable, Sendable {
+    let folder: FolderDTO
+}
+
+struct BulkDeleteRequest: Encodable, Sendable {
+    let ids: [String]
 }
 
 struct NoteBodyRequest: Encodable, Sendable {
