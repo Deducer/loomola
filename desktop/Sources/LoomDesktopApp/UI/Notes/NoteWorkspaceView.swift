@@ -232,15 +232,13 @@ struct NoteWorkspaceView: View {
     // MARK: - Title bar
 
     private var titleBar: some View {
-        // Inline with the macOS traffic lights. `fullSizeContentView`
-        // lets our content draw under the title chrome at y=0; the
-        // traffic lights overlay at their standard position (vertical
-        // center ~y=13). 36pt frame keeps our buttons inline with
-        // the lights and gives the title row below room to breathe
-        // before the big serif headline.
+        // Inline with the macOS traffic lights inside the unified
+        // 52pt title bar (`WindowChrome.applyTallTitleBar`). 52pt
+        // frame centers our home/⋯ buttons at the same vertical
+        // axis as the lights with breathing room above and below.
         HStack(spacing: 0) {
-            // 78pt traffic-light spacer + a bit of extra breathing
-            // room after the lights so HomeBackButton doesn't crowd
+            // 78pt traffic-light spacer + extra breathing room
+            // after the lights so HomeBackButton doesn't crowd
             // the green button.
             Spacer().frame(width: 78 + DSSpacing.md)
             HomeBackButton(action: onClose)
@@ -254,7 +252,7 @@ struct NoteWorkspaceView: View {
             }
             .padding(.trailing, DSSpacing.lg)
         }
-        .frame(height: 36)
+        .frame(height: 52)
     }
 
     private var rowMenu: some View {

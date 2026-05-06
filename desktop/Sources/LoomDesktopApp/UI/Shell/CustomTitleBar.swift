@@ -54,7 +54,7 @@ struct CustomTitleBar: View {
             }
             .padding(.trailing, DSSpacing.lg)
         }
-        .frame(height: 40)
+        .frame(height: 52)
         .frame(maxWidth: .infinity)
         .background(DSColor.Bg.canvas)
     }

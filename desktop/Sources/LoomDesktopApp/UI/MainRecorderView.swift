@@ -25,10 +25,11 @@ struct MainRecorderView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // In note-workspace mode the workspace's own home/⋯ row
-            // (rendered inline with the macOS traffic lights via
-            // `.ignoresSafeArea(.all, edges: .top)`) replaces this
-            // chrome — Granola pattern, single top bar.
+            // Both modes draw their top row inline with the macOS
+            // traffic lights inside the unified 52pt title bar.
+            // `.ignoresSafeArea(.all, edges: .top)` on this VStack
+            // lets the row sit at y=0 instead of being pushed below
+            // the system chrome — Granola pattern.
             if noteTarget == nil {
                 CustomTitleBar(
                     userInitial: viewModel.email.first,
@@ -87,7 +88,13 @@ struct MainRecorderView: View {
                 }
             }
         }
+        .ignoresSafeArea(.all, edges: .top)
         .background(DSColor.Bg.canvas)
+        .background(
+            WindowAccessor { window in
+                WindowChrome.applyTallTitleBar(to: window)
+            }
+        )
         .background(
             // ⌘S to toggle the sidebar — Granola convention.
             Button("") {
@@ -96,6 +103,24 @@ struct MainRecorderView: View {
             .keyboardShortcut("s", modifiers: .command)
             .opacity(0)
         )
+        .overlay(alignment: .bottom) {
+            // Audio recording is active but the user navigated back
+            // to the home view — surface a persistent pill so they
+            // don't forget the recording is running and have one-tap
+            // access to Stop or to return to the note.
+            if viewModel.activeRecordingKind == .audio, noteTarget == nil {
+                RecordingStatusPill(
+                    startedAt: viewModel.activeAudioRecordingStartedAt,
+                    audioLevel: viewModel.audioLevel,
+                    onOpen: { noteTarget = .recording },
+                    onStop: { viewModel.stopAudioNoteRecordingAndUpload() }
+                )
+                .padding(.bottom, DSSpacing.xl)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(LoomolaMotion.medium, value: viewModel.activeRecordingKind)
+        .animation(LoomolaMotion.medium, value: noteTarget)
         .sheet(isPresented: $showSettings) {
             SettingsSheet(onDismiss: { showSettings = false })
                 .environmentObject(viewModel)
