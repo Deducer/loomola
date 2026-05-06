@@ -65,6 +65,17 @@ actor BackendClient {
         )
     }
 
+    /// Build the request URL from `baseURL` + a path that may
+    /// include a query string. Using `URL.appending(path:)` here
+    /// would percent-encode the `?`, turning `/foo?x=1` into
+    /// `/foo%3Fx=1` (server then routes to `/foo` with no query
+    /// or 404s). `URL(string:relativeTo:)` parses path + query
+    /// the way HTTP expects.
+    private func makeURL(path: String) -> URL {
+        URL(string: path, relativeTo: baseURL)?.absoluteURL
+            ?? baseURL.appending(path: path)
+    }
+
     private func get<ResponseBody: Decodable>(path: String) async throws -> ResponseBody {
         let data = try await getData(path: path)
         do {
@@ -76,7 +87,7 @@ actor BackendClient {
 
     private func getData(path: String) async throws -> Data {
         let token = try await accessTokenProvider()
-        var request = URLRequest(url: baseURL.appending(path: path))
+        var request = URLRequest(url: makeURL(path: path))
         request.httpMethod = "GET"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
@@ -110,7 +121,7 @@ actor BackendClient {
         body: RequestBody
     ) async throws -> ResponseBody {
         let token = try await accessTokenProvider()
-        var request = URLRequest(url: baseURL.appending(path: path))
+        var request = URLRequest(url: makeURL(path: path))
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
