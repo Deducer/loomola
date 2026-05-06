@@ -154,6 +154,57 @@ actor BackendClient {
         return envelope.attachment
     }
 
+    /// Soft-delete a note attachment. Used by the workspace's
+    /// right-click → Remove flow.
+    func deleteNoteAttachment(mediaId: String, attachmentId: String) async throws {
+        let token = try await accessTokenProvider()
+        let url = makeURL(path: "/api/notes/\(mediaId)/attachments/\(attachmentId)")
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw BackendClientError.nonHTTPResponse(path: "/api/notes/\(mediaId)/attachments/\(attachmentId)")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw BackendClientError.badStatus(
+                statusCode: http.statusCode,
+                path: "/api/notes/\(mediaId)/attachments/\(attachmentId)",
+                body: data
+            )
+        }
+    }
+
+    /// Trigger AI re-enhancement for an audio note (Granola's
+    /// "Generate notes" button). Returns 202 — the work runs as
+    /// a pg-boss job. Poll `getEnhancementStatus` for completion.
+    func enhanceNote(mediaId: String) async throws {
+        let token = try await accessTokenProvider()
+        let url = makeURL(path: "/api/notes/\(mediaId)/enhance")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw BackendClientError.nonHTTPResponse(path: "/api/notes/\(mediaId)/enhance")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw BackendClientError.badStatus(
+                statusCode: http.statusCode,
+                path: "/api/notes/\(mediaId)/enhance",
+                body: data
+            )
+        }
+    }
+
+    /// Read the current AI-enhancement state for an audio note.
+    /// Used by the workspace to poll for completion after firing
+    /// `enhanceNote`. Returns title + summary + status.
+    func getEnhancementStatus(mediaId: String) async throws -> EnhanceStatusResponse {
+        try await get(path: "/api/notes/\(mediaId)/enhance")
+    }
+
     private func inferContentType(for url: URL) -> String {
         switch url.pathExtension.lowercased() {
         case "png": return "image/png"
@@ -456,6 +507,16 @@ struct ListAttachmentsResponse: Decodable, Sendable {
 
 struct CreateAttachmentResponse: Decodable, Sendable {
     let attachment: NoteAttachmentDTO
+}
+
+/// Response shape from GET /api/notes/<id>/enhance. Chapters /
+/// actionItems are jsonb in the DB and don't have stable shapes
+/// the desktop needs yet — keep them out and add later if a UI
+/// surface needs them.
+struct EnhanceStatusResponse: Decodable, Sendable {
+    let titleSuggested: String?
+    let summary: String?
+    let generationStatus: String  // "pending" | "streaming" | "complete" | "failed"
 }
 
 struct ObsidianSyncedRequest: Encodable, Sendable {

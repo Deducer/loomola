@@ -49,6 +49,9 @@ LOOM_API_BASE_URL="${LOOM_API_BASE_URL:-https://loom.dissonance.cloud}"
 # from (visible in Settings → Account). Falls back to "unknown" off
 # the git tree.
 BUILD_COMMIT="$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+if [[ "$BUILD_COMMIT" != "unknown" ]] && ! git -C "$REPO_ROOT" diff --quiet --ignore-submodules HEAD -- 2>/dev/null; then
+  BUILD_COMMIT="$BUILD_COMMIT-dirty"
+fi
 BUILD_DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
 if [[ -n "${LOOM_SUPABASE_URL:-}" && -n "${LOOM_SUPABASE_ANON_KEY:-}" ]]; then

@@ -34,22 +34,23 @@ struct SegmentedControl<Item, Label>: View where
     @ViewBuilder
     private func segment(for item: Item) -> some View {
         let isSelected = selection == item
-        Button {
-            withAnimation(LoomolaMotion.medium) {
-                selection = item
+        label(item)
+            .font(DSFont.Body.md())
+            .foregroundStyle(
+                isSelected ? DSColor.Text.primary : DSColor.Text.secondary
+            )
+            .padding(.horizontal, DSSpacing.lg)
+            .padding(.vertical, DSSpacing.sm)
+            .frame(maxWidth: .infinity)
+            .background(thumb(isSelected: isSelected))
+            .contentShape(Rectangle())
+            .overlay {
+                ActionHitArea {
+                    withAnimation(LoomolaMotion.medium) {
+                        selection = item
+                    }
+                }
             }
-        } label: {
-            label(item)
-                .font(DSFont.Body.md())
-                .foregroundStyle(
-                    isSelected ? DSColor.Text.primary : DSColor.Text.secondary
-                )
-                .padding(.horizontal, DSSpacing.lg)
-                .padding(.vertical, DSSpacing.sm)
-                .frame(maxWidth: .infinity)
-                .background(thumb(isSelected: isSelected))
-        }
-        .buttonStyle(.plain)
     }
 
     @ViewBuilder

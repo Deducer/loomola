@@ -93,6 +93,9 @@ echo
 echo "===================================="
 echo "Loomola installer"
 HEAD_COMMIT="$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+if [[ "$HEAD_COMMIT" != "unknown" ]] && ! git -C "$REPO_ROOT" diff --quiet --ignore-submodules HEAD -- 2>/dev/null; then
+  HEAD_COMMIT="$HEAD_COMMIT-dirty"
+fi
 HEAD_TITLE="$(git -C "$REPO_ROOT" log -1 --pretty=%s 2>/dev/null || echo)"
 echo "  About to install commit: $HEAD_COMMIT"
 echo "  ($HEAD_TITLE)"

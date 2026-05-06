@@ -52,6 +52,15 @@ struct NoteWorkspaceView: View {
     /// attachment.
     @State private var toastMessage: String? = nil
 
+    /// When non-nil, shows a fullscreen preview overlay for the
+    /// supplied attachment. Click outside / Escape dismisses.
+    @State private var previewedAttachment: NoteAttachmentDTO? = nil
+
+    /// AI-enhance state: idle | running | complete | failed.
+    /// Drives the Generate-notes pill in review mode.
+    @State private var enhanceStatus: EnhanceStatus = .idle
+    @State private var pollEnhanceTask: Task<Void, Never>? = nil
+
     private var isRecording: Bool {
         if case .recording = target { return true }
         return false
@@ -144,9 +153,26 @@ struct NoteWorkspaceView: View {
                 recordingControlBar
                     .padding(.horizontal, DSSpacing.lg)
                     .padding(.bottom, DSSpacing.lg)
+            } else {
+                // Reviewing mode: green ✦ Generate-notes pill anchored
+                // bottom-center. POSTs /api/notes/<id>/enhance and
+                // polls until status flips to complete.
+                generateNotesBar
+                    .padding(.horizontal, DSSpacing.lg)
+                    .padding(.bottom, DSSpacing.lg)
             }
         }
         .background(DSColor.Bg.canvas)
+        .overlay {
+            if let preview = previewedAttachment {
+                attachmentPreviewOverlay(preview)
+                    .transition(.opacity)
+            }
+        }
+        // Extend SwiftUI content under the macOS title bar so our
+        // title-bar HStack can sit inline with the traffic lights
+        // instead of pushed down by the default safe-area inset.
+        .ignoresSafeArea(.all, edges: .top)
         .overlay(alignment: .bottom) {
             if let toastMessage {
                 attachmentToast(message: toastMessage)
@@ -156,9 +182,11 @@ struct NoteWorkspaceView: View {
         }
         .animation(LoomolaMotion.quick, value: isDropTargeted)
         .animation(LoomolaMotion.medium, value: toastMessage)
+        .animation(LoomolaMotion.quick, value: previewedAttachment)
         .onAppear { handleAppear() }
         .onDisappear {
             reviewAutosaveTask?.cancel()
+            pollEnhanceTask?.cancel()
         }
         .onChange(of: reviewBody) { _, newValue in
             scheduleReviewAutosave(newValue)
@@ -449,6 +477,131 @@ struct NoteWorkspaceView: View {
             .frame(width: 1, height: 24)
     }
 
+    // MARK: - Generate-notes bar (reviewing mode only)
+
+    /// Bottom-anchored AI-enhance pill. ✦ Generate notes (idle) →
+    /// "Generating…" with spinner (running) → "Notes updated" check
+    /// (complete, ~2.5s) → back to idle. Reads + writes title and
+    /// body via the same bindings as the editors so updates reflect
+    /// immediately without re-fetching from the server.
+    private var generateNotesBar: some View {
+        HStack {
+            Spacer()
+            Group {
+                switch enhanceStatus {
+                case .idle:
+                    Button(action: startEnhance) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("Generate notes")
+                                .font(DSFont.Body.md())
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Capsule().fill(DSColor.State.success))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Re-run AI to refine title + summary from transcript and your notes")
+                case .running:
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(DSColor.Text.secondary)
+                        Text("Generating notes…")
+                            .font(DSFont.Body.md())
+                            .foregroundStyle(DSColor.Text.secondary)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(Capsule().fill(DSColor.Bg.surface))
+                    .overlay { Capsule().strokeBorder(DSColor.Border.subtle, lineWidth: 1) }
+                case .complete:
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(DSColor.State.success)
+                        Text("Notes updated")
+                            .font(DSFont.Body.md())
+                            .foregroundStyle(DSColor.Text.primary)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(Capsule().fill(DSColor.Bg.surface))
+                    .overlay { Capsule().strokeBorder(DSColor.Border.subtle, lineWidth: 1) }
+                case .failed:
+                    Button(action: startEnhance) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(DSColor.State.danger)
+                            Text("Try again")
+                                .font(DSFont.Body.md())
+                                .foregroundStyle(DSColor.Text.primary)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Capsule().fill(DSColor.Bg.surface))
+                        .overlay { Capsule().strokeBorder(DSColor.Border.subtle, lineWidth: 1) }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .animation(LoomolaMotion.quick, value: enhanceStatus)
+            Spacer()
+        }
+    }
+
+    // MARK: - Attachment preview overlay
+
+    /// Quick-Look-style fullscreen overlay anchored to the workspace
+    /// panel. Click outside the image (or the close button) dismisses.
+    private func attachmentPreviewOverlay(_ attachment: NoteAttachmentDTO) -> some View {
+        ZStack {
+            Color.black.opacity(0.78)
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture { previewedAttachment = nil }
+
+            if let url = URL(string: attachment.url) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .padding(DSSpacing.xl)
+                    case .failure:
+                        Text("Couldn't load image")
+                            .foregroundStyle(.white)
+                    default:
+                        ProgressView().tint(.white)
+                    }
+                }
+            }
+
+            // Top-right close button. White-on-translucent so it's
+            // visible against any image.
+            VStack {
+                HStack {
+                    Spacer()
+                    Button(action: { previewedAttachment = nil }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 28, height: 28)
+                            .background(Circle().fill(.black.opacity(0.5)))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, DSSpacing.md)
+                    .padding(.trailing, DSSpacing.md)
+                }
+                Spacer()
+            }
+        }
+    }
+
     // MARK: - Lifecycle
 
     // MARK: - Drop target overlay
@@ -493,7 +646,13 @@ struct NoteWorkspaceView: View {
 
             HStack(spacing: 8) {
                 ForEach(attachments) { attachment in
-                    AttachmentThumbnail(attachment: attachment)
+                    AttachmentThumbnail(
+                        attachment: attachment,
+                        onOpen: { previewedAttachment = attachment },
+                        onRemove: {
+                            Task { await removeAttachment(attachment) }
+                        }
+                    )
                 }
                 if uploadingCount > 0 {
                     UploadingThumbnailPlaceholder()
@@ -567,6 +726,26 @@ struct NoteWorkspaceView: View {
         return accepted > 0
     }
 
+    /// Optimistic remove: drops from local list immediately so the
+    /// thumbnail disappears, then DELETEs server-side. On failure,
+    /// restores from snapshot and surfaces a toast.
+    private func removeAttachment(_ attachment: NoteAttachmentDTO) async {
+        guard let backend = viewModel.backendClient, let noteId else { return }
+        let snapshot = attachments
+        attachments.removeAll(where: { $0.id == attachment.id })
+        if previewedAttachment?.id == attachment.id { previewedAttachment = nil }
+        do {
+            try await backend.deleteNoteAttachment(
+                mediaId: noteId,
+                attachmentId: attachment.id
+            )
+            showToast(message: "Attachment removed")
+        } catch {
+            attachments = snapshot
+            showToast(message: "Couldn't remove attachment")
+        }
+    }
+
     private func uploadAttachment(noteId: String, fileURL: URL) async {
         guard let backend = viewModel.backendClient else { return }
         do {
@@ -638,6 +817,77 @@ struct NoteWorkspaceView: View {
                     }
                 }
             }
+        }
+    }
+
+    // MARK: - AI enhance
+
+    /// Kicks off a re-run of the AI title + summary pipeline against
+    /// the latest transcript + the user's typed notes. Polls every 3s
+    /// until the server reports `complete` (or `failed`). On
+    /// completion the title and body bindings update in-place so the
+    /// editor reflects the new copy without a re-fetch.
+    private func startEnhance() {
+        guard case .reviewing(let recording) = target else { return }
+        guard let backend = viewModel.backendClient else { return }
+        guard enhanceStatus != .running else { return }
+
+        // Flush any pending autosave so the AI run sees the user's
+        // latest typed notes (it reads `notes.body` server-side).
+        reviewAutosaveTask?.cancel()
+        let bodyToFlush = reviewBody
+
+        pollEnhanceTask?.cancel()
+        enhanceStatus = .running
+
+        pollEnhanceTask = Task { @MainActor in
+            do {
+                if bodyToFlush != reviewLastSaved {
+                    try? await backend.putNoteBody(mediaId: recording.id, body: bodyToFlush)
+                    reviewLastSaved = bodyToFlush
+                }
+                try await backend.enhanceNote(mediaId: recording.id)
+            } catch {
+                enhanceStatus = .failed
+                showToast(message: "Couldn't start AI run")
+                return
+            }
+
+            // Poll up to 60s @ 3s intervals.
+            let deadline = Date().addingTimeInterval(60)
+            while Date() < deadline {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                if Task.isCancelled { return }
+                guard let status = try? await backend.getEnhancementStatus(mediaId: recording.id) else {
+                    continue
+                }
+                switch status.generationStatus {
+                case "complete":
+                    if let suggested = status.titleSuggested, !suggested.isEmpty {
+                        reviewTitle = suggested
+                    }
+                    if let summary = status.summary, !summary.isEmpty {
+                        reviewBody = summary
+                        reviewLastSaved = summary
+                    }
+                    enhanceStatus = .complete
+                    showToast(message: "Notes updated")
+                    // Auto-revert pill after a beat so it's
+                    // re-runnable.
+                    try? await Task.sleep(nanoseconds: 2_500_000_000)
+                    if !Task.isCancelled { enhanceStatus = .idle }
+                    return
+                case "failed":
+                    enhanceStatus = .failed
+                    showToast(message: "AI run failed")
+                    return
+                default:
+                    continue
+                }
+            }
+            // Timeout — tell user to refresh later.
+            enhanceStatus = .idle
+            showToast(message: "Still running — check back shortly")
         }
     }
 
@@ -841,6 +1091,8 @@ private struct AudioLevelMeter: View {
 
 private struct AttachmentThumbnail: View {
     let attachment: NoteAttachmentDTO
+    let onOpen: () -> Void
+    let onRemove: () -> Void
     @State private var hovering = false
 
     var body: some View {
@@ -868,6 +1120,17 @@ private struct AttachmentThumbnail: View {
         .onHover { hovering = $0 }
         .animation(LoomolaMotion.quick, value: hovering)
         .help(attachment.filename)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onOpen)
+        .contextMenu {
+            Button("Open preview") { onOpen() }
+            Divider()
+            Button(role: .destructive) {
+                onRemove()
+            } label: {
+                Label("Remove", systemImage: "trash")
+            }
+        }
     }
 
     private var placeholder: some View {

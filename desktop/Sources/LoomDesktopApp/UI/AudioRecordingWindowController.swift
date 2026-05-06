@@ -97,13 +97,12 @@ private struct AudioRecordingPanelView: View {
 
             if hovering {
                 VStack(spacing: 9) {
-                    Button(action: state.stop) {
-                        Image(systemName: "stop.fill")
-                            .font(.system(size: 13, weight: .bold))
-                            .frame(width: 34, height: 34)
-                            .background(Color.white.opacity(0.14), in: Circle())
-                    }
-                    .buttonStyle(.plain)
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .frame(width: 34, height: 34)
+                        .background(Color.white.opacity(0.14), in: Circle())
+                        .contentShape(Circle())
+                        .overlay { ActionHitArea(action: state.stop).clipShape(Circle()) }
                     .foregroundStyle(.white.opacity(0.88))
                     .help("Stop and upload audio note")
 
@@ -112,13 +111,12 @@ private struct AudioRecordingPanelView: View {
                         .frame(width: 28, height: 3)
                         .help("Drag to move")
 
-                    Button(action: state.discard) {
-                        Image(systemName: "trash")
-                            .font(.system(size: 11, weight: .bold))
-                            .frame(width: 30, height: 30)
-                            .background(DSColor.State.recording.opacity(0.18), in: Circle())
-                    }
-                    .buttonStyle(.plain)
+                    Image(systemName: "trash")
+                        .font(.system(size: 11, weight: .bold))
+                        .frame(width: 30, height: 30)
+                        .background(DSColor.State.recording.opacity(0.18), in: Circle())
+                        .contentShape(Circle())
+                        .overlay { ActionHitArea(action: state.discard).clipShape(Circle()) }
                     .foregroundStyle(DSColor.State.recording.opacity(0.92))
                     .help("Discard audio note")
                 }

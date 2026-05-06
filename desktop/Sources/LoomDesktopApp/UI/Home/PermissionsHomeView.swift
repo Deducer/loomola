@@ -81,10 +81,11 @@ struct PermissionsHomeView: View {
 
                     HStack {
                         Spacer()
-                        Button("Skip for now", action: onSkip)
-                            .buttonStyle(.plain)
+                        Text("Skip for now")
                             .font(DSFont.Body.sm())
                             .foregroundStyle(DSColor.Text.secondary)
+                            .contentShape(Rectangle())
+                            .overlay { ActionHitArea(action: onSkip) }
                         if !status.requiredMissing {
                             PrimaryButton("Continue", icon: "arrow.right", action: onComplete)
                         }

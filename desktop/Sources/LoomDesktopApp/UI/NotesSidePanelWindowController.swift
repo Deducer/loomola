@@ -89,6 +89,16 @@ final class NotesSidePanelWindowController {
     }
 }
 
+/// AI-enhance state machine for the Generate-notes pill in the
+/// workspace's review mode. Mirrors the server's
+/// `ai_outputs.generation_status` plus an idle default.
+enum EnhanceStatus: Equatable {
+    case idle
+    case running
+    case complete
+    case failed
+}
+
 /// What the workspace is showing. Drives the bottom-bar render and
 /// whether the body fetches a saved body on appear.
 enum NoteWorkspaceTarget: Equatable {

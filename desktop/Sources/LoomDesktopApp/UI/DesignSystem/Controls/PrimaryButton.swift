@@ -36,59 +36,29 @@ struct PrimaryButton: View {
     }
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: DSSpacing.sm) {
-                if isLoading {
-                    ProgressView().controlSize(.small).tint(.white)
-                } else if let icon {
-                    Image(systemName: icon)
-                        .font(.system(size: 14, weight: .semibold))
-                }
-                Text(title)
+        HStack(spacing: DSSpacing.sm) {
+            if isLoading {
+                ProgressView().controlSize(.small).tint(.white)
+            } else if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .semibold))
             }
-            .font(DSFont.Body.lg())
+            Text(title)
         }
-        .buttonStyle(PrimaryButtonStyle(kind: kind, isLoading: isLoading))
-        .disabled(isLoading || !isEnabled)
-    }
-}
-
-/// `ButtonStyle.makeBody` should not contain `@State` or really
-/// any DynamicProperty wrappers — even `@Environment`, while
-/// nominally supported, has surfaced as a runtime crash source on
-/// macOS 26.4.1. Extracting the body to a real `View` is the
-/// stable pattern.
-private struct PrimaryButtonStyle: ButtonStyle {
-    let kind: PrimaryButton.Kind
-    let isLoading: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        PrimaryButtonStyleBody(
-            configuration: configuration,
-            kind: kind,
-            isLoading: isLoading
-        )
-    }
-}
-
-private struct PrimaryButtonStyleBody: View {
-    let configuration: ButtonStyle.Configuration
-    let kind: PrimaryButton.Kind
-    let isLoading: Bool
-
-    @Environment(\.isEnabled) private var isEnabled
-
-    var body: some View {
-        configuration.label
-            .foregroundStyle(.white)
-            .padding(.horizontal, DSSpacing.xl)
-            .padding(.vertical, DSSpacing.md)
-            .background(fillColor(pressed: configuration.isPressed))
-            .clipShape(RoundedRectangle(cornerRadius: DSRadius.pill, style: .continuous))
-            .dsShadow(.brand(color: brandColor))
-            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
-            .opacity(isEnabled ? 1.0 : 0.45)
-            .animation(LoomolaMotion.quick, value: configuration.isPressed)
+        .font(DSFont.Body.lg())
+        .foregroundStyle(.white)
+        .padding(.horizontal, DSSpacing.xl)
+        .padding(.vertical, DSSpacing.md)
+        .background(brandColor)
+        .clipShape(RoundedRectangle(cornerRadius: DSRadius.pill, style: .continuous))
+        .dsShadow(.brand(color: brandColor))
+        .opacity(isActionEnabled ? 1.0 : 0.45)
+        .contentShape(RoundedRectangle(cornerRadius: DSRadius.pill, style: .continuous))
+        .overlay {
+            ActionHitArea(isEnabled: isActionEnabled, action: action)
+                .clipShape(RoundedRectangle(cornerRadius: DSRadius.pill, style: .continuous))
+        }
+        .accessibilityLabel(title)
     }
 
     private var brandColor: Color {
@@ -98,13 +68,7 @@ private struct PrimaryButtonStyleBody: View {
         }
     }
 
-    private func fillColor(pressed: Bool) -> Color {
-        let base = brandColor
-        if pressed {
-            // Darken slightly under press. Color-overlay trick keeps
-            // it cheap.
-            return base.opacity(0.88)
-        }
-        return base
+    private var isActionEnabled: Bool {
+        isEnabled && !isLoading
     }
 }

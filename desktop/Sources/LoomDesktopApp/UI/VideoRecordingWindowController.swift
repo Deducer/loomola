@@ -122,24 +122,22 @@ private struct VideoRecordingPanelView: View {
 
             Spacer()
 
-            Button(action: state.stop) {
-                Image(systemName: "stop.fill")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 32, height: 32)
-                    .background(DSColor.State.recording.opacity(0.92), in: Circle())
-            }
-            .buttonStyle(.plain)
+            Image(systemName: "stop.fill")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 32, height: 32)
+                .background(DSColor.State.recording.opacity(0.92), in: Circle())
+                .contentShape(Circle())
+                .overlay { ActionHitArea(action: state.stop).clipShape(Circle()) }
             .help("Stop and upload recording")
 
-            Button(action: state.discard) {
-                Image(systemName: "trash")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(DSColor.State.recording.opacity(0.92))
-                    .frame(width: 28, height: 28)
-                    .background(Color.white.opacity(hovering ? 0.16 : 0.10), in: Circle())
-            }
-            .buttonStyle(.plain)
+            Image(systemName: "trash")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(DSColor.State.recording.opacity(0.92))
+                .frame(width: 28, height: 28)
+                .background(Color.white.opacity(hovering ? 0.16 : 0.10), in: Circle())
+                .contentShape(Circle())
+                .overlay { ActionHitArea(action: state.discard).clipShape(Circle()) }
             .help("Discard recording")
         }
         .padding(.horizontal, DSSpacing.lg)

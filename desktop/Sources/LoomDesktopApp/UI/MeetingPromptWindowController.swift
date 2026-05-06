@@ -89,15 +89,14 @@ private struct MeetingPromptPanelView: View {
                     .lineLimit(1)
 
                 HStack(spacing: DSSpacing.sm) {
-                    Button("Start note", action: start)
-                        .disabled(startDisabled)
+                    MeetingPromptTextAction("Start note", isProminent: true, isEnabled: !startDisabled) {
+                        start()
+                    }
                     if context.joinURL != nil || context.bundleIdentifier != nil {
-                        Button(joinLabel, action: join)
-                            .buttonStyle(.plain)
+                        MeetingPromptTextAction(joinLabel, action: join)
                             .foregroundStyle(.white.opacity(0.92))
                     }
-                    Button("Not now", action: dismiss)
-                        .buttonStyle(.plain)
+                    MeetingPromptTextAction("Not now", action: dismiss)
                         .foregroundStyle(.white.opacity(0.72))
                 }
                 .font(DSFont.Body.sm())
@@ -125,6 +124,44 @@ private struct MeetingPromptPanelView: View {
         case "teams": return "Open Teams"
         case "webex": return "Open Webex"
         default: return "Open meeting"
+        }
+    }
+}
+
+private struct MeetingPromptTextAction: View {
+    let title: String
+    let isProminent: Bool
+    let isEnabled: Bool
+    let action: () -> Void
+
+    init(
+        _ title: String,
+        isProminent: Bool = false,
+        isEnabled: Bool = true,
+        action: @escaping () -> Void
+    ) {
+        self.title = title
+        self.isProminent = isProminent
+        self.isEnabled = isEnabled
+        self.action = action
+    }
+
+    var body: some View {
+        Text(title)
+            .font(DSFont.Body.sm())
+            .foregroundStyle(isProminent ? Color.black : Color.white.opacity(0.86))
+            .padding(.horizontal, DSSpacing.sm)
+            .padding(.vertical, DSSpacing.xs)
+            .background(background)
+            .opacity(isEnabled ? 1.0 : 0.45)
+            .contentShape(Rectangle())
+            .overlay { ActionHitArea(isEnabled: isEnabled, action: action) }
+    }
+
+    @ViewBuilder
+    private var background: some View {
+        if isProminent {
+            Capsule().fill(Color.white.opacity(0.94))
         }
     }
 }

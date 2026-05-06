@@ -39,16 +39,17 @@ struct SignedOutHomeView: View {
                 .frame(maxWidth: 360)
                 .onAppear { focusedField = .email }
 
-                Button {
-                    if let url = URL(string: "https://loom.dissonance.cloud") {
-                        NSWorkspace.shared.open(url)
+                Text("Trouble signing in?")
+                    .font(DSFont.Body.sm())
+                    .foregroundStyle(DSColor.Accent.primary)
+                    .contentShape(Rectangle())
+                    .overlay {
+                        ActionHitArea {
+                            if let url = URL(string: "https://loom.dissonance.cloud") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
                     }
-                } label: {
-                    Text("Trouble signing in?")
-                        .font(DSFont.Body.sm())
-                        .foregroundStyle(DSColor.Accent.primary)
-                }
-                .buttonStyle(.plain)
             }
             .frame(maxWidth: 480)
 
