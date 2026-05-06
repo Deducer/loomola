@@ -17,6 +17,7 @@ private let log = Logger(subsystem: "cloud.dissonance.loom.desktop", category: "
 @MainActor
 final class RecentRecordingsService: ObservableObject {
     @Published private(set) var items: [RecentRecording] = []
+    @Published private(set) var folders: [FolderDTO] = []
     @Published private(set) var isLoading = false
     @Published private(set) var lastError: String?
     /// Flips to true after the first refresh attempt completes
@@ -75,20 +76,54 @@ final class RecentRecordingsService: ObservableObject {
             isLoading = false
             hasLoaded = true
         }
+        // Fan out: items + folders in parallel so the row UI has
+        // both ready when the first paint lands.
+        async let itemsResponse = backend.recentRecordings(limit: limit)
+        async let foldersResponse = backend.listFolders()
         do {
-            let response = try await backend.recentRecordings(limit: limit)
+            let response = try await itemsResponse
             let mapped = response.items.compactMap { RecentRecording(dto: $0) }
             items = mapped
             lastError = nil
             log.notice("fetched \(response.items.count, privacy: .public) item(s); \(mapped.count, privacy: .public) decoded")
-            for (i, item) in response.items.enumerated() {
-                log.notice("  item[\(i, privacy: .public)] id=\(item.id, privacy: .public) kind=\(item.kind, privacy: .public) slug=\(item.slug, privacy: .public)")
-            }
         } catch {
-            // Don't blank out items on error — keep showing the last
-            // good list. Surface the error for debug.
             lastError = error.localizedDescription
             log.error("refresh failed: \(error.localizedDescription, privacy: .public)")
+        }
+        // Folders fetch is a soft dependency — failure here just
+        // disables the folder picker, doesn't block the rows.
+        do {
+            let response = try await foldersResponse
+            folders = response.folders
+        } catch {
+            log.error("folders fetch failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Optimistically update a recording's folder assignment in the
+    /// local items array, then persist. The view's folder pill
+    /// updates immediately; if the server call fails, we revert and
+    /// surface the error.
+    func assignFolder(recordingId: String, folderId: String?) async {
+        guard let index = items.firstIndex(where: { $0.id == recordingId }) else { return }
+        let original = items[index]
+        let newFolderName: String?
+        if let folderId {
+            newFolderName = folders.first(where: { $0.id == folderId })?.name
+        } else {
+            newFolderName = nil
+        }
+        items[index] = original.with(folderId: folderId, folderName: newFolderName)
+        do {
+            try await backend.assignRecordingToFolder(
+                recordingId: recordingId,
+                folderId: folderId
+            )
+            log.notice("assigned \(recordingId, privacy: .public) → folder \(folderId ?? "<none>", privacy: .public)")
+        } catch {
+            // Revert on failure.
+            items[index] = original
+            log.error("assign folder failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -127,6 +162,8 @@ struct RecentRecording: Identifiable, Equatable {
     let createdAt: Date
     let durationSeconds: Double?
     let thumbnailURL: URL?
+    var folderId: String?
+    var folderName: String?
 
     init?(dto: RecentRecordingDTO) {
         self.id = dto.id
@@ -147,5 +184,16 @@ struct RecentRecording: Identifiable, Equatable {
         }
         self.durationSeconds = dto.durationSeconds
         self.thumbnailURL = dto.thumbnailUrl.flatMap { URL(string: $0) }
+        self.folderId = dto.folderId
+        self.folderName = dto.folderName
+    }
+
+    /// Builds a copy with overridden folder assignment. Used by the
+    /// optimistic-update path in RecentRecordingsService.assignFolder.
+    func with(folderId: String?, folderName: String?) -> RecentRecording {
+        var copy = self
+        copy.folderId = folderId
+        copy.folderName = folderName
+        return copy
     }
 }

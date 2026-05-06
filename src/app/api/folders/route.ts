@@ -1,6 +1,22 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/require-auth";
-import { createFolder, getFolderOwned } from "@/db/queries/folders";
+import {
+  createFolder,
+  getFolderOwned,
+  listFoldersForOwner,
+} from "@/db/queries/folders";
+
+export async function GET(request: Request) {
+  const user = await requireAuth(request);
+  const folders = await listFoldersForOwner(user.id);
+  return NextResponse.json({
+    folders: folders.map((f) => ({
+      id: f.id,
+      name: f.name,
+      parentId: f.parentId,
+    })),
+  });
+}
 
 export async function POST(request: Request) {
   const user = await requireAuth();

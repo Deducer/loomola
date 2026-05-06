@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { listRecordings } from "@/db/queries/recordings";
 import { listImageAttachmentsForMediaIds } from "@/db/queries/notes";
+import { listFoldersForOwner } from "@/db/queries/folders";
 import { presignGet } from "@/lib/r2/presigned-get";
 import { requireAuth } from "@/lib/require-auth";
 
@@ -16,6 +17,10 @@ import { requireAuth } from "@/lib/require-auth";
 ///   • audio → first image attachment (signed R2 URL) or null —
 ///     never the auto-generated waveform PNG, which is decorative
 ///     noise. The desktop renders a paper icon when null.
+///
+/// `folderId` / `folderName`: included so the desktop's Recent rows
+///   can render a folder pill without a second round trip. Null when
+///   the recording isn't filed.
 export async function GET(request: Request) {
   const user = await requireAuth(request);
 
@@ -32,6 +37,15 @@ export async function GET(request: Request) {
     audioIds.length > 0
       ? await listImageAttachmentsForMediaIds(audioIds, user.id)
       : new Map();
+
+  // One round trip for folder names. Only fetch when at least one
+  // recording in the slice is filed.
+  const sliceHasFolder = slice.some((r) => r.folderId != null);
+  const folderNameById = new Map<string, string>();
+  if (sliceHasFolder) {
+    const folders = await listFoldersForOwner(user.id);
+    for (const f of folders) folderNameById.set(f.id, f.name);
+  }
 
   const items = await Promise.all(
     slice.map(async (r) => {
@@ -56,6 +70,8 @@ export async function GET(request: Request) {
         // strict JSONDecoder accepts it as Double.
         durationSeconds: r.durationSeconds == null ? null : Number(r.durationSeconds),
         thumbnailUrl,
+        folderId: r.folderId,
+        folderName: r.folderId ? (folderNameById.get(r.folderId) ?? null) : null,
       };
     })
   );

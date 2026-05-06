@@ -1069,15 +1069,30 @@ final class RecorderViewModel: ObservableObject {
         if email.isEmpty {
             email = session.user.email ?? ""
         }
-        // Eagerly construct the recent service so the fetch is already
-        // in flight by the time the user lands on IdleHomeView. Without
-        // this, the service is built lazily when the home view renders;
-        // if a permissions preflight sits between sign-in and idle home
-        // (often ~30s), the user reaches the home view, sees an empty
-        // strip, and waits another 200ms-1s for the request to land.
-        // The discard underscore is intentional — we want the side
-        // effect (service init → refresh()) more than the value.
+        // Eagerly construct the recent service if not yet built, then
+        // kick a fresh refresh.
+        //
+        // Why both: signIn() flips state to .preparingPermissions
+        // BEFORE this method runs (apply runs from the network task's
+        // success continuation). That intermediate state often falls
+        // through to IdleHomeView (when permissions are already
+        // granted), which accesses viewModel.recentRecordings and
+        // creates the service — at which point accessToken is still
+        // nil and the service's init refresh() throws
+        // missingAccessToken. The failure caches as
+        // hasLoaded=true, items=[], and the strip stays empty until a
+        // later trigger (60s timer, didBecomeActive, ScrollView
+        // re-onAppear) happens to align with a token-having state.
+        //
+        // The first call below ensures the service exists at all (for
+        // the cold-restore path where state goes straight from
+        // .signedOut → .signedInIdle). The second call replaces any
+        // failed first refresh with one that uses the now-valid
+        // token (refresh() bails if a task is in flight, but the
+        // failed-auth refresh completes within ms, so refreshTask
+        // is reliably nil by the time apply() runs).
         _ = recentRecordings
+        _recentService?.refresh()
         refreshChromeMeetingContext(showStatus: false)
         if canListCaptureSourcesWithoutPrompt() {
             refreshCaptureSources()

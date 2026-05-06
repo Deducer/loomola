@@ -50,6 +50,18 @@ actor BackendClient {
         try await get(path: "/api/recordings/recent?limit=\(limit)")
     }
 
+    func listFolders() async throws -> ListFoldersResponse {
+        try await get(path: "/api/folders")
+    }
+
+    func assignRecordingToFolder(recordingId: String, folderId: String?) async throws {
+        let _: EmptyResponse = try await jsonRequest(
+            method: "PATCH",
+            path: "/api/recordings/\(recordingId)/folder",
+            body: AssignFolderRequest(folderId: folderId)
+        )
+    }
+
     /// Persist the user's live-typed notes body for an audio
     /// recording. Called from the desktop's NotesSidePanel via a
     /// debounced autosave pipeline. Body is plain markdown; the
@@ -299,6 +311,22 @@ struct RecentRecordingDTO: Decodable, Equatable, Sendable {
     let createdAt: String  // ISO 8601
     let durationSeconds: Double?
     let thumbnailUrl: String?
+    let folderId: String?
+    let folderName: String?
+}
+
+struct ListFoldersResponse: Decodable, Equatable, Sendable {
+    let folders: [FolderDTO]
+}
+
+struct FolderDTO: Decodable, Equatable, Sendable, Identifiable {
+    let id: String
+    let name: String
+    let parentId: String?
+}
+
+struct AssignFolderRequest: Encodable, Sendable {
+    let folderId: String?
 }
 
 struct NoteBodyRequest: Encodable, Sendable {

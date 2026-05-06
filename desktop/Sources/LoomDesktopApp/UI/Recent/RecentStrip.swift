@@ -69,7 +69,19 @@ struct RecentStrip: View {
                         .padding(.horizontal, DSSpacing.md)
                     VStack(spacing: 0) {
                         ForEach(group.items) { recording in
-                            RecentNoteRow(recording: recording) { open(recording: recording) }
+                            RecentNoteRow(
+                                recording: recording,
+                                folders: service.folders,
+                                onOpen: { open(recording: recording) },
+                                onAssignFolder: { newFolderId in
+                                    Task {
+                                        await service.assignFolder(
+                                            recordingId: recording.id,
+                                            folderId: newFolderId
+                                        )
+                                    }
+                                }
+                            )
                         }
                     }
                 }
