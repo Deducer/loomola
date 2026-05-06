@@ -115,13 +115,13 @@ struct NoteWorkspaceView: View {
         VStack(spacing: 0) {
             titleBar
             ScrollView {
-                VStack(alignment: .leading, spacing: DSSpacing.lg) {
+                VStack(alignment: .leading, spacing: DSSpacing.xl) {
                     titleEditor
                     pillRow
                     bodyEditor
                 }
                 .padding(.horizontal, DSSpacing.xl)
-                .padding(.top, 8)
+                .padding(.top, DSSpacing.lg)
                 .padding(.bottom, DSSpacing.xxl)
             }
             // Drag images anywhere over the editor area. Whole-body
@@ -199,11 +199,14 @@ struct NoteWorkspaceView: View {
         // Inline with the macOS traffic lights. `fullSizeContentView`
         // lets our content draw under the title chrome at y=0; the
         // traffic lights overlay at their standard position (vertical
-        // center ~y=13). 28pt frame with no top padding centers our
-        // buttons at the same y, eliminating the wasted vertical band.
+        // center ~y=13). 36pt frame keeps our buttons inline with
+        // the lights and gives the title row below room to breathe
+        // before the big serif headline.
         HStack(spacing: 0) {
-            // 78pt traffic-light spacer.
-            Spacer().frame(width: 78)
+            // 78pt traffic-light spacer + a bit of extra breathing
+            // room after the lights so HomeBackButton doesn't crowd
+            // the green button.
+            Spacer().frame(width: 78 + DSSpacing.md)
             HomeBackButton(action: onClose)
                 .help(isRecording ? "Hide (panel reappears on next event)" : "Close")
             Spacer()
@@ -213,9 +216,9 @@ struct NoteWorkspaceView: View {
             .popover(isPresented: $showRowMenu, arrowEdge: .top) {
                 rowMenu
             }
-            .padding(.trailing, DSSpacing.md)
+            .padding(.trailing, DSSpacing.lg)
         }
-        .frame(height: 28)
+        .frame(height: 36)
     }
 
     private var rowMenu: some View {
@@ -310,7 +313,7 @@ struct NoteWorkspaceView: View {
     // MARK: - Pill row
 
     private var pillRow: some View {
-        HStack(spacing: DSSpacing.sm) {
+        HStack(spacing: DSSpacing.md) {
             todayPill
             mePill
             folderPill

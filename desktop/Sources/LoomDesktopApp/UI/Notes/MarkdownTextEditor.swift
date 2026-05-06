@@ -117,33 +117,35 @@ struct MarkdownTextEditor: NSViewRepresentable {
             applyHeadings(in: plain, storage: storage)
             applyInlineRuns(
                 pattern: "(?<!\\*)\\*\\*([^*\\n]+)\\*\\*(?!\\*)",
+                markerLength: 2,
                 in: plain,
                 storage: storage,
-                attribute: .font,
-                value: MarkdownStyle.bold
+                font: MarkdownStyle.bold
             )
             applyInlineRuns(
                 pattern: "(?<![*\\w])\\*([^*\\n]+)\\*(?![*\\w])",
+                markerLength: 1,
                 in: plain,
                 storage: storage,
-                attribute: .font,
-                value: MarkdownStyle.italic
+                font: MarkdownStyle.italic
             )
             applyInlineRuns(
                 pattern: "`([^`\\n]+)`",
+                markerLength: 1,
                 in: plain,
                 storage: storage,
-                attribute: .font,
-                value: MarkdownStyle.mono
+                font: MarkdownStyle.mono
             )
             storage.endEditing()
         }
 
         private func applyHeadings(in plain: NSString, storage: NSTextStorage) {
-            // Heading is `^#{1,3}\s.*$` per line. Apply font+color
-            // to the entire line including the `#` markers (so the
-            // user sees the line as a heading visually, but can
-            // still see and edit the source markers).
+            // Heading lines are `^#{1,3}\s.*$`. We render the whole
+            // line at heading size, then collapse the `#…# ` prefix
+            // to invisible so the source markers don't clutter the
+            // rendered note. Markers stay in the underlying string
+            // (still saves as markdown) — they just don't take
+            // visual space in the editor.
             guard let regex = try? NSRegularExpression(
                 pattern: "^(#{1,3})\\s.*$",
                 options: [.anchorsMatchLines]
@@ -155,26 +157,70 @@ struct MarkdownTextEditor: NSViewRepresentable {
                 let level = max(1, min(3, levelRange.length))
                 let font = MarkdownStyle.heading(level: level)
                 storage.addAttribute(.font, value: font, range: match.range)
+                // Hide the `#…# ` prefix (level + 1 chars including
+                // the trailing space).
+                let prefix = NSRange(
+                    location: match.range.location,
+                    length: level + 1
+                )
+                hideMarker(prefix, in: storage)
             }
         }
 
         private func applyInlineRuns(
             pattern: String,
+            markerLength: Int,
             in plain: NSString,
             storage: NSTextStorage,
-            attribute: NSAttributedString.Key,
-            value: NSFont
+            font: NSFont
         ) {
             guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
             let full = NSRange(location: 0, length: plain.length)
             regex.enumerateMatches(in: plain as String, range: full) { match, _, _ in
                 guard let match = match else { return }
-                // Apply to the whole match (including markers) so
-                // the user sees the formatted text in place. Markers
-                // remain visible — feels like Bear/Obsidian rather
-                // than fully WYSIWYG.
-                storage.addAttribute(attribute, value: value, range: match.range)
+                // Style the inner content (between markers) as
+                // bold / italic / mono, and hide both leading +
+                // trailing markers so the rendered text reads as a
+                // word, not as a `**word**`.
+                let inner = NSRange(
+                    location: match.range.location + markerLength,
+                    length: match.range.length - markerLength * 2
+                )
+                if inner.length > 0 {
+                    storage.addAttribute(.font, value: font, range: inner)
+                }
+                let leading = NSRange(
+                    location: match.range.location,
+                    length: markerLength
+                )
+                let trailing = NSRange(
+                    location: match.range.location + match.range.length - markerLength,
+                    length: markerLength
+                )
+                hideMarker(leading, in: storage)
+                hideMarker(trailing, in: storage)
             }
+        }
+
+        /// Make a run of characters visually disappear without
+        /// removing them from the underlying string. Tiny font + 0
+        /// kerning collapses horizontal width to ~0; clear color
+        /// hides any residual glyph. The chars stay in
+        /// `textStorage.string` so the markdown source persists,
+        /// undo-redo works, and saves to the server are still valid
+        /// markdown.
+        private func hideMarker(_ range: NSRange, in storage: NSTextStorage) {
+            guard range.length > 0,
+                  range.location >= 0,
+                  range.location + range.length <= storage.length else { return }
+            storage.addAttributes(
+                [
+                    .font: NSFont.systemFont(ofSize: 0.01),
+                    .foregroundColor: NSColor.clear,
+                    .kern: 0,
+                ],
+                range: range
+            )
         }
     }
 }
