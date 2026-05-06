@@ -301,6 +301,7 @@ A 72-min audio recording was almost lost on 2026-05-06: a Coolify brownout retur
 | **Desktop `OrphanRetryCoordinator`** | Re-runs `/api/recordings/start` → multipart upload → `/api/recordings/<id>/complete` from the durable on-disk copies. Aborts the original failed row best-effort. Marks the orphan `rescuedSlug` in metadata on success. |
 | **Settings → Recovery section** | Lists every orphaned recording with title + duration + size + last error. Per-orphan actions: Retry upload (PrimaryButton, disables while in flight), Reveal in Finder, Discard. Rescued orphans show a "Rescued" pill + Open button that links to `/notes/<slug>`. Hidden when there are no orphans, so the section doesn't clutter normal use. |
 | **Tests** | New `OrphanedRecordingStoreTests` covers capture / round-trip / mark-rescued / discard. All 96 desktop tests + 247 server unit tests pass. |
+| **Helper scripts kept around for incident response** | `scripts/diag-latest-audio.mjs` (latest audio note's full state — DB row + transcript + AI outputs + pg-boss jobs), `scripts/rescue-orphan-audio-note.mjs` (mix raw mic + system tracks locally with ffmpeg, upload to R2, insert media_objects row, enqueue transcribe), `scripts/wake-prod-boss.mjs` (hits an authed enhance endpoint with bearer token to wake pg-boss when silently dead). |
 
 ## Open follow-ups (next milestones to spec)
 

@@ -71,7 +71,7 @@ This repo hosts **two products on one codebase**, gated by a single env flag:
 
 > **Note:** This file has drifted from the canonical project notes — `CLAUDE.md` is the up-to-date source for stage history, current architecture, and conventions. Read it first; this file's deeper sections are kept for compatibility but may lag.
 
-Stage 1 (M1–M11) + Stages 1.5–1.10 + 1.99 + Stage 2 (Granola-alt G-M1–M17) + Stage 3 (security) + Stage 4 (desktop M2 premium recorder) + Stage 5 (desktop M3 visual restructure) + Stage 6 (live notes) + Stage 7 (stability + Granola Recent UX + multi-folder Phase 1) + Stage 8 (Granola-grade desktop note workspace) all shipped. See `CLAUDE.md` for per-stage details. Big-picture surface area:
+Stage 1 (M1–M11) + Stages 1.5–1.10 + 1.99 + Stage 2 (Granola-alt G-M1–M17) + Stage 3 (security) + Stage 4 (desktop M2 premium recorder) + Stage 5 (desktop M3 visual restructure) + Stage 6 (live notes) + Stage 7 (stability + Granola Recent UX + multi-folder Phase 1) + Stage 8 (Granola-grade desktop note workspace) + Stage 9 (reliability sprint: orphan recovery + boot-warmed pg-boss + brownout detection) all shipped. See `CLAUDE.md` for per-stage details. Big-picture surface area:
 
 - `/` — dashboard with folder sidebar, search, sort/filter, drag-and-drop card-to-folder, hover card menu (Edit / Move / Delete). Cards click into the **edit** page (creator-first), not the share page.
 - `/record` — recording flow: pre-record form → preparing (permissions) → 3-2-1 countdown → recording → uploading → finished. Bubble can be dragged anywhere on screen during recording (Chrome `documentPictureInPicture` window with the live camera).
