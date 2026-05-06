@@ -155,6 +155,13 @@
       "when": 1777999600000,
       "tag": "0021_media_folder_assignments",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1778003200000,
+      "tag": "0022_import_metadata",
+      "breakpoints": true
     }
   ]
 }

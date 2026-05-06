@@ -94,6 +94,10 @@ export const folders = pgTable(
     ownerId: uuid("owner_id").notNull(),
     parentId: uuid("parent_id"),
     name: text("name").notNull(),
+    // See media_objects.importSource above. Partial unique index in
+    // migration 0022.
+    importSource: text("import_source"),
+    importSourceId: text("import_source_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -194,6 +198,13 @@ export const mediaObjects = pgTable("media_objects", {
     "suggested_folder_dismissed_at",
     { withTimezone: true }
   ),
+  // Imported-from-elsewhere metadata. NULL for natively-recorded rows.
+  // Source values constrained to ('loom', 'granola') by DB CHECK
+  // constraint (migration 0022). Partial unique index on
+  // (owner_id, import_source, import_source_id) is the dedup key for
+  // merge-idempotent imports.
+  importSource: text("import_source"),
+  importSourceId: text("import_source_id"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -370,6 +381,10 @@ export const people = pgTable(
     // the user's voice fingerprint baseline. At most one is_self=true per
     // owner, enforced by partial unique index people_owner_self_unique.
     isSelf: boolean("is_self").notNull().default(false),
+    // See media_objects.importSource above. Partial unique index in
+    // migration 0022.
+    importSource: text("import_source"),
+    importSourceId: text("import_source_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

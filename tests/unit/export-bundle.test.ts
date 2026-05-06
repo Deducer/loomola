@@ -67,6 +67,8 @@ function baseItem(type: "audio" | "video"): ExportBundleMediaData {
       suggestedFolderId: null,
       suggestedFolderAt: null,
       suggestedFolderDismissedAt: null,
+      importSource: null,
+      importSourceId: null,
       createdAt: new Date("2026-05-01T20:08:00.000Z"),
       updatedAt: new Date("2026-05-01T20:09:00.000Z"),
       deletedAt: null,

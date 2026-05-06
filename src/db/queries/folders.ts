@@ -206,6 +206,8 @@ export async function listFoldersForRecording(params: {
       ownerId: folders.ownerId,
       parentId: folders.parentId,
       name: folders.name,
+      importSource: folders.importSource,
+      importSourceId: folders.importSourceId,
       createdAt: folders.createdAt,
       updatedAt: folders.updatedAt,
     })
@@ -240,6 +242,8 @@ export async function listFolderAssignmentsForRecordings(params: {
         ownerId: folders.ownerId,
         parentId: folders.parentId,
         name: folders.name,
+        importSource: folders.importSource,
+        importSourceId: folders.importSourceId,
         createdAt: folders.createdAt,
         updatedAt: folders.updatedAt,
       },
