@@ -3,15 +3,10 @@ import SwiftUI
 
 /// Recent strip on the idle home view. Renders type-appropriately:
 ///
-/// - When the user has Video selected, shows a horizontal grid of
-///   thumbnail-prominent cards (video is something you scan
-///   visually).
-/// - When the user has Audio note selected, shows a Granola-style
-///   vertical list of compact rows (audio is something you scan by
-///   title — the auto-generated waveform PNG carries no signal).
-///
-/// Filters the underlying service's items by `kind` so each mode
-/// only shows its own type.
+/// - Video selected → 3 thumbnail-prominent cards (visual scan).
+/// - Audio note selected → all of the user's notes, Granola-style
+///   vertical rows grouped by date ("Today", "Yesterday",
+///   "Mon May 4", "Apr 30"...). Compact and scannable by title.
 struct RecentStrip: View {
     @ObservedObject var service: RecentRecordingsService
     let captureMode: CaptureMode
@@ -39,11 +34,6 @@ struct RecentStrip: View {
 
             content
         }
-        .onAppear {
-            if service.items.isEmpty {
-                service.refresh()
-            }
-        }
     }
 
     @ViewBuilder
@@ -61,8 +51,8 @@ struct RecentStrip: View {
     }
 
     private var videoGrid: some View {
-        HStack(alignment: .top, spacing: DSSpacing.lg) {
-            ForEach(filteredItems.prefix(4)) { recording in
+        HStack(alignment: .top, spacing: DSSpacing.xl) {
+            ForEach(filteredItems.prefix(3)) { recording in
                 RecentCard(recording: recording) { open(recording: recording) }
             }
             Spacer()
@@ -70,9 +60,19 @@ struct RecentStrip: View {
     }
 
     private var noteList: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(filteredItems.prefix(6)) { recording in
-                RecentNoteRow(recording: recording) { open(recording: recording) }
+        VStack(alignment: .leading, spacing: DSSpacing.lg) {
+            ForEach(groupedByDate(filteredItems), id: \.label) { group in
+                VStack(alignment: .leading, spacing: DSSpacing.xs) {
+                    Text(group.label)
+                        .font(DSFont.Body.sm())
+                        .foregroundStyle(DSColor.Text.tertiary)
+                        .padding(.horizontal, DSSpacing.md)
+                    VStack(spacing: 0) {
+                        ForEach(group.items) { recording in
+                            RecentNoteRow(recording: recording) { open(recording: recording) }
+                        }
+                    }
+                }
             }
         }
     }
@@ -81,11 +81,11 @@ struct RecentStrip: View {
     private var skeleton: some View {
         switch captureMode {
         case .video:
-            HStack(spacing: DSSpacing.lg) {
-                ForEach(0..<4, id: \.self) { _ in
+            HStack(spacing: DSSpacing.xl) {
+                ForEach(0..<3, id: \.self) { _ in
                     RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
                         .fill(DSColor.Bg.subtle)
-                        .frame(width: 220, height: 168)
+                        .frame(width: 240, height: 180)
                 }
                 Spacer()
             }
@@ -155,5 +155,62 @@ struct RecentStrip: View {
         if let url = URL(string: "https://loom.dissonance.cloud") {
             NSWorkspace.shared.open(url)
         }
+    }
+
+    // MARK: - Date grouping
+
+    private struct DateGroup {
+        let label: String
+        let items: [RecentRecording]
+    }
+
+    private func groupedByDate(_ items: [RecentRecording]) -> [DateGroup] {
+        let calendar = Calendar.current
+        let now = Date()
+        let today = calendar.startOfDay(for: now)
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: today) ?? today
+
+        // Insertion-ordered buckets so the output preserves the
+        // reverse-chronological item order (newest groups first).
+        var labels: [String] = []
+        var bucket: [String: [RecentRecording]] = [:]
+
+        for item in items.sorted(by: { $0.createdAt > $1.createdAt }) {
+            let label = labelFor(
+                date: item.createdAt,
+                today: today,
+                yesterday: yesterday,
+                now: now,
+                calendar: calendar
+            )
+            if bucket[label] == nil {
+                bucket[label] = []
+                labels.append(label)
+            }
+            bucket[label]?.append(item)
+        }
+
+        return labels.map { DateGroup(label: $0, items: bucket[$0] ?? []) }
+    }
+
+    private func labelFor(
+        date: Date,
+        today: Date,
+        yesterday: Date,
+        now: Date,
+        calendar: Calendar
+    ) -> String {
+        if calendar.isDate(date, inSameDayAs: today) { return "Today" }
+        if calendar.isDate(date, inSameDayAs: yesterday) { return "Yesterday" }
+        let daysAgo = calendar.dateComponents([.day], from: calendar.startOfDay(for: date), to: today).day ?? 0
+        let formatter = DateFormatter()
+        if daysAgo < 7 {
+            formatter.dateFormat = "EEE, MMM d"   // "Mon, May 4"
+        } else if calendar.isDate(date, equalTo: now, toGranularity: .year) {
+            formatter.dateFormat = "MMM d"        // "Apr 30"
+        } else {
+            formatter.dateFormat = "MMM d, yyyy"  // "Dec 12, 2025"
+        }
+        return formatter.string(from: date)
     }
 }

@@ -2,14 +2,13 @@ import AppKit
 import SwiftUI
 
 /// Granola-style row for the Recent notes list (audio mode). Compact
-/// horizontal layout: tinted icon → title → relative time. Click →
-/// opens /notes/<slug> in the default browser.
+/// horizontal layout: icon → title → relative time. Click → opens
+/// /notes/<slug> in the default browser.
 ///
-/// Why a row instead of a card here: the note's thumbnail is the
-/// auto-generated waveform PNG, which carries no informational
-/// value — users scan notes by title and meeting context. A dense
-/// row layout shows more notes per scroll-screen and matches the
-/// Granola pattern users already know.
+/// The icon is the note's first image attachment if it has one
+/// (server picks it up via listImageAttachmentsForMediaIds). When
+/// there's no attachment, we render a tinted paper icon — never the
+/// auto-generated waveform PNG, which carries no informational value.
 struct RecentNoteRow: View {
     let recording: RecentRecording
     let onOpen: () -> Void
@@ -18,14 +17,9 @@ struct RecentNoteRow: View {
 
     var body: some View {
         HStack(spacing: DSSpacing.md) {
-            ZStack {
-                RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous)
-                    .fill(DSColor.Bg.subtle)
-                Image(systemName: "doc.text")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(DSColor.Text.tertiary)
-            }
-            .frame(width: 32, height: 32)
+            iconView
+                .frame(width: 32, height: 32)
+                .clipShape(RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous))
 
             Text(recording.title)
                 .font(DSFont.Body.md())
@@ -35,7 +29,7 @@ struct RecentNoteRow: View {
 
             Text(relativeTimestamp)
                 .font(DSFont.Body.sm())
-                .foregroundStyle(DSColor.Text.tertiary)
+                .foregroundStyle(DSColor.Text.secondary)
         }
         .padding(.horizontal, DSSpacing.md)
         .padding(.vertical, DSSpacing.sm)
@@ -48,6 +42,29 @@ struct RecentNoteRow: View {
         .overlay { ActionHitArea(action: onOpen) }
         .onHover { hovering = $0 }
         .animation(LoomolaMotion.quick, value: hovering)
+    }
+
+    @ViewBuilder
+    private var iconView: some View {
+        if let url = recording.thumbnailURL {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image): image.resizable().scaledToFill()
+                default: paperIcon
+                }
+            }
+        } else {
+            paperIcon
+        }
+    }
+
+    private var paperIcon: some View {
+        ZStack {
+            Rectangle().fill(DSColor.Bg.subtle)
+            Image(systemName: "doc.text")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(DSColor.Text.tertiary)
+        }
     }
 
     private var relativeTimestamp: String {

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { listRecordings } from "@/db/queries/recordings";
+import { listImageAttachmentsForMediaIds } from "@/db/queries/notes";
 import { presignGet } from "@/lib/r2/presigned-get";
 import { requireAuth } from "@/lib/require-auth";
 
@@ -8,35 +9,55 @@ import { requireAuth } from "@/lib/require-auth";
 /// only the fields the desktop needs and inlines a signed thumbnail
 /// URL so the desktop doesn't N+1.
 ///
-/// Query: ?limit=4 (default 4, capped at 12)
+/// Query: ?limit=N (default 8, capped at 50)
+///
+/// `thumbnailUrl` semantics:
+///   • video → composite thumbnail (signed R2 URL) or null
+///   • audio → first image attachment (signed R2 URL) or null —
+///     never the auto-generated waveform PNG, which is decorative
+///     noise. The desktop renders a paper icon when null.
 export async function GET(request: Request) {
   const user = await requireAuth(request);
 
   const url = new URL(request.url);
-  const requested = Number.parseInt(url.searchParams.get("limit") ?? "4", 10);
-  const limit = Math.min(12, Math.max(1, Number.isFinite(requested) ? requested : 4));
+  const requested = Number.parseInt(url.searchParams.get("limit") ?? "8", 10);
+  const limit = Math.min(50, Math.max(1, Number.isFinite(requested) ? requested : 8));
 
   const all = await listRecordings(user.id);
   const slice = all.slice(0, limit);
 
+  // One round trip for all audio attachments instead of N+1.
+  const audioIds = slice.filter((r) => r.type === "audio").map((r) => r.id);
+  const attachments =
+    audioIds.length > 0
+      ? await listImageAttachmentsForMediaIds(audioIds, user.id)
+      : new Map();
+
   const items = await Promise.all(
-    slice.map(async (r) => ({
-      id: r.id,
-      slug: r.slug,
-      title: r.aiTitle ?? r.title ?? "Untitled",
-      kind: r.type,
-      createdAt: r.createdAt.toISOString(),
-      // `media_objects.duration_seconds` is a Drizzle `numeric` column,
-      // which arrives in JS as a *string* to preserve precision. The
-      // desktop client's DTO declares this as `Double?` and decodes
-      // strictly, so emitting the raw string makes its JSONDecoder
-      // throw and the Recent strip silently shows the empty state.
-      // Coerce to a JS number here so the JSON output is a number.
-      durationSeconds: r.durationSeconds == null ? null : Number(r.durationSeconds),
-      thumbnailUrl: r.compositeThumbnailKey
-        ? await presignGet(r.compositeThumbnailKey)
-        : null,
-    }))
+    slice.map(async (r) => {
+      let thumbnailUrl: string | null = null;
+      if (r.type === "audio") {
+        const list = attachments.get(r.id) ?? [];
+        const firstImage = list[0];
+        if (firstImage) {
+          thumbnailUrl = await presignGet(firstImage.r2Key);
+        }
+      } else if (r.compositeThumbnailKey) {
+        thumbnailUrl = await presignGet(r.compositeThumbnailKey);
+      }
+      return {
+        id: r.id,
+        slug: r.slug,
+        title: r.aiTitle ?? r.title ?? "Untitled",
+        kind: r.type,
+        createdAt: r.createdAt.toISOString(),
+        // `media_objects.duration_seconds` is a Drizzle `numeric` column
+        // → arrives as a string. Coerce to a JS number so the desktop's
+        // strict JSONDecoder accepts it as Double.
+        durationSeconds: r.durationSeconds == null ? null : Number(r.durationSeconds),
+        thumbnailUrl,
+      };
+    })
   );
 
   return NextResponse.json({ items });

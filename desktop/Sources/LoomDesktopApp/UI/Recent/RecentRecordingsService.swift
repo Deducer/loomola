@@ -39,10 +39,14 @@ final class RecentRecordingsService: ObservableObject {
     /// exit.
     nonisolated(unsafe) private var didBecomeActiveObserver: NSObjectProtocol?
 
-    init(backend: BackendClient, limit: Int = 4) {
+    init(backend: BackendClient, limit: Int = 30) {
         self.backend = backend
         self.limit = limit
         wireLifecycleObservers()
+        // Cold-launch refresh so the strip populates the moment the
+        // user lands on the idle home view, instead of waiting on
+        // RecentStrip.onAppear (race-prone) or the 60s timer.
+        refresh()
     }
 
     deinit {

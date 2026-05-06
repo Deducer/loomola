@@ -2,27 +2,32 @@ import AppKit
 import SwiftUI
 
 /// One card in the Recent recordings grid (video mode). Shows a
-/// 16:9 thumbnail prominent + title + relative timestamp. Click →
-/// opens the share page in the default browser.
+/// 16:9 thumbnail with a subtle border and shadow, then title +
+/// relative timestamp. Click → opens the share page.
 ///
-/// Sized at 220×124 thumbnail (16:9) — bumped from the original
-/// 140×84 because the previous size made thumbnails too small to
-/// be useful as a "browse by frame" cue, which is the whole point
-/// of a recent strip for screen recordings.
+/// The border + shadow are deliberate: dark thumbnails (anything on a
+/// black background) blend into the canvas without a visible edge.
+/// The shadow gives them lift; the border keeps the silhouette
+/// readable when the shadow is subtle.
 struct RecentCard: View {
     let recording: RecentRecording
     let onOpen: () -> Void
 
     @State private var hovering = false
 
-    private let cardWidth: CGFloat = 220
-    private let thumbnailHeight: CGFloat = 124
+    private let cardWidth: CGFloat = 240
+    private let thumbnailHeight: CGFloat = 135  // 16:9
 
     var body: some View {
         VStack(alignment: .leading, spacing: DSSpacing.sm) {
             thumbnail
                 .frame(width: cardWidth, height: thumbnailHeight)
                 .clipShape(RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
+                        .strokeBorder(DSColor.Border.subtle, lineWidth: 1)
+                }
+                .dsShadow(hovering ? .raised : .subtle)
             VStack(alignment: .leading, spacing: 2) {
                 Text(recording.title)
                     .font(DSFont.Body.md())
@@ -31,7 +36,7 @@ struct RecentCard: View {
                     .multilineTextAlignment(.leading)
                 Text(relativeTimestamp)
                     .font(DSFont.Body.sm())
-                    .foregroundStyle(DSColor.Text.tertiary)
+                    .foregroundStyle(DSColor.Text.secondary)
             }
             .frame(width: cardWidth, alignment: .leading)
         }
