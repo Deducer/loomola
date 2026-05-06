@@ -21,7 +21,7 @@ struct IdleHomeView: View {
                     meetingPromptCard(context: context)
                 }
 
-                RecentStrip(service: recentService)
+                RecentStrip(service: recentService, captureMode: captureMode)
                     .padding(.top, DSSpacing.lg)
             }
             .padding(.horizontal, DSSpacing.xxl)
