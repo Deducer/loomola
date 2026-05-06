@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Floating HUD shown during a composite video recording. Lives top-
 /// center of the screen by default; user can drag. Mirrors
-/// `AudioRecordingWindowController`'s pattern but in a horizontal
+/// `RecordingStatusOverlayController`'s pattern but in a horizontal
 /// pill optimized for "you're recording right now" feedback:
 /// recording dot + elapsed timer + mic meter + stop + discard.
 ///

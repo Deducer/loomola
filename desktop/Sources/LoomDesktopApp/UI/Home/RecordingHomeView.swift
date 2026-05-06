@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Surface shown in the main window while a composite or audio
 /// recording is active. Replaces the idle home; the on-screen HUD
-/// (`VideoRecordingWindowController` / `AudioRecordingWindowController`)
+/// (`VideoRecordingWindowController` / `RecordingStatusOverlayController`)
 /// keeps showing — this is the *main-window* representation if the
 /// user happens to bring it to front.
 struct RecordingHomeView: View {

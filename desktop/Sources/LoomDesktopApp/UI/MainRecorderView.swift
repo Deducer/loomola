@@ -4,8 +4,14 @@ import SwiftUI
 struct MainRecorderView: View {
     @StateObject private var viewModel = RecorderViewModel()
     @State private var meetingPromptWindow = MeetingPromptWindowController()
-    @State private var audioRecordingWindow = AudioRecordingWindowController()
     @State private var videoRecordingWindow = VideoRecordingWindowController()
+    /// Granola-shape always-visible audio-recording reminder. Small
+    /// vertical capsule that floats on every Space and every app
+    /// while audio is recording, so the user never loses track even
+    /// when in another desktop / app. Replaces the Stage-8 in-app
+    /// `RecordingStatusPill`. Spec:
+    /// docs/superpowers/specs/2026-05-06-floating-recording-pill-design.md.
+    @State private var recordingStatusOverlay = RecordingStatusOverlayController()
     @State private var permissionStatus: PermissionStatus = PermissionChecker.currentStatus()
     @State private var dismissedPreflight = false
     @State private var captureMode: CaptureMode = .video
@@ -116,22 +122,6 @@ struct MainRecorderView: View {
             .keyboardShortcut("s", modifiers: .command)
             .opacity(0)
         )
-        .overlay(alignment: .bottom) {
-            // Audio recording is active but the user navigated back
-            // to the home view — surface a persistent pill so they
-            // don't forget the recording is running and have one-tap
-            // access to Stop or to return to the note.
-            if viewModel.activeRecordingKind == .audio, noteTarget == nil {
-                RecordingStatusPill(
-                    startedAt: viewModel.activeAudioRecordingStartedAt,
-                    audioLevel: viewModel.audioLevel,
-                    onOpen: { noteTarget = .recording },
-                    onStop: { viewModel.stopAudioNoteRecordingAndUpload() }
-                )
-                .padding(.bottom, DSSpacing.xl)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
         .animation(LoomolaMotion.medium, value: viewModel.activeRecordingKind)
         .animation(LoomolaMotion.medium, value: noteTarget)
         .sheet(isPresented: $showSettings) {
@@ -154,19 +144,13 @@ struct MainRecorderView: View {
         }
         .onChange(of: viewModel.activeRecordingKind) { _, kind in
             updateMeetingPromptWindow()
-            updateAudioRecordingWindow()
+            updateRecordingStatusOverlay()
             updateVideoRecordingWindow()
             updateNoteTarget()
             RecorderCommands.isVideoRecording = (kind == .video)
         }
-        .onChange(of: viewModel.activeAudioRecordingStartedAt) { _, _ in
-            updateAudioRecordingWindow()
-        }
-        .onChange(of: viewModel.audioTitle) { _, _ in
-            updateAudioRecordingWindow()
-        }
         .onChange(of: viewModel.audioLevel) { _, level in
-            handleAudioLevelChange(level: level)
+            videoRecordingWindow.updateLevel(level)
         }
         .onChange(of: viewModel.includeMicInAudioNote) { _, _ in
             updateMeetingPromptWindow()
@@ -176,7 +160,7 @@ struct MainRecorderView: View {
         }
         .onDisappear {
             meetingPromptWindow.hide()
-            audioRecordingWindow.hide()
+            recordingStatusOverlay.hide()
             videoRecordingWindow.hide()
         }
         .onReceive(NotificationCenter.default.publisher(for: RecorderCommands.toggleRecording)) { _ in
@@ -295,11 +279,6 @@ struct MainRecorderView: View {
         )
     }
 
-    private func handleAudioLevelChange(level: Double) {
-        updateAudioRecordingWindow()
-        videoRecordingWindow.updateLevel(level)
-    }
-
     private func updateVideoRecordingWindow() {
         guard
             viewModel.activeRecordingKind == .video,
@@ -316,13 +295,20 @@ struct MainRecorderView: View {
         )
     }
 
-    private func updateAudioRecordingWindow() {
-        // The Granola-style NotesSidePanel replaces the small
-        // floating capsule for audio note recordings — having both
-        // is redundant. Keep the capsule controller wired up but
-        // never show it for audio. (Video recording still uses
-        // VideoRecordingWindowController for its top-center HUD.)
-        audioRecordingWindow.hide()
+    /// Show / hide the floating cross-Spaces recording reminder
+    /// pill based on whether an audio note is currently capturing.
+    /// Tap brings the main window to the front and drops the user
+    /// into the workspace bound to that recording — works whether
+    /// the workspace is already open or not.
+    private func updateRecordingStatusOverlay() {
+        if viewModel.activeRecordingKind == .audio {
+            recordingStatusOverlay.show(viewModel: viewModel) {
+                AppActivation.bringRecorderToFront()
+                noteTarget = .recording
+            }
+        } else {
+            recordingStatusOverlay.hide()
+        }
     }
 
     /// Auto-swap the main window into note-workspace mode when an

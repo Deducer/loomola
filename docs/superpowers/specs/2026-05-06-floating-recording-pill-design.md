@@ -2,7 +2,7 @@
 
 **Author:** Claude Opus 4.7
 **Date:** 2026-05-06
-**Status:** Spec — not yet planned or built
+**Status:** Built 2026-05-06 (`RecordingStatusOverlayController` + `RecordingStatusOverlayView` in `desktop/Sources/LoomDesktopApp/UI/RecordingStatusOverlay.swift`); pending install + dogfood. Stage-8 in-app `RecordingStatusPill.swift` retired in the same commit. The retired no-op `AudioRecordingWindowController.swift` was removed too.
 **Driving feedback:** Ian, 2026-05-06 (during the same live call as the live-transcription-drawer spec) — *"Granola has this cool very small and unobtrusive vertical pill overlay with the granola logo and a simple three vertical bar sound waveform (that responds to the audio), and it follows you whatever desktop window you're on so you're always reminded that it's recording (very helpful)…"*
 
 ---
