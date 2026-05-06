@@ -235,6 +235,7 @@ A second high-density polish day after Stage 7's dogfood. The audio note flow go
 - **Sized window default.** `defaultSize(width: 1080, height: 740)` + `minWidth: 920, minHeight: 620`. Half a 1080p / third of a 1440p screen — small enough to live next to a Zoom call.
 - **Workspace content readable cap.** `maxWidth: 640` centered horizontally so the editor doesn't sprawl across a wide window; recording control bar capped at 480pt.
 - **Single audio recording UI.** The small floating capsule and `RecordingHomeView` are suppressed for audio mode — workspace owns the recording UI.
+- **Floating cross-Spaces recording pill.** Granola-shape vertical capsule (`RecordingStatusOverlayController` + `RecordingStatusOverlayView`, file `desktop/Sources/LoomDesktopApp/UI/RecordingStatusOverlay.swift`) shown for the duration of every audio note recording. Floats on every Space and every app (`canJoinAllSpaces + .stationary + .fullScreenAuxiliary`); Loomola brand mark + 3-bar live meter; hover reveals a 6-dot drag grip (drag-to-move with screen clamping + UserDefaults position recall under `loomola.recordingPill.position`); tap calls `AppActivation.bringRecorderToFront()` + sets `noteTarget = .recording`. `sharingType: .none` keeps it out of the user's own captures. The Stage-8 in-app `RecordingStatusPill` and the no-op `AudioRecordingWindowController` were retired in the same change.
 
 ## Granola-alt (in progress)
 
