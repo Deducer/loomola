@@ -26,7 +26,13 @@ export async function GET(request: Request) {
       title: r.aiTitle ?? r.title ?? "Untitled",
       kind: r.type,
       createdAt: r.createdAt.toISOString(),
-      durationSeconds: r.durationSeconds ?? null,
+      // `media_objects.duration_seconds` is a Drizzle `numeric` column,
+      // which arrives in JS as a *string* to preserve precision. The
+      // desktop client's DTO declares this as `Double?` and decodes
+      // strictly, so emitting the raw string makes its JSONDecoder
+      // throw and the Recent strip silently shows the empty state.
+      // Coerce to a JS number here so the JSON output is a number.
+      durationSeconds: r.durationSeconds == null ? null : Number(r.durationSeconds),
       thumbnailUrl: r.compositeThumbnailKey
         ? await presignGet(r.compositeThumbnailKey)
         : null,
