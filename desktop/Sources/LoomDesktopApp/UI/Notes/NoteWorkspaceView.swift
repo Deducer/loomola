@@ -88,7 +88,7 @@ struct NoteWorkspaceView: View {
                     bodyEditor
                 }
                 .padding(.horizontal, DSSpacing.xl)
-                .padding(.top, DSSpacing.md)
+                .padding(.top, 8)
                 .padding(.bottom, DSSpacing.xxl)
             }
             if isRecording {
@@ -109,27 +109,27 @@ struct NoteWorkspaceView: View {
     // MARK: - Title bar
 
     private var titleBar: some View {
+        // Inline with the macOS traffic lights — `fullSizeContentView`
+        // on the panel lets our content draw under the title chrome,
+        // so the home button + ⋯ live in the same Y band as the
+        // traffic lights. Total height matches the system title bar
+        // (~28pt) plus a few px of breathing room.
         HStack(spacing: 0) {
-            // 78pt traffic-light spacer (matches CustomTitleBar).
+            // 78pt traffic-light spacer.
             Spacer().frame(width: 78)
-            IconButton(
-                icon: "chevron.left",
-                size: 26,
-                action: onClose
-            )
-            .help(isRecording ? "Hide while recording (panel reappears on next event)" : "Close")
+            HomeBackButton(action: onClose)
+                .help(isRecording ? "Hide (panel reappears on next event)" : "Close")
             Spacer()
-            IconButton(
-                icon: "ellipsis",
-                size: 26,
-                action: { showRowMenu.toggle() }
-            )
+            GhostEllipsisButton {
+                showRowMenu.toggle()
+            }
             .popover(isPresented: $showRowMenu, arrowEdge: .top) {
                 rowMenu
             }
             .padding(.trailing, DSSpacing.md)
         }
-        .frame(height: 40)
+        .frame(height: 32)
+        .padding(.top, 4)
     }
 
     private var rowMenu: some View {
@@ -334,19 +334,14 @@ struct NoteWorkspaceView: View {
 
     private var recordingControlBar: some View {
         HStack(spacing: DSSpacing.md) {
-            // Mini live audio level meter, 4 bars. Reads
-            // `viewModel.audioLevel`. Granola shows an actual
-            // waveform; bars are a close-enough proxy for v1.
-            HStack(alignment: .center, spacing: 2) {
-                ForEach(0..<4) { i in
-                    let threshold = Double(i + 1) * 0.25
-                    let active = viewModel.audioLevel >= threshold * 0.8
-                    RoundedRectangle(cornerRadius: 1)
-                        .fill(active ? DSColor.Accent.primary : DSColor.Bg.subtle)
-                        .frame(width: 3, height: 10 + CGFloat(i) * 2)
-                }
-            }
-            .frame(width: 28)
+            AudioLevelMeter(level: viewModel.audioLevel)
+
+            // Chevron — placeholder for live transcription drawer
+            // (deferred; needs Deepgram streaming).
+            Image(systemName: "chevron.up")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(DSColor.Text.tertiary)
+                .help("Live transcription (coming soon)")
 
             // Timer.
             if let startedAt = viewModel.activeAudioRecordingStartedAt {
@@ -359,30 +354,13 @@ struct NoteWorkspaceView: View {
 
             Spacer()
 
-            // Pause/Resume was reverted in 259f909 due to PTS
-            // rewrite crashes. When that lands cleanly, restore
-            // an icon-button trio (Pause/Resume + Stop) here.
+            // Pause/Resume was reverted in 259f909 (PTS-rewrite
+            // crash). When that lands cleanly, an icon-only pause/
+            // resume goes here on the left of Stop.
 
-            // Stop & upload — primary destructive button.
-            Button {
+            StopRecordingButton {
                 viewModel.stopAudioNoteRecordingAndUpload()
-            } label: {
-                HStack(spacing: 6) {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(.white)
-                        .frame(width: 9, height: 9)
-                    Text("Stop")
-                        .font(DSFont.Body.sm())
-                }
-                .padding(.horizontal, DSSpacing.md)
-                .padding(.vertical, 6)
-                .foregroundStyle(.white)
-                .background(
-                    Capsule().fill(DSColor.State.recording)
-                )
             }
-            .buttonStyle(.plain)
-            .help("Stop & upload")
         }
         .padding(.horizontal, DSSpacing.lg)
         .padding(.vertical, DSSpacing.sm)
@@ -491,6 +469,133 @@ private struct WorkspacePill: View {
         .overlay { ActionHitArea(action: action) }
         .onHover { hovering = $0 }
         .animation(LoomolaMotion.quick, value: hovering)
+    }
+}
+
+// MARK: - Title-bar buttons
+
+/// Granola-shape home/back button — bordered pill housing a
+/// chevron-left + house icon. Subtle bg fill on hover.
+private struct HomeBackButton: View {
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "chevron.left")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(DSColor.Text.secondary)
+            Image(systemName: "house")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(DSColor.Text.secondary)
+        }
+        .padding(.horizontal, DSSpacing.sm)
+        .padding(.vertical, 4)
+        .background(
+            Capsule()
+                .fill(hovering ? DSColor.Bg.subtle : Color.clear)
+        )
+        .overlay {
+            Capsule()
+                .strokeBorder(DSColor.Border.subtle, lineWidth: 1)
+        }
+        .contentShape(Capsule())
+        .overlay { ActionHitArea(action: action) }
+        .onHover { hovering = $0 }
+        .animation(LoomolaMotion.quick, value: hovering)
+    }
+}
+
+/// Granola-shape ⋯ — bare three dots that gain a circle bg on
+/// hover. Not a "button" until you hover it.
+private struct GhostEllipsisButton: View {
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Image(systemName: "ellipsis")
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(hovering ? DSColor.Text.secondary : DSColor.Text.tertiary)
+            .frame(width: 24, height: 24)
+            .background(
+                Circle()
+                    .fill(hovering ? DSColor.Bg.subtle : Color.clear)
+            )
+            .contentShape(Circle())
+            .overlay { ActionHitArea(action: action) }
+            .onHover { hovering = $0 }
+            .animation(LoomolaMotion.quick, value: hovering)
+    }
+}
+
+// MARK: - Recording controls
+
+/// Granola-shape Stop — small filled red square inside an outlined
+/// pill. No "Stop" text; the icon + recording context conveys it.
+private struct StopRecordingButton: View {
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 0) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(DSColor.State.recording)
+                .frame(width: 10, height: 10)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            Capsule()
+                .fill(hovering ? DSColor.Bg.subtle : Color.clear)
+        )
+        .overlay {
+            Capsule()
+                .strokeBorder(DSColor.Border.strong, lineWidth: 1)
+        }
+        .contentShape(Capsule())
+        .overlay { ActionHitArea(action: action) }
+        .onHover { hovering = $0 }
+        .help("Stop & upload")
+        .animation(LoomolaMotion.quick, value: hovering)
+    }
+}
+
+/// Five-bar live audio meter that scales heights smoothly with
+/// `level` and uses a perceived-loudness curve (sqrt) so quiet
+/// speech is still visible. Granola-style "subtle waveform"
+/// approximation.
+private struct AudioLevelMeter: View {
+    let level: Double
+
+    /// Per-bar shape multiplier so the meter has a visual peak in
+    /// the middle (like an actual waveform), not flat across.
+    private let multipliers: [Double] = [0.55, 0.85, 1.0, 0.85, 0.6]
+
+    /// Linear input gets sqrt'd (perceived-loudness curve) and
+    /// modestly amplified. Speech peak ~0.2-0.4 → effective 0.55-
+    /// 0.78 → comfortably visible bars instead of nearly-static.
+    private var amplified: Double {
+        let l = max(0, min(1, level))
+        return min(1.0, sqrt(l * 1.6))
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 2) {
+            ForEach(0..<5, id: \.self) { i in
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(DSColor.Accent.primary.opacity(0.85))
+                    .frame(width: 2, height: barHeight(at: i))
+            }
+        }
+        .frame(width: 22, height: 18, alignment: .center)
+        .animation(.interpolatingSpring(stiffness: 180, damping: 15), value: amplified)
+    }
+
+    private func barHeight(at index: Int) -> CGFloat {
+        let minH = 3.0
+        let maxH = 18.0
+        let scaled = amplified * multipliers[index]
+        return CGFloat(minH + (maxH - minH) * scaled)
     }
 }
 
