@@ -83,7 +83,11 @@ struct HeroCaptureSection: View {
                 Field(placeholder: "Audio note title (optional)", text: $viewModel.audioTitle)
                     .frame(maxWidth: 420)
                 HStack(spacing: DSSpacing.md) {
-                    PrimaryButton("Start audio note", icon: "waveform.circle.fill") {
+                    PrimaryButton(
+                        viewModel.isStartingRecording ? "Starting…" : "Start audio note",
+                        icon: "waveform.circle.fill",
+                        isLoading: viewModel.isStartingRecording
+                    ) {
                         viewModel.startAudioNoteRecording()
                     }
                     .disabled(audioStartDisabled)
@@ -139,6 +143,7 @@ struct HeroCaptureSection: View {
     private var audioStartDisabled: Bool {
         viewModel.state == .signedOut ||
             viewModel.activeRecordingKind != nil ||
+            viewModel.isStartingRecording ||
             (!viewModel.includeMicInAudioNote && !viewModel.includeSystemAudioInAudioNote)
     }
 }

@@ -26,8 +26,9 @@ final class MicrophoneCaptureCoordinator: NSObject, @unchecked Sendable {
     private var engine: AVAudioEngine?
     private var writer: AudioAssetWriter?
     private var formatDescription: CMAudioFormatDescription?
+    private var nextSampleTime: AVAudioFramePosition = 0
 
-    /// Starts capturing mic audio with AEC. Two write modes:
+    /// Starts capturing mic audio, optionally with AEC. Two write modes:
     ///
     /// - When `outputURL` is non-nil, writes captured PCM to a
     ///   .m4a file via AudioAssetWriter (the audio-note flow uses
@@ -37,12 +38,11 @@ final class MicrophoneCaptureCoordinator: NSObject, @unchecked Sendable {
     ///   downstream consumer wired the callback (the composite
     ///   recorder uses this — the audio gets muxed inline into the
     ///   composite MP4, no separate file needed).
-    ///
-    /// The nil path was added after Ian saw a hard crash in
-    /// AVAssetWriterInput.init on macOS 26.4.1 — the composite flow
-    /// never used the .m4a anyway, so skipping the construction
-    /// sidesteps the crash entirely.
-    func start(deviceID: String?, outputURL: URL?) throws {
+    func start(
+        deviceID: String?,
+        outputURL: URL?,
+        voiceProcessingEnabled: Bool = true
+    ) throws {
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
 
@@ -53,17 +53,19 @@ final class MicrophoneCaptureCoordinator: NSObject, @unchecked Sendable {
             try setInputDevice(on: inputNode, uniqueID: deviceID)
         }
 
-        // Acoustic echo cancellation. macOS auto-uses the current system
-        // output as the reference signal — the audio coming out of the
-        // user's speakers gets subtracted from the mic input.
-        do {
-            try inputNode.setVoiceProcessingEnabled(true)
-        } catch {
-            // If voice processing can't be enabled (rare — usually means
-            // the input device doesn't support it), fall back to plain
-            // capture and log. The recording is still produced; just
-            // without AEC, so the user may hear participant echo.
-            print("[mic] voice processing unavailable, falling back: \(error)")
+        if voiceProcessingEnabled {
+            // Acoustic echo cancellation. macOS auto-uses the current
+            // system output as the reference signal — the audio coming out
+            // of the user's speakers gets subtracted from the mic input.
+            do {
+                try inputNode.setVoiceProcessingEnabled(true)
+            } catch {
+                // If voice processing can't be enabled (rare — usually
+                // means the input device doesn't support it), fall back to
+                // plain capture and log. The recording is still produced;
+                // just without AEC, so the user may hear participant echo.
+                print("[mic] voice processing unavailable, falling back: \(error)")
+            }
         }
 
         let format = inputNode.outputFormat(forBus: 0)
@@ -83,6 +85,7 @@ final class MicrophoneCaptureCoordinator: NSObject, @unchecked Sendable {
         // Cache the CMAudioFormatDescription so we don't rebuild it
         // every tap callback.
         self.formatDescription = try makeFormatDescription(from: format)
+        self.nextSampleTime = 0
 
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: format) {
             [weak self] buffer, time in
@@ -94,6 +97,40 @@ final class MicrophoneCaptureCoordinator: NSObject, @unchecked Sendable {
         self.engine = engine
     }
 
+    func startWithTimeout(
+        deviceID: String?,
+        outputURL: URL?,
+        voiceProcessingEnabled: Bool = true,
+        timeoutNanoseconds: UInt64 = 8_000_000_000
+    ) async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            let resolver = MicrophoneStartResolver(continuation)
+            let startTask = Task.detached(priority: .userInitiated) { [self] in
+                do {
+                    try start(
+                        deviceID: deviceID,
+                        outputURL: outputURL,
+                        voiceProcessingEnabled: voiceProcessingEnabled
+                    )
+                    if !resolver.resolve(.success(())) {
+                        _ = try? await stop()
+                    }
+                } catch {
+                    _ = resolver.resolve(.failure(error))
+                }
+            }
+
+            Task.detached { [self, startTask] in
+                try? await Task.sleep(nanoseconds: timeoutNanoseconds)
+                if resolver.resolve(.failure(MicrophoneCaptureCoordinatorError.startTimedOut)) {
+                    startTask.cancel()
+                    await startTask.value
+                    _ = try? await stop()
+                }
+            }
+        }
+    }
+
     func stop() async throws -> URL? {
         guard let engine else {
             throw MicrophoneCaptureCoordinatorError.notRecording
@@ -102,6 +139,7 @@ final class MicrophoneCaptureCoordinator: NSObject, @unchecked Sendable {
         engine.stop()
         self.engine = nil
         self.formatDescription = nil
+        self.nextSampleTime = 0
 
         // If the writer was set up (audio-note flow), finalize and
         // return the resulting URL. If not (composite flow), there
@@ -120,14 +158,65 @@ final class MicrophoneCaptureCoordinator: NSObject, @unchecked Sendable {
             onLevel?(level)
         }
 
-        if let sampleBuffer = makeSampleBuffer(
-            from: buffer,
-            at: time,
-            formatDescription: formatDescription
-        ) {
-            try? writer?.append(sampleBuffer)
-            onSampleBuffer?(sampleBuffer)
+        // File write: the AVAudioPCMBuffer from the engine tap goes
+        // straight to AudioAssetWriter (which uses AVAudioFile and
+        // wants PCM directly). No CMSampleBuffer round-trip needed
+        // for this path.
+        try? writer?.append(buffer)
+
+        // Composite path: the bubble compositor still consumes
+        // CMSampleBuffer, so build one for the callback.
+        if onSampleBuffer != nil {
+            let sampleTime = resolvedSampleTime(for: buffer, time: time)
+            if let sampleBuffer = makeSampleBuffer(
+                from: buffer,
+                sampleTime: sampleTime,
+                formatDescription: formatDescription
+            ) {
+                onSampleBuffer?(sampleBuffer)
+            }
         }
+    }
+
+    private func resolvedSampleTime(
+        for buffer: AVAudioPCMBuffer,
+        time: AVAudioTime
+    ) -> AVAudioFramePosition {
+        let frameLength = AVAudioFramePosition(buffer.frameLength)
+        if time.isSampleTimeValid {
+            nextSampleTime = time.sampleTime + frameLength
+            return time.sampleTime
+        }
+        let sampleTime = nextSampleTime
+        nextSampleTime += frameLength
+        return sampleTime
+    }
+}
+
+private final class MicrophoneStartResolver: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, Error>?
+
+    init(_ continuation: CheckedContinuation<Void, Error>) {
+        self.continuation = continuation
+    }
+
+    func resolve(_ result: Result<Void, Error>) -> Bool {
+        lock.lock()
+        guard let continuation else {
+            lock.unlock()
+            return false
+        }
+        self.continuation = nil
+        lock.unlock()
+
+        switch result {
+        case .success:
+            continuation.resume()
+        case .failure(let error):
+            continuation.resume(throwing: error)
+        }
+        return true
     }
 }
 
@@ -241,7 +330,7 @@ private func makeFormatDescription(
 
 private func makeSampleBuffer(
     from buffer: AVAudioPCMBuffer,
-    at time: AVAudioTime,
+    sampleTime: AVAudioFramePosition,
     formatDescription: CMAudioFormatDescription
 ) -> CMSampleBuffer? {
     let frameCount = CMItemCount(buffer.frameLength)
@@ -249,7 +338,7 @@ private func makeSampleBuffer(
 
     let sampleRate = buffer.format.sampleRate
     let pts = CMTime(
-        value: time.sampleTime,
+        value: sampleTime,
         timescale: CMTimeScale(sampleRate)
     )
     var timing = CMSampleTimingInfo(
@@ -306,6 +395,7 @@ private func peakLevel(of buffer: AVAudioPCMBuffer) -> Double? {
 
 enum MicrophoneCaptureCoordinatorError: LocalizedError {
     case notRecording
+    case startTimedOut
     case audioUnitUnavailable
     case cannotSetDevice(OSStatus)
     case cannotEnumerateDevices(OSStatus)
@@ -316,6 +406,8 @@ enum MicrophoneCaptureCoordinatorError: LocalizedError {
         switch self {
         case .notRecording:
             return "There is no active microphone recording to stop."
+        case .startTimedOut:
+            return "The microphone took too long to start. Check microphone permissions or try another input device."
         case .audioUnitUnavailable:
             return "The microphone audio unit was not available."
         case .cannotSetDevice(let status):

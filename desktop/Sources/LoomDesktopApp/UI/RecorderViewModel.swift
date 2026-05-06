@@ -96,6 +96,10 @@ final class RecorderViewModel: ObservableObject {
     /// Separate from audioNoteRecorder so video + audio note flows don't
     /// share state. Stops on stopLocalRecordingAndUpload.
     private var compositeMicCoordinator: MicrophoneCaptureCoordinator?
+    private var compositeStartWatchdogTask: Task<Void, Never>?
+    private var pendingCompositeMicTask: Task<Void, Never>?
+    private var pendingCompositeStartToken: UUID?
+    private var activeCompositeRecordingToken: UUID?
 
     /// Persist + apply the user's chosen camera device ID. Restarting
     /// the shared camera coordinator with the new ID swaps the input
@@ -203,6 +207,22 @@ final class RecorderViewModel: ObservableObject {
     func signOut() {
         guard let authService else { return }
         Task {
+            compositeStartWatchdogTask?.cancel()
+            pendingCompositeMicTask?.cancel()
+            compositeStartWatchdogTask = nil
+            pendingCompositeMicTask = nil
+            pendingCompositeStartToken = nil
+            activeCompositeRecordingToken = nil
+            isStartingRecording = false
+            if let screenCaptureCoordinator {
+                try? await screenCaptureCoordinator.stop()
+                screenCaptureCoordinator.onScreenSampleBuffer = nil
+            }
+            _ = try? await compositeMicCoordinator?.stop()
+            compositeRecorder = nil
+            compositeMicCoordinator = nil
+            activeRecordingURL = nil
+            activeVideoRecordingStartedAt = nil
             await audioNoteRecorder?.cancel()
             obsidianSyncTask?.cancel()
             obsidianRealtimeTask?.cancel()
@@ -450,7 +470,7 @@ final class RecorderViewModel: ObservableObject {
             statusMessage = "ScreenCaptureKit requires macOS 14 or newer."
             return
         }
-        guard let screenCaptureCoordinator else {
+        guard screenCaptureCoordinator != nil else {
             statusMessage = "ScreenCaptureKit requires macOS 14 or newer."
             return
         }
@@ -493,17 +513,22 @@ final class RecorderViewModel: ObservableObject {
 
         let micDeviceID = selectedMicDeviceID
         let camDeviceID = selectedCameraDeviceID
+        let startToken = UUID()
+        pendingCompositeStartToken = startToken
+        activeCompositeRecordingToken = nil
+        compositeStartWatchdogTask?.cancel()
+        compositeStartWatchdogTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 12_000_000_000)
+            self?.handleCompositeStartTimeout(
+                token: startToken,
+                outputURL: outputURL
+            )
+        }
 
-        // Heavyweight setup OFF the main actor. Two operations here
-        // can each block for several seconds when cold:
-        //   - AVAssetWriter init in CompositeRecorder.prepare (disk
-        //     touch + encoder setup)
-        //   - inputNode.setVoiceProcessingEnabled(true) and
-        //     engine.start() in MicrophoneCaptureCoordinator.start
-        //     (Audio Unit voice processing cold-boot)
-        // Doing these on main wedged the UI for the duration —
-        // beach ball, click queue stalled, click delivery silently
-        // broken once it resumed. Off main, the UI stays responsive.
+        // Heavyweight writer setup OFF the main actor. Microphone startup
+        // deliberately happens after the screen recorder is live; CoreAudio
+        // can stall, and video should still start instead of pinning the UI
+        // to "Starting..." forever.
         Task.detached(priority: .userInitiated) { [weak self] in
             let compositor = CompositeRecorder(
                 bubbleController: BubblePositionController.shared,
@@ -513,27 +538,16 @@ final class RecorderViewModel: ObservableObject {
             do {
                 try compositor.prepare(outputURL: outputURL, frameSize: pixelSize)
             } catch {
-                await MainActor.run {
-                    self?.isStartingRecording = false
-                    self?.state = .failed(message: error.localizedDescription)
-                    self?.statusMessage = "Composite recorder setup failed: \(error.localizedDescription)"
-                }
+                await self?.failCompositeRecorderSetup(error, token: startToken)
                 return
-            }
-
-            // Mic failure is non-fatal — record video only.
-            let micCoordinator = MicrophoneCaptureCoordinator()
-            do {
-                try micCoordinator.start(deviceID: micDeviceID, outputURL: nil)
-            } catch {
-                print("[recorder] mic start failed: \(error.localizedDescription)")
             }
 
             await self?.installLocalRecordingState(
                 compositor: compositor,
-                micCoordinator: micCoordinator,
                 outputURL: outputURL,
-                camDeviceID: camDeviceID
+                camDeviceID: camDeviceID,
+                micDeviceID: micDeviceID,
+                startToken: startToken
             )
         }
     }
@@ -545,28 +559,19 @@ final class RecorderViewModel: ObservableObject {
     @MainActor
     private func installLocalRecordingState(
         compositor: CompositeRecorder,
-        micCoordinator: MicrophoneCaptureCoordinator,
         outputURL: URL,
-        camDeviceID: String?
+        camDeviceID: String?,
+        micDeviceID: String?,
+        startToken: UUID
     ) async {
         guard #available(macOS 14.0, *) else { return }
         guard let screenCaptureCoordinator else { return }
 
         // If the user discarded mid-setup, tear it back down.
-        guard isStartingRecording else {
-            try? await micCoordinator.stop()
-            try? await compositor.finish()
+        guard isStartingRecording, pendingCompositeStartToken == startToken else {
+            _ = try? await compositor.finish()
             try? FileManager.default.removeItem(at: outputURL)
             return
-        }
-
-        micCoordinator.onSampleBuffer = { [weak compositor] sampleBuffer in
-            compositor?.appendMicSample(sampleBuffer)
-        }
-        micCoordinator.onLevel = { [weak self] level in
-            Task { @MainActor in
-                self?.recordAudioLevel(level)
-            }
         }
 
         CameraCaptureCoordinator.shared.requestPermissionAndStart(
@@ -578,25 +583,118 @@ final class RecorderViewModel: ObservableObject {
         }
 
         compositeRecorder = compositor
-        compositeMicCoordinator = micCoordinator
         activeVideoRecordingStartedAt = Date()
         activeRecordingURL = outputURL
         activeRecordingKind = .video
+        activeCompositeRecordingToken = startToken
         state = .recording
         isStartingRecording = false
+        pendingCompositeStartToken = nil
+        compositeStartWatchdogTask?.cancel()
+        compositeStartWatchdogTask = nil
 
         do {
             let display = try await screenCaptureCoordinator.startFirstDisplayCapture()
             statusMessage = "Recording \(display.name) (composite with bubble)."
+            startCompositeMicAsync(
+                deviceID: micDeviceID,
+                compositor: compositor,
+                token: startToken
+            )
         } catch {
             screenCaptureCoordinator.onScreenSampleBuffer = nil
-            _ = try? await micCoordinator.stop()
             compositeRecorder = nil
             compositeMicCoordinator = nil
             activeVideoRecordingStartedAt = nil
             activeRecordingKind = nil
+            activeCompositeRecordingToken = nil
+            activeRecordingURL = nil
             state = .failed(message: error.localizedDescription)
             statusMessage = "Composite recording failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func failCompositeRecorderSetup(_ error: Error, token: UUID) {
+        guard pendingCompositeStartToken == token else { return }
+        pendingCompositeStartToken = nil
+        activeCompositeRecordingToken = nil
+        compositeStartWatchdogTask?.cancel()
+        compositeStartWatchdogTask = nil
+        isStartingRecording = false
+        state = .failed(message: error.localizedDescription)
+        statusMessage = "Composite recorder setup failed: \(error.localizedDescription)"
+    }
+
+    private func handleCompositeStartTimeout(token: UUID, outputURL: URL) {
+        guard pendingCompositeStartToken == token, isStartingRecording else { return }
+        pendingCompositeStartToken = nil
+        activeCompositeRecordingToken = nil
+        isStartingRecording = false
+        state = .failed(message: "Video recorder took too long to start.")
+        statusMessage = "Video recorder took too long to start. Try again, or check Screen Recording and Microphone permissions."
+        try? FileManager.default.removeItem(at: outputURL)
+    }
+
+    private func startCompositeMicAsync(
+        deviceID: String?,
+        compositor: CompositeRecorder,
+        token: UUID
+    ) {
+        pendingCompositeMicTask?.cancel()
+        let micCoordinator = MicrophoneCaptureCoordinator()
+        micCoordinator.onSampleBuffer = { [weak compositor] sampleBuffer in
+            compositor?.appendMicSample(sampleBuffer)
+        }
+        micCoordinator.onLevel = { [weak self] level in
+            Task { @MainActor in
+                self?.recordAudioLevel(level)
+            }
+        }
+        pendingCompositeMicTask = Task { [weak self, micCoordinator] in
+            do {
+                try await micCoordinator.startWithTimeout(
+                    deviceID: deviceID,
+                    outputURL: nil,
+                    voiceProcessingEnabled: false
+                )
+            } catch {
+                print("[recorder] mic start failed: \(error.localizedDescription)")
+                self?.clearPendingCompositeMicTask(token: token)
+                return
+            }
+
+            if Task.isCancelled {
+                self?.stopLateCompositeMicCoordinator(micCoordinator)
+                return
+            }
+            self?.installCompositeMicCoordinator(micCoordinator, token: token)
+        }
+    }
+
+    private func installCompositeMicCoordinator(
+        _ micCoordinator: MicrophoneCaptureCoordinator,
+        token: UUID
+    ) {
+        guard activeCompositeRecordingToken == token,
+              activeRecordingKind == .video
+        else {
+            stopLateCompositeMicCoordinator(micCoordinator)
+            return
+        }
+        compositeMicCoordinator = micCoordinator
+        pendingCompositeMicTask = nil
+    }
+
+    private func clearPendingCompositeMicTask(token: UUID) {
+        guard activeCompositeRecordingToken == token else { return }
+        pendingCompositeMicTask = nil
+    }
+
+    private func stopLateCompositeMicCoordinator(
+        _ micCoordinator: MicrophoneCaptureCoordinator
+    ) {
+        Task {
+            _ = try? await micCoordinator.stop()
         }
     }
 
@@ -608,6 +706,13 @@ final class RecorderViewModel: ObservableObject {
         else { return }
         let micCoordinator = compositeMicCoordinator
         let startedAt = activeVideoRecordingStartedAt ?? Date()
+        compositeStartWatchdogTask?.cancel()
+        pendingCompositeMicTask?.cancel()
+        compositeStartWatchdogTask = nil
+        pendingCompositeMicTask = nil
+        pendingCompositeStartToken = nil
+        activeCompositeRecordingToken = nil
+        isStartingRecording = false
         compositeRecorder = nil
         compositeMicCoordinator = nil
         activeVideoRecordingStartedAt = nil
@@ -678,11 +783,30 @@ final class RecorderViewModel: ObservableObject {
     /// and best-effort deletes the temp file.
     func cancelLocalRecording() {
         guard #available(macOS 14.0, *) else { return }
+        if isStartingRecording {
+            compositeStartWatchdogTask?.cancel()
+            pendingCompositeMicTask?.cancel()
+            compositeStartWatchdogTask = nil
+            pendingCompositeMicTask = nil
+            pendingCompositeStartToken = nil
+            activeCompositeRecordingToken = nil
+            isStartingRecording = false
+            state = .signedInIdle
+            statusMessage = "Recording start cancelled."
+            return
+        }
         guard let screenCaptureCoordinator,
               let compositor = compositeRecorder as? CompositeRecorder
         else { return }
         let micCoordinator = compositeMicCoordinator
         let outputURL = activeRecordingURL
+        compositeStartWatchdogTask?.cancel()
+        pendingCompositeMicTask?.cancel()
+        compositeStartWatchdogTask = nil
+        pendingCompositeMicTask = nil
+        pendingCompositeStartToken = nil
+        activeCompositeRecordingToken = nil
+        isStartingRecording = false
         compositeRecorder = nil
         compositeMicCoordinator = nil
         activeVideoRecordingStartedAt = nil
@@ -702,7 +826,15 @@ final class RecorderViewModel: ObservableObject {
     }
 
     func startAudioNoteRecording() {
+        guard !isStartingRecording else {
+            statusMessage = "Another recording is still starting. Wait a moment, then try again."
+            return
+        }
         guard let audioNoteRecorder else { return }
+        // SCStream + backend.startRecording can take 3-4 seconds.
+        // Flip isStartingRecording so the button shows "Starting…"
+        // and disables — without this the click looked dead.
+        isStartingRecording = true
         state = .preparingPermissions
         statusMessage = "Starting audio note..."
         let trimmedTitle = audioTitle.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -715,6 +847,7 @@ final class RecorderViewModel: ObservableObject {
         let includeMic = includeMicInAudioNote
         let includeSystemAudio = includeSystemAudioInAudioNote
         let meetingContext = meetingContext
+        let microphoneDeviceID = selectedMicDeviceID
         meetingPromptContext = nil
         Task {
             do {
@@ -722,7 +855,8 @@ final class RecorderViewModel: ObservableObject {
                     title: title,
                     includeMic: includeMic,
                     includeSystemAudio: includeSystemAudio,
-                    meetingContext: meetingContext
+                    meetingContext: meetingContext,
+                    microphoneDeviceID: microphoneDeviceID
                 )
                 activeRecordingKind = .audio
                 activeAudioRecordingStartedAt = Date()
@@ -733,11 +867,13 @@ final class RecorderViewModel: ObservableObject {
                 audioLevel = 0
                 state = .recording
                 statusMessage = "Recording audio note with \(session.tracks.count) track(s)."
+                isStartingRecording = false
             } catch {
                 activeRecordingKind = nil
                 activeAudioRecordingStartedAt = nil
                 state = .failed(message: error.localizedDescription)
                 statusMessage = "Audio note failed to start: \(error.localizedDescription)"
+                isStartingRecording = false
             }
         }
     }
@@ -915,6 +1051,15 @@ final class RecorderViewModel: ObservableObject {
         audioLevel = min(1, max(0, level))
     }
 
+    private func syncPendingObsidianNotesFromRealtime() {
+        syncPendingObsidianNotes(showStatus: false)
+    }
+
+    private func markObsidianRealtimeUnavailable() {
+        obsidianRealtimeTask = nil
+        statusMessage = "Realtime Obsidian sync is unavailable; 30-second backup sync is still running."
+    }
+
     private func startObsidianAutoSync() {
         guard obsidianSyncTask == nil else { return }
         syncPendingObsidianNotes(showStatus: false)
@@ -935,17 +1080,12 @@ final class RecorderViewModel: ObservableObject {
         obsidianRealtimeTask = Task { [weak self] in
             do {
                 try await obsidianRealtimeSubscriber.start(userId: userId) { [weak self] in
-                    await MainActor.run {
-                        self?.syncPendingObsidianNotes(showStatus: false)
-                    }
+                    await self?.syncPendingObsidianNotesFromRealtime()
                 }
             } catch is CancellationError {
                 return
             } catch {
-                await MainActor.run {
-                    self?.obsidianRealtimeTask = nil
-                    self?.statusMessage = "Realtime Obsidian sync is unavailable; 30-second backup sync is still running."
-                }
+                self?.markObsidianRealtimeUnavailable()
             }
         }
     }

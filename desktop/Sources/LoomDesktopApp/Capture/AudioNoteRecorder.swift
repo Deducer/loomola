@@ -5,7 +5,7 @@ final class AudioNoteRecorder {
     var onAudioLevel: ((Double) -> Void)?
 
     private let backend: BackendClient
-    private let microphoneCapture = MicrophoneCaptureCoordinator()
+    private var microphoneCapture: MicrophoneCaptureCoordinator?
     private let systemAudioCapture: SystemAudioCaptureCoordinator?
     private var session: AudioRecordingSession?
 
@@ -37,9 +37,6 @@ final class AudioNoteRecorder {
         }
 
         let audioLevelSink = onAudioLevel
-        microphoneCapture.onLevel = { level in
-            audioLevelSink?(level)
-        }
         systemAudioCapture?.onLevel = { level in
             audioLevelSink?(level)
         }
@@ -61,7 +58,11 @@ final class AudioNoteRecorder {
                 guard let url = nextSession.localFileURL(for: .mic) else {
                     throw AudioNoteRecorderError.missingLocalFileURL
                 }
-                try microphoneCapture.start(deviceID: microphoneDeviceID, outputURL: url)
+                microphoneCapture = try await startMicrophoneCapture(
+                    primaryURL: url,
+                    deviceID: microphoneDeviceID,
+                    audioLevelSink: audioLevelSink
+                )
             }
             if tracks.contains(.systemAudio) {
                 guard let url = nextSession.localFileURL(for: .systemAudio) else {
@@ -89,14 +90,13 @@ final class AudioNoteRecorder {
 
         var localFiles: [TrackKind: URL] = [:]
         if session.tracks.contains(.mic) {
-            // The audio-note flow always supplies a URL when calling
-            // start(deviceID:outputURL:), so stop() returns a non-nil
-            // URL. Force-unwrap is safe here; if it ever becomes nil
-            // the throw on the next branch (no completed tracks)
-            // surfaces the failure.
-            if let micURL = try await microphoneCapture.stop() {
+            // The mic coordinator returns the actual completed local file.
+            // In the AEC fallback case this may be either the voice-processed
+            // attempt URL or the plain-capture URL.
+            if let micURL = try await microphoneCapture?.stop() {
                 localFiles[.mic] = micURL
             }
+            microphoneCapture = nil
         }
         if session.tracks.contains(.systemAudio), let systemAudioCapture {
             localFiles[.systemAudio] = try await systemAudioCapture.stop()
@@ -133,8 +133,10 @@ final class AudioNoteRecorder {
 
     func cancel() async {
         guard let session else { return }
+        let microphoneCapture = self.microphoneCapture
+        self.microphoneCapture = nil
         if session.tracks.contains(.mic) {
-            _ = try? await microphoneCapture.stop()
+            _ = try? await microphoneCapture?.stop()
         }
         if session.tracks.contains(.systemAudio), let systemAudioCapture {
             _ = try? await systemAudioCapture.stop()
@@ -144,6 +146,41 @@ final class AudioNoteRecorder {
         }
         try? FileManager.default.removeItem(at: session.directory)
         self.session = nil
+    }
+
+    private func startMicrophoneCapture(
+        primaryURL: URL,
+        deviceID: String?,
+        audioLevelSink: ((Double) -> Void)?
+    ) async throws -> MicrophoneCaptureCoordinator {
+        // VPIO is disabled by default. Enabling
+        // `setVoiceProcessingEnabled(true)` on macOS gives us echo
+        // cancellation but also forces the OS audio output through
+        // the VoiceProcessing IO unit, which ducks/mutes other apps'
+        // playback (Zoom, Meet, music) for the duration of the
+        // recording — Ian got bitten by this mid-call. Since we
+        // already capture system audio as a separate track, the
+        // mix-audio job can do server-side dedup if echo ever shows
+        // up. Headphone users (the typical recording-a-call case)
+        // get clean mic audio either way because there's no
+        // acoustic feedback path.
+        let plain = makeMicrophoneCapture(audioLevelSink: audioLevelSink)
+        try await plain.startWithTimeout(
+            deviceID: deviceID,
+            outputURL: primaryURL,
+            voiceProcessingEnabled: false
+        )
+        return plain
+    }
+
+    private func makeMicrophoneCapture(
+        audioLevelSink: ((Double) -> Void)?
+    ) -> MicrophoneCaptureCoordinator {
+        let capture = MicrophoneCaptureCoordinator()
+        capture.onLevel = { level in
+            audioLevelSink?(level)
+        }
+        return capture
     }
 
     private static func createSessionDirectory() throws -> URL {
