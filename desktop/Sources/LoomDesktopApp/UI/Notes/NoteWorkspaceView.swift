@@ -92,8 +92,11 @@ struct NoteWorkspaceView: View {
                 .padding(.bottom, DSSpacing.xxl)
             }
             if isRecording {
-                Divider().overlay(DSColor.Border.subtle)
+                // No divider — Granola's restraint pattern. The pill
+                // floats at the bottom with vertical padding only.
                 recordingControlBar
+                    .padding(.horizontal, DSSpacing.lg)
+                    .padding(.bottom, DSSpacing.lg)
             }
         }
         .background(DSColor.Bg.canvas)
@@ -109,11 +112,11 @@ struct NoteWorkspaceView: View {
     // MARK: - Title bar
 
     private var titleBar: some View {
-        // Inline with the macOS traffic lights — `fullSizeContentView`
-        // on the panel lets our content draw under the title chrome,
-        // so the home button + ⋯ live in the same Y band as the
-        // traffic lights. Total height matches the system title bar
-        // (~28pt) plus a few px of breathing room.
+        // Inline with the macOS traffic lights. `fullSizeContentView`
+        // lets our content draw under the title chrome at y=0; the
+        // traffic lights overlay at their standard position (vertical
+        // center ~y=13). 28pt frame with no top padding centers our
+        // buttons at the same y, eliminating the wasted vertical band.
         HStack(spacing: 0) {
             // 78pt traffic-light spacer.
             Spacer().frame(width: 78)
@@ -128,8 +131,7 @@ struct NoteWorkspaceView: View {
             }
             .padding(.trailing, DSSpacing.md)
         }
-        .frame(height: 32)
-        .padding(.top, 4)
+        .frame(height: 28)
     }
 
     private var rowMenu: some View {
@@ -298,50 +300,40 @@ struct NoteWorkspaceView: View {
 
     private var bodyEditor: some View {
         ZStack(alignment: .topLeading) {
-            TextEditor(text: bodyBinding)
-                .font(DSFont.Body.md())
-                .foregroundStyle(DSColor.Text.primary)
-                .scrollContentBackground(.hidden)
-                .background(Color.clear)
-                .frame(minHeight: 320)
-                .tint(DSColor.Accent.primary)
-                .focused($bodyFocused)
-                // SwiftUI TextEditor adds ~5pt of internal leading
-                // padding around the text storage that the title
-                // row above doesn't have. Pull the editor 5pt back
-                // so the text origin lines up with the title.
-                .padding(.leading, -5)
-            if bodyBinding.wrappedValue.isEmpty && !loadingBody {
-                Text("Write notes")
-                    .font(DSFont.Body.md())
-                    .foregroundStyle(DSColor.Text.tertiary)
-                    .padding(.top, 8)
-                    .padding(.leading, 4)
-                    .allowsHitTesting(false)
-            }
-            if loadingBody {
-                Text("Loading…")
-                    .font(DSFont.Body.md())
-                    .foregroundStyle(DSColor.Text.tertiary)
-                    .padding(.top, 8)
-                    .padding(.leading, 4)
-                    .allowsHitTesting(false)
-            }
+            MarkdownTextEditor(
+                text: bodyBinding,
+                placeholder: loadingBody ? "Loading…" : "Write notes",
+                isFocused: $bodyFocused
+            )
+            .frame(minHeight: 320)
+            // Pull 5pt back to compensate for NSTextView's internal
+            // text container inset so the heading text origin lines
+            // up with the title row above.
+            .padding(.leading, -5)
         }
     }
 
     // MARK: - Recording control bar (recording mode only)
 
+    /// Single grouped pill: [meter] [▾] | [timer] | [stop]. The
+    /// recording's audio source, timer, and stop affordance share
+    /// one container so they read as one unit — stop the thing
+    /// that's being indicated by the meter and timer next to it.
+    /// Granola's larger, more conspicuous shape with restraint
+    /// (no surrounding divider).
     private var recordingControlBar: some View {
-        HStack(spacing: DSSpacing.md) {
-            AudioLevelMeter(level: viewModel.audioLevel)
+        HStack(spacing: 0) {
+            // Meter + chevron (transcription drawer placeholder).
+            HStack(spacing: 8) {
+                AudioLevelMeter(level: viewModel.audioLevel)
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(DSColor.Text.tertiary)
+            }
+            .padding(.leading, 14)
+            .padding(.trailing, 12)
 
-            // Chevron — placeholder for live transcription drawer
-            // (deferred; needs Deepgram streaming).
-            Image(systemName: "chevron.up")
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(DSColor.Text.tertiary)
-                .help("Live transcription (coming soon)")
+            pillSeparator
 
             // Timer.
             if let startedAt = viewModel.activeAudioRecordingStartedAt {
@@ -349,21 +341,43 @@ struct NoteWorkspaceView: View {
                     Text(elapsedString(now: ctx.date, startedAt: startedAt))
                         .font(DSFont.Mono.body())
                         .foregroundStyle(DSColor.Text.secondary)
+                        .monospacedDigit()
+                }
+                .padding(.horizontal, 14)
+            }
+
+            pillSeparator
+
+            // Stop. Inline inside the pill rather than a sibling pill.
+            HStack(spacing: 0) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(DSColor.State.recording)
+                    .frame(width: 12, height: 12)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+            .overlay {
+                ActionHitArea {
+                    viewModel.stopAudioNoteRecordingAndUpload()
                 }
             }
-
-            Spacer()
-
-            // Pause/Resume was reverted in 259f909 (PTS-rewrite
-            // crash). When that lands cleanly, an icon-only pause/
-            // resume goes here on the left of Stop.
-
-            StopRecordingButton {
-                viewModel.stopAudioNoteRecordingAndUpload()
-            }
+            .help("Stop & upload")
         }
-        .padding(.horizontal, DSSpacing.lg)
-        .padding(.vertical, DSSpacing.sm)
+        .background(
+            Capsule().fill(DSColor.Bg.surface)
+        )
+        .overlay {
+            Capsule().strokeBorder(DSColor.Border.subtle, lineWidth: 1)
+        }
+        .frame(height: 44)
+        .frame(maxWidth: .infinity)
+    }
+
+    private var pillSeparator: some View {
+        Rectangle()
+            .fill(DSColor.Border.subtle)
+            .frame(width: 1, height: 24)
     }
 
     // MARK: - Lifecycle

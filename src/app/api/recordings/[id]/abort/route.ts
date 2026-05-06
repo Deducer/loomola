@@ -34,9 +34,19 @@ export async function POST(
     await Promise.all(aborts);
   }
 
+  // Discard semantics: a user-initiated abort means "this never
+  // happened, scrub it." Soft-delete the row so it disappears from
+  // Recent / dashboard / search instead of lingering as an
+  // "Untitled / failed" ghost the user has to delete by hand.
+  // 30-day trash recovery still applies — the row sticks around
+  // in the DB but listRecordings filters on deletedAt IS NULL.
   await db
     .update(mediaObjects)
-    .set({ status: "failed", uploadMetadata: null })
+    .set({
+      status: "failed",
+      uploadMetadata: null,
+      deletedAt: new Date(),
+    })
     .where(
       and(eq(mediaObjects.id, recording.id), eq(mediaObjects.ownerId, user.id))
     );
