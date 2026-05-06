@@ -69,14 +69,16 @@ This repo hosts **two products on one codebase**, gated by a single env flag:
 
 ## Milestones (live status: see [`ROADMAP.md`](ROADMAP.md))
 
-Stage 1 (M1–M11) + Stage 1.5a/b + Stage 1.6 + Stage 1.7 + Stage 1.8 all shipped. Big-picture surface area:
+> **Note:** This file has drifted from the canonical project notes — `CLAUDE.md` is the up-to-date source for stage history, current architecture, and conventions. Read it first; this file's deeper sections are kept for compatibility but may lag.
+
+Stage 1 (M1–M11) + Stages 1.5–1.10 + 1.99 + Stage 2 (Granola-alt G-M1–M17) + Stage 3 (security) + Stage 4 (desktop M2 premium recorder) + Stage 5 (desktop M3 visual restructure) + Stage 6 (live notes) + Stage 7 (stability + Granola Recent UX + multi-folder Phase 1) + Stage 8 (Granola-grade desktop note workspace) all shipped. See `CLAUDE.md` for per-stage details. Big-picture surface area:
 
 - `/` — dashboard with folder sidebar, search, sort/filter, drag-and-drop card-to-folder, hover card menu (Edit / Move / Delete). Cards click into the **edit** page (creator-first), not the share page.
 - `/record` — recording flow: pre-record form → preparing (permissions) → 3-2-1 countdown → recording → uploading → finished. Bubble can be dragged anywhere on screen during recording (Chrome `documentPictureInPicture` window with the live camera).
 - `/v/:slug` — visitor share page. Watch-first: title → player (Loom-style chapter segments + hover-scrub thumbnails) → AI summary → action items → chapters list → tabs (Transcript · Comments). Brand-themed when a brand profile is assigned (logo + accent + tagline + custom Google Font + CTA pill + footer text).
 - `/recordings/[id]/edit` — creator console. Sticky preview on the left, settings + trim + downloads + analytics + danger-zone on the right (capped at 360px so the video gets the lion's share of the page).
 - `/brands` — brand profile CRUD with full Layer 2 theming fields.
-- `desktop/` — native macOS companion app early dev build. It can sign in, list capture sources, show a live camera bubble, and upload a first-display MP4 as the `composite` track through the existing backend. It does **not** yet composite the bubble into exported video or upload raw tracks. Spec: [`docs/superpowers/specs/2026-04-27-macos-desktop-app-design.md`](docs/superpowers/specs/2026-04-27-macos-desktop-app-design.md). Plan: [`docs/superpowers/plans/2026-04-27-macos-desktop-app.md`](docs/superpowers/plans/2026-04-27-macos-desktop-app.md).
+- `desktop/` — native macOS companion app, **production-grade** through Stage 8. Composite recorder (AVAssetWriter + CIContext), audio note flow on AVAudioFile (post-Stage-7 rewrite for macOS 26.4.1 AVFCore bug), Granola-grade one-window note workspace (markdown editor with hidden syntax, drag-drop image attachments, Generate-notes pill, RecordingStatusPill on home view). Toolbar items live in the unified system NSToolbar via SwiftUI's `.toolbar { ToolbarItem(...) }` API. Auth tokens in file storage by default. Logger-based observability (`subsystem: cloud.dissonance.loom.desktop`). Builds via `desktop/scripts/install-local-app.sh`. See `CLAUDE.md` for stage-by-stage detail.
 
 ## Conventions
 
