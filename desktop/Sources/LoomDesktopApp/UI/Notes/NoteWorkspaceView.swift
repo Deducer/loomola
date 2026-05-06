@@ -138,7 +138,6 @@ struct NoteWorkspaceView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            titleBar
             ScrollView {
                 VStack(alignment: .leading, spacing: DSSpacing.xl) {
                     titleEditor
@@ -212,6 +211,31 @@ struct NoteWorkspaceView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .toolbar {
+            // Home button + ⋯ live in the unified system NSToolbar
+            // so they sit inline with the macOS traffic lights AND
+            // are clickable. SwiftUI hoists these items into the
+            // window's NSToolbar; declared here (not in
+            // MainRecorderView) so the workspace's per-mode menu
+            // logic stays close to its state.
+            ToolbarItem(placement: .navigation) {
+                HomeBackButton(action: onClose)
+                    .help(isRecording ? "Hide" : "Close")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button { showRowMenu.toggle() } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(DSColor.Text.tertiary)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .popover(isPresented: $showRowMenu, arrowEdge: .top) {
+                    rowMenu
+                }
+            }
+        }
         .animation(LoomolaMotion.quick, value: isDropTargeted)
         .animation(LoomolaMotion.medium, value: toastMessage)
         .animation(LoomolaMotion.quick, value: previewedAttachment)
@@ -225,27 +249,7 @@ struct NoteWorkspaceView: View {
         }
     }
 
-    // MARK: - Title bar
-
-    private var titleBar: some View {
-        // Sits BELOW the unified system title bar (52pt) — the
-        // traffic lights breathe up there, our row breathes here.
-        // 44pt frame with horizontal padding gives the home/⋯
-        // buttons room from the window edge.
-        HStack(spacing: 0) {
-            HomeBackButton(action: onClose)
-                .help(isRecording ? "Hide (panel reappears on next event)" : "Close")
-            Spacer()
-            GhostEllipsisButton {
-                showRowMenu.toggle()
-            }
-            .popover(isPresented: $showRowMenu, arrowEdge: .top) {
-                rowMenu
-            }
-        }
-        .padding(.horizontal, DSSpacing.lg)
-        .frame(height: 44)
-    }
+    // MARK: - ⋯ menu content
 
     private var rowMenu: some View {
         VStack(alignment: .leading, spacing: 0) {

@@ -25,41 +25,6 @@ struct MainRecorderView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Both modes render their top row BELOW the system title
-            // bar. The window has a unified 52pt title bar
-            // (WindowChrome) so the macOS traffic lights have
-            // breathing room above, and our row sits cleanly below
-            // — clickable, no z-order conflict with the toolbar.
-            if noteTarget == nil {
-                CustomTitleBar(
-                    userInitial: viewModel.email.first,
-                    sidebarOpen: sidebarOpen,
-                    onToggleSidebar: { withAnimation(LoomolaMotion.quick) { sidebarOpen.toggle() } },
-                    onSettings: { showSettings = true },
-                    onAccount: { showAccountMenu.toggle() }
-                )
-                .overlay(alignment: .topTrailing) {
-                    // Anchor for the popover. Empty view positioned where
-                    // the avatar sits (~30pt from the right edge, at the
-                    // title bar's vertical center).
-                    Color.clear
-                        .frame(width: 30, height: 30)
-                        .padding(.trailing, DSSpacing.lg)
-                        .popover(isPresented: $showAccountMenu, arrowEdge: .top) {
-                            AccountMenuPopover(
-                                email: viewModel.email.isEmpty ? nil : viewModel.email,
-                                onOpenLibrary: openDashboard,
-                                onSignOut: {
-                                    showAccountMenu = false
-                                    viewModel.signOut()
-                                }
-                            )
-                        }
-                }
-
-                Divider().overlay(DSColor.Border.subtle)
-            }
-
             ZStack(alignment: .leading) {
                 contentForCurrentState
 
@@ -89,6 +54,54 @@ struct MainRecorderView: View {
             }
         }
         .background(DSColor.Bg.canvas)
+        .toolbar {
+            // Home-mode chrome lives in the unified system toolbar
+            // (sidebar + wordmark on the left, settings + avatar on
+            // the right). When the workspace is open it adds its
+            // own toolbar items via `NoteWorkspaceView.toolbar`;
+            // SwiftUI merges items based on which view is currently
+            // rendered.
+            if noteTarget == nil {
+                ToolbarItem(placement: .navigation) {
+                    IconButton(
+                        icon: "sidebar.left",
+                        size: 26,
+                        action: {
+                            withAnimation(LoomolaMotion.quick) { sidebarOpen.toggle() }
+                        }
+                    )
+                    .help(sidebarOpen ? "Close sidebar (⌘S)" : "Open sidebar (⌘S)")
+                }
+                ToolbarItem(placement: .navigation) {
+                    HStack(spacing: DSSpacing.sm) {
+                        BrandLogoMark(size: 22)
+                        Text("Loomola")
+                            .font(DSFont.Body.lg())
+                            .foregroundStyle(DSColor.Text.primary)
+                    }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    IconButton(icon: "gearshape", size: 30, action: { showSettings = true })
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    IconButton(
+                        text: viewModel.email.first.map { String($0).uppercased() } ?? "?",
+                        size: 30,
+                        action: { showAccountMenu.toggle() }
+                    )
+                    .popover(isPresented: $showAccountMenu, arrowEdge: .top) {
+                        AccountMenuPopover(
+                            email: viewModel.email.isEmpty ? nil : viewModel.email,
+                            onOpenLibrary: openDashboard,
+                            onSignOut: {
+                                showAccountMenu = false
+                                viewModel.signOut()
+                            }
+                        )
+                    }
+                }
+            }
+        }
         .toolbarBackground(.hidden, for: .windowToolbar)
         .background(
             WindowAccessor { window in
