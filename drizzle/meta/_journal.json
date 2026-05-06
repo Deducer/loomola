@@ -148,6 +148,13 @@
       "when": 1777996000000,
       "tag": "0020_speaker_suggestion",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1777999600000,
+      "tag": "0021_media_folder_assignments",
+      "breakpoints": true
     }
   ]
 }

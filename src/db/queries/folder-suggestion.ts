@@ -2,6 +2,7 @@ import { db } from "@/db";
 import {
   aiOutputs,
   folders,
+  mediaFolderAssignments,
   mediaObjects,
   notes,
   transcripts,
@@ -209,6 +210,28 @@ export async function acceptPendingSuggestion(args: {
 
   const folderId = updated[0]?.folderId;
   if (!folderId) return null;
+
+  // Phase-1 dual-write to the join table. Suggestions only fire
+  // for unfiled notes so there's typically nothing to clear, but
+  // we wipe-and-insert defensively in case the note was filed via
+  // a different path between the suggestion firing and the user
+  // accepting it.
+  await db
+    .delete(mediaFolderAssignments)
+    .where(
+      and(
+        eq(mediaFolderAssignments.mediaObjectId, args.mediaObjectId),
+        eq(mediaFolderAssignments.ownerId, args.ownerId)
+      )
+    );
+  await db
+    .insert(mediaFolderAssignments)
+    .values({
+      mediaObjectId: args.mediaObjectId,
+      folderId,
+      ownerId: args.ownerId,
+    })
+    .onConflictDoNothing();
 
   const [folderRow] = await db
     .select({ name: folders.name })

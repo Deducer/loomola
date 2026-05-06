@@ -9,6 +9,7 @@ import {
   integer,
   bigserial,
   boolean,
+  primaryKey,
   uniqueIndex,
   index,
   customType,
@@ -103,6 +104,42 @@ export const folders = pgTable(
   (t) => ({
     ownerIdx: index("folders_owner_idx").on(t.ownerId),
     parentIdx: index("folders_parent_idx").on(t.parentId),
+  })
+);
+
+// ---------------------------------------------------------------------------
+// media_folder_assignments — many-to-many between recordings and folders.
+//
+// Phase 1 of the multi-folder migration (spec:
+// docs/superpowers/specs/2026-05-06-multi-folder-assignments-design.md).
+// During the dual-write phase this table is kept in sync with the legacy
+// `media_objects.folder_id` column. Reads still go through `folder_id`.
+// In Phase 2 we flip reads here and in Phase 3 drop the legacy column.
+// ---------------------------------------------------------------------------
+
+export const mediaFolderAssignments = pgTable(
+  "media_folder_assignments",
+  {
+    mediaObjectId: uuid("media_object_id").notNull(),
+    folderId: uuid("folder_id").notNull(),
+    ownerId: uuid("owner_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({
+      name: "media_folder_assignments_pkey",
+      columns: [t.mediaObjectId, t.folderId],
+    }),
+    folderIdx: index("media_folder_assignments_folder_idx").on(
+      t.folderId,
+      t.createdAt
+    ),
+    ownerMediaIdx: index("media_folder_assignments_owner_media_idx").on(
+      t.ownerId,
+      t.mediaObjectId
+    ),
   })
 );
 
