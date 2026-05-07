@@ -41,14 +41,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!enableGranola()) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  // Accept either a cookie session (browser) or an Authorization: Bearer
+  // <jwt> header (CLI). The server Supabase client reads cookies by
+  // default; for bearer tokens we have to pass the JWT explicitly.
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
+  const authHeader = req.headers.get("authorization");
+  const bearer = authHeader?.toLowerCase().startsWith("bearer ")
+    ? authHeader.slice(7).trim()
+    : null;
+  const { data: userData, error: authError } = bearer
+    ? await supabase.auth.getUser(bearer)
+    : await supabase.auth.getUser();
+  if (authError || !userData?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const ownerId = user.id;
+  const ownerId = userData.user.id;
 
   let json: unknown;
   try {
