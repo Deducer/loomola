@@ -99,6 +99,7 @@ See [`ROADMAP.md`](ROADMAP.md) for the full status table.
 
 - **Multi-tenant / team accounts.** Single-user today. Sign-up is invite-only on my live instance because I haven't built proper signup yet. The architecture supports it, the UX doesn't.
 - **iOS / Android / Windows desktop.** macOS only for native capture. The web `/record` flow works on any Chrome.
+- **Loom's advanced editing surface.** Basic trim (start / end) is shipped. Filler-word removal, edit-by-transcript (cut sentences directly out of the transcript), AI silence-removal, speed ramps, cursor-zoom effects, drawing or annotation on the recording — none of these are built yet. None are technically hard; they just haven't been my pain point. If any of them are yours, send a note via the contact form and I'll prioritize whichever the most people ask for.
 - **Voice-biometric speaker recognition.** ("Here's Bhaskar's voice across all my recordings.") Spec'd, deferred. See [`docs/superpowers/specs/2026-05-04-speaker-recognition-design.md`](docs/superpowers/specs/2026-05-04-speaker-recognition-design.md).
 - **Loom migration tool.** Separate piece of work once the Granola migrator settles.
 - **Custom share-page domains** per brand profile (something like `videos.acme.com` mapping to a Loomola brand). Pairs with Brand Layer 2.

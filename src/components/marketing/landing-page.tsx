@@ -161,6 +161,7 @@ function Article() {
 
       <Section number="02" title="Specimen">
         <SpecimenTable />
+        <GapsNote />
       </Section>
 
       <Section number="03" title="Get it">
@@ -334,6 +335,35 @@ function PullCallout() {
       founder in Liverpool made the screen-recording half free the same year.
       The meeting-notes half is what&apos;s missing.
     </blockquote>
+  );
+}
+
+function GapsNote() {
+  return (
+    <aside
+      className="mt-8 border-l-2 pl-5"
+      style={{ borderColor: RULE }}
+    >
+      <p
+        className="font-mono text-[10px] uppercase tracking-[0.22em]"
+        style={{ color: ACCENT }}
+      >
+        Worth knowing
+      </p>
+      <p
+        className="mt-2 text-[0.98rem] leading-[1.65]"
+        style={{ color: SOFT_INK }}
+      >
+        Loomola has the recording, transcript, AI summaries, share pages,
+        and basic start / end trim. It does{" "}
+        <span style={{ fontStyle: "italic" }}>not</span> yet have Loom&apos;s
+        advanced editing layer: filler-word removal, edit-by-transcript,
+        AI silence-removal, speed ramps, cursor-zoom effects, drawing on
+        the recording. None of those are technically hard; they just
+        haven&apos;t been my pain point yet. If any of them is yours, the
+        contact form below is the fastest way to push them up the queue.
+      </p>
+    </aside>
   );
 }
 
