@@ -188,9 +188,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     // ─── 2. Upsert folders for each list ───
+    // Lookup priority:
+    //   1. By (owner, 'granola', granolaListId) — the dedicated import key.
+    //   2. Fallback: by (owner, name, parent IS NULL) — merges into an
+    //      existing user-created folder of the same name. Required because
+    //      `folders_unique_sibling_name` (owner, COALESCE(parent, …), name)
+    //      forbids creating a second folder with the same name; name
+    //      collisions with manually-created folders are common (users
+    //      mirror their Granola list names locally) and the practical
+    //      answer is to merge into the existing folder rather than fail.
+    //      When we merge, we ALSO stamp `import_source` + `import_source_id`
+    //      on the existing folder so future runs find it via the dedicated
+    //      key on path 1 — keeping the merge sticky.
     const folderIdByGranolaListId = new Map<string, string>();
     for (const l of payload.lists) {
-      const existing = await tx
+      const byImportKey = await tx
         .select()
         .from(folders)
         .where(
@@ -202,19 +214,50 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         )
         .limit(1);
       let folderId: string;
-      if (existing.length > 0) {
-        folderId = existing[0].id;
+      if (byImportKey.length > 0) {
+        folderId = byImportKey[0].id;
       } else {
-        const inserted = await tx
-          .insert(folders)
-          .values({
-            ownerId,
-            name: l.name,
-            importSource: "granola",
-            importSourceId: l.granolaListId,
-          })
-          .returning({ id: folders.id });
-        folderId = inserted[0].id;
+        const byName = await tx
+          .select()
+          .from(folders)
+          .where(
+            and(
+              eq(folders.ownerId, ownerId),
+              eq(folders.name, l.name),
+              isNull(folders.parentId)
+            )
+          )
+          .limit(1);
+        if (byName.length > 0) {
+          // Merge into the existing user-created folder. Stamp the import
+          // metadata only if currently null so we don't overwrite a
+          // different Granola list id mapped earlier.
+          const existing = byName[0];
+          if (!existing.importSource) {
+            await tx
+              .update(folders)
+              .set({
+                importSource: "granola",
+                importSourceId: l.granolaListId,
+              })
+              .where(eq(folders.id, existing.id));
+          }
+          folderId = existing.id;
+          warnings.push(
+            `merged Granola list "${l.name}" into existing folder ${existing.id}`
+          );
+        } else {
+          const inserted = await tx
+            .insert(folders)
+            .values({
+              ownerId,
+              name: l.name,
+              importSource: "granola",
+              importSourceId: l.granolaListId,
+            })
+            .returning({ id: folders.id });
+          folderId = inserted[0].id;
+        }
       }
       folderIdByGranolaListId.set(l.granolaListId, folderId);
     }
