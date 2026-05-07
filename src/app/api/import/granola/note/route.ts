@@ -263,9 +263,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     // ─── 3. Upsert media_objects row ───
+    // The dashboard's notes-list renders this jsonb directly as an array
+    // of display strings (see src/components/dashboard/notes-list.tsx
+    // attendeeLabel) — so store NAMES here, not the people UUIDs. The
+    // structured link to people rows is preserved separately on
+    // people.import_source_id and via speaker_assignments.
     const attendeesJson = payload.attendees
-      .map((a) => personIdByGranolaId.get(a.granolaPersonId))
-      .filter((id): id is string => Boolean(id));
+      .map((a) => a.name?.trim() || a.email)
+      .filter((s): s is string => Boolean(s));
 
     const existingMedia = await tx
       .select()
@@ -297,12 +302,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         const app = detectMeetingApp(payload.meetingUrl);
         if (app) updates.meetingDetectedApp = app;
       }
+      // Attendees is metadata (display strings), not user-editable data.
+      // Always refresh on import so a new attendee or a fixed name on
+      // Granola's side propagates. Skip only when source is empty AND
+      // we'd clobber an existing list.
       const existingAttendees = m.attendees as unknown;
-      if (
+      if (attendeesJson.length > 0) {
+        updates.attendees = attendeesJson;
+      } else if (
         existingAttendees === null ||
         (Array.isArray(existingAttendees) && existingAttendees.length === 0)
       ) {
-        if (attendeesJson.length > 0) updates.attendees = attendeesJson;
+        updates.attendees = attendeesJson;
       }
       if (Object.keys(updates).length > 0) {
         await tx
