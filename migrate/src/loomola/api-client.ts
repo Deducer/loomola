@@ -41,11 +41,17 @@ export class LoomolaApi {
       body: JSON.stringify(payload),
     });
     if (!res.ok) {
-      let body: unknown = null;
-      try {
-        body = await res.json();
-      } catch {
-        body = await res.text();
+      // Read once as text, then attempt JSON. Calling res.json() and
+      // then res.text() in a fallback throws "Body already used" because
+      // .json() consumes the stream even when parsing fails.
+      const text = await res.text().catch(() => "");
+      let body: unknown = text;
+      if (text) {
+        try {
+          body = JSON.parse(text);
+        } catch {
+          // leave as text
+        }
       }
       throw new LoomolaApiError(
         `import failed (${res.status})`,
