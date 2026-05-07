@@ -81,6 +81,7 @@ function baseItem(type: "audio" | "video"): ExportBundleMediaData {
             mediaObjectId: "media-1",
             ownerId: "owner-1",
             body: "Raw typed notes.",
+            templateId: "general-meeting",
             createdAt: new Date("2026-05-01T20:08:00.000Z"),
             updatedAt: new Date("2026-05-01T20:09:00.000Z"),
           }
@@ -106,7 +107,7 @@ function baseItem(type: "audio" | "video"): ExportBundleMediaData {
       actionItems: [{ text: "Follow up with Omar", timestamp_sec: 12 }],
       llmModel: "test",
       searchTsv: null,
-      templateId: "default",
+      templateId: "general-meeting",
       generationStatusValue: "complete",
       generatedAt: new Date("2026-05-01T20:10:00.000Z"),
     },
