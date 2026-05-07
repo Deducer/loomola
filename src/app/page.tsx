@@ -2,6 +2,8 @@ import Link from "next/link";
 import { FileText, Plus, Search, Video } from "lucide-react";
 import { redirect } from "next/navigation";
 import { requireAuth } from "@/lib/require-auth";
+import { createClient } from "@/lib/supabase/server";
+import { LandingPage } from "@/components/marketing/landing-page";
 import { listBrandProfiles } from "@/db/queries/brand-profiles";
 import { listFoldersForOwner } from "@/db/queries/folders";
 import {
@@ -47,6 +49,15 @@ export default async function HomePage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
+  // Unauthed visitors land on the public marketing page (the X-comment
+  // funnel surface). Authed users get the existing dashboard. We only
+  // call createClient + getUser cheap-path; if there's a session we
+  // fall through to requireAuth which honors the same cookie.
+  const supabase = await createClient();
+  const { data: { user: authUser } } = await supabase.auth.getUser();
+  if (!authUser) {
+    return <LandingPage />;
+  }
   const user = await requireAuth();
   const sp = await searchParams;
   const granolaEnabled = enableGranola();
