@@ -515,6 +515,11 @@ struct NoteWorkspaceView: View {
 
     // MARK: - Recording control bar (recording mode only)
 
+    /// THE canonical audio-recording control surface. Routed by
+    /// MainRecorderView whenever an audio note is active — this is the
+    /// pill the user actually clicks. RecordingHomeView is video-only;
+    /// any audio-recording UI change MUST land here, not there.
+    ///
     /// Single grouped pill. While recording: [meter] [▾] | [timer] | [⬛
     /// Stop]. While paused: [meter dim] [▾] | [timer frozen] | [▶
     /// Resume] | [✓ End & upload]. Granola-style pause-by-default —
