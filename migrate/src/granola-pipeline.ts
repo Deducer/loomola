@@ -34,6 +34,10 @@ export type GranolaCliArgs = {
   // cache and use the official REST API. When unset, fall back to
   // reading the desktop app's local cache (cache-v3/v4 plaintext only).
   granolaApiKey: string | undefined;
+  // Force-update notes.body + ai_outputs.summary on already-imported
+  // rows (overrides merge idempotency for those two fields only). Use
+  // when re-running to backfill a content-format change.
+  replaceContent: boolean;
 };
 
 const STATE_PATH = join(homedir(), ".loomola-migrate", "state.json");
@@ -312,6 +316,7 @@ async function runGranolaImportViaApi(
         includeTranscript: true,
       });
       const payload = officialNoteToPayload(detail);
+      if (args.replaceContent) payload.replaceContent = true;
       const result = await loomola.importGranolaNote(payload);
       state!.markSucceeded(summary.id);
       if (result.action === "created") {
@@ -450,9 +455,15 @@ function officialNoteToPayload(
     };
   }
 
-  // Body: prefer markdown summary (the polished, displayed content);
-  // fall back to text-only summary; finally empty.
+  // Both fields get the rich markdown version. Granola's summary_text
+  // is the same content stripped of markdown syntax — useless for
+  // Loomola's renderers (the Enhanced view renders markdown via
+  // react-markdown; the Raw view shows the body verbatim, but markdown
+  // source is still more readable than blob text). Headings, bullets,
+  // bold, and line breaks all carry over.
   const notesBody =
+    detail.summary_markdown ?? detail.summary_text ?? "";
+  const aiSummary =
     detail.summary_markdown ?? detail.summary_text ?? "";
 
   return {
@@ -461,7 +472,7 @@ function officialNoteToPayload(
     createdAt: detail.created_at,
     durationSeconds,
     notesBody,
-    aiSummary: detail.summary_text ?? "",
+    aiSummary,
     meetingUrl: null,
     attendees,
     lists: detail.folder_membership.map((f) => ({

@@ -58,6 +58,9 @@ Run modes:
   --resume                Skip already-succeeded ids
   --fresh                 Ignore state.json, start over
   --retry-failed          Only retry previously-failed ids
+  --replace-content       Force-overwrite notes.body + ai_outputs.summary
+                          on already-imported rows. Use to backfill a
+                          content-format change.
 
 Misc:
   --help, --version
@@ -100,6 +103,7 @@ async function main(): Promise<number> {
       (args["granola-api-key"] as string) ||
       process.env.GRANOLA_API_KEY ||
       undefined,
+    replaceContent: !!args["replace-content"],
   };
   return await runGranolaImport(cliArgs);
 }

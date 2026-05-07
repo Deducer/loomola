@@ -39,6 +39,7 @@ export type GranolaNoteImportPayload = {
   attendees: GranolaAttendee[];
   lists: GranolaList[];
   transcript: GranolaTranscript | null;
+  replaceContent?: boolean;
 };
 
 export type GranolaNoteImportResult = {

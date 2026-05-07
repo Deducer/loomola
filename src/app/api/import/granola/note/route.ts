@@ -348,7 +348,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         ownerId,
         body: payload.notesBody,
       });
-    } else if (!existingNote[0].body && payload.notesBody) {
+    } else if (
+      payload.notesBody &&
+      (payload.replaceContent || !existingNote[0].body)
+    ) {
       await tx
         .update(notes)
         .set({ body: payload.notesBody })
@@ -458,7 +461,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       if (!a.titleSuggested && payload.title) {
         updates.titleSuggested = payload.title;
       }
-      if (!a.summary && payload.aiSummary) updates.summary = payload.aiSummary;
+      if (
+        payload.aiSummary &&
+        (payload.replaceContent || !a.summary)
+      ) {
+        updates.summary = payload.aiSummary;
+      }
       if (Object.keys(updates).length > 0) {
         await tx.update(aiOutputs).set(updates).where(eq(aiOutputs.id, a.id));
       }

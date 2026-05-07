@@ -42,6 +42,11 @@ export const granolaNoteImportSchema = z.object({
   attendees: z.array(granolaAttendeeSchema),
   lists: z.array(granolaListSchema),
   transcript: granolaTranscriptSchema.nullable(),
+  // Force-update body + ai summary even when the target row already has
+  // non-empty values. Used to backfill formatting (markdown vs. plain
+  // text) on previously-imported rows. Default false — normal merge
+  // / fill-the-gaps idempotency.
+  replaceContent: z.boolean().optional().default(false),
 });
 
 export type GranolaSegment = z.infer<typeof granolaSegmentSchema>;
