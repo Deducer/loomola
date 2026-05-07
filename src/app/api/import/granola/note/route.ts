@@ -424,8 +424,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return { mediaObjectId, action, hadFolder: assignedAnyFolder };
     });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    const stack = e instanceof Error ? e.stack : undefined;
+    const err = e as Error & {
+      code?: string;
+      detail?: string;
+      constraint?: string;
+      table?: string;
+      column?: string;
+      cause?: unknown;
+    };
+    const msg = err?.message ?? String(e);
+    const cause = err?.cause as
+      | { code?: string; detail?: string; constraint?: string; message?: string }
+      | undefined;
     console.error("[import/granola/note] transaction failed", {
       granolaId: payload.granolaId,
       title: payload.title?.slice(0, 60),
@@ -433,16 +443,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       lists: payload.lists.length,
       transcriptSegs: payload.transcript?.segments.length ?? 0,
       error: msg,
-      stack,
+      pgCode: err?.code ?? cause?.code,
+      pgDetail: err?.detail ?? cause?.detail,
+      pgConstraint: err?.constraint ?? cause?.constraint,
+      causeMsg: cause?.message,
+      stack: err?.stack,
     });
     return NextResponse.json(
       {
         error: "Import failed",
         granolaId: payload.granolaId,
         message: msg,
-        // Surface error detail back to the CLI so the operator can diagnose
-        // without needing container log access. Safe — Postgres errors here
-        // contain table/column names but no user PII beyond what was sent.
+        pgCode: err?.code ?? cause?.code ?? null,
+        pgDetail: err?.detail ?? cause?.detail ?? null,
+        pgConstraint: err?.constraint ?? cause?.constraint ?? null,
+        causeMsg: cause?.message ?? null,
       },
       { status: 500 }
     );
