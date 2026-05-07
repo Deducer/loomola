@@ -1,5 +1,6 @@
 import { Instrument_Serif } from "next/font/google";
 import Link from "next/link";
+import { ContactForm } from "./contact-form";
 
 // Italic-leaning display serif. Free, on Google Fonts, gives the page
 // the magazine/manifesto feel that separates this from the standard
@@ -168,6 +169,23 @@ function Article() {
           repo and stand up your own instance. A pre-recorded setup
           walkthrough is on the way; live setup help is available paid.
         </p>
+        <p className="mt-5 text-[1.0625rem] leading-[1.7]">
+          <span style={{ color: ACCENT, fontWeight: 600 }}>
+            Already shipped:
+          </span>{" "}
+          a Granola-to-Loomola CLI that imports your full Granola backlog
+          (notes, transcripts, summaries, attendees, folders, speaker
+          attribution). It uses Granola&apos;s official Business-tier API,
+          so it requires a Granola Business subscription on the source side
+          for now. I imported a couple hundred of my own notes with it last
+          week.{" "}
+          <span style={{ color: ACCENT, fontWeight: 600 }}>
+            Coming next:
+          </span>{" "}
+          a Loom-to-Loomola CLI on the same shape. If you have a backlog you
+          want to escape, send a note via the form below and I&apos;ll
+          prioritize accordingly.
+        </p>
         <div className="mt-7 flex flex-wrap items-stretch gap-3">
           <a
             href={GITHUB}
@@ -204,6 +222,65 @@ function Article() {
             DM @theiancross
           </a>
         </div>
+      </Section>
+
+      <Section number="04" title="Get in touch">
+        <p className="text-[1.0625rem] leading-[1.7]">
+          Send a question, a feature request, or a war story. I read everything
+          and tend to reply within a day.
+        </p>
+        <ul
+          className="mt-4 space-y-1 text-[1rem] leading-[1.7]"
+          style={{ color: SOFT_INK }}
+        >
+          <li>
+            <span style={{ color: INK, fontWeight: 500 }}>
+              Setup help.
+            </span>{" "}
+            Got stuck somewhere between Cloudflare R2 and the first
+            recording? I do paid one-on-one walkthroughs.
+          </li>
+          <li>
+            <span style={{ color: INK, fontWeight: 500 }}>
+              Migration help.
+            </span>{" "}
+            Granola today, Loom soon. If you have a backlog to import, tell
+            me what you have and how much.
+          </li>
+          <li>
+            <span style={{ color: INK, fontWeight: 500 }}>
+              New to self-hosting or open source?
+            </span>{" "}
+            Happy to help you find your footing. The whole point is that
+            you own your stuff; I'll point you at the right docs and
+            answer the dumb questions.
+          </li>
+          <li>
+            <span style={{ color: INK, fontWeight: 500 }}>
+              Feedback, feature requests, or just hi.
+            </span>{" "}
+            Especially welcome. Loomola is opinionated by design but the
+            opinions aren't permanent.
+          </li>
+        </ul>
+        <div className="mt-10">
+          <ContactForm />
+        </div>
+        <p
+          className="mt-6 font-mono text-[10px] uppercase tracking-[0.22em]"
+          style={{ color: SOFT_INK }}
+        >
+          Prefer X?{" "}
+          <a
+            href={X_HANDLE}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:underline"
+            style={{ color: INK, textUnderlineOffset: "3px" }}
+          >
+            DM @theiancross
+          </a>
+        </p>
       </Section>
     </main>
   );

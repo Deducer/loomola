@@ -31,6 +31,8 @@ export async function updateSession(request: NextRequest) {
   const isAuthRoute = url.pathname.startsWith("/login") ||
                       url.pathname.startsWith("/auth");
   const isApiHealth = url.pathname === "/api/health";
+  // Public contact form on the landing page.
+  const isContactApi = url.pathname === "/api/contact";
   // The root path is the public marketing landing for unauthed visitors.
   // page.tsx itself branches: shows LandingPage when user is null,
   // dashboard otherwise. Without this exception, middleware would
@@ -63,7 +65,7 @@ export async function updateSession(request: NextRequest) {
     url.pathname.startsWith("/api/") &&
     /^Bearer\s+.+/i.test(request.headers.get("authorization") ?? "");
 
-  if (!user && !isAuthRoute && !isApiHealth && !isPublicLanding && !isPublicShare && !isPublicViewerApi && !isWebhook && !isBubbleIframe && !isBearerApi) {
+  if (!user && !isAuthRoute && !isApiHealth && !isContactApi && !isPublicLanding && !isPublicShare && !isPublicViewerApi && !isWebhook && !isBubbleIframe && !isBearerApi) {
     url.pathname = "/login";
     return NextResponse.redirect(url);
   }
