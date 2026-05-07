@@ -56,6 +56,9 @@ struct NoteWorkspaceView: View {
     @State private var reviewTitle: String = ""
     @State private var reviewFolderId: String? = nil
     @State private var reviewFolderName: String? = nil
+    @State private var noteTemplates: [NoteTemplateDTO] = []
+    @State private var selectedTemplateId: String = "general-meeting"
+    @State private var showTemplatePicker = false
     @State private var reviewAutosaveTask: Task<Void, Never>? = nil
     @State private var reviewLastSaved: String = ""
     @State private var showFolderPicker = false
@@ -131,6 +134,10 @@ struct NoteWorkspaceView: View {
         case .recording: return nil
         case .reviewing: return reviewFolderName
         }
+    }
+
+    private var selectedTemplate: NoteTemplateDTO? {
+        noteTemplates.first(where: { $0.id == selectedTemplateId }) ?? noteTemplates.first
     }
 
     /// Backing media-object id (also the noteId) for whichever
@@ -370,6 +377,7 @@ struct NoteWorkspaceView: View {
             todayPill
             mePill
             folderPill
+            templatePill
         }
     }
 
@@ -449,6 +457,45 @@ struct NoteWorkspaceView: View {
         }
     }
 
+    @ViewBuilder
+    private var templatePill: some View {
+        WorkspacePill(
+            icon: "book.closed",
+            label: selectedTemplate?.name ?? "Template",
+            isActive: true,
+            action: { showTemplatePicker.toggle() }
+        )
+        .popover(isPresented: $showTemplatePicker, arrowEdge: .top) {
+            NoteTemplatePickerPopover(
+                templates: noteTemplates,
+                selectedTemplateId: selectedTemplateId,
+                onSelect: { template in
+                    showTemplatePicker = false
+                    handleTemplateSelect(template)
+                }
+            )
+        }
+    }
+
+    private func handleTemplateSelect(_ template: NoteTemplateDTO) {
+        guard selectedTemplateId != template.id else { return }
+        guard let backend = viewModel.backendClient, let noteId else {
+            selectedTemplateId = template.id
+            return
+        }
+        let previous = selectedTemplateId
+        selectedTemplateId = template.id
+        Task {
+            do {
+                try await backend.setNoteTemplate(mediaId: noteId, templateId: template.id)
+                showToast(message: "Template set to \(template.name)")
+            } catch {
+                selectedTemplateId = previous
+                showToast(message: "Couldn't save template")
+            }
+        }
+    }
+
     // MARK: - Body
 
     private var bodyEditor: some View {
@@ -468,17 +515,20 @@ struct NoteWorkspaceView: View {
 
     // MARK: - Recording control bar (recording mode only)
 
-    /// Single grouped pill: [meter] [▾] | [timer] | [stop]. The
-    /// recording's audio source, timer, and stop affordance share
-    /// one container so they read as one unit — stop the thing
-    /// that's being indicated by the meter and timer next to it.
-    /// Granola's larger, more conspicuous shape with restraint
-    /// (no surrounding divider).
+    /// Single grouped pill. While recording: [meter] [▾] | [timer] | [⬛
+    /// Stop]. While paused: [meter dim] [▾] | [timer frozen] | [▶
+    /// Resume] | [✓ End & upload]. Granola-style pause-by-default —
+    /// the prominent button never finalizes the upload. End requires a
+    /// pause first.
     private var recordingControlBar: some View {
         HStack(spacing: 0) {
             // Meter + chevron (transcription drawer placeholder).
+            // Meter shows 0 while paused (engines run but buffers are
+            // dropped, so meter readings would be misleading).
             HStack(spacing: 8) {
-                AudioLevelMeter(level: viewModel.audioLevel)
+                AudioLevelMeter(
+                    level: viewModel.isAudioNotePaused ? 0 : viewModel.audioLevel
+                )
                 Image(systemName: "chevron.up")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(DSColor.Text.tertiary)
@@ -488,34 +538,85 @@ struct NoteWorkspaceView: View {
 
             pillSeparator
 
-            // Timer.
+            // Timer. While paused, freeze at the elapsed-at-pause value
+            // so the user sees a stable number and gets visual feedback
+            // that the recording isn't accumulating dead air.
             if let startedAt = viewModel.activeAudioRecordingStartedAt {
-                TimelineView(.periodic(from: startedAt, by: 1)) { ctx in
-                    Text(elapsedString(now: ctx.date, startedAt: startedAt))
-                        .font(DSFont.Mono.body())
-                        .foregroundStyle(DSColor.Text.secondary)
-                        .monospacedDigit()
+                Group {
+                    if viewModel.isAudioNotePaused, let pausedAt = viewModel.audioNotePausedAt {
+                        let frozen = pausedAt.timeIntervalSince(startedAt)
+                            - viewModel.audioNotePausedAccumulatedSeconds
+                        Text(elapsedString(seconds: max(0, frozen)))
+                            .font(DSFont.Mono.body())
+                            .foregroundStyle(DSColor.Text.tertiary)
+                            .monospacedDigit()
+                    } else {
+                        TimelineView(.periodic(from: startedAt, by: 1)) { ctx in
+                            let elapsed = ctx.date.timeIntervalSince(startedAt)
+                                - viewModel.audioNotePausedAccumulatedSeconds
+                            Text(elapsedString(seconds: max(0, elapsed)))
+                                .font(DSFont.Mono.body())
+                                .foregroundStyle(DSColor.Text.secondary)
+                                .monospacedDigit()
+                        }
+                    }
                 }
                 .padding(.horizontal, 14)
             }
 
             pillSeparator
 
-            // Stop. Inline inside the pill rather than a sibling pill.
-            HStack(spacing: 0) {
+            if viewModel.isAudioNotePaused {
+                // ▶ Resume — primary action when paused.
+                Image(systemName: "play.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(DSColor.Accent.primary)
+                    .frame(width: 12, height: 12)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .contentShape(Rectangle())
+                    .overlay {
+                        ActionHitArea {
+                            viewModel.resumeAudioNoteRecording()
+                        }
+                    }
+                    .help("Resume recording")
+
+                pillSeparator
+
+                // ✓ End & upload — explicit second click to finalize.
+                // Subtler than Resume so the user has to deliberately
+                // pick "I'm done" rather than misclick out of a pause.
+                Image(systemName: "checkmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(DSColor.Text.tertiary)
+                    .frame(width: 12, height: 12)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .contentShape(Rectangle())
+                    .overlay {
+                        ActionHitArea {
+                            viewModel.stopAudioNoteRecordingAndUpload()
+                        }
+                    }
+                    .help("End & upload")
+            } else {
+                // ⬛ Stop — pauses the recording. Granola pattern: the
+                // most prominent button on a live recording is always
+                // the recoverable action, never the upload trigger.
                 RoundedRectangle(cornerRadius: 2)
                     .fill(DSColor.State.recording)
                     .frame(width: 12, height: 12)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .contentShape(Rectangle())
+                    .overlay {
+                        ActionHitArea {
+                            viewModel.pauseAudioNoteRecording()
+                        }
+                    }
+                    .help("Pause (click again to resume; End & upload appears once paused)")
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .contentShape(Rectangle())
-            .overlay {
-                ActionHitArea {
-                    viewModel.stopAudioNoteRecordingAndUpload()
-                }
-            }
-            .help("Stop & upload")
         }
         .background(
             Capsule().fill(DSColor.Bg.surface)
@@ -842,6 +943,14 @@ struct NoteWorkspaceView: View {
         if let noteId {
             Task {
                 if let backend = viewModel.backendClient {
+                    if let response = try? await backend.listNoteTemplates() {
+                        await MainActor.run { noteTemplates = response.templates }
+                    }
+                    if case .recording = target,
+                       let note = try? await backend.getNote(mediaId: noteId),
+                       let templateId = note.templateId {
+                        await MainActor.run { selectedTemplateId = templateId }
+                    }
                     if let list = try? await backend.listNoteAttachments(mediaId: noteId) {
                         await MainActor.run { attachments = list }
                     }
@@ -860,10 +969,13 @@ struct NoteWorkspaceView: View {
             Task {
                 if let backend = viewModel.backendClient {
                     do {
-                        let body = try await backend.getNoteBody(mediaId: recording.id)
+                        let note = try await backend.getNote(mediaId: recording.id)
                         await MainActor.run {
-                            reviewBody = body
-                            reviewLastSaved = body
+                            reviewBody = note.body ?? ""
+                            reviewLastSaved = note.body ?? ""
+                            if let templateId = note.templateId {
+                                selectedTemplateId = templateId
+                            }
                             loadingBody = false
                         }
                     } catch {
@@ -902,7 +1014,10 @@ struct NoteWorkspaceView: View {
                     try? await backend.putNoteBody(mediaId: recording.id, body: bodyToFlush)
                     reviewLastSaved = bodyToFlush
                 }
-                try await backend.enhanceNote(mediaId: recording.id)
+                try await backend.enhanceNote(
+                    mediaId: recording.id,
+                    templateId: selectedTemplateId
+                )
             } catch {
                 enhanceStatus = .failed
                 showToast(message: "Couldn't start AI run")
@@ -925,6 +1040,9 @@ struct NoteWorkspaceView: View {
                     if let summary = status.summary, !summary.isEmpty {
                         reviewBody = summary
                         reviewLastSaved = summary
+                    }
+                    if let templateId = status.templateId {
+                        selectedTemplateId = templateId
                     }
                     enhanceStatus = .complete
                     showToast(message: "Notes updated")
@@ -968,7 +1086,11 @@ struct NoteWorkspaceView: View {
     }
 
     private func elapsedString(now: Date, startedAt: Date) -> String {
-        let total = max(0, Int(now.timeIntervalSince(startedAt)))
+        elapsedString(seconds: max(0, now.timeIntervalSince(startedAt)))
+    }
+
+    private func elapsedString(seconds: TimeInterval) -> String {
+        let total = max(0, Int(seconds))
         let h = total / 3600
         let m = (total % 3600) / 60
         let s = total % 60
@@ -1013,6 +1135,167 @@ private struct WorkspacePill: View {
         .overlay { ActionHitArea(action: action) }
         .onHover { hovering = $0 }
         .animation(LoomolaMotion.quick, value: hovering)
+    }
+}
+
+private struct NoteTemplatePickerPopover: View {
+    let templates: [NoteTemplateDTO]
+    let selectedTemplateId: String
+    let onSelect: (NoteTemplateDTO) -> Void
+
+    @State private var previewId: String?
+
+    private var categories: [String] {
+        var result: [String] = []
+        for template in templates where !result.contains(template.category) {
+            result.append(template.category)
+        }
+        return result
+    }
+
+    private var preview: NoteTemplateDTO? {
+        let id = previewId ?? selectedTemplateId
+        return templates.first(where: { $0.id == id }) ?? templates.first
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            templateList
+                .frame(width: 220)
+                .background(DSColor.Bg.surface)
+
+            Divider().overlay(DSColor.Border.subtle)
+
+            if let preview {
+                templateDetail(preview)
+                    .frame(width: 340)
+            } else {
+                Text("No templates")
+                    .font(DSFont.Body.md())
+                    .foregroundStyle(DSColor.Text.tertiary)
+                    .frame(width: 340, height: 260)
+            }
+        }
+        .frame(height: 420)
+        .background(DSColor.Bg.surfaceRaised)
+        .onAppear {
+            previewId = selectedTemplateId
+        }
+    }
+
+    private var templateList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Note templates")
+                .font(DSFont.Body.lg())
+                .foregroundStyle(DSColor.Text.primary)
+                .padding(.horizontal, DSSpacing.md)
+                .padding(.vertical, DSSpacing.sm)
+
+            Divider().overlay(DSColor.Border.subtle)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: DSSpacing.md) {
+                    ForEach(categories, id: \.self) { category in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(category)
+                                .font(DSFont.Body.sm())
+                                .foregroundStyle(DSColor.Text.tertiary)
+                                .padding(.horizontal, DSSpacing.md)
+                            ForEach(templates.filter { $0.category == category }) { template in
+                                templateRow(template)
+                            }
+                        }
+                    }
+                }
+                .padding(.vertical, DSSpacing.sm)
+            }
+        }
+    }
+
+    private func templateRow(_ template: NoteTemplateDTO) -> some View {
+        let isPreview = (previewId ?? selectedTemplateId) == template.id
+        let isSelected = selectedTemplateId == template.id
+        return HStack(spacing: DSSpacing.sm) {
+            Image(systemName: "book.closed")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(DSColor.Accent.primary)
+                .frame(width: 16)
+            Text(template.name)
+                .font(DSFont.Body.md())
+                .foregroundStyle(isPreview ? DSColor.Text.primary : DSColor.Text.secondary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            if isSelected {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(DSColor.Accent.primary)
+            }
+        }
+        .padding(.horizontal, DSSpacing.md)
+        .padding(.vertical, 7)
+        .background(isPreview ? DSColor.Bg.subtle : Color.clear)
+        .contentShape(Rectangle())
+        .overlay {
+            ActionHitArea {
+                previewId = template.id
+            }
+        }
+    }
+
+    private func templateDetail(_ template: NoteTemplateDTO) -> some View {
+        VStack(alignment: .leading, spacing: DSSpacing.md) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(template.category)
+                    .font(DSFont.Body.sm())
+                    .foregroundStyle(DSColor.Accent.primary)
+                Text(template.name)
+                    .font(DSFont.Display.lg())
+                    .foregroundStyle(DSColor.Text.primary)
+                Text(template.description)
+                    .font(DSFont.Body.sm())
+                    .foregroundStyle(DSColor.Text.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: DSSpacing.sm) {
+                    detailBlock(title: "Meeting context", body: template.meetingContext)
+                    ForEach(template.sections, id: \.title) { section in
+                        detailBlock(title: section.title, body: section.prompt)
+                    }
+                }
+            }
+
+            Button {
+                onSelect(template)
+            } label: {
+                Text(selectedTemplateId == template.id ? "Selected" : "Use template")
+                    .font(DSFont.Body.md())
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 9)
+                    .background(Capsule().fill(DSColor.State.success))
+            }
+            .buttonStyle(.plain)
+            .disabled(selectedTemplateId == template.id)
+            .opacity(selectedTemplateId == template.id ? 0.65 : 1)
+        }
+        .padding(DSSpacing.lg)
+    }
+
+    private func detailBlock(title: String, body: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(DSFont.Body.md())
+                .foregroundStyle(DSColor.Text.primary)
+            Text(body)
+                .font(DSFont.Body.sm())
+                .foregroundStyle(DSColor.Text.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(DSSpacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(DSColor.Bg.subtle, in: RoundedRectangle(cornerRadius: DSRadius.md))
     }
 }
 
