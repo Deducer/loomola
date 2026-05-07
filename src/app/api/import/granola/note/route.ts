@@ -212,6 +212,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           personId = inserted[0].id;
         }
       } else {
+        // Race-safe insert. If another concurrent import for the same
+        // user already inserted this granolaPersonId, our INSERT would
+        // violate the partial unique index and the whole transaction
+        // would abort. ON CONFLICT DO NOTHING + a fetch-fallback turns
+        // that race into a quiet collision.
         const inserted = await tx
           .insert(people)
           .values({
@@ -222,8 +227,30 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             importSource: "granola",
             importSourceId: a.granolaPersonId,
           })
+          .onConflictDoNothing({
+            target: [
+              people.ownerId,
+              people.importSource,
+              people.importSourceId,
+            ],
+          })
           .returning({ id: people.id });
-        personId = inserted[0].id;
+        if (inserted.length > 0) {
+          personId = inserted[0].id;
+        } else {
+          const refetch = await tx
+            .select({ id: people.id })
+            .from(people)
+            .where(
+              and(
+                eq(people.ownerId, ownerId),
+                eq(people.importSource, "granola"),
+                eq(people.importSourceId, a.granolaPersonId)
+              )
+            )
+            .limit(1);
+          personId = refetch[0]!.id;
+        }
       }
       personIdByGranolaId.set(a.granolaPersonId, personId);
     }
@@ -288,6 +315,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             `merged Granola list "${l.name}" into existing folder ${existing.id}`
           );
         } else {
+          // Race-safe insert: same partial unique index logic as people.
           const inserted = await tx
             .insert(folders)
             .values({
@@ -296,8 +324,30 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
               importSource: "granola",
               importSourceId: l.granolaListId,
             })
+            .onConflictDoNothing({
+              target: [
+                folders.ownerId,
+                folders.importSource,
+                folders.importSourceId,
+              ],
+            })
             .returning({ id: folders.id });
-          folderId = inserted[0].id;
+          if (inserted.length > 0) {
+            folderId = inserted[0].id;
+          } else {
+            const refetch = await tx
+              .select({ id: folders.id })
+              .from(folders)
+              .where(
+                and(
+                  eq(folders.ownerId, ownerId),
+                  eq(folders.importSource, "granola"),
+                  eq(folders.importSourceId, l.granolaListId)
+                )
+              )
+              .limit(1);
+            folderId = refetch[0]!.id;
+          }
         }
       }
       folderIdByGranolaListId.set(l.granolaListId, folderId);
