@@ -1,8 +1,40 @@
 import { db } from "@/db";
 import { people } from "@/db/schema";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, or, sql } from "drizzle-orm";
 
 export type Person = typeof people.$inferSelect;
+
+/**
+ * Find a person row that matches the given email — checking both
+ * the canonical `email` column and the `email_aliases` jsonb array.
+ * Returns the first hit, or null. Used by the Granola import endpoint
+ * so a re-import of an attendee under a different email merges into
+ * an existing manually-created person rather than creating a dupe.
+ */
+export async function findPersonByAnyEmail(
+  ownerId: string,
+  email: string
+): Promise<Person | null> {
+  const lower = email.trim().toLowerCase();
+  if (!lower) return null;
+  const [row] = await db
+    .select()
+    .from(people)
+    .where(
+      and(
+        eq(people.ownerId, ownerId),
+        or(
+          sql`lower(${people.email}) = ${lower}`,
+          // jsonb @> '["lower-email"]' — needs the literal array. Build
+          // via JSON.stringify for safety. The GIN index in migration
+          // 0024 makes this O(log n).
+          sql`${people.emailAliases} @> ${JSON.stringify([lower])}::jsonb`
+        )
+      )
+    )
+    .limit(1);
+  return row ?? null;
+}
 
 export type CreatePersonInput = {
   displayName: string;

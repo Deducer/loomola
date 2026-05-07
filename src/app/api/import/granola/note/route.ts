@@ -10,7 +10,7 @@
 // Spec: docs/superpowers/specs/2026-05-06-granola-migration-tool-design.md
 
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { createClient } from "@/lib/supabase/server";
 import { db } from "@/db";
 import {
@@ -114,7 +114,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const personIdByGranolaId = new Map<string, string>();
 
     for (const a of payload.attendees) {
-      const existing = await tx
+      let existing = await tx
         .select()
         .from(people)
         .where(
@@ -125,6 +125,47 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           )
         )
         .limit(1);
+      // Fallback: if no Granola-id match, try matching by any email
+      // (canonical or alias). Lets a Granola attendee that you've
+      // already added to your People library get merged onto your
+      // existing row instead of forking a duplicate.
+      if (existing.length === 0 && a.email) {
+        const lower = a.email.trim().toLowerCase();
+        const byEmail = await tx
+          .select()
+          .from(people)
+          .where(
+            and(
+              eq(people.ownerId, ownerId),
+              sql`(lower(${people.email}) = ${lower}
+                   OR ${people.emailAliases} @> ${JSON.stringify([lower])}::jsonb)`
+            )
+          )
+          .limit(1);
+        if (byEmail.length > 0) {
+          // Stamp the Granola identity onto the matched person so
+          // future re-imports hit the import-key path above.
+          const e = byEmail[0];
+          const aliases = Array.isArray(e.emailAliases)
+            ? (e.emailAliases as string[])
+            : [];
+          const updates: Partial<typeof people.$inferInsert> = {
+            importSource: "granola",
+            importSourceId: a.granolaPersonId,
+          };
+          // Add Granola's email to aliases if different from canonical.
+          if (
+            a.email &&
+            e.email?.toLowerCase() !== a.email.toLowerCase() &&
+            !aliases.some((x) => x.toLowerCase() === a.email!.toLowerCase())
+          ) {
+            updates.emailAliases = [...aliases, a.email];
+          }
+          await tx.update(people).set(updates).where(eq(people.id, e.id));
+          existing = [{ ...e, ...updates }];
+        }
+      }
+
       let personId: string;
       if (existing.length > 0) {
         const e = existing[0];

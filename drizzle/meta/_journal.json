@@ -162,6 +162,20 @@
       "when": 1778003200000,
       "tag": "0022_import_metadata",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1778006800000,
+      "tag": "0023_note_templates",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1778169600000,
+      "tag": "0024_people_email_aliases",
+      "breakpoints": true
     }
   ]
 }

@@ -14,6 +14,7 @@ import {
   index,
   customType,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 const tsvector = customType<{ data: string; driverData: string }>({
   dataType() {
@@ -250,7 +251,7 @@ export const aiOutputs = pgTable("ai_outputs", {
   actionItems: jsonb("action_items"),
   llmModel: text("llm_model").notNull(),
   searchTsv: tsvector("search_tsv"),
-  templateId: text("template_id").notNull().default("default"),
+  templateId: text("template_id").notNull().default("general-meeting"),
   generationStatusValue: generationStatus("generation_status")
     .notNull()
     .default("complete"),
@@ -322,6 +323,7 @@ export const notes = pgTable(
       .references(() => mediaObjects.id, { onDelete: "cascade" }),
     ownerId: uuid("owner_id").notNull(),
     body: text("body").notNull().default(""),
+    templateId: text("template_id").notNull().default("general-meeting"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -332,6 +334,10 @@ export const notes = pgTable(
   (t) => ({
     mediaObjectIdx: uniqueIndex("notes_media_object_idx").on(t.mediaObjectId),
     ownerIdx: index("notes_owner_idx").on(t.ownerId),
+    ownerTemplateIdx: index("notes_owner_template_idx").on(
+      t.ownerId,
+      t.templateId
+    ),
   })
 );
 
@@ -375,6 +381,11 @@ export const people = pgTable(
     ownerId: uuid("owner_id").notNull(),
     displayName: text("display_name").notNull(),
     email: text("email"),
+    // Additional emails the same human is known by (work + personal,
+    // multiple Granola accounts, etc.). Populated by POST /api/people/merge
+    // and read by findPersonByAnyEmail. Primary canonical address stays in
+    // `email` above. Migration 0024.
+    emailAliases: jsonb("email_aliases").notNull().default(sql`'[]'::jsonb`),
     notes: text("notes"),
     // Marks the user's own Person row. Used by speaker-suggestion to pick
     // the host speaker_idx and (later, in v2 voice biometrics) seeded as

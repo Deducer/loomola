@@ -217,3 +217,114 @@ The user's stated preference: "make sure we use the right tech for that" — imp
 - Real-time live speaker labeling during recording (we label after transcript completes).
 - Speaker turn-detection improvements over Deepgram's diarization.
 - Telemetry on accept rate.
+
+---
+
+# Addendum 2026-05-07 — Path C technology choice + research notes
+
+After the Granola migration dogfood (2026-05-06/07), the user reaffirmed Path C as the right long-term direction and asked for a deliberate tech pick. Here's the May 2026 landscape and the recommended stack.
+
+## Recommended stack (Path C v2 implementation)
+
+- **Embedding model:** **SpeechBrain ECAPA-TDNN** (`speechbrain/spkrec-ecapa-voxceleb`).
+  - 192-dim float, Apache-2.0, ~1.71% EER on VoxCeleb1.
+  - CPU inference acceptable (~70 ms / utterance on M4); no GPU required for our volume.
+  - Reach for **NeMo TitaNet-Large** (~0.66% EER) only if accuracy demands force it; heavier install, license still Apache.
+- **Vector store:** existing pgvector — `people.voice_embedding vector(192)`.
+- **Sidecar service:** small Python FastAPI app, `extract-embeddings` endpoint, takes a R2 audio key + speaker-segments JSON, returns `{speaker_idx → embedding[]}`. Deployed alongside the main container in Coolify (or as a separate Coolify service).
+- **Worker job:** new `extract_voice_embeddings` pg-boss job, queued after `transcribe` completes for any media with audio. Calls the sidecar; persists per-speaker embeddings on `voice_samples` (new table — see schema below); updates `speaker_assignments.is_suggestion` based on cosine match.
+- **Match step:** cosine similarity over `people.voice_embedding`, biased to candidates in `media_objects.attendees` when present.
+- **Confirmation UX:** reuse the existing G-M13 speaker-suggestion pill in `transcript-panel.tsx`. On accept → update `people.voice_embedding` as a moving-average centroid of accepted samples; mark `speaker_assignments.is_suggestion=false`.
+
+### New tables (proposed)
+
+```sql
+-- One row per (media_object, speaker_idx) embedding, separate from the
+-- people-level centroid so we can recompute centroids if the model
+-- version changes.
+CREATE TABLE voice_samples (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_id uuid NOT NULL,
+  person_id uuid REFERENCES people(id) ON DELETE SET NULL,
+  media_object_id uuid REFERENCES media_objects(id) ON DELETE CASCADE,
+  speaker_idx integer NOT NULL,
+  embedding vector(192) NOT NULL,
+  total_speech_seconds numeric NOT NULL,
+  model_version text NOT NULL DEFAULT 'speechbrain/spkrec-ecapa-voxceleb',
+  accepted_by_user boolean NOT NULL DEFAULT false,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (media_object_id, speaker_idx, model_version)
+);
+
+ALTER TABLE people
+  ADD COLUMN voice_embedding vector(192),
+  ADD COLUMN voice_embedding_sample_count integer NOT NULL DEFAULT 0,
+  ADD COLUMN voice_embedding_updated_at timestamptz;
+```
+
+`people.voice_embedding` is the running centroid; `voice_samples` keeps the originals so we can rebuild it on model upgrade or after merges.
+
+### Confidence rules (initial; tune in the field)
+
+- **Auto-label** when cosine ≥ 0.55 AND speaker is in calendar attendee set.
+- **Suggest** (pill UX) when 0.30 ≤ cosine < 0.55, or ≥ 0.55 but speaker is not in attendee set.
+- **No suggestion** below cosine 0.30 — too risky; user labels manually.
+- **Skip embedding extraction** for speakers with < 1.5 s of total speech (embedding quality collapses below that).
+
+### Hooks into the existing G-M13 attendee-match v1
+
+- The attendee-match pill (already shipped) writes `speaker_assignments.is_suggestion=true` rows. The new voice-match worker should **respect** any `is_suggestion=false` row (user already labeled it; don't second-guess) and only write into the same table where rows are absent or still suggestions.
+- When attendee-match has high confidence AND voice-match has high confidence on the same speaker_idx, agreement → auto-accept. Disagreement → leave as suggestion + show both candidates.
+
+## Research findings — May 2026 landscape
+
+| Topic | Finding (source links below) |
+|---|---|
+| **OSS embedding model leaders** | NeMo TitaNet (~0.66% EER) > WeSpeaker (~0.7-1.2%) > SpeechBrain ECAPA (~1.71%) > pyannote/embedding (~2.8%) > Resemblyzer (~5-6%). All Apache or MIT. |
+| **Hosted speaker-enrollment APIs** | Speechmatics is the only major STT API with a real cross-recording enrollment endpoint as of May 2026. Deepgram = diarization only. AssemblyAI's voiceprinting is on roadmap, not shipped. |
+| **Calendar-attendee + diarization heuristic** | Industry-wide pattern, no published reference implementation. Our G-M13 v1 (count-equality + dominant-speaker) is already a clean version. Otter, Fireflies, Read.ai use the same general shape plus voice biometrics on top. |
+| **Train-by-confirmation accuracy** | 1 sample → ~85% recall; 3-5 samples across different sessions → > 95%; ~10 samples plateaus ([MDPI 2024](https://www.mdpi.com/2076-3417/14/4/1329)). Standard pattern: centroid-of-accepted, cosine threshold, reject samples too far from centroid to avoid drift. |
+| **Where it falls down** | Bluetooth headsets (~2× EER vs wired mic), similar-voice pairs (siblings/partners — embedding margin shrinks; confirmation UX essential), short turns < 1.5 s, far-field overlap (laptop on conf table, 6+ ppl). Pyannote 3.1 still misses ~11-19% DER on the last case. |
+| **Real-world meeting accuracy** | [arXiv 2508.18913](https://arxiv.org/abs/2508.18913) reports speaker-tracking error 29.1% → 20.4% on noisy far-field with 2025 frameworks. Confirms: meeting audio is the hard regime; one round of confirmations is what gets to >95%. |
+
+### Why ECAPA over TitaNet (decision rationale)
+
+- TitaNet's 1% EER advantage doesn't matter at our volume (~50 unique people per user, ~5 hours of audio per week). The gap shows up in 1000+ class verification benchmarks; ours is a dozen-class identification task with explicit calendar-attendee priors that further constrain the space.
+- ECAPA inference is < 100 ms on CPU per 5-second segment; TitaNet wants GPU for parity speed. Single-VPS Coolify deploy + no GPU means ECAPA fits without changing the infra story.
+- ECAPA has ~5 years of production track record (Kaldi-derived, used by tens of products); TitaNet is newer and more locked into the NeMo toolkit's install footprint (2 GB+ on disk).
+
+If accuracy turns out to be the limiter in practice, switching to TitaNet is a model-card swap + re-extracting from `voice_samples` (we kept the originals for exactly this reason) — no schema or API change.
+
+### Why not Speechmatics' hosted enrollment
+
+- Vendor lock-in: forces us off Deepgram entirely (or run two STT vendors in parallel).
+- Cost: Speechmatics is per-minute-billed similar to Deepgram; doubles transcription cost for marginal accuracy gain over a self-hosted ECAPA.
+- Privacy: voice embeddings stay on your VPS instead of in a third-party vendor's biometric store.
+
+Worth re-evaluating if Path C ECAPA accuracy turns out to be insufficient AND Speechmatics' general transcription quality matches Deepgram's at our use case.
+
+## Plan (Path C v2 — when picked up)
+
+Rough sequencing, ~3-4 focused days:
+
+1. New `voice_samples` table + `people.voice_embedding` columns (migration).
+2. Python sidecar service: FastAPI + speechbrain + ffmpeg (segment extraction). Coolify-deployable container.
+3. New pg-boss job `extract_voice_embeddings`, queued from the existing transcribe handler. Hits the sidecar; persists samples.
+4. Centroid-update logic on `speaker_assignments` accept (re-average over `voice_samples WHERE accepted_by_user=true`).
+5. Match step in the existing `suggest_speakers` worker: combine attendee-match prior + voice-match cosine; respect existing accepted assignments.
+6. UX is **unchanged** — same suggestion pill the user already lives with from G-M13 v1. The pill just gets smarter over time as embeddings accumulate.
+
+## Sources (May 2026)
+
+- [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) — current pyannote pipeline
+- [pyannote/embedding](https://huggingface.co/pyannote/embedding) — pyannote's standalone embedding model
+- [SpeechBrain ECAPA-TDNN model card](https://huggingface.co/speechbrain/spkrec-ecapa-voxceleb) — recommended pick
+- [NVIDIA NeMo TitaNet model card](https://huggingface.co/nvidia/speakerverification_en_titanet_large) — accuracy ceiling
+- [WeSpeaker (NPU-Speech) GitHub](https://github.com/wenet-e2e/wespeaker) — production-tuned alternative
+- [Comparison of Modern Deep Learning Models for Speaker Verification (MDPI 2024)](https://www.mdpi.com/2076-3417/14/4/1329) — accuracy benchmarks
+- [Speechmatics Speaker Identification](https://docs.speechmatics.com/speech-to-text/features/speaker-identification) — only hosted enrollment
+- [AssemblyAI Speaker Identification](https://www.assemblyai.com/docs/speech-understanding/speaker-identification) — name-mapping only, no voiceprints yet
+- [AssemblyAI Speaker Fingerprinting roadmap blog](https://www.assemblyai.com/blog/speaker-fingerprinting-voice-ai)
+- [Deepgram API Overview](https://developers.deepgram.com/reference/deepgram-api-overview) — confirms diarization-only
+- [arXiv 2508.18913: Robust Speaker Verification in Highly Noisy Environments](https://arxiv.org/abs/2508.18913)
+- [BrassTranscripts 2026: Best Speaker Diarization Models Compared](https://brasstranscripts.com/blog/speaker-diarization-models-comparison)
