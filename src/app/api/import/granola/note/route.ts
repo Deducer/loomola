@@ -107,7 +107,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const payload: GranolaNoteImportPayload = sanitizePayload(parsed.data);
   const warnings: string[] = [];
 
-  const result = await db.transaction(async (tx) => {
+  let result: { mediaObjectId: string; action: "created" | "updated" | "unchanged"; hadFolder: boolean };
+  try {
+    result = await db.transaction(async (tx) => {
     // ─── 1. Upsert attendee people rows (resolve granolaPersonId → people.id) ───
     const personIdByGranolaId = new Map<string, string>();
 
@@ -420,7 +422,31 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     return { mediaObjectId, action, hadFolder: assignedAnyFolder };
-  });
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const stack = e instanceof Error ? e.stack : undefined;
+    console.error("[import/granola/note] transaction failed", {
+      granolaId: payload.granolaId,
+      title: payload.title?.slice(0, 60),
+      attendees: payload.attendees.length,
+      lists: payload.lists.length,
+      transcriptSegs: payload.transcript?.segments.length ?? 0,
+      error: msg,
+      stack,
+    });
+    return NextResponse.json(
+      {
+        error: "Import failed",
+        granolaId: payload.granolaId,
+        message: msg,
+        // Surface error detail back to the CLI so the operator can diagnose
+        // without needing container log access. Safe — Postgres errors here
+        // contain table/column names but no user PII beyond what was sent.
+      },
+      { status: 500 }
+    );
+  }
 
   // ─── 9. Outside the transaction: queue suggest_folder for orphans ───
   if (!result.hadFolder && result.action === "created") {
