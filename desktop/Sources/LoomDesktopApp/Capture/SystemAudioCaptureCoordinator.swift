@@ -10,6 +10,14 @@ final class SystemAudioCaptureCoordinator: NSObject, SCStreamOutput, SCStreamDel
     private var stream: SCStream?
     private var writer: AudioAssetWriter?
     private let sampleQueue = DispatchQueue(label: "cloud.dissonance.loom.desktop.system-audio-samples")
+    /// When true, incoming system-audio sample buffers are discarded
+    /// instead of being written or fed to the level meter. Stream stays
+    /// alive so resume is instant. Toggle from AudioNoteRecorder.
+    private var paused = false
+    var isPaused: Bool {
+        get { paused }
+        set { paused = newValue }
+    }
 
     func start(outputURL: URL) async throws {
         let content = try await SCShareableContent.current
@@ -53,6 +61,7 @@ final class SystemAudioCaptureCoordinator: NSObject, SCStreamOutput, SCStreamDel
         of type: SCStreamOutputType
     ) {
         guard type == .audio else { return }
+        if paused { return }
         try? writer?.append(sampleBuffer)
         if let level = AudioLevelSampler.linearLevel(from: sampleBuffer) {
             onLevel?(level)

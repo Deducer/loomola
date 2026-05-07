@@ -27,6 +27,16 @@ final class MicrophoneCaptureCoordinator: NSObject, @unchecked Sendable {
     private var writer: AudioAssetWriter?
     private var formatDescription: CMAudioFormatDescription?
     private var nextSampleTime: AVAudioFramePosition = 0
+    /// When true, the engine tap continues firing but every buffer is
+    /// discarded — no file write, no level meter, no compositor
+    /// callback. Pause = no audio data captured during this interval;
+    /// the resulting file naturally elides the gap. Toggle from the
+    /// owning AudioNoteRecorder on user pause/resume.
+    private var paused = false
+    var isPaused: Bool {
+        get { paused }
+        set { paused = newValue }
+    }
 
     /// Starts capturing mic audio, optionally with AEC. Two write modes:
     ///
@@ -153,6 +163,11 @@ final class MicrophoneCaptureCoordinator: NSObject, @unchecked Sendable {
 
     private func handleTap(buffer: AVAudioPCMBuffer, time: AVAudioTime) {
         guard let formatDescription else { return }
+        // Drop incoming buffers while paused. We deliberately keep the
+        // engine running so resume is instant and the input device
+        // stays warm (re-acquiring a USB / Bluetooth mic on resume can
+        // take 1-3 s and surfaces as a click in the recording).
+        if paused { return }
 
         if let level = peakLevel(of: buffer) {
             onLevel?(level)

@@ -9,6 +9,16 @@ final class AudioNoteRecorder {
     private let systemAudioCapture: SystemAudioCaptureCoordinator?
     private var session: AudioRecordingSession?
 
+    /// Pause/resume bookkeeping. `paused` mirrors the flag both capture
+    /// coordinators carry; `pauseStartedAt` is the wall-clock timestamp
+    /// of the most recent pause (nil when running). `pausedAccumulatedSeconds`
+    /// is total time spent paused this session — subtracted from
+    /// (now - session.startedAt) at upload time so durationSeconds
+    /// matches the actual audio duration on disk.
+    private(set) var paused = false
+    private var pauseStartedAt: Date?
+    private var pausedAccumulatedSeconds: TimeInterval = 0
+
     /// True when a session exists in any state (recording or
     /// post-stop-failure). Used by orphan-rescue to detect that there
     /// is local data still on disk that wasn't uploaded.
@@ -114,12 +124,38 @@ final class AudioNoteRecorder {
         }
     }
 
+    func pause() {
+        guard session != nil, !paused else { return }
+        paused = true
+        pauseStartedAt = Date()
+        microphoneCapture?.isPaused = true
+        systemAudioCapture?.isPaused = true
+    }
+
+    func resume() {
+        guard session != nil, paused, let pauseStartedAt else { return }
+        pausedAccumulatedSeconds += Date().timeIntervalSince(pauseStartedAt)
+        self.pauseStartedAt = nil
+        paused = false
+        microphoneCapture?.isPaused = false
+        systemAudioCapture?.isPaused = false
+    }
+
     func stopAndUpload() async throws -> CompleteRecordingResponse {
         guard let session else {
             throw AudioNoteRecorderError.notRecording
         }
         guard let recordingId = session.backendRecordingId else {
             throw AudioNoteRecorderError.missingBackendRecordingId
+        }
+        // If user hits "End & upload" while paused, fold the in-progress
+        // pause into the accumulator before computing duration.
+        if paused, let pauseStartedAt {
+            pausedAccumulatedSeconds += Date().timeIntervalSince(pauseStartedAt)
+            self.pauseStartedAt = nil
+            paused = false
+            microphoneCapture?.isPaused = false
+            systemAudioCapture?.isPaused = false
         }
 
         var localFiles: [TrackKind: URL] = [:]
@@ -153,15 +189,18 @@ final class AudioNoteRecorder {
             throw AudioNoteRecorderError.noCompletedAudioTracks
         }
 
+        let elapsed = Date().timeIntervalSince(session.startedAt)
+        let recordedSeconds = max(elapsed - pausedAccumulatedSeconds, 1)
         let response = try await backend.complete(
             recordingId: recordingId,
             request: CompleteRecordingRequest(
                 tracks: completedTracks,
-                durationSeconds: max(Date().timeIntervalSince(session.startedAt), 1)
+                durationSeconds: recordedSeconds
             )
         )
         try? FileManager.default.removeItem(at: session.directory)
         self.session = nil
+        pausedAccumulatedSeconds = 0
         return response
     }
 
@@ -180,6 +219,9 @@ final class AudioNoteRecorder {
         }
         try? FileManager.default.removeItem(at: session.directory)
         self.session = nil
+        paused = false
+        pauseStartedAt = nil
+        pausedAccumulatedSeconds = 0
     }
 
     private func startMicrophoneCapture(

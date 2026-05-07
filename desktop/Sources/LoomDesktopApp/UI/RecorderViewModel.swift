@@ -26,8 +26,18 @@ final class RecorderViewModel: ObservableObject {
     @Published private(set) var activeAudioRecordingId: String?
     /// True while the audio note recording is paused. Drives the
     /// Pause↔Resume UI state in RecordingHomeView. Mirrors
-    /// AudioNoteRecorder.isPaused but kept as an @Published mirror
+    /// AudioNoteRecorder.paused but kept as an @Published mirror
     /// so SwiftUI re-renders on transition.
+    @Published private(set) var isAudioNotePaused: Bool = false
+    /// Wall-clock time of the most recent pause for the active audio
+    /// note recording. Used to freeze the elapsed-timer display while
+    /// paused. Nil when running.
+    @Published private(set) var audioNotePausedAt: Date?
+    /// Total time (seconds) the active recording has spent paused.
+    /// The timer in RecordingHomeView shows
+    /// (now - startedAt) - audioNotePausedAccumulatedSeconds so
+    /// it matches the actual recorded audio duration.
+    @Published private(set) var audioNotePausedAccumulatedSeconds: TimeInterval = 0
     /// Live-typed manual notes body for the active audio recording.
     /// Bound to the NotesSidePanel textarea, debounced-saved to
     /// /api/notes/<mediaId> while recording.
@@ -911,6 +921,9 @@ final class RecorderViewModel: ObservableObject {
                 activeAudioRecordingStartedAt = Date()
                 activeAudioRecordingSlug = session.backendSlug
                 activeAudioRecordingId = session.backendRecordingId
+                isAudioNotePaused = false
+                audioNotePausedAt = nil
+                audioNotePausedAccumulatedSeconds = 0
                 liveNotesBody = ""
                 startNotesAutosave()
                 audioLevel = 0
@@ -928,6 +941,38 @@ final class RecorderViewModel: ObservableObject {
         }
     }
 
+    /// Pause the active audio-note capture. The mic + system-audio
+    /// engines stay running; their tap callbacks discard buffers while
+    /// `paused == true`. The on-disk audio file naturally elides the
+    /// gap. Resume is instant — no device re-acquisition.
+    ///
+    /// Safe to call only when an audio note recording is active and
+    /// not already paused. UI gates this; defensive no-op otherwise.
+    func pauseAudioNoteRecording() {
+        guard let audioNoteRecorder,
+              activeRecordingKind == .audio,
+              !isAudioNotePaused
+        else { return }
+        audioNoteRecorder.pause()
+        isAudioNotePaused = true
+        audioNotePausedAt = Date()
+    }
+
+    /// Resume after a previous pauseAudioNoteRecording(). Recomputes
+    /// total paused-time so the displayed timer + uploaded
+    /// durationSeconds match the actual recorded audio duration.
+    func resumeAudioNoteRecording() {
+        guard let audioNoteRecorder,
+              activeRecordingKind == .audio,
+              isAudioNotePaused,
+              let pausedAt = audioNotePausedAt
+        else { return }
+        audioNoteRecorder.resume()
+        audioNotePausedAccumulatedSeconds += Date().timeIntervalSince(pausedAt)
+        audioNotePausedAt = nil
+        isAudioNotePaused = false
+    }
+
     func stopAudioNoteRecordingAndUpload() {
         guard let audioNoteRecorder else { return }
         // Match the video Stop & upload pattern: clear
@@ -943,6 +988,9 @@ final class RecorderViewModel: ObservableObject {
         activeRecordingKind = nil
         activeAudioRecordingStartedAt = nil
         activeAudioRecordingSlug = nil
+        isAudioNotePaused = false
+        audioNotePausedAt = nil
+        audioNotePausedAccumulatedSeconds = 0
         // Keep activeAudioRecordingId until after the final flush.
         audioLevel = 0
         state = .finalizing
@@ -1068,6 +1116,9 @@ final class RecorderViewModel: ObservableObject {
             activeAudioRecordingStartedAt = nil
             activeAudioRecordingSlug = nil
             activeAudioRecordingId = nil
+            isAudioNotePaused = false
+            audioNotePausedAt = nil
+            audioNotePausedAccumulatedSeconds = 0
             audioLevel = 0
             liveNotesBody = ""
             state = .signedInIdle

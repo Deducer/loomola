@@ -13,7 +13,7 @@ struct RecordingHomeView: View {
             Spacer()
 
             VStack(spacing: DSSpacing.md) {
-                pulsingDot
+                statusDot
                 Text(headline)
                     .font(DSFont.Display.lg())
                     .foregroundStyle(DSColor.Text.primary)
@@ -30,7 +30,7 @@ struct RecordingHomeView: View {
                 .font(DSFont.Mono.timer())
                 .foregroundStyle(DSColor.Text.primary)
 
-            VideoLevelMeter(level: viewModel.audioLevel)
+            VideoLevelMeter(level: isPausedAudio ? 0 : viewModel.audioLevel)
                 .frame(width: 160, height: 28)
 
             actions
@@ -42,11 +42,22 @@ struct RecordingHomeView: View {
         .background(DSColor.Bg.canvas)
     }
 
-    private var pulsingDot: some View {
-        TimelineView(.animation(minimumInterval: 0.05)) { context in
+    // MARK: - Status dot
+
+    /// Recording → red, pulsing.
+    /// Paused (audio only) → solid warning-orange, no pulse.
+    @ViewBuilder
+    private var statusDot: some View {
+        if isPausedAudio {
             Circle()
-                .fill(DSColor.State.recording.opacity(pulseAlpha(at: context.date)))
+                .fill(DSColor.State.warning)
                 .frame(width: 14, height: 14)
+        } else {
+            TimelineView(.animation(minimumInterval: 0.05)) { context in
+                Circle()
+                    .fill(DSColor.State.recording.opacity(pulseAlpha(at: context.date)))
+                    .frame(width: 14, height: 14)
+            }
         }
     }
 
@@ -56,7 +67,10 @@ struct RecordingHomeView: View {
         return 0.55 + phase * 0.45
     }
 
+    // MARK: - Headlines + subtitle
+
     private var headline: String {
+        if isPausedAudio { return "Paused" }
         switch viewModel.activeRecordingKind {
         case .video: return "Recording"
         case .audio: return "Recording audio note"
@@ -70,6 +84,12 @@ struct RecordingHomeView: View {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    // MARK: - Timer
+
+    /// Elapsed = (now - startedAt) - audioNotePausedAccumulatedSeconds
+    /// while recording. While paused, freeze at the value computed at
+    /// the moment of pause so the user sees a stable number rather
+    /// than ticking dead air.
     private var startedAt: Date {
         if viewModel.activeRecordingKind == .video {
             return viewModel.activeVideoRecordingStartedAt ?? Date()
@@ -77,14 +97,26 @@ struct RecordingHomeView: View {
         return viewModel.activeAudioRecordingStartedAt ?? Date()
     }
 
+    @ViewBuilder
     private var timer: some View {
-        TimelineView(.periodic(from: startedAt, by: 1)) { ctx in
-            Text(elapsedString(now: ctx.date, startedAt: startedAt))
+        if isPausedAudio, let pausedAt = viewModel.audioNotePausedAt {
+            // Frozen value at pause time.
+            let frozenSec =
+                pausedAt.timeIntervalSince(startedAt)
+                - viewModel.audioNotePausedAccumulatedSeconds
+            Text(formatElapsed(seconds: max(0, frozenSec)))
+        } else {
+            TimelineView(.periodic(from: startedAt, by: 1)) { ctx in
+                let elapsed =
+                    ctx.date.timeIntervalSince(startedAt)
+                    - viewModel.audioNotePausedAccumulatedSeconds
+                Text(formatElapsed(seconds: max(0, elapsed)))
+            }
         }
     }
 
-    private func elapsedString(now: Date, startedAt: Date) -> String {
-        let total = max(0, Int(now.timeIntervalSince(startedAt)))
+    private func formatElapsed(seconds: TimeInterval) -> String {
+        let total = max(0, Int(seconds))
         let h = total / 3600
         let m = (total % 3600) / 60
         let s = total % 60
@@ -94,11 +126,22 @@ struct RecordingHomeView: View {
         return String(format: "%02d:%02d", m, s)
     }
 
+    // MARK: - Buttons
+
+    /// Convenience: only true while an audio recording is active AND
+    /// paused. Video recording doesn't support pause yet — its UI
+    /// stays as it was.
+    private var isPausedAudio: Bool {
+        viewModel.activeRecordingKind == .audio && viewModel.isAudioNotePaused
+    }
+
     @ViewBuilder
     private var actions: some View {
         HStack(spacing: DSSpacing.md) {
             switch viewModel.activeRecordingKind {
             case .video:
+                // Video: no pause yet (separate piece of work — AVAssetWriter
+                // pause handling + screen capture coordination is fussier).
                 PrimaryButton("Stop & upload", icon: "stop.fill", kind: .destructive) {
                     viewModel.stopLocalRecordingAndUpload()
                 }
@@ -106,14 +149,30 @@ struct RecordingHomeView: View {
                     viewModel.cancelLocalRecording()
                 }
             case .audio:
-                PrimaryButton("Stop & upload", icon: "stop.fill", kind: .destructive) {
-                    viewModel.stopAudioNoteRecordingAndUpload()
-                }
-                SecondaryButton("Discard", icon: "trash") {
-                    viewModel.cancelAudioNoteRecording()
-                }
-                SecondaryButton("Open note", icon: "doc.text") {
-                    viewModel.openActiveAudioNote()
+                if viewModel.isAudioNotePaused {
+                    PrimaryButton("Resume", icon: "play.fill") {
+                        viewModel.resumeAudioNoteRecording()
+                    }
+                    SecondaryButton("End & upload", icon: "checkmark.circle") {
+                        viewModel.stopAudioNoteRecordingAndUpload()
+                    }
+                    SecondaryButton("Discard", icon: "trash") {
+                        viewModel.cancelAudioNoteRecording()
+                    }
+                } else {
+                    // Granola-style: the prominent button on a live recording
+                    // is pause-by-default. End & upload requires an explicit
+                    // pause first → user can't accidentally fire the upload
+                    // pipeline by misclicking during meeting prep.
+                    PrimaryButton("Stop", icon: "stop.fill") {
+                        viewModel.pauseAudioNoteRecording()
+                    }
+                    SecondaryButton("Open note", icon: "doc.text") {
+                        viewModel.openActiveAudioNote()
+                    }
+                    SecondaryButton("Discard", icon: "trash") {
+                        viewModel.cancelAudioNoteRecording()
+                    }
                 }
             case nil:
                 EmptyView()
