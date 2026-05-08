@@ -8,7 +8,13 @@ import { cn } from "@/lib/cn";
 
 type Props = {
   userEmail: string;
-  activePath: "recordings" | "brands" | "record" | "people" | "dictionary";
+  activePath:
+    | "recordings"
+    | "brands"
+    | "record"
+    | "people"
+    | "dictionary"
+    | "settings";
   granolaEnabled?: boolean;
 };
 
@@ -22,6 +28,7 @@ export function TopNav({ userEmail, activePath, granolaEnabled = false }: Props)
           { href: "/dictionary", label: "Dictionary", key: "dictionary" as const },
         ]
       : []),
+    { href: "/settings", label: "Settings", key: "settings" as const },
   ];
 
   const linkClass = (active: boolean) =>

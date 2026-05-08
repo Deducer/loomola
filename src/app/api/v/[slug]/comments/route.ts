@@ -8,6 +8,7 @@ import { checkAndBump } from "@/lib/comments/rate-limit";
 import { sendEmail } from "@/lib/mail/mailgun";
 import { renderNewCommentEmail } from "@/lib/mail/templates/new-comment";
 import { getSupabaseService } from "@/lib/supabase/service";
+import { getUserPreferences } from "@/db/queries/user-preferences";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_BODY = 2000;
@@ -90,6 +91,8 @@ export async function POST(
   // response. Errors caught and logged; comment is still persisted.
   void (async () => {
     try {
+      const preferences = await getUserPreferences(rec.ownerId);
+      if (!preferences.notifyComments) return;
       const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
       const shareUrl = `${appUrl}/v/${slug}`;
       const service = getSupabaseService();

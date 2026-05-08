@@ -14,6 +14,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   ArrowLeft,
+  BookOpen,
   Calendar,
   Check,
   ChevronUp,
@@ -33,6 +34,7 @@ import {
   Trash2,
   Users,
   Volume2,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -59,6 +61,9 @@ type NotePageClientProps = {
   transcriptText: string;
   transcriptWords: Word[];
   initialAttachments: NoteAttachment[];
+  initialTemplateId: string;
+  initialGeneratedTemplateId: string | null;
+  templates: NoteTemplate[];
   initialEnhancedSummary: string | null;
   initialGenerationStatus: GenerationStatus;
   initialObsidianSaveState: ObsidianSaveState;
@@ -72,6 +77,16 @@ type GenerationStatus = "idle" | "pending" | "streaming" | "complete" | "failed"
 type NoteViewMode = "original" | "enhanced";
 type ObsidianSaveState = "idle" | "saving" | "queued" | "synced" | "error";
 type AttachmentSaveState = "idle" | "uploading" | "error";
+type TemplateSaveState = "idle" | "saving" | "error";
+
+type NoteTemplate = {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  meetingContext: string;
+  sections: Array<{ title: string; prompt: string }>;
+};
 
 type NoteAttachment = {
   id: string;
@@ -91,6 +106,9 @@ export function NotePageClient({
   attendees,
   folderLabel,
   initialBody,
+  initialTemplateId,
+  initialGeneratedTemplateId,
+  templates,
   audioUrl,
   waveformUrl,
   transcriptText,
@@ -106,6 +124,13 @@ export function NotePageClient({
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [body, setBody] = useState(initialBody);
   const [title, setTitle] = useState(initialTitle ?? "");
+  const [templateId, setTemplateId] = useState(initialTemplateId);
+  const [generatedTemplateId, setGeneratedTemplateId] = useState(
+    initialGeneratedTemplateId
+  );
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  const [templateState, setTemplateState] =
+    useState<TemplateSaveState>("idle");
   const [lastSavedBody, setLastSavedBody] = useState(initialBody);
   const [lastSavedTitle, setLastSavedTitle] = useState(initialTitle ?? "");
   const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -158,6 +183,19 @@ export function NotePageClient({
     if (!Array.isArray(attendees) || attendees.length === 0) return "Me";
     return `${attendees.length + 1} people`;
   }, [attendees]);
+  const selectedTemplate = useMemo(
+    () => templates.find((template) => template.id === templateId) ?? templates[0],
+    [templateId, templates]
+  );
+  const generatedTemplate = useMemo(
+    () =>
+      generatedTemplateId
+        ? templates.find((template) => template.id === generatedTemplateId)
+        : null,
+    [generatedTemplateId, templates]
+  );
+  const enhancedUsesSelectedTemplate =
+    !!enhancedSummary && (!generatedTemplateId || generatedTemplateId === templateId);
 
   useEffect(() => {
     if (body === lastSavedBody) return;
@@ -185,10 +223,12 @@ export function NotePageClient({
     const data = (await response.json()) as {
       titleSuggested: string | null;
       summary: string | null;
+      templateId: string | null;
       generationStatus: GenerationStatus;
     };
 
     setGenerationStatus(data.generationStatus);
+    if (data.templateId) setGeneratedTemplateId(data.templateId);
     if (data.summary) {
       setEnhancedSummary(data.summary);
       setViewMode("enhanced");
@@ -287,6 +327,8 @@ export function NotePageClient({
       await saveBodyNow();
       const response = await fetch(`/api/notes/${mediaId}/enhance`, {
         method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ templateId }),
       });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
@@ -302,6 +344,30 @@ export function NotePageClient({
           ? "Transcript is still processing."
           : "Could not generate notes."
       );
+    }
+  }
+
+  async function updateTemplate(nextTemplateId: string) {
+    if (nextTemplateId === templateId) {
+      setTemplatePickerOpen(false);
+      return;
+    }
+    const previous = templateId;
+    setTemplateId(nextTemplateId);
+    setTemplatePickerOpen(false);
+    setTemplateState("saving");
+    try {
+      const response = await fetch(`/api/notes/${mediaId}/template`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ templateId: nextTemplateId }),
+      });
+      if (!response.ok) throw new Error("template_failed");
+      setTemplateState("idle");
+      if (enhancedSummary) setViewMode("original");
+    } catch {
+      setTemplateId(previous);
+      setTemplateState("error");
     }
   }
 
@@ -511,12 +577,26 @@ export function NotePageClient({
               <Folder className="h-3.5 w-3.5" />
               {folderLabel ?? "Add to folder"}
             </span>
+            <button
+              type="button"
+              onClick={() => setTemplatePickerOpen(true)}
+              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border bg-bg-subtle/80 px-3 transition-colors hover:border-border-strong hover:bg-bg-elevated hover:text-text"
+            >
+              <BookOpen className="h-3.5 w-3.5" />
+              {selectedTemplate?.name ?? "Template"}
+            </button>
             {durationLabel && (
               <span className="inline-flex h-8 items-center rounded-full border border-border bg-bg-subtle/80 px-3 tabular-nums">
                 {durationLabel}
               </span>
             )}
             <SaveIndicator state={titleState} />
+            {templateState === "saving" && (
+              <span className="text-xs text-text-subtle">Saving template</span>
+            )}
+            {templateState === "error" && (
+              <span className="text-xs text-red-400">Template not saved</span>
+            )}
           </div>
           <NoteAttachments
             attachments={attachments}
@@ -545,6 +625,9 @@ export function NotePageClient({
             generationStatus={generationStatus}
             hasTranscript={!!transcriptText.trim()}
             hasEnhancedSummary={!!enhancedSummary}
+            selectedTemplateName={selectedTemplate?.name ?? "template"}
+            generatedTemplateName={generatedTemplate?.name ?? null}
+            enhancedUsesSelectedTemplate={enhancedUsesSelectedTemplate}
             error={enhanceError}
             onGenerate={generateNotes}
           />
@@ -655,6 +738,14 @@ export function NotePageClient({
           />
         )}
       </div>
+      {templatePickerOpen && (
+        <TemplatePickerDialog
+          templates={templates}
+          selectedTemplateId={templateId}
+          onSelect={updateTemplate}
+          onClose={() => setTemplatePickerOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -847,12 +938,18 @@ function EnhancementControls({
   generationStatus,
   hasTranscript,
   hasEnhancedSummary,
+  selectedTemplateName,
+  generatedTemplateName,
+  enhancedUsesSelectedTemplate,
   error,
   onGenerate,
 }: {
   generationStatus: GenerationStatus;
   hasTranscript: boolean;
   hasEnhancedSummary: boolean;
+  selectedTemplateName: string;
+  generatedTemplateName: string | null;
+  enhancedUsesSelectedTemplate: boolean;
   error: string | null;
   onGenerate: () => void;
 }) {
@@ -888,7 +985,135 @@ function EnhancementControls({
             ? "Regenerate notes"
             : "Generate notes"}
       </Button>
+      {hasEnhancedSummary && !enhancedUsesSelectedTemplate && (
+        <p className="max-w-sm text-center text-xs text-text-subtle">
+          Current notes used {generatedTemplateName ?? "another template"}.
+          Regenerate to use {selectedTemplateName}.
+        </p>
+      )}
       {error && <p className="text-xs text-red-400">{error}</p>}
+    </div>
+  );
+}
+
+function TemplatePickerDialog({
+  templates,
+  selectedTemplateId,
+  onSelect,
+  onClose,
+}: {
+  templates: NoteTemplate[];
+  selectedTemplateId: string;
+  onSelect: (templateId: string) => void;
+  onClose: () => void;
+}) {
+  const [previewId, setPreviewId] = useState(selectedTemplateId);
+  const preview =
+    templates.find((template) => template.id === previewId) ?? templates[0];
+  const grouped = useMemo(() => {
+    const map = new Map<string, NoteTemplate[]>();
+    for (const template of templates) {
+      const items = map.get(template.category) ?? [];
+      items.push(template);
+      map.set(template.category, items);
+    }
+    return Array.from(map.entries());
+  }, [templates]);
+
+  if (!preview) return null;
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/45 px-4 backdrop-blur-sm">
+      <div className="flex max-h-[78vh] w-full max-w-4xl overflow-hidden rounded-xl border border-border bg-bg-elevated shadow-2xl shadow-black/40">
+        <aside className="w-72 shrink-0 border-r border-border bg-bg-subtle/50 p-3">
+          <div className="mb-3 flex items-center justify-between gap-3 px-1">
+            <div>
+              <h2 className="text-sm font-semibold text-text">Note templates</h2>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-full text-text-muted hover:bg-bg-elevated hover:text-text"
+              aria-label="Close templates"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <div className="max-h-[62vh] overflow-y-auto pr-1">
+            {grouped.map(([category, items]) => (
+              <div key={category} className="mb-4">
+                <p className="mb-1 px-2 text-[11px] font-medium uppercase tracking-normal text-text-subtle">
+                  {category}
+                </p>
+                <div className="space-y-1">
+                  {items.map((template) => (
+                    <button
+                      key={template.id}
+                      type="button"
+                      onClick={() => setPreviewId(template.id)}
+                      className={cn(
+                        "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors",
+                        previewId === template.id
+                          ? "bg-bg-elevated text-text"
+                          : "text-text-muted hover:bg-bg-elevated/70 hover:text-text"
+                      )}
+                    >
+                      <BookOpen className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                      <span className="min-w-0 flex-1 truncate">{template.name}</span>
+                      {selectedTemplateId === template.id && (
+                        <Check className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </aside>
+        <section className="min-w-0 flex-1 overflow-y-auto p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-medium text-emerald-400">{preview.category}</p>
+              <h3 className="mt-1 text-2xl font-semibold tracking-normal text-text">
+                {preview.name}
+              </h3>
+              <p className="mt-2 max-w-xl text-sm leading-6 text-text-muted">
+                {preview.description}
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => onSelect(preview.id)}
+              className="rounded-full border-border-strong bg-bg-subtle px-4 text-text hover:bg-bg"
+            >
+              {selectedTemplateId === preview.id ? "Selected" : "Use template"}
+            </Button>
+          </div>
+
+          <div className="mt-6 rounded-lg border border-border bg-bg-subtle/60 p-4">
+            <p className="mb-2 text-xs font-medium text-text-subtle">
+              Meeting context
+            </p>
+            <p className="text-sm leading-6 text-text-muted">
+              {preview.meetingContext}
+            </p>
+          </div>
+
+          <div className="mt-5 space-y-2">
+            {preview.sections.map((section) => (
+              <div
+                key={section.title}
+                className="rounded-lg border border-border bg-bg-subtle/45 p-4"
+              >
+                <p className="text-sm font-semibold text-text">{section.title}</p>
+                <p className="mt-1 text-sm leading-6 text-text-muted">
+                  {section.prompt}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
     </div>
   );
 }

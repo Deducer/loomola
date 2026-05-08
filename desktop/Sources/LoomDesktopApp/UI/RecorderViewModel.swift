@@ -51,6 +51,10 @@ final class RecorderViewModel: ObservableObject {
     @Published private(set) var audioLevel = 0.0
     @Published private(set) var meetingContext: MeetingContext?
     @Published private(set) var meetingPromptContext: MeetingContext?
+    @Published private(set) var meetingDetectionEnabled: Bool =
+        UserDefaults.standard.object(forKey: "loomola.meetingDetectionEnabled") as? Bool ?? true
+    @Published private(set) var floatingRecordingIndicatorEnabled: Bool =
+        UserDefaults.standard.object(forKey: "loomola.floatingRecordingIndicatorEnabled") as? Bool ?? true
     @Published private(set) var nativeMessagingStatus = "Chrome bridge can be installed after the extension is loaded."
     @Published private(set) var isInstallingNativeMessagingHost = false
     @Published private(set) var captureSources = CaptureSourceSnapshot(
@@ -329,6 +333,32 @@ final class RecorderViewModel: ObservableObject {
             return
         }
         NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    func setMeetingDetectionEnabled(_ enabled: Bool) {
+        guard meetingDetectionEnabled != enabled else { return }
+        meetingDetectionEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: "loomola.meetingDetectionEnabled")
+        if enabled {
+            statusMessage = "Meeting detection enabled."
+            if accessToken != nil {
+                startMeetingWatch()
+            }
+        } else {
+            meetingWatchTask?.cancel()
+            meetingWatchTask = nil
+            applyMeetingContext(nil)
+            statusMessage = "Meeting detection disabled."
+        }
+    }
+
+    func setFloatingRecordingIndicatorEnabled(_ enabled: Bool) {
+        guard floatingRecordingIndicatorEnabled != enabled else { return }
+        floatingRecordingIndicatorEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: "loomola.floatingRecordingIndicatorEnabled")
+        statusMessage = enabled
+            ? "Floating recording indicator enabled."
+            : "Floating recording indicator disabled."
     }
 
     func startRecordingPlaceholder() {
@@ -1242,7 +1272,9 @@ final class RecorderViewModel: ObservableObject {
         }
         startObsidianAutoSync()
         startObsidianRealtimeSync(userId: session.user.id)
-        startMeetingWatch()
+        if meetingDetectionEnabled {
+            startMeetingWatch()
+        }
     }
 
     func openActiveAudioNote() {
@@ -1300,6 +1332,7 @@ final class RecorderViewModel: ObservableObject {
     }
 
     private func startMeetingWatch() {
+        guard meetingDetectionEnabled else { return }
         guard meetingWatchTask == nil else { return }
         refreshChromeMeetingContext(showStatus: false)
         // The idle meeting-watch loop is intentionally minimal: it

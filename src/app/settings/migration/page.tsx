@@ -18,7 +18,7 @@ export default async function MigrationSettingsPage() {
     <div className="min-h-screen bg-[var(--bg)]">
       <TopNav
         userEmail={user.email ?? ""}
-        activePath="recordings"
+        activePath="settings"
         granolaEnabled={true}
       />
       <main className="mx-auto max-w-2xl px-6 py-12 space-y-8">

@@ -31,7 +31,8 @@ export async function insertBlankAiOutput(
 
 export async function resetAiOutputForEnhancement(
   mediaObjectId: string,
-  llmModel: string
+  llmModel: string,
+  templateId: string
 ): Promise<AiOutput> {
   const existing = await getAiOutputByMedia(mediaObjectId);
   if (existing) {
@@ -43,6 +44,7 @@ export async function resetAiOutputForEnhancement(
         chapters: null,
         actionItems: null,
         llmModel,
+        templateId,
         generationStatusValue: "pending",
         generatedAt: new Date(),
       })
@@ -56,6 +58,7 @@ export async function resetAiOutputForEnhancement(
     .values({
       mediaObjectId,
       llmModel,
+      templateId,
       generationStatusValue: "pending",
     })
     .returning();

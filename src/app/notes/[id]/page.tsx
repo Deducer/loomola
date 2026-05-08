@@ -11,6 +11,11 @@ import { listSpeakerAssignments } from "@/db/queries/speaker-assignments";
 import { NotePageClient } from "@/components/notes/note-page-client";
 import { resolveObsidianPath } from "@/lib/notes/obsidian-path";
 import type { Word } from "@/lib/viewer/paragraphs";
+import {
+  DEFAULT_NOTE_TEMPLATE_ID,
+  getNoteTemplate,
+  listNoteTemplates,
+} from "@/lib/ai/note-templates";
 
 export default async function NotesPage({
   params,
@@ -50,6 +55,15 @@ export default async function NotesPage({
       attendees={data.media.attendees}
       folderLabel={null}
       initialBody={data.note?.body ?? ""}
+      initialTemplateId={
+        getNoteTemplate(
+          data.note?.templateId ??
+            data.aiOutput?.templateId ??
+            DEFAULT_NOTE_TEMPLATE_ID
+        ).id
+      }
+      initialGeneratedTemplateId={data.aiOutput?.templateId ?? null}
+      templates={listNoteTemplates()}
       audioUrl={audioUrl}
       waveformUrl={waveformUrl}
       transcriptText={data.transcript?.fullText ?? ""}

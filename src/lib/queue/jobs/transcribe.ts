@@ -5,6 +5,8 @@ import { db } from "@/db";
 import { mediaObjects } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getCanonicalTerms } from "@/db/queries/dictionary-terms";
+import { getUserPreferences } from "@/db/queries/user-preferences";
+import { deepgramLanguageOption } from "@/lib/preferences/user-preferences";
 
 export const TRANSCRIBE_JOB = "transcribe";
 
@@ -35,6 +37,9 @@ export async function runTranscribeJob(data: TranscribeJobData): Promise<void> {
   if (!appUrl) throw new Error("NEXT_PUBLIC_APP_URL is not set");
 
   const audioUrl = await presignGet(sourceKey);
+  const ownerId = await getMediaOwnerId(mediaObjectId);
+  const preferences = ownerId ? await getUserPreferences(ownerId) : null;
+  const language = deepgramLanguageOption(preferences?.transcriptionLanguage);
   const { nonce, sig } = await issueDeepgramCallbackToken({
     recordingId: mediaObjectId,
   });
@@ -48,13 +53,22 @@ export async function runTranscribeJob(data: TranscribeJobData): Promise<void> {
     model: "nova-2",
     smart_format: true,
     diarize: true,
-    language: "en",
+    ...(language ? { language } : {}),
     ...(keywords.length > 0 ? { keywords } : {}),
   });
 
   console.log(
     `[transcribe] submitted Deepgram request for media ${mediaObjectId}`
   );
+}
+
+async function getMediaOwnerId(mediaObjectId: string): Promise<string | null> {
+  const [media] = await db
+    .select({ ownerId: mediaObjects.ownerId })
+    .from(mediaObjects)
+    .where(eq(mediaObjects.id, mediaObjectId))
+    .limit(1);
+  return media?.ownerId ?? null;
 }
 
 async function getDeepgramKeywords(mediaObjectId: string): Promise<string[]> {

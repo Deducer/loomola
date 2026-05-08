@@ -14,6 +14,14 @@ import {
 } from "@/db/queries/ai-outputs";
 import { presignGet } from "@/lib/r2/presigned-get";
 import type { ModelMessage } from "ai";
+import {
+  buildTemplateInstruction,
+  DEFAULT_NOTE_TEMPLATE_ID,
+  getNoteTemplate,
+  type NoteTemplate,
+} from "@/lib/ai/note-templates";
+import { getUserPreferences } from "@/db/queries/user-preferences";
+import { buildSummaryLanguageInstruction } from "@/lib/preferences/user-preferences";
 
 export const TITLE_SUMMARY_JOB = "generate_title_summary";
 
@@ -22,16 +30,23 @@ export type TitleSummaryJobData = { mediaObjectId: string };
 export function buildAudioNotesEnhancementPrompt(params: {
   title: string | null;
   sourceContextHint?: string | null;
+  template?: NoteTemplate;
+  outputLanguageInstruction?: string;
   attachmentNames?: string[];
   rawNotes: string;
   transcript: string;
 }): string {
+  const template = params.template ?? getNoteTemplate(DEFAULT_NOTE_TEMPLATE_ID);
   return [
     "You are an AI meeting note-taker. The user hand-typed raw notes during a meeting, and you also have the transcript.",
     "",
     "Your job is to produce a polished markdown version of the notes that can become the user's primary record of the meeting.",
     "",
+    "# Selected note template",
+    buildTemplateInstruction(template),
+    "",
     "Critical rules:",
+    `- ${params.outputLanguageInstruction ?? "Output language: match the transcript language."}`,
     "- Preserve verbatim any phrase, sentence, or bullet the user wrote that is specific, opinionated, or stylistically distinctive.",
     "- Expand sparse shorthand only when the transcript gives clear context.",
     "- Structure the output with markdown headings and bullets.",
@@ -42,6 +57,7 @@ export function buildAudioNotesEnhancementPrompt(params: {
     "",
     `Current title: ${params.title?.trim() || "Untitled note"}`,
     `Source context: ${params.sourceContextHint?.trim() || "Unknown"}`,
+    `Selected template id: ${template.id}`,
     `Attached images: ${
       params.attachmentNames?.length
         ? params.attachmentNames.join(", ")
@@ -96,6 +112,7 @@ export async function runTitleSummaryJob(
   const [media] = await db
     .select({
       type: mediaObjects.type,
+      ownerId: mediaObjects.ownerId,
       title: mediaObjects.title,
       sourceContextHint: mediaObjects.sourceContextHint,
     })
@@ -113,6 +130,7 @@ export async function runTitleSummaryJob(
   }
 
   if (media?.type === "audio") {
+    const preferences = await getUserPreferences(media.ownerId);
     const note = await getNotesByMediaObjectForJob(data.mediaObjectId);
     const attachments = await listNoteAttachmentsForJob(data.mediaObjectId);
     const imageAttachments = await Promise.all(
@@ -124,6 +142,11 @@ export async function runTitleSummaryJob(
     const prompt = buildAudioNotesEnhancementPrompt({
       title: media.title,
       sourceContextHint: media.sourceContextHint,
+      template: getNoteTemplate(note?.templateId),
+      outputLanguageInstruction: buildSummaryLanguageInstruction({
+        summaryLanguage: preferences.summaryLanguage,
+        transcriptLanguage: transcript.language,
+      }),
       attachmentNames: attachments.map((attachment) => attachment.filename),
       rawNotes: note?.body ?? "",
       transcript: text,
@@ -156,6 +179,12 @@ export async function runTitleSummaryJob(
       "You write titles and summaries for screen-recorded videos from their transcripts.",
       "",
       "Rules:",
+      `- ${buildSummaryLanguageInstruction({
+        summaryLanguage: media
+          ? (await getUserPreferences(media.ownerId)).summaryLanguage
+          : null,
+        transcriptLanguage: transcript.language,
+      })}`,
       "- Title: 3-12 words, sentence case, no quotes, no trailing period.",
       "- Summary: 2-3 sentences covering WHAT the recording is about, not how long it is.",
       "- Focus on the substantive content. Ignore filler (ums, false starts).",

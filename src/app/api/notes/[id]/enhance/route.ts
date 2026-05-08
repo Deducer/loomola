@@ -1,12 +1,22 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { getAudioNotePageData } from "@/db/queries/notes";
 import {
   getAiOutputByMedia,
   resetAiOutputForEnhancement,
 } from "@/db/queries/ai-outputs";
+import { upsertNoteTemplate } from "@/db/queries/notes";
 import { enqueueAiJobs } from "@/lib/queue/enqueue-processing";
 import { enableGranola } from "@/lib/feature-flags";
 import { requireAuth } from "@/lib/require-auth";
+import {
+  DEFAULT_NOTE_TEMPLATE_ID,
+  isSystemNoteTemplateId,
+} from "@/lib/ai/note-templates";
+
+const enhanceRequestSchema = z.object({
+  templateId: z.string().optional(),
+});
 
 function granolaNotFound() {
   return NextResponse.json({ error: "not_found" }, { status: 404 });
@@ -28,6 +38,7 @@ export async function GET(
     summary: aiOutput?.summary ?? null,
     chapters: aiOutput?.chapters ?? null,
     actionItems: aiOutput?.actionItems ?? null,
+    templateId: aiOutput?.templateId ?? data.note?.templateId ?? DEFAULT_NOTE_TEMPLATE_ID,
     generationStatus: aiOutput?.generationStatusValue ?? "idle",
   });
 }
@@ -48,9 +59,27 @@ export async function POST(
     );
   }
 
+  const json = await request.json().catch(() => ({}));
+  const parsed = enhanceRequestSchema.safeParse(json);
+  if (!parsed.success) {
+    return NextResponse.json({ error: "invalid_request" }, { status: 400 });
+  }
+  const templateId =
+    parsed.data.templateId ?? data.note?.templateId ?? DEFAULT_NOTE_TEMPLATE_ID;
+  if (!isSystemNoteTemplateId(templateId)) {
+    return NextResponse.json({ error: "unknown_template" }, { status: 400 });
+  }
+  if (templateId !== data.note?.templateId) {
+    await upsertNoteTemplate(data.media.id, user.id, templateId);
+  }
+
   const llmModel =
     process.env.LLM_MODEL ?? process.env.LLM_MODEL_ID ?? "claude-sonnet-4-6";
-  const aiOutput = await resetAiOutputForEnhancement(data.media.id, llmModel);
+  const aiOutput = await resetAiOutputForEnhancement(
+    data.media.id,
+    llmModel,
+    templateId
+  );
 
   try {
     await enqueueAiJobs({ mediaObjectId: data.media.id });
@@ -66,6 +95,7 @@ export async function POST(
     {
       titleSuggested: aiOutput.titleSuggested,
       summary: aiOutput.summary,
+      templateId: aiOutput.templateId,
       generationStatus: aiOutput.generationStatusValue,
     },
     { status: 202 }

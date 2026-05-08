@@ -77,6 +77,33 @@ export async function upsertNotesBody(
   return row;
 }
 
+export async function upsertNoteTemplate(
+  mediaObjectId: string,
+  ownerId: string,
+  templateId: string
+): Promise<Note> {
+  const [media] = await db
+    .select({ id: mediaObjects.id, ownerId: mediaObjects.ownerId })
+    .from(mediaObjects)
+    .where(and(eq(mediaObjects.id, mediaObjectId), eq(mediaObjects.type, "audio")))
+    .limit(1);
+
+  if (!media || media.ownerId !== ownerId) {
+    throw new Error("media_object_not_found");
+  }
+
+  const [row] = await db
+    .insert(notes)
+    .values({ mediaObjectId, ownerId, templateId })
+    .onConflictDoUpdate({
+      target: notes.mediaObjectId,
+      set: { templateId, updatedAt: sql`now()` },
+    })
+    .returning();
+
+  return row;
+}
+
 export async function getNotesByMediaObject(
   mediaObjectId: string,
   ownerId: string

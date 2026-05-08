@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { sendEmail } from "@/lib/mail/mailgun";
 import { renderNewViewEmail } from "@/lib/mail/templates/new-view";
 import { getSupabaseService } from "@/lib/supabase/service";
+import { getUserPreferences } from "@/db/queries/user-preferences";
 
 export async function POST(
   request: Request,
@@ -41,6 +42,8 @@ export async function POST(
   if (inserted) {
     void (async () => {
       try {
+        const preferences = await getUserPreferences(rec.ownerId);
+        if (!preferences.notifyFirstView) return;
         const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
         const shareUrl = `${appUrl}/v/${slug}`;
         const editUrl = `${appUrl}/recordings/${rec.id}/edit`;

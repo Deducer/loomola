@@ -158,6 +158,9 @@ struct MainRecorderView: View {
         .onChange(of: viewModel.includeSystemAudioInAudioNote) { _, _ in
             updateMeetingPromptWindow()
         }
+        .onChange(of: viewModel.floatingRecordingIndicatorEnabled) { _, _ in
+            updateRecordingStatusOverlay()
+        }
         .onDisappear {
             meetingPromptWindow.hide()
             recordingStatusOverlay.hide()
@@ -301,6 +304,10 @@ struct MainRecorderView: View {
     /// into the workspace bound to that recording — works whether
     /// the workspace is already open or not.
     private func updateRecordingStatusOverlay() {
+        guard viewModel.floatingRecordingIndicatorEnabled else {
+            recordingStatusOverlay.hide()
+            return
+        }
         if viewModel.activeRecordingKind == .audio {
             recordingStatusOverlay.show(viewModel: viewModel) {
                 AppActivation.bringRecorderToFront()

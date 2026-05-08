@@ -149,6 +149,38 @@ export const mediaFolderAssignments = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// user_preferences — account-level defaults and notification controls
+// ---------------------------------------------------------------------------
+
+export const userPreferences = pgTable("user_preferences", {
+  ownerId: uuid("owner_id").primaryKey(),
+  transcriptionLanguage: text("transcription_language")
+    .notNull()
+    .default("en"),
+  summaryLanguage: text("summary_language")
+    .notNull()
+    .default("same-as-transcript"),
+  transcriptRetentionDays: integer("transcript_retention_days"),
+  meetingDetectionEnabled: boolean("meeting_detection_enabled")
+    .notNull()
+    .default(true),
+  floatingRecordingIndicatorEnabled: boolean(
+    "floating_recording_indicator_enabled"
+  )
+    .notNull()
+    .default(true),
+  notifyFirstView: boolean("notify_first_view").notNull().default(true),
+  notifyComments: boolean("notify_comments").notNull().default(true),
+  notifyMarketing: boolean("notify_marketing").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+// ---------------------------------------------------------------------------
 // media_objects — polymorphic core (video today, audio in future milestones)
 // ---------------------------------------------------------------------------
 

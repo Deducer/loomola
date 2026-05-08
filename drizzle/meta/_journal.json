@@ -176,6 +176,13 @@
       "when": 1778169600000,
       "tag": "0024_people_email_aliases",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1778256000000,
+      "tag": "0025_user_preferences",
+      "breakpoints": true
     }
   ]
 }

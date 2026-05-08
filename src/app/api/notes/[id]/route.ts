@@ -7,6 +7,7 @@ import {
 } from "@/db/queries/notes";
 import { enableGranola } from "@/lib/feature-flags";
 import { requireAuth } from "@/lib/require-auth";
+import { DEFAULT_NOTE_TEMPLATE_ID } from "@/lib/ai/note-templates";
 
 const noteBodySchema = z.object({
   body: z.string(),
@@ -25,7 +26,10 @@ export async function GET(
   const { id } = await params;
 
   const row = await getNotesByMediaObject(id, user.id);
-  return NextResponse.json(row ?? { body: "" }, { status: 200 });
+  return NextResponse.json(
+    row ?? { body: "", templateId: DEFAULT_NOTE_TEMPLATE_ID },
+    { status: 200 }
+  );
 }
 
 export async function PUT(

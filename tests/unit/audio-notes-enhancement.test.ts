@@ -3,6 +3,7 @@ import {
   buildAudioNotesEnhancementMessages,
   buildAudioNotesEnhancementPrompt,
 } from "@/lib/queue/jobs/generate-title-summary";
+import { getNoteTemplate } from "@/lib/ai/note-templates";
 
 describe("buildAudioNotesEnhancementPrompt", () => {
   it("anchors the prompt on raw notes and transcript context", () => {
@@ -22,6 +23,22 @@ describe("buildAudioNotesEnhancementPrompt", () => {
     expect(prompt).toContain("Use attached images");
     expect(prompt).toContain("Preserve verbatim");
     expect(prompt).toContain("Do not invent");
+  });
+
+  it("adds the selected template instructions", () => {
+    const prompt = buildAudioNotesEnhancementPrompt({
+      title: "Aman 1:1",
+      template: getNoteTemplate("one-to-one"),
+      outputLanguageInstruction: "Output language: French.",
+      rawNotes: "- blocked on customer rollout",
+      transcript: "We discussed blockers and mutual feedback.",
+    });
+
+    expect(prompt).toContain("Template: 1 to 1");
+    expect(prompt).toContain("Top of mind");
+    expect(prompt).toContain("Mutual feedback");
+    expect(prompt).toContain("Selected template id: one-to-one");
+    expect(prompt).toContain("Output language: French.");
   });
 
   it("includes attached images as model image parts", () => {

@@ -13,6 +13,8 @@ struct SettingsSheet: View {
     @ObservedObject private var orphanStore = OrphanedRecordingStore.shared
     @State private var permissionStatus: PermissionStatus = PermissionChecker.currentStatus()
     @State private var diagnosticsExpanded = false
+    @State private var preferences = UserPreferencesDTO.defaults
+    @State private var preferencesStatus: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -21,6 +23,7 @@ struct SettingsSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: DSSpacing.xxl) {
                     sourcesSection
+                    preferencesSection
                     if permissionStatus.requiredMissing || permissionStatus.camera == .denied
                         || permissionStatus.microphone == .denied
                         || permissionStatus.screenRecording == .denied
@@ -28,6 +31,7 @@ struct SettingsSheet: View {
                         permissionsSection
                     }
                     integrationsSection
+                    notificationsSection
                     if !orphanStore.orphans.isEmpty {
                         recoverySection
                     }
@@ -44,6 +48,9 @@ struct SettingsSheet: View {
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
             permissionStatus = PermissionChecker.currentStatus()
         }
+        .task {
+            await loadPreferences()
+        }
     }
 
     private var header: some View {
@@ -56,6 +63,149 @@ struct SettingsSheet: View {
         }
         .padding(.horizontal, DSSpacing.xxl)
         .padding(.vertical, DSSpacing.lg)
+    }
+
+    // MARK: - Preferences
+
+    private var preferencesSection: some View {
+        Section(title: "Preferences", subtitle: "Granola-style meeting defaults.") {
+            VStack(alignment: .leading, spacing: DSSpacing.lg) {
+                settingsToggleRow(
+                    title: "Meeting detection",
+                    subtitle: "Watch for Meet, Zoom, Teams, and Webex context.",
+                    isOn: Binding(
+                        get: { preferences.meetingDetectionEnabled },
+                        set: { enabled in
+                            preferences.meetingDetectionEnabled = enabled
+                            viewModel.setMeetingDetectionEnabled(enabled)
+                            savePreferences(
+                                UpdateUserPreferencesRequest(meetingDetectionEnabled: enabled)
+                            )
+                        }
+                    )
+                )
+                settingsToggleRow(
+                    title: "Live recording indicator",
+                    subtitle: "Show the floating pill while audio notes are recording.",
+                    isOn: Binding(
+                        get: { preferences.floatingRecordingIndicatorEnabled },
+                        set: { enabled in
+                            preferences.floatingRecordingIndicatorEnabled = enabled
+                            viewModel.setFloatingRecordingIndicatorEnabled(enabled)
+                            savePreferences(
+                                UpdateUserPreferencesRequest(
+                                    floatingRecordingIndicatorEnabled: enabled
+                                )
+                            )
+                        }
+                    )
+                )
+                FieldPicker(
+                    label: "Transcription language",
+                    placeholder: "English",
+                    icon: "waveform",
+                    options: transcriptionLanguageOptions,
+                    selection: Binding(
+                        get: { preferences.transcriptionLanguage },
+                        set: { value in
+                            guard let value else { return }
+                            preferences.transcriptionLanguage = value
+                            savePreferences(
+                                UpdateUserPreferencesRequest(transcriptionLanguage: value)
+                            )
+                        }
+                    )
+                )
+                FieldPicker(
+                    label: "Summary language",
+                    placeholder: "Same as transcript",
+                    icon: "text.bubble",
+                    options: summaryLanguageOptions,
+                    selection: Binding(
+                        get: { preferences.summaryLanguage },
+                        set: { value in
+                            guard let value else { return }
+                            preferences.summaryLanguage = value
+                            savePreferences(
+                                UpdateUserPreferencesRequest(summaryLanguage: value)
+                            )
+                        }
+                    )
+                )
+                FieldPicker(
+                    label: "Transcript retention",
+                    placeholder: "Policy saved; cleanup next",
+                    icon: "archivebox",
+                    options: transcriptRetentionOptions,
+                    selection: Binding(
+                        get: { retentionSelection },
+                        set: { value in
+                            guard let value else { return }
+                            preferences.transcriptRetentionDays = value == "forever"
+                                ? nil
+                                : Int(value)
+                            savePreferences(
+                                UpdateUserPreferencesRequest(
+                                    transcriptRetentionDays: preferences.transcriptRetentionDays,
+                                    encodeTranscriptRetentionDays: true
+                                )
+                            )
+                        }
+                    )
+                )
+                if let preferencesStatus {
+                    Text(preferencesStatus)
+                        .font(DSFont.Body.sm())
+                        .foregroundStyle(DSColor.Text.tertiary)
+                }
+            }
+        }
+    }
+
+    private var notificationsSection: some View {
+        Section(title: "Notifications", subtitle: "Email preferences for shared recordings.") {
+            VStack(alignment: .leading, spacing: DSSpacing.lg) {
+                settingsToggleRow(
+                    title: "First view emails",
+                    subtitle: "Notify when a new visitor opens a shared recording.",
+                    isOn: Binding(
+                        get: { preferences.notifyFirstView },
+                        set: { enabled in
+                            preferences.notifyFirstView = enabled
+                            savePreferences(
+                                UpdateUserPreferencesRequest(notifyFirstView: enabled)
+                            )
+                        }
+                    )
+                )
+                settingsToggleRow(
+                    title: "Comment emails",
+                    subtitle: "Notify when someone comments on a shared recording.",
+                    isOn: Binding(
+                        get: { preferences.notifyComments },
+                        set: { enabled in
+                            preferences.notifyComments = enabled
+                            savePreferences(
+                                UpdateUserPreferencesRequest(notifyComments: enabled)
+                            )
+                        }
+                    )
+                )
+                settingsToggleRow(
+                    title: "Product updates",
+                    subtitle: "Reserved for occasional Loomola product notes.",
+                    isOn: Binding(
+                        get: { preferences.notifyMarketing },
+                        set: { enabled in
+                            preferences.notifyMarketing = enabled
+                            savePreferences(
+                                UpdateUserPreferencesRequest(notifyMarketing: enabled)
+                            )
+                        }
+                    )
+                )
+            }
+        }
     }
 
     // MARK: - Sources
@@ -200,6 +350,108 @@ struct SettingsSheet: View {
                     .disabled(primaryDisabled)
                 if let secondary {
                     SecondaryButton(secondary.0, icon: secondary.1, action: secondary.2)
+                }
+            }
+        }
+    }
+
+    private func settingsToggleRow(
+        title: String,
+        subtitle: String,
+        isOn: Binding<Bool>
+    ) -> some View {
+        HStack(spacing: DSSpacing.md) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(DSFont.Body.lg())
+                    .foregroundStyle(DSColor.Text.primary)
+                Text(subtitle)
+                    .font(DSFont.Body.sm())
+                    .foregroundStyle(DSColor.Text.secondary)
+                    .lineLimit(2)
+            }
+            Spacer()
+            Toggle("", isOn: isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+        }
+    }
+
+    private var transcriptionLanguageOptions: [FieldPicker<String>.Option<String>] {
+        [
+            .init(id: "auto", title: "Auto-detect"),
+            .init(id: "en", title: "English"),
+            .init(id: "es", title: "Spanish"),
+            .init(id: "fr", title: "French"),
+            .init(id: "de", title: "German"),
+            .init(id: "it", title: "Italian"),
+            .init(id: "pt", title: "Portuguese"),
+            .init(id: "nl", title: "Dutch"),
+            .init(id: "hi", title: "Hindi"),
+            .init(id: "ja", title: "Japanese"),
+            .init(id: "ko", title: "Korean"),
+            .init(id: "zh", title: "Chinese")
+        ]
+    }
+
+    private var summaryLanguageOptions: [FieldPicker<String>.Option<String>] {
+        [
+            .init(id: "same-as-transcript", title: "Same as transcript"),
+            .init(id: "en", title: "English"),
+            .init(id: "es", title: "Spanish"),
+            .init(id: "fr", title: "French"),
+            .init(id: "de", title: "German"),
+            .init(id: "it", title: "Italian"),
+            .init(id: "pt", title: "Portuguese"),
+            .init(id: "nl", title: "Dutch"),
+            .init(id: "hi", title: "Hindi"),
+            .init(id: "ja", title: "Japanese"),
+            .init(id: "ko", title: "Korean"),
+            .init(id: "zh", title: "Chinese")
+        ]
+    }
+
+    private var transcriptRetentionOptions: [FieldPicker<String>.Option<String>] {
+        [
+            .init(id: "forever", title: "Forever"),
+            .init(id: "30", title: "30 days"),
+            .init(id: "90", title: "90 days"),
+            .init(id: "365", title: "1 year")
+        ]
+    }
+
+    private var retentionSelection: String {
+        preferences.transcriptRetentionDays.map(String.init) ?? "forever"
+    }
+
+    private func loadPreferences() async {
+        guard let backend = viewModel.backendClient else { return }
+        do {
+            let response = try await backend.getUserPreferences()
+            preferences = response.preferences
+            viewModel.setMeetingDetectionEnabled(response.preferences.meetingDetectionEnabled)
+            viewModel.setFloatingRecordingIndicatorEnabled(
+                response.preferences.floatingRecordingIndicatorEnabled
+            )
+            preferencesStatus = nil
+        } catch {
+            preferencesStatus = "Preferences unavailable: \(error.localizedDescription)"
+        }
+    }
+
+    private func savePreferences(_ request: UpdateUserPreferencesRequest) {
+        guard let backend = viewModel.backendClient else { return }
+        preferencesStatus = "Saving..."
+        Task {
+            do {
+                let response = try await backend.updateUserPreferences(request)
+                await MainActor.run {
+                    preferences = response.preferences
+                    preferencesStatus = "Saved."
+                }
+            } catch {
+                await MainActor.run {
+                    preferencesStatus = "Save failed: \(error.localizedDescription)"
                 }
             }
         }
