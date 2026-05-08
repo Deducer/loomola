@@ -10,11 +10,10 @@ export const dynamic = "force-dynamic";
 export default async function SettingsPage() {
   const user = await requireAuth();
   const granolaEnabled = enableGranola();
-  const preferences = await getUserPreferences(user.id);
-
   if (!granolaEnabled) {
     redirect("/");
   }
+  const preferences = await getUserPreferences(user.id);
 
   return (
     <div className="min-h-screen bg-bg">
