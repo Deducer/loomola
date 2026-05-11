@@ -46,8 +46,12 @@ actor BackendClient {
         return markdown
     }
 
-    func recentRecordings(limit: Int = 4) async throws -> RecentRecordingsResponse {
-        try await get(path: "/api/recordings/recent?limit=\(limit)")
+    func recentRecordings(limit: Int = 4, kind: String? = nil) async throws -> RecentRecordingsResponse {
+        var path = "/api/recordings/recent?limit=\(limit)"
+        if let kind {
+            path += "&kind=\(kind)"
+        }
+        return try await get(path: path)
     }
 
     func listFolders() async throws -> ListFoldersResponse {

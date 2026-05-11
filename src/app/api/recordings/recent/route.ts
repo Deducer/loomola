@@ -11,6 +11,7 @@ import { requireAuth } from "@/lib/require-auth";
 /// URL so the desktop doesn't N+1.
 ///
 /// Query: ?limit=N (default 8, capped at 50)
+///        ?kind=video|audio (optional; filters before applying limit)
 ///
 /// `thumbnailUrl` semantics:
 ///   • video → composite thumbnail (signed R2 URL) or null
@@ -27,9 +28,14 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const requested = Number.parseInt(url.searchParams.get("limit") ?? "8", 10);
   const limit = Math.min(50, Math.max(1, Number.isFinite(requested) ? requested : 8));
+  const kind = url.searchParams.get("kind");
+  if (kind !== null && kind !== "video" && kind !== "audio") {
+    return NextResponse.json({ error: "invalid_kind" }, { status: 400 });
+  }
 
   const all = await listRecordings(user.id);
-  const slice = all.slice(0, limit);
+  const filtered = kind === null ? all : all.filter((r) => r.type === kind);
+  const slice = filtered.slice(0, limit);
 
   // One round trip for all audio attachments instead of N+1.
   const audioIds = slice.filter((r) => r.type === "audio").map((r) => r.id);

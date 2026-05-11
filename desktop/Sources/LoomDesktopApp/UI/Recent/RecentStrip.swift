@@ -10,8 +10,8 @@ import SwiftUI
 ///
 /// Audio rows support per-row hover ⋯ menu (Move to folder /
 /// Delete) and bulk-select via a hover-revealed checkbox; ticking
-/// any checkbox surfaces the floating action bar at the bottom of
-/// the strip with Move / Delete / Cancel.
+/// any checkbox surfaces Move / Delete / Cancel actions in the
+/// header, matching the web app's visible bulk-action pattern.
 struct RecentStrip: View {
     @ObservedObject var service: RecentRecordingsService
     let captureMode: CaptureMode
@@ -73,7 +73,9 @@ struct RecentStrip: View {
                     .help("Show all")
                 }
                 Spacer()
-                if !filteredItems.isEmpty && captureMode == .video {
+                if captureMode == .audio && !selectedIds.isEmpty {
+                    bulkHeaderActions
+                } else if !filteredItems.isEmpty && captureMode == .video {
                     Text("View all")
                         .font(DSFont.Body.sm())
                         .foregroundStyle(DSColor.Accent.primary)
@@ -83,13 +85,6 @@ struct RecentStrip: View {
             }
 
             content
-        }
-        .overlay(alignment: .bottom) {
-            if captureMode == .audio && !selectedIds.isEmpty {
-                bulkActionBar
-                    .padding(.bottom, DSSpacing.lg)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
         }
         .animation(LoomolaMotion.quick, value: selectedIds.isEmpty)
         .onChange(of: captureMode) { _, _ in
@@ -170,9 +165,6 @@ struct RecentStrip: View {
                 }
             }
         }
-        // Bottom padding so the floating action bar doesn't overlap
-        // the last row when the selection has any items.
-        .padding(.bottom, selectedIds.isEmpty ? 0 : 64)
     }
 
     private func toggleSelected(_ id: String) {
@@ -183,15 +175,24 @@ struct RecentStrip: View {
         }
     }
 
-    // MARK: - Bulk action bar
+    // MARK: - Bulk actions
 
-    private var bulkActionBar: some View {
-        HStack(spacing: DSSpacing.md) {
+    private var bulkHeaderActions: some View {
+        HStack(spacing: DSSpacing.sm) {
             Text("\(selectedIds.count) selected")
                 .font(DSFont.Body.md())
                 .foregroundStyle(DSColor.Text.primary)
 
-            Spacer()
+            if selectedIds.count < filteredItems.count {
+                Button {
+                    selectedIds = Set(filteredItems.map(\.id))
+                } label: {
+                    Text("Select all")
+                        .font(DSFont.Body.sm())
+                        .foregroundStyle(DSColor.Accent.primary)
+                }
+                .buttonStyle(.plain)
+            }
 
             Button {
                 showBulkPicker = true
@@ -280,19 +281,17 @@ struct RecentStrip: View {
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, DSSpacing.lg)
-        .padding(.vertical, DSSpacing.sm)
+        .padding(.horizontal, DSSpacing.sm)
+        .padding(.vertical, 6)
         .background(
-            RoundedRectangle(cornerRadius: DSRadius.lg)
+            RoundedRectangle(cornerRadius: DSRadius.md)
                 .fill(DSColor.Bg.surfaceRaised)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: DSRadius.lg)
+            RoundedRectangle(cornerRadius: DSRadius.md)
                 .strokeBorder(DSColor.Border.subtle, lineWidth: 1)
         }
         .dsShadow(.raised)
-        .frame(maxWidth: 520)
-        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     // MARK: - Skeleton + empty + nav

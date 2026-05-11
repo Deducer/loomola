@@ -76,16 +76,22 @@ final class RecentRecordingsService: ObservableObject {
             isLoading = false
             hasLoaded = true
         }
-        // Fan out: items + folders in parallel so the row UI has
-        // both ready when the first paint lands.
-        async let itemsResponse = backend.recentRecordings(limit: limit)
+        // Fan out: videos + notes + folders in parallel. Fetching
+        // each media kind separately prevents a run of recent notes
+        // from crowding all Loom videos out of the desktop's Video
+        // Recent section.
+        async let videoItemsResponse = backend.recentRecordings(limit: limit, kind: "video")
+        async let audioItemsResponse = backend.recentRecordings(limit: limit, kind: "audio")
         async let foldersResponse = backend.listFolders()
         do {
-            let response = try await itemsResponse
-            let mapped = response.items.compactMap { RecentRecording(dto: $0) }
+            let (videoResponse, audioResponse) = try await (videoItemsResponse, audioItemsResponse)
+            let combined = videoResponse.items + audioResponse.items
+            let mapped = combined
+                .compactMap { RecentRecording(dto: $0) }
+                .sorted { $0.createdAt > $1.createdAt }
             items = mapped
             lastError = nil
-            log.notice("fetched \(response.items.count, privacy: .public) item(s); \(mapped.count, privacy: .public) decoded")
+            log.notice("fetched \(videoResponse.items.count, privacy: .public) video(s), \(audioResponse.items.count, privacy: .public) note(s); \(mapped.count, privacy: .public) decoded")
         } catch {
             lastError = error.localizedDescription
             log.error("refresh failed: \(error.localizedDescription, privacy: .public)")
