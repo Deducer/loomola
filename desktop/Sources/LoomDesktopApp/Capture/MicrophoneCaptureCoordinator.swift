@@ -3,12 +3,13 @@ import CoreAudio
 import CoreMedia
 import Foundation
 
-/// Captures microphone audio through AVAudioEngine. Voice processing is
+/// Captures microphone audio. Audio-note recording uses AVCaptureSession
+/// because it coexists better with Zoom/Meet already owning the call audio
+/// stack. The video-compositor path still uses AVAudioEngine so it can feed
+/// CMSampleBuffers directly into the MP4 compositor. Voice processing is
 /// intentionally opt-in because macOS can route meeting playback through
-/// the voice-processing unit, which makes Zoom/Meet sound muted or ducked
-/// while Loomola is recording. Both desktop recording flows currently use
-/// plain capture so the user can keep hearing the call.
-final class MicrophoneCaptureCoordinator: NSObject, @unchecked Sendable {
+/// the voice-processing unit, which makes Zoom/Meet sound muted or ducked.
+final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, @unchecked Sendable {
     var onLevel: ((Double) -> Void)?
 
     /// Compositor hook. When set, every mic `CMSampleBuffer` is also
@@ -18,9 +19,11 @@ final class MicrophoneCaptureCoordinator: NSObject, @unchecked Sendable {
     var onSampleBuffer: ((CMSampleBuffer) -> Void)?
 
     private var engine: AVAudioEngine?
+    private var captureSession: AVCaptureSession?
     private var writer: AudioAssetWriter?
     private var formatDescription: CMAudioFormatDescription?
     private var nextSampleTime: AVAudioFramePosition = 0
+    private let sampleQueue = DispatchQueue(label: "cloud.dissonance.loom.desktop.mic-samples")
     /// When true, the engine tap continues firing but every buffer is
     /// discarded — no file write, no level meter, no compositor
     /// callback. Pause = no audio data captured during this interval;
@@ -47,6 +50,11 @@ final class MicrophoneCaptureCoordinator: NSObject, @unchecked Sendable {
         outputURL: URL?,
         voiceProcessingEnabled: Bool = false
     ) throws {
+        if outputURL != nil, onSampleBuffer == nil, !voiceProcessingEnabled {
+            try startCaptureSession(deviceID: deviceID, outputURL: outputURL)
+            return
+        }
+
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
 
@@ -136,9 +144,17 @@ final class MicrophoneCaptureCoordinator: NSObject, @unchecked Sendable {
     }
 
     func stop() async throws -> URL? {
-        guard let engine else {
-            throw MicrophoneCaptureCoordinatorError.notRecording
+        if let captureSession {
+            captureSession.stopRunning()
+            self.captureSession = nil
+            if let writer = self.writer {
+                self.writer = nil
+                return try await writer.finish()
+            }
+            return nil
         }
+
+        guard let engine else { throw MicrophoneCaptureCoordinatorError.notRecording }
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         self.engine = nil
@@ -153,6 +169,61 @@ final class MicrophoneCaptureCoordinator: NSObject, @unchecked Sendable {
             return try await writer.finish()
         }
         return nil
+    }
+
+    func captureOutput(
+        _ output: AVCaptureOutput,
+        didOutput sampleBuffer: CMSampleBuffer,
+        from connection: AVCaptureConnection
+    ) {
+        if paused { return }
+        try? writer?.append(sampleBuffer)
+        let level = connection.audioChannels
+            .map { AudioLevelSampler.linearLevel(fromDecibels: $0.averagePowerLevel) }
+            .max()
+        if let level {
+            onLevel?(level)
+        }
+    }
+
+    private func startCaptureSession(deviceID: String?, outputURL: URL?) throws {
+        guard let outputURL else { throw MicrophoneCaptureCoordinatorError.missingOutputURL }
+        let captureSession = AVCaptureSession()
+        let device = try Self.audioDevice(id: deviceID)
+        let input = try AVCaptureDeviceInput(device: device)
+        guard captureSession.canAddInput(input) else {
+            throw MicrophoneCaptureCoordinatorError.cannotAddInput
+        }
+        captureSession.addInput(input)
+
+        let output = AVCaptureAudioDataOutput()
+        output.setSampleBufferDelegate(self, queue: sampleQueue)
+        guard captureSession.canAddOutput(output) else {
+            throw MicrophoneCaptureCoordinatorError.cannotAddOutput
+        }
+        captureSession.addOutput(output)
+
+        let writer = try AudioAssetWriter(outputURL: outputURL)
+        try writer.start()
+        self.writer = writer
+        self.captureSession = captureSession
+        self.paused = false
+        captureSession.startRunning()
+    }
+
+    private static func audioDevice(id: String?) throws -> AVCaptureDevice {
+        let devices = AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.microphone, .external],
+            mediaType: .audio,
+            position: .unspecified
+        ).devices
+        if let id, let device = devices.first(where: { $0.uniqueID == id }) {
+            return device
+        }
+        if let device = AVCaptureDevice.default(for: .audio) {
+            return device
+        }
+        throw MicrophoneCaptureCoordinatorError.noMicrophone
     }
 
     private func handleTap(buffer: AVAudioPCMBuffer, time: AVAudioTime) {
@@ -403,8 +474,12 @@ private func peakLevel(of buffer: AVAudioPCMBuffer) -> Double? {
 }
 
 enum MicrophoneCaptureCoordinatorError: LocalizedError {
+    case noMicrophone
+    case cannotAddInput
+    case cannotAddOutput
     case notRecording
     case startTimedOut
+    case missingOutputURL
     case audioUnitUnavailable
     case cannotSetDevice(OSStatus)
     case cannotEnumerateDevices(OSStatus)
@@ -413,10 +488,18 @@ enum MicrophoneCaptureCoordinatorError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
+        case .noMicrophone:
+            return "No microphone was available to record."
+        case .cannotAddInput:
+            return "The selected microphone could not be added to the capture session."
+        case .cannotAddOutput:
+            return "Microphone audio output could not be added to the capture session."
         case .notRecording:
             return "There is no active microphone recording to stop."
         case .startTimedOut:
             return "The microphone took too long to start. Check microphone permissions or try another input device."
+        case .missingOutputURL:
+            return "The microphone recording is missing a local file path."
         case .audioUnitUnavailable:
             return "The microphone audio unit was not available."
         case .cannotSetDevice(let status):
