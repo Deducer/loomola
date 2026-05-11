@@ -56,6 +56,8 @@ struct NoteWorkspaceView: View {
     @State private var reviewTitle: String = ""
     @State private var reviewFolderId: String? = nil
     @State private var reviewFolderName: String? = nil
+    @State private var recordingFolderId: String? = nil
+    @State private var recordingFolderName: String? = nil
     @State private var noteTemplates: [NoteTemplateDTO] = []
     @State private var selectedTemplateId: String = "general-meeting"
     @State private var showTemplatePicker = false
@@ -120,18 +122,18 @@ struct NoteWorkspaceView: View {
         }
     }
 
-    /// Folder fields read from view-model (recording) or local
-    /// state (review).
+    /// Folder fields are kept local so the pill updates immediately,
+    /// then the selection is persisted to the backend.
     private var folderId: String? {
         switch target {
-        case .recording: return nil  // Not yet wired during recording.
+        case .recording: return recordingFolderId
         case .reviewing: return reviewFolderId
         }
     }
 
     private var folderName: String? {
         switch target {
-        case .recording: return nil
+        case .recording: return recordingFolderName
         case .reviewing: return reviewFolderName
         }
     }
@@ -431,14 +433,34 @@ struct NoteWorkspaceView: View {
     private func handleFolderSelect(folderId newFolderId: String?) {
         switch target {
         case .recording:
-            // The active recording's media-object id is on the
-            // view model; reuse the existing assignFolder path.
-            if let recordingId = viewModel.activeAudioRecordingId {
-                Task {
-                    await viewModel.recentRecordings.assignFolder(
+            let previousFolderId = recordingFolderId
+            let previousFolderName = recordingFolderName
+            let selectedFolderName = newFolderId.flatMap { id in
+                viewModel.recentRecordings.folders.first(where: { $0.id == id })?.name
+            }
+            recordingFolderId = newFolderId
+            recordingFolderName = selectedFolderName
+
+            guard let recordingId = viewModel.activeAudioRecordingId,
+                  let backend = viewModel.backendClient
+            else {
+                recordingFolderId = previousFolderId
+                recordingFolderName = previousFolderName
+                showToast(message: "Folder will be available after recording starts")
+                return
+            }
+
+            Task {
+                do {
+                    try await backend.assignRecordingToFolder(
                         recordingId: recordingId,
                         folderId: newFolderId
                     )
+                    showToast(message: selectedFolderName.map { "Added to \($0)" } ?? "Removed from folder")
+                } catch {
+                    recordingFolderId = previousFolderId
+                    recordingFolderName = previousFolderName
+                    showToast(message: "Couldn't save folder")
                 }
             }
         case .reviewing(let recording):
