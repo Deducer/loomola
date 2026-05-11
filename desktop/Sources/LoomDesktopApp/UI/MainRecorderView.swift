@@ -20,6 +20,7 @@ struct MainRecorderView: View {
     @State private var sidebarOpen = false
     @State private var sidebarQuery = ""
     @State private var folderFilterId: String? = nil
+    @State private var hostWindow: NSWindow?
     /// Granola-shape one-window note workspace. When non-nil, the
     /// main window swaps its content for the workspace UI; nil
     /// shows the home shell (sidebar + capture / Recent strip).
@@ -111,7 +112,9 @@ struct MainRecorderView: View {
         .toolbarBackground(.hidden, for: .windowToolbar)
         .background(
             WindowAccessor { window in
+                hostWindow = window
                 WindowChrome.applyTallTitleBar(to: window)
+                updateWindowCloseState(window)
             }
         )
         .background(
@@ -148,6 +151,8 @@ struct MainRecorderView: View {
             updateVideoRecordingWindow()
             updateNoteTarget()
             RecorderCommands.isVideoRecording = (kind == .video)
+            RecorderCommands.isAudioRecording = (kind == .audio)
+            updateWindowCloseState()
         }
         .onChange(of: viewModel.audioLevel) { _, level in
             videoRecordingWindow.updateLevel(level)
@@ -163,7 +168,9 @@ struct MainRecorderView: View {
         }
         .onDisappear {
             meetingPromptWindow.hide()
-            recordingStatusOverlay.hide()
+            if viewModel.activeRecordingKind == nil {
+                recordingStatusOverlay.hide()
+            }
             videoRecordingWindow.hide()
         }
         .onReceive(NotificationCenter.default.publisher(for: RecorderCommands.toggleRecording)) { _ in
@@ -240,6 +247,7 @@ struct MainRecorderView: View {
                 recentService: viewModel.recentRecordings,
                 captureMode: $captureMode,
                 folderFilterId: $folderFilterId,
+                onOpenLiveAudioNote: { noteTarget = .recording },
                 onOpenAudioNote: { recording in
                     noteTarget = .reviewing(recording: recording)
                 }
@@ -266,6 +274,11 @@ struct MainRecorderView: View {
             viewModel.activeRecordingKind != nil ||
             viewModel.isStartingRecording ||
             (!viewModel.includeMicInAudioNote && !viewModel.includeSystemAudioInAudioNote)
+    }
+
+    private func updateWindowCloseState(_ window: NSWindow? = nil) {
+        let window = window ?? hostWindow
+        window?.standardWindowButton(.closeButton)?.isEnabled = (viewModel.activeRecordingKind == nil)
     }
 
     private func updateMeetingPromptWindow() {

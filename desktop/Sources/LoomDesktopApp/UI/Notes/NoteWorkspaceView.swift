@@ -542,9 +542,9 @@ struct NoteWorkspaceView: View {
     /// pill the user actually clicks. RecordingHomeView is video-only;
     /// any audio-recording UI change MUST land here, not there.
     ///
-    /// Single grouped pill. While recording: [meter] [▾] | [timer] | [⬛
-    /// Stop]. While paused: [meter dim] [▾] | [timer frozen] | [▶
-    /// Resume] | [✓ End & upload]. Granola-style pause-by-default —
+    /// Single grouped pill. While recording: [meter] [v] | [timer] | [Pause].
+    /// While paused: [meter dim] [v] | [timer frozen] | [Resume] |
+    /// [End & upload]. Granola-style pause-by-default —
     /// the prominent button never finalizes the upload. End requires a
     /// pause first.
     private var recordingControlBar: some View {
@@ -628,11 +628,13 @@ struct NoteWorkspaceView: View {
                     }
                     .help("End & upload")
             } else {
-                // ⬛ Stop — pauses the recording. Granola pattern: the
+                // Pause — keeps the prominent live action recoverable.
+                // Granola pattern: the
                 // most prominent button on a live recording is always
                 // the recoverable action, never the upload trigger.
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(DSColor.State.recording)
+                Image(systemName: "pause.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(DSColor.State.recording)
                     .frame(width: 12, height: 12)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)

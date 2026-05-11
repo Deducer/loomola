@@ -19,7 +19,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const user = await requireAuth();
+  const user = await requireAuth(request);
   const body = (await request.json().catch(() => ({}))) as {
     name?: string;
     parentId?: string | null;

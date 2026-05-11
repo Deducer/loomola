@@ -135,6 +135,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func openDashboard() {
         NSWorkspace.shared.open(URL(string: "https://loom.dissonance.cloud")!)
     }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard RecorderCommands.isAnyRecording else {
+            return .terminateNow
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "Recording in progress"
+        alert.informativeText = "End and upload, or discard the current recording before quitting Loomola."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Keep Recording")
+        alert.runModal()
+        AppActivation.bringRecorderToFront()
+        return .terminateCancel
+    }
 }
 
 extension AppDelegate: NSMenuItemValidation {

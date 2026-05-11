@@ -7,6 +7,7 @@ struct IdleHomeView: View {
     @ObservedObject var recentService: RecentRecordingsService
     @Binding var captureMode: CaptureMode
     @Binding var folderFilterId: String?
+    let onOpenLiveAudioNote: () -> Void
     let onOpenAudioNote: (RecentRecording) -> Void
 
     private var activeFolderName: String? {
@@ -22,7 +23,11 @@ struct IdleHomeView: View {
                     .foregroundStyle(DSColor.Text.primary)
                     .padding(.top, DSSpacing.lg)
 
-                heroCard
+                if viewModel.activeRecordingKind == .audio {
+                    activeAudioRecordingCard
+                } else {
+                    heroCard
+                }
 
                 if let context = viewModel.meetingPromptContext {
                     meetingPromptCard(context: context)
@@ -53,6 +58,94 @@ struct IdleHomeView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(DSColor.Bg.surface, in: RoundedRectangle(cornerRadius: DSRadius.lg))
         .dsShadow(.subtle)
+    }
+
+    private var activeAudioRecordingCard: some View {
+        HStack(alignment: .center, spacing: DSSpacing.lg) {
+            ZStack {
+                Circle()
+                    .fill(
+                        viewModel.isAudioNotePaused
+                            ? DSColor.Text.tertiary.opacity(0.16)
+                            : DSColor.State.recording.opacity(0.16)
+                    )
+                Image(systemName: viewModel.isAudioNotePaused ? "pause.fill" : "waveform")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(viewModel.isAudioNotePaused ? DSColor.Text.secondary : DSColor.State.recording)
+            }
+            .frame(width: 44, height: 44)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(viewModel.isAudioNotePaused ? "Audio note paused" : "Audio note recording")
+                    .font(DSFont.Body.lg())
+                    .foregroundStyle(DSColor.Text.primary)
+                activeAudioElapsed
+            }
+
+            Spacer(minLength: DSSpacing.lg)
+
+            HStack(spacing: DSSpacing.sm) {
+                SecondaryButton(
+                    viewModel.isAudioNotePaused ? "Resume" : "Pause",
+                    icon: viewModel.isAudioNotePaused ? "play.fill" : "pause.fill"
+                ) {
+                    if viewModel.isAudioNotePaused {
+                        viewModel.resumeAudioNoteRecording()
+                    } else {
+                        viewModel.pauseAudioNoteRecording()
+                    }
+                }
+                SecondaryButton("Open note", icon: "square.and.pencil") {
+                    onOpenLiveAudioNote()
+                }
+                if viewModel.isAudioNotePaused {
+                    PrimaryButton(
+                        "End & upload",
+                        icon: "checkmark",
+                        kind: .destructive
+                    ) {
+                        viewModel.stopAudioNoteRecordingAndUpload()
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, DSSpacing.xl)
+        .padding(.vertical, DSSpacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(DSColor.Bg.surface, in: RoundedRectangle(cornerRadius: DSRadius.lg))
+        .overlay(
+            RoundedRectangle(cornerRadius: DSRadius.lg)
+                .strokeBorder(DSColor.Border.subtle, lineWidth: 1)
+        )
+        .dsShadow(.subtle)
+    }
+
+    @ViewBuilder
+    private var activeAudioElapsed: some View {
+        if let startedAt = viewModel.activeAudioRecordingStartedAt {
+            if viewModel.isAudioNotePaused, let pausedAt = viewModel.audioNotePausedAt {
+                let frozen = pausedAt.timeIntervalSince(startedAt)
+                    - viewModel.audioNotePausedAccumulatedSeconds
+                Text(elapsedString(seconds: frozen))
+                    .font(DSFont.Mono.body())
+                    .foregroundStyle(DSColor.Text.tertiary)
+                    .monospacedDigit()
+            } else {
+                TimelineView(.periodic(from: startedAt, by: 1)) { context in
+                    let elapsed = context.date.timeIntervalSince(startedAt)
+                        - viewModel.audioNotePausedAccumulatedSeconds
+                    Text(elapsedString(seconds: elapsed))
+                        .font(DSFont.Mono.body())
+                        .foregroundStyle(DSColor.Text.secondary)
+                        .monospacedDigit()
+                }
+            }
+        } else {
+            Text("00:00")
+                .font(DSFont.Mono.body())
+                .foregroundStyle(DSColor.Text.tertiary)
+                .monospacedDigit()
+        }
     }
 
     private func meetingPromptCard(context: MeetingContext) -> some View {
@@ -102,5 +195,16 @@ struct IdleHomeView: View {
         case "webex": return "Open Webex"
         default: return "Open meeting"
         }
+    }
+
+    private func elapsedString(seconds: TimeInterval) -> String {
+        let total = max(0, Int(seconds))
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        let s = total % 60
+        if h > 0 {
+            return String(format: "%d:%02d:%02d", h, m, s)
+        }
+        return String(format: "%02d:%02d", m, s)
     }
 }

@@ -12,8 +12,8 @@ enum RecorderCommands {
     /// state.
     static let toggleRecording = Notification.Name("loomola.toggleRecording")
 
-    /// Posted when the video-recording active state changes. The
-    /// menubar uses it to refresh the Start/Stop item title.
+    /// Posted when any recording active state changes. The menubar
+    /// uses it to refresh titles; AppDelegate uses it to guard Quit.
     static let videoRecordingStateChanged = Notification.Name("loomola.videoRecordingStateChanged")
 
     static func postToggleRecording() {
@@ -26,6 +26,7 @@ enum RecorderCommands {
     /// (main actor) writes; menubar reads happen on main too.
     private static let lock = NSLock()
     nonisolated(unsafe) private static var _isVideoRecording = false
+    nonisolated(unsafe) private static var _isAudioRecording = false
 
     static var isVideoRecording: Bool {
         get {
@@ -41,5 +42,26 @@ enum RecorderCommands {
                 NotificationCenter.default.post(name: videoRecordingStateChanged, object: nil)
             }
         }
+    }
+
+    static var isAudioRecording: Bool {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return _isAudioRecording
+        }
+        set {
+            lock.lock()
+            let changed = _isAudioRecording != newValue
+            _isAudioRecording = newValue
+            lock.unlock()
+            if changed {
+                NotificationCenter.default.post(name: videoRecordingStateChanged, object: nil)
+            }
+        }
+    }
+
+    static var isAnyRecording: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return _isVideoRecording || _isAudioRecording
     }
 }

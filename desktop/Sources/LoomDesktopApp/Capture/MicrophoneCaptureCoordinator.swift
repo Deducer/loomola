@@ -3,17 +3,11 @@ import CoreAudio
 import CoreMedia
 import Foundation
 
-/// Captures microphone audio with macOS's built-in voice-processing chain
-/// (acoustic echo cancellation + noise suppression). When the user is on
-/// speakers (no headphones), AEC subtracts the system playback signal
-/// from the mic input so participants' voices don't echo back into the
-/// recording. Without this, mic + system-audio mixing produces a
-/// "doubled" participant voice on every recording made over speakers.
-///
-/// The previous implementation used `AVCaptureSession`, which doesn't
-/// expose the voice-processing audio unit. AVAudioEngine + an inputNode
-/// with `setVoiceProcessingEnabled(true)` is the standard macOS path for
-/// recording-quality VoIP-style audio.
+/// Captures microphone audio through AVAudioEngine. Voice processing is
+/// intentionally opt-in because macOS can route meeting playback through
+/// the voice-processing unit, which makes Zoom/Meet sound muted or ducked
+/// while Loomola is recording. Both desktop recording flows currently use
+/// plain capture so the user can keep hearing the call.
 final class MicrophoneCaptureCoordinator: NSObject, @unchecked Sendable {
     var onLevel: ((Double) -> Void)?
 
@@ -51,7 +45,7 @@ final class MicrophoneCaptureCoordinator: NSObject, @unchecked Sendable {
     func start(
         deviceID: String?,
         outputURL: URL?,
-        voiceProcessingEnabled: Bool = true
+        voiceProcessingEnabled: Bool = false
     ) throws {
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
@@ -110,7 +104,7 @@ final class MicrophoneCaptureCoordinator: NSObject, @unchecked Sendable {
     func startWithTimeout(
         deviceID: String?,
         outputURL: URL?,
-        voiceProcessingEnabled: Bool = true,
+        voiceProcessingEnabled: Bool = false,
         timeoutNanoseconds: UInt64 = 8_000_000_000
     ) async throws {
         try await withCheckedThrowingContinuation { continuation in

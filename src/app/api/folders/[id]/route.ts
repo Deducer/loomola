@@ -12,7 +12,7 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const user = await requireAuth();
+  const user = await requireAuth(request);
   const { id } = await params;
   const body = (await request.json().catch(() => ({}))) as {
     name?: string;
@@ -70,10 +70,10 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const user = await requireAuth();
+  const user = await requireAuth(request);
   const { id } = await params;
   const ok = await deleteFolderOwned({ id, ownerId: user.id });
   if (!ok) {
