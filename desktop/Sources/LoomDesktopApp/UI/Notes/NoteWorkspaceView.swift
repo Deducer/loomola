@@ -12,6 +12,28 @@ enum EnhanceStatus: Equatable {
     case failed
 }
 
+private enum WorkspaceToastTone {
+    case success
+    case warning
+    case error
+
+    var icon: String {
+        switch self {
+        case .success: return "checkmark.circle.fill"
+        case .warning: return "exclamationmark.triangle.fill"
+        case .error: return "exclamationmark.circle.fill"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .success: return DSColor.State.success
+        case .warning: return DSColor.State.warning
+        case .error: return DSColor.State.danger
+        }
+    }
+}
+
 /// What the workspace is showing. Drives the bottom-bar render and
 /// whether the body fetches a saved body on appear.
 enum NoteWorkspaceTarget: Equatable {
@@ -78,9 +100,10 @@ struct NoteWorkspaceView: View {
     /// Number of in-flight uploads. Drives the "still processing"
     /// state on attachment thumbnails.
     @State private var uploadingCount = 0
-    /// Bottom-anchored toast that fades in/out on successful
-    /// attachment.
+    /// Bottom-anchored toast that fades in/out after transient
+    /// workspace feedback.
     @State private var toastMessage: String? = nil
+    @State private var toastTone: WorkspaceToastTone = .success
 
     /// True while the cursor is anywhere over the workspace body
     /// — drives the appearance of the top-right `⋯` menu button.
@@ -221,7 +244,7 @@ struct NoteWorkspaceView: View {
         }
         .overlay(alignment: .bottom) {
             if let toastMessage {
-                attachmentToast(message: toastMessage)
+                attachmentToast(message: toastMessage, tone: toastTone)
                     .padding(.bottom, isRecording ? 80 : DSSpacing.xl)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
@@ -446,7 +469,7 @@ struct NoteWorkspaceView: View {
             else {
                 recordingFolderId = previousFolderId
                 recordingFolderName = previousFolderName
-                showToast(message: "Folder will be available after recording starts")
+                showToast(message: "Folder will be available after recording starts", tone: .warning)
                 return
             }
 
@@ -460,7 +483,7 @@ struct NoteWorkspaceView: View {
                 } catch {
                     recordingFolderId = previousFolderId
                     recordingFolderName = previousFolderName
-                    showToast(message: "Couldn't save folder")
+                    showToast(message: "Couldn't save folder", tone: .error)
                 }
             }
         case .reviewing(let recording):
@@ -513,7 +536,7 @@ struct NoteWorkspaceView: View {
                 showToast(message: "Template set to \(template.name)")
             } catch {
                 selectedTemplateId = previous
-                showToast(message: "Couldn't save template")
+                showToast(message: "Couldn't save template", tone: .error)
             }
         }
     }
@@ -851,12 +874,12 @@ struct NoteWorkspaceView: View {
 
     // MARK: - Toast
 
-    /// Bottom-anchored confirmation pill. Auto-dismisses after ~2.5s.
-    private func attachmentToast(message: String) -> some View {
+    /// Bottom-anchored feedback pill. Auto-dismisses after ~2.5s.
+    private func attachmentToast(message: String, tone: WorkspaceToastTone) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: "checkmark.circle.fill")
+            Image(systemName: tone.icon)
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(DSColor.State.success)
+                .foregroundStyle(tone.tint)
             Text(message)
                 .font(DSFont.Body.md())
                 .foregroundStyle(DSColor.Text.primary)
@@ -902,7 +925,7 @@ struct NoteWorkspaceView: View {
                 Task { @MainActor in
                     defer { uploadingCount = max(0, uploadingCount - 1) }
                     guard let url = resolvedURL else {
-                        showToast(message: "Couldn't read dropped file")
+                        showToast(message: "Couldn't read dropped file", tone: .error)
                         return
                     }
                     await uploadAttachment(noteId: noteId, fileURL: url)
@@ -928,7 +951,7 @@ struct NoteWorkspaceView: View {
             showToast(message: "Attachment removed")
         } catch {
             attachments = snapshot
-            showToast(message: "Couldn't remove attachment")
+            showToast(message: "Couldn't remove attachment", tone: .error)
         }
     }
 
@@ -942,12 +965,13 @@ struct NoteWorkspaceView: View {
             attachments.append(attachment)
             showToast(message: "File attached to note")
         } catch {
-            showToast(message: "Couldn't attach \(fileURL.lastPathComponent)")
+            showToast(message: "Couldn't attach \(fileURL.lastPathComponent)", tone: .error)
         }
     }
 
-    private func showToast(message: String) {
+    private func showToast(message: String, tone: WorkspaceToastTone = .success) {
         toastMessage = message
+        toastTone = tone
         let token = message
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 2_500_000_000)
@@ -1049,7 +1073,7 @@ struct NoteWorkspaceView: View {
                 )
             } catch {
                 enhanceStatus = .failed
-                showToast(message: "Couldn't start AI run")
+                showToast(message: "Couldn't start AI run", tone: .error)
                 return
             }
 
@@ -1082,7 +1106,7 @@ struct NoteWorkspaceView: View {
                     return
                 case "failed":
                     enhanceStatus = .failed
-                    showToast(message: "AI run failed")
+                    showToast(message: "AI run failed", tone: .error)
                     return
                 default:
                     continue
@@ -1090,7 +1114,7 @@ struct NoteWorkspaceView: View {
             }
             // Timeout — tell user to refresh later.
             enhanceStatus = .idle
-            showToast(message: "Still running — check back shortly")
+            showToast(message: "Still running — check back shortly", tone: .warning)
         }
     }
 
