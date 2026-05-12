@@ -169,7 +169,7 @@ struct MainRecorderView: View {
         // macOS titlebar. Pull this custom chrome back into that
         // titlebar zone so it sits on the same visual line as the
         // traffic lights, matching Granola's premium window chrome.
-        .offset(y: -40)
+        .offset(y: -48)
     }
 
     private var titleBarSidebarButton: some View {
