@@ -92,11 +92,19 @@ struct HeroCaptureSection: View {
                 Toggle("System audio", isOn: $viewModel.includeSystemAudioInAudioNote)
                     .toggleStyle(.checkbox)
                     .font(DSFont.Body.sm())
+                    .disabled(viewModel.systemAudioCaptureMode == .audioDevice && viewModel.selectedSystemAudioDeviceID == nil)
             }
             if viewModel.needsSystemAudioDeviceSelection {
-                Text("Choose a system audio device before starting, or switch back to Apple system audio in Settings.")
+                Text("Choose a virtual system audio device in Settings before enabling system audio.")
                     .font(DSFont.Body.sm())
                     .foregroundStyle(DSColor.State.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if viewModel.systemAudioCaptureMode == .audioDevice &&
+                        viewModel.selectedSystemAudioDeviceID == nil
+            {
+                Text("Mic-only is safest for calls. Add a virtual audio device later for system audio.")
+                    .font(DSFont.Body.sm())
+                    .foregroundStyle(DSColor.Text.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }

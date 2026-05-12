@@ -269,6 +269,11 @@ struct SettingsSheet: View {
                         .font(DSFont.Body.sm())
                         .foregroundStyle(DSColor.Text.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("Apple system audio is hidden by default because it can change live call playback volume on some setups.")
+                        .font(DSFont.Body.sm())
+                        .foregroundStyle(DSColor.State.warning)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 HStack {
                     if let sourceRefreshStatus {
@@ -468,7 +473,10 @@ struct SettingsSheet: View {
     }
 
     private var systemAudioCaptureOptions: [FieldPicker<SystemAudioCaptureMode>.Option<SystemAudioCaptureMode>] {
-        SystemAudioCaptureMode.allCases.map {
+        let modes: [SystemAudioCaptureMode] = RecorderViewModel.allowsAppleSystemAudioCapture
+            ? SystemAudioCaptureMode.allCases
+            : [.audioDevice]
+        return modes.map {
             .init(id: $0, title: "\($0.title) · \($0.detail)")
         }
     }

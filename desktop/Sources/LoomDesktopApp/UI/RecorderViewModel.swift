@@ -13,7 +13,7 @@ final class RecorderViewModel: ObservableObject {
     @Published var password = ""
     @Published var audioTitle = ""
     @Published var includeMicInAudioNote = true
-    @Published var includeSystemAudioInAudioNote = true
+    @Published var includeSystemAudioInAudioNote = false
     @Published private(set) var statusMessage = "Sign in to capture with Loomola."
     @Published private(set) var configuration: DesktopAuthConfiguration?
     @Published private(set) var activeRecordingKind: DesktopRecordingKind?
@@ -70,9 +70,7 @@ final class RecorderViewModel: ObservableObject {
     @Published var selectedMicDeviceID: String? = UserDefaults.standard
         .string(forKey: "loomola.selectedMicDeviceID")
     @Published var systemAudioCaptureMode: SystemAudioCaptureMode =
-        SystemAudioCaptureMode(
-            rawValue: UserDefaults.standard.string(forKey: "loomola.systemAudioCaptureMode") ?? ""
-        ) ?? .screenCaptureKit
+        RecorderViewModel.initialSystemAudioCaptureMode()
     @Published var selectedSystemAudioDeviceID: String? = UserDefaults.standard
         .string(forKey: "loomola.selectedSystemAudioDeviceID")
 
@@ -126,6 +124,26 @@ final class RecorderViewModel: ObservableObject {
     private var pendingCompositeStartToken: UUID?
     private var activeCompositeRecordingToken: UUID?
 
+    private static let allowAppleSystemAudioCaptureKey = "loomola.allowAppleSystemAudioCapture"
+
+    static var allowsAppleSystemAudioCapture: Bool {
+        UserDefaults.standard.bool(forKey: allowAppleSystemAudioCaptureKey)
+    }
+
+    private static func initialSystemAudioCaptureMode() -> SystemAudioCaptureMode {
+        let stored = SystemAudioCaptureMode(
+            rawValue: UserDefaults.standard.string(forKey: "loomola.systemAudioCaptureMode") ?? ""
+        ) ?? .audioDevice
+        if stored == .screenCaptureKit && !allowsAppleSystemAudioCapture {
+            UserDefaults.standard.set(
+                SystemAudioCaptureMode.audioDevice.rawValue,
+                forKey: "loomola.systemAudioCaptureMode"
+            )
+            return .audioDevice
+        }
+        return stored
+    }
+
     /// Persist + apply the user's chosen camera device ID. Restarting
     /// the shared camera coordinator with the new ID swaps the input
     /// without tearing the session down.
@@ -155,6 +173,14 @@ final class RecorderViewModel: ObservableObject {
     }
 
     func setSystemAudioCaptureMode(_ mode: SystemAudioCaptureMode) {
+        guard mode != .screenCaptureKit || Self.allowsAppleSystemAudioCapture else {
+            systemAudioCaptureMode = .audioDevice
+            UserDefaults.standard.set(
+                SystemAudioCaptureMode.audioDevice.rawValue,
+                forKey: "loomola.systemAudioCaptureMode"
+            )
+            return
+        }
         systemAudioCaptureMode = mode
         UserDefaults.standard.set(mode.rawValue, forKey: "loomola.systemAudioCaptureMode")
     }
@@ -957,12 +983,28 @@ final class RecorderViewModel: ObservableObject {
             title = trimmedTitle
         }
         let includeMic = includeMicInAudioNote
-        let includeSystemAudio = includeSystemAudioInAudioNote
+        var includeSystemAudio = includeSystemAudioInAudioNote
         let meetingContext = meetingContext
         let microphoneDeviceID = selectedMicDeviceID
         let systemAudioCaptureMode = systemAudioCaptureMode
         let systemAudioDeviceID = selectedSystemAudioDeviceID
         meetingPromptContext = nil
+        if includeSystemAudio &&
+            systemAudioCaptureMode == .screenCaptureKit &&
+            !Self.allowsAppleSystemAudioCapture
+        {
+            if includeMic {
+                recorderLog.error("startAudioNoteRecording — Apple system audio blocked; falling back to mic-only")
+                includeSystemAudio = false
+                statusMessage = "Recording with mic only to keep call audio stable. Choose a virtual audio device for system audio."
+            } else {
+                recorderLog.error("startAudioNoteRecording — blocked: Apple system audio disabled and mic is off")
+                state = .signedInIdle
+                statusMessage = "Turn on Mic or choose a virtual system audio device before starting."
+                isStartingRecording = false
+                return
+            }
+        }
         if includeSystemAudio && systemAudioCaptureMode == .audioDevice && systemAudioDeviceID == nil {
             recorderLog.error("startAudioNoteRecording — blocked: system audio device required")
             state = .signedInIdle

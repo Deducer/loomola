@@ -11,16 +11,16 @@ enum SystemAudioCaptureMode: String, CaseIterable, Identifiable, Sendable {
         case .screenCaptureKit:
             return "Apple system audio"
         case .audioDevice:
-            return "Audio device"
+            return "Virtual audio device"
         }
     }
 
     var detail: String {
         switch self {
         case .screenCaptureKit:
-            return "Best for meetings"
+            return "Experimental"
         case .audioDevice:
-            return "Best for SoundSource"
+            return "Best for stable calls"
         }
     }
 }
