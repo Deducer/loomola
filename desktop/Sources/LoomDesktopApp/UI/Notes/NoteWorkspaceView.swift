@@ -377,7 +377,8 @@ struct NoteWorkspaceView: View {
             .font(DSFont.Display.xl())
             .foregroundStyle(DSColor.Text.primary)
             .tint(DSColor.Accent.primary)
-            .disabled(!isTitleEditable)
+            .allowsHitTesting(isTitleEditable)
+            .focusable(isTitleEditable)
     }
 
     private var titlePlaceholder: String {
