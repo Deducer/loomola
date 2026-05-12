@@ -21,6 +21,7 @@ struct MainRecorderView: View {
     @State private var sidebarQuery = ""
     @State private var folderFilterId: String? = nil
     @State private var hostWindow: NSWindow?
+    @State private var windowIsFullScreen = false
     /// Granola-shape one-window note workspace. When non-nil, the
     /// main window swaps its content for the workspace UI; nil
     /// shows the home shell (sidebar + capture / Recent strip).
@@ -71,6 +72,7 @@ struct MainRecorderView: View {
             WindowAccessor { window in
                 hostWindow = window
                 WindowChrome.applyTallTitleBar(to: window)
+                updateWindowFullScreenState(window)
                 updateWindowCloseState(window)
             }
         )
@@ -90,6 +92,14 @@ struct MainRecorderView: View {
         }
         .onAppear {
             AppActivation.bringRecorderToFront()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { notification in
+            guard notification.object as? NSWindow === hostWindow else { return }
+            windowIsFullScreen = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { notification in
+            guard notification.object as? NSWindow === hostWindow else { return }
+            windowIsFullScreen = false
         }
         .task {
             await viewModel.restoreSession()
@@ -165,11 +175,15 @@ struct MainRecorderView: View {
         .padding(.trailing, DSSpacing.lg)
         .padding(.top, 8)
         .frame(height: 44)
-        // The SwiftUI content root starts below the transparent
-        // macOS titlebar. Pull this custom chrome back into that
-        // titlebar zone so it sits on the same visual line as the
-        // traffic lights, matching Granola's premium window chrome.
-        .offset(y: -48)
+        // Normal windows start the SwiftUI content below the
+        // transparent macOS titlebar; fullscreen windows do not.
+        // Keep the row lifted in normal mode, but keep it inside the
+        // visible content bounds in fullscreen.
+        .offset(y: homeChromeYOffset)
+    }
+
+    private var homeChromeYOffset: CGFloat {
+        windowIsFullScreen ? -8 : -48
     }
 
     private var titleBarSidebarButton: some View {
@@ -307,6 +321,11 @@ struct MainRecorderView: View {
     private func updateWindowCloseState(_ window: NSWindow? = nil) {
         let window = window ?? hostWindow
         window?.standardWindowButton(.closeButton)?.isEnabled = (viewModel.activeRecordingKind == nil)
+    }
+
+    private func updateWindowFullScreenState(_ window: NSWindow? = nil) {
+        let window = window ?? hostWindow
+        windowIsFullScreen = window?.styleMask.contains(.fullScreen) ?? false
     }
 
     private func updateMeetingPromptWindow() {
