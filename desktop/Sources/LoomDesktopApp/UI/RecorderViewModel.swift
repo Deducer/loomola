@@ -69,6 +69,12 @@ final class RecorderViewModel: ObservableObject {
         .string(forKey: "loomola.selectedCameraDeviceID")
     @Published var selectedMicDeviceID: String? = UserDefaults.standard
         .string(forKey: "loomola.selectedMicDeviceID")
+    @Published var systemAudioCaptureMode: SystemAudioCaptureMode =
+        SystemAudioCaptureMode(
+            rawValue: UserDefaults.standard.string(forKey: "loomola.systemAudioCaptureMode") ?? ""
+        ) ?? .screenCaptureKit
+    @Published var selectedSystemAudioDeviceID: String? = UserDefaults.standard
+        .string(forKey: "loomola.selectedSystemAudioDeviceID")
 
     /// Lazily-built service powering the Recent strip on the idle
     /// home view. Created on first access once the backend client
@@ -146,6 +152,26 @@ final class RecorderViewModel: ObservableObject {
         } else {
             UserDefaults.standard.removeObject(forKey: "loomola.selectedMicDeviceID")
         }
+    }
+
+    func setSystemAudioCaptureMode(_ mode: SystemAudioCaptureMode) {
+        systemAudioCaptureMode = mode
+        UserDefaults.standard.set(mode.rawValue, forKey: "loomola.systemAudioCaptureMode")
+    }
+
+    func setSelectedSystemAudioDevice(id: String?) {
+        selectedSystemAudioDeviceID = id
+        if let id {
+            UserDefaults.standard.set(id, forKey: "loomola.selectedSystemAudioDeviceID")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "loomola.selectedSystemAudioDeviceID")
+        }
+    }
+
+    var needsSystemAudioDeviceSelection: Bool {
+        includeSystemAudioInAudioNote &&
+            systemAudioCaptureMode == .audioDevice &&
+            selectedSystemAudioDeviceID == nil
     }
     private let obsidianSyncIntervalNanoseconds: UInt64 = 30_000_000_000
     private let meetingWatchIntervalNanoseconds: UInt64 = 15_000_000_000
@@ -934,8 +960,17 @@ final class RecorderViewModel: ObservableObject {
         let includeSystemAudio = includeSystemAudioInAudioNote
         let meetingContext = meetingContext
         let microphoneDeviceID = selectedMicDeviceID
+        let systemAudioCaptureMode = systemAudioCaptureMode
+        let systemAudioDeviceID = selectedSystemAudioDeviceID
         meetingPromptContext = nil
-        recorderLog.notice("startAudioNoteRecording — Task launching (mic=\(includeMic, privacy: .public), sys=\(includeSystemAudio, privacy: .public))")
+        if includeSystemAudio && systemAudioCaptureMode == .audioDevice && systemAudioDeviceID == nil {
+            recorderLog.error("startAudioNoteRecording — blocked: system audio device required")
+            state = .signedInIdle
+            statusMessage = "Choose a system audio device in Settings before starting."
+            isStartingRecording = false
+            return
+        }
+        recorderLog.notice("startAudioNoteRecording — Task launching (mic=\(includeMic, privacy: .public), sys=\(includeSystemAudio, privacy: .public), sysMode=\(systemAudioCaptureMode.rawValue, privacy: .public))")
         Task {
             do {
                 recorderLog.notice("startAudioNoteRecording — calling audioNoteRecorder.start")
@@ -944,7 +979,9 @@ final class RecorderViewModel: ObservableObject {
                     includeMic: includeMic,
                     includeSystemAudio: includeSystemAudio,
                     meetingContext: meetingContext,
-                    microphoneDeviceID: microphoneDeviceID
+                    microphoneDeviceID: microphoneDeviceID,
+                    systemAudioCaptureMode: systemAudioCaptureMode,
+                    systemAudioDeviceID: systemAudioDeviceID
                 )
                 recorderLog.notice("startAudioNoteRecording — succeeded (backendId=\(session.backendRecordingId ?? "nil", privacy: .public), slug=\(session.backendSlug ?? "nil", privacy: .public), tracks=\(session.tracks.count, privacy: .public))")
                 activeRecordingKind = .audio

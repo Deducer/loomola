@@ -7,6 +7,7 @@ final class AudioNoteRecorder {
     private let backend: BackendClient
     private var microphoneCapture: MicrophoneCaptureCoordinator?
     private let systemAudioCapture: SystemAudioCaptureCoordinator?
+    private var systemAudioDeviceCapture: MicrophoneCaptureCoordinator?
     private var session: AudioRecordingSession?
 
     /// Pause/resume bookkeeping. `paused` mirrors the flag both capture
@@ -51,6 +52,7 @@ final class AudioNoteRecorder {
     func detachSessionAfterOrphanSave() {
         session = nil
         microphoneCapture = nil
+        systemAudioDeviceCapture = nil
     }
 
     init(backend: BackendClient) {
@@ -67,7 +69,9 @@ final class AudioNoteRecorder {
         includeMic: Bool,
         includeSystemAudio: Bool,
         meetingContext: MeetingContext? = nil,
-        microphoneDeviceID: String? = nil
+        microphoneDeviceID: String? = nil,
+        systemAudioCaptureMode: SystemAudioCaptureMode = .screenCaptureKit,
+        systemAudioDeviceID: String? = nil
     ) async throws -> AudioRecordingSession {
         guard session == nil else {
             throw AudioNoteRecorderError.alreadyRecording
@@ -112,10 +116,22 @@ final class AudioNoteRecorder {
                 guard let url = nextSession.localFileURL(for: .systemAudio) else {
                     throw AudioNoteRecorderError.missingLocalFileURL
                 }
-                guard let systemAudioCapture else {
-                    throw AudioNoteRecorderError.systemAudioUnavailable
+                switch systemAudioCaptureMode {
+                case .screenCaptureKit:
+                    guard let systemAudioCapture else {
+                        throw AudioNoteRecorderError.systemAudioUnavailable
+                    }
+                    try await systemAudioCapture.start(outputURL: url)
+                case .audioDevice:
+                    guard let systemAudioDeviceID else {
+                        throw AudioNoteRecorderError.systemAudioDeviceRequired
+                    }
+                    systemAudioDeviceCapture = try await startSystemAudioDeviceCapture(
+                        primaryURL: url,
+                        deviceID: systemAudioDeviceID,
+                        audioLevelSink: audioLevelSink
+                    )
                 }
-                try await systemAudioCapture.start(outputURL: url)
             }
             return nextSession
         } catch {
@@ -130,6 +146,7 @@ final class AudioNoteRecorder {
         pauseStartedAt = Date()
         microphoneCapture?.isPaused = true
         systemAudioCapture?.isPaused = true
+        systemAudioDeviceCapture?.isPaused = true
     }
 
     func resume() {
@@ -139,6 +156,7 @@ final class AudioNoteRecorder {
         paused = false
         microphoneCapture?.isPaused = false
         systemAudioCapture?.isPaused = false
+        systemAudioDeviceCapture?.isPaused = false
     }
 
     func stopAndUpload() async throws -> CompleteRecordingResponse {
@@ -156,6 +174,7 @@ final class AudioNoteRecorder {
             paused = false
             microphoneCapture?.isPaused = false
             systemAudioCapture?.isPaused = false
+            systemAudioDeviceCapture?.isPaused = false
         }
 
         var localFiles: [TrackKind: URL] = [:]
@@ -168,7 +187,14 @@ final class AudioNoteRecorder {
             }
             microphoneCapture = nil
         }
-        if session.tracks.contains(.systemAudio), let systemAudioCapture {
+        if session.tracks.contains(.systemAudio),
+           let systemAudioDeviceCapture
+        {
+            if let systemAudioURL = try await systemAudioDeviceCapture.stop() {
+                localFiles[.systemAudio] = systemAudioURL
+            }
+            self.systemAudioDeviceCapture = nil
+        } else if session.tracks.contains(.systemAudio), let systemAudioCapture {
             localFiles[.systemAudio] = try await systemAudioCapture.stop()
         }
 
@@ -211,7 +237,10 @@ final class AudioNoteRecorder {
         if session.tracks.contains(.mic) {
             _ = try? await microphoneCapture?.stop()
         }
-        if session.tracks.contains(.systemAudio), let systemAudioCapture {
+        if session.tracks.contains(.systemAudio), let systemAudioDeviceCapture {
+            _ = try? await systemAudioDeviceCapture.stop()
+            self.systemAudioDeviceCapture = nil
+        } else if session.tracks.contains(.systemAudio), let systemAudioCapture {
             _ = try? await systemAudioCapture.stop()
         }
         if let recordingId = session.backendRecordingId {
@@ -249,6 +278,20 @@ final class AudioNoteRecorder {
         return plain
     }
 
+    private func startSystemAudioDeviceCapture(
+        primaryURL: URL,
+        deviceID: String,
+        audioLevelSink: ((Double) -> Void)?
+    ) async throws -> MicrophoneCaptureCoordinator {
+        let capture = makeMicrophoneCapture(audioLevelSink: audioLevelSink)
+        try await capture.startWithTimeout(
+            deviceID: deviceID,
+            outputURL: primaryURL,
+            voiceProcessingEnabled: false
+        )
+        return capture
+    }
+
     private func makeMicrophoneCapture(
         audioLevelSink: ((Double) -> Void)?
     ) -> MicrophoneCaptureCoordinator {
@@ -274,6 +317,7 @@ enum AudioNoteRecorderError: LocalizedError {
     case missingBackendRecordingId
     case missingLocalFileURL
     case systemAudioUnavailable
+    case systemAudioDeviceRequired
     case noCompletedAudioTracks
 
     var errorDescription: String? {
@@ -290,6 +334,8 @@ enum AudioNoteRecorderError: LocalizedError {
             return "The audio note is missing a local file path."
         case .systemAudioUnavailable:
             return "System audio capture requires macOS 14 or newer."
+        case .systemAudioDeviceRequired:
+            return "Choose a system audio device in Settings, or switch system audio back to Apple capture."
         case .noCompletedAudioTracks:
             return "No audio was captured. Check microphone and Screen & System Audio permissions, then try again."
         }

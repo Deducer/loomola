@@ -93,6 +93,12 @@ struct HeroCaptureSection: View {
                     .toggleStyle(.checkbox)
                     .font(DSFont.Body.sm())
             }
+            if viewModel.needsSystemAudioDeviceSelection {
+                Text("Choose a system audio device before starting, or switch back to Apple system audio in Settings.")
+                    .font(DSFont.Body.sm())
+                    .foregroundStyle(DSColor.State.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -102,43 +108,80 @@ struct HeroCaptureSection: View {
             .frame(height: 1)
     }
 
+    @ViewBuilder
     private var pickers: some View {
-        HStack(spacing: DSSpacing.lg) {
-            FieldPicker(
-                label: "Microphone",
-                placeholder: "System default",
-                icon: "mic",
-                options: viewModel.captureSources.microphones.map {
-                    .init(id: $0.id, title: $0.name)
-                },
-                selection: Binding(
-                    get: { viewModel.selectedMicDeviceID },
-                    set: { viewModel.setSelectedMicDevice(id: $0) }
-                )
-            )
-            .frame(maxWidth: .infinity)
-
-            FieldPicker(
-                label: "Camera",
-                placeholder: "System default",
-                icon: "camera",
-                options: viewModel.captureSources.cameras.map {
-                    .init(id: $0.id, title: $0.name)
-                },
-                selection: Binding(
-                    get: { viewModel.selectedCameraDeviceID },
-                    set: { viewModel.setSelectedCameraDevice(id: $0) }
-                )
-            )
-            .frame(maxWidth: .infinity)
+        switch captureMode {
+        case .video:
+            HStack(spacing: DSSpacing.lg) {
+                microphonePicker
+                cameraPicker
+            }
+        case .audio:
+            HStack(spacing: DSSpacing.lg) {
+                microphonePicker
+                if viewModel.includeSystemAudioInAudioNote &&
+                    viewModel.systemAudioCaptureMode == .audioDevice
+                {
+                    systemAudioDevicePicker
+                }
+            }
         }
+    }
+
+    private var microphonePicker: some View {
+        FieldPicker(
+            label: "Microphone",
+            placeholder: "System default",
+            icon: "mic",
+            options: viewModel.captureSources.microphones.map {
+                .init(id: $0.id, title: $0.name)
+            },
+            selection: Binding(
+                get: { viewModel.selectedMicDeviceID },
+                set: { viewModel.setSelectedMicDevice(id: $0) }
+            )
+        )
+        .frame(maxWidth: .infinity)
+    }
+
+    private var cameraPicker: some View {
+        FieldPicker(
+            label: "Camera",
+            placeholder: "System default",
+            icon: "camera",
+            options: viewModel.captureSources.cameras.map {
+                .init(id: $0.id, title: $0.name)
+            },
+            selection: Binding(
+                get: { viewModel.selectedCameraDeviceID },
+                set: { viewModel.setSelectedCameraDevice(id: $0) }
+            )
+        )
+        .frame(maxWidth: .infinity)
+    }
+
+    private var systemAudioDevicePicker: some View {
+        FieldPicker(
+            label: "System audio device",
+            placeholder: "Choose virtual audio device",
+            icon: "slider.horizontal.3",
+            options: viewModel.captureSources.microphones.map {
+                .init(id: $0.id, title: $0.name)
+            },
+            selection: Binding(
+                get: { viewModel.selectedSystemAudioDeviceID },
+                set: { viewModel.setSelectedSystemAudioDevice(id: $0) }
+            )
+        )
+        .frame(maxWidth: .infinity)
     }
 
     private var audioStartDisabled: Bool {
         viewModel.state == .signedOut ||
             viewModel.activeRecordingKind != nil ||
             viewModel.isStartingRecording ||
-            (!viewModel.includeMicInAudioNote && !viewModel.includeSystemAudioInAudioNote)
+            (!viewModel.includeMicInAudioNote && !viewModel.includeSystemAudioInAudioNote) ||
+            viewModel.needsSystemAudioDeviceSelection
     }
 }
 

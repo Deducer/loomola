@@ -215,7 +215,7 @@ struct SettingsSheet: View {
     // MARK: - Sources
 
     private var sourcesSection: some View {
-        Section(title: "Sources", subtitle: "Choose which camera and microphone Loomola records.") {
+        Section(title: "Sources", subtitle: "Choose which audio and video sources Loomola records.") {
             VStack(alignment: .leading, spacing: DSSpacing.md) {
                 FieldPicker(
                     label: "Camera",
@@ -237,6 +237,37 @@ struct SettingsSheet: View {
                         set: { viewModel.setSelectedMicDevice(id: $0) }
                     )
                 )
+                FieldPicker(
+                    label: "System audio capture",
+                    placeholder: "Apple system audio",
+                    icon: "speaker.wave.2",
+                    options: systemAudioCaptureOptions,
+                    selection: Binding(
+                        get: { viewModel.systemAudioCaptureMode },
+                        set: { mode in
+                            guard let mode else { return }
+                            viewModel.setSystemAudioCaptureMode(mode)
+                        }
+                    )
+                )
+                if viewModel.systemAudioCaptureMode == .audioDevice {
+                    FieldPicker(
+                        label: "System audio device",
+                        placeholder: "Choose virtual audio device",
+                        icon: "slider.horizontal.3",
+                        options: viewModel.captureSources.microphones.map {
+                            .init(id: $0.id, title: $0.name)
+                        },
+                        selection: Binding(
+                            get: { viewModel.selectedSystemAudioDeviceID },
+                            set: { viewModel.setSelectedSystemAudioDevice(id: $0) }
+                        )
+                    )
+                    Text("Use a virtual input such as BlackHole or Loopback when SoundSource should keep controlling playback volume.")
+                        .font(DSFont.Body.sm())
+                        .foregroundStyle(DSColor.Text.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 HStack {
                     Spacer()
                     SecondaryButton("Refresh sources", icon: "arrow.clockwise") {
@@ -422,6 +453,12 @@ struct SettingsSheet: View {
             .init(id: "90", title: "90 days"),
             .init(id: "365", title: "1 year")
         ]
+    }
+
+    private var systemAudioCaptureOptions: [FieldPicker<SystemAudioCaptureMode>.Option<SystemAudioCaptureMode>] {
+        SystemAudioCaptureMode.allCases.map {
+            .init(id: $0, title: "\($0.title) · \($0.detail)")
+        }
     }
 
     private var retentionSelection: String {
