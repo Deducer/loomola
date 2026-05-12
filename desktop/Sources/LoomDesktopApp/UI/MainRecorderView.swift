@@ -85,31 +85,21 @@ struct MainRecorderView: View {
                         Text("Loomola")
                             .font(DSFont.Body.lg())
                             .foregroundStyle(DSColor.Text.primary)
+                            .lineLimit(1)
                     }
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    IconButton(icon: "gearshape", size: 30, action: { showSettings = true })
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    IconButton(
-                        text: viewModel.email.first.map { String($0).uppercased() } ?? "?",
-                        size: 30,
-                        action: { showAccountMenu.toggle() }
-                    )
-                    .popover(isPresented: $showAccountMenu, arrowEdge: .top) {
-                        AccountMenuPopover(
-                            email: viewModel.email.isEmpty ? nil : viewModel.email,
-                            onOpenLibrary: openDashboard,
-                            onSignOut: {
-                                showAccountMenu = false
-                                viewModel.signOut()
-                            }
-                        )
-                    }
+                    .frame(minWidth: 132, alignment: .leading)
+                    .padding(.trailing, DSSpacing.sm)
                 }
             }
         }
         .toolbarBackground(.hidden, for: .windowToolbar)
+        .overlay(alignment: .topTrailing) {
+            if noteTarget == nil {
+                titleBarActions
+                    .padding(.top, 8)
+                    .padding(.trailing, DSSpacing.lg)
+            }
+        }
         .background(
             WindowAccessor { window in
                 hostWindow = window
@@ -186,6 +176,36 @@ struct MainRecorderView: View {
                     viewModel.acknowledgeUploadComplete()
                 }
             }
+        }
+    }
+
+    private var titleBarActions: some View {
+        HStack(spacing: DSSpacing.sm) {
+            IconButton(icon: "gearshape", size: 30, action: { showSettings = true })
+                .help("Settings")
+            IconButton(
+                text: viewModel.email.first.map { String($0).uppercased() } ?? "?",
+                size: 30,
+                action: { showAccountMenu.toggle() }
+            )
+            .help("Account")
+            .popover(isPresented: $showAccountMenu, arrowEdge: .top) {
+                AccountMenuPopover(
+                    email: viewModel.email.isEmpty ? nil : viewModel.email,
+                    onOpenLibrary: openDashboard,
+                    onSignOut: {
+                        showAccountMenu = false
+                        viewModel.signOut()
+                    }
+                )
+            }
+        }
+        .padding(4)
+        .background(
+            Capsule().fill(DSColor.Bg.surface.opacity(0.9))
+        )
+        .overlay {
+            Capsule().strokeBorder(DSColor.Border.subtle, lineWidth: 1)
         }
     }
 
