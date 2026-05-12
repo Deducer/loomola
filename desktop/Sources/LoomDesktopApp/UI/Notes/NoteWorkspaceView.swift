@@ -265,21 +265,11 @@ struct NoteWorkspaceView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .toolbar {
-            // Home button lives in the unified system NSToolbar
-            // (inline with the macOS traffic lights). The ⋯ menu
-            // does NOT — placing it as a `.primaryAction` toolbar
-            // item visually grouped it with the home button (both
-            // ended up on the left of the toolbar). The ⋯ now
-            // renders as a hover-revealed overlay at the top-right
-            // of the workspace body (see `workspaceHovering` /
-            // `.overlay(alignment: .topTrailing)` below) — Granola
-            // pattern, matches what was there before the toolbar
-            // refactor.
-            ToolbarItem(placement: .navigation) {
-                HomeBackButton(action: onClose)
-                    .help(isRecording ? "Hide" : "Close")
-            }
+        .overlay(alignment: .topLeading) {
+            HomeBackButton(action: onClose)
+                .help(isRecording ? "Hide" : "Close")
+                .padding(.leading, DSSpacing.md)
+                .padding(.top, DSSpacing.sm)
         }
         .onContinuousHover { phase in
             switch phase {

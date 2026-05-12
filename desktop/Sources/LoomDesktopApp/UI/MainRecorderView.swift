@@ -63,7 +63,6 @@ struct MainRecorderView: View {
             }
         }
         .background(DSColor.Bg.canvas)
-        .toolbarBackground(.hidden, for: .windowToolbar)
         .overlay(alignment: .top) {
             if noteTarget == nil {
                 homeTitleBar
