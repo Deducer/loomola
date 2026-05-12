@@ -13,7 +13,8 @@ final class RecorderViewModel: ObservableObject {
     @Published var password = ""
     @Published var audioTitle = ""
     @Published var includeMicInAudioNote = true
-    @Published var includeSystemAudioInAudioNote = false
+    @Published var includeSystemAudioInAudioNote =
+        RecorderViewModel.defaultIncludeSystemAudioInAudioNote()
     @Published private(set) var statusMessage = "Sign in to capture with Loomola."
     @Published private(set) var configuration: DesktopAuthConfiguration?
     @Published private(set) var activeRecordingKind: DesktopRecordingKind?
@@ -130,16 +131,51 @@ final class RecorderViewModel: ObservableObject {
         UserDefaults.standard.bool(forKey: allowAppleSystemAudioCaptureKey)
     }
 
+    static var systemAudioCaptureModesForSettings: [SystemAudioCaptureMode] {
+        var modes: [SystemAudioCaptureMode] = []
+        if #available(macOS 14.2, *) {
+            modes.append(.coreAudioTap)
+        }
+        modes.append(.audioDevice)
+        if allowsAppleSystemAudioCapture {
+            modes.append(.screenCaptureKit)
+        }
+        return modes
+    }
+
+    private static func defaultIncludeSystemAudioInAudioNote() -> Bool {
+        if #available(macOS 14.2, *) {
+            return true
+        }
+        return false
+    }
+
     private static func initialSystemAudioCaptureMode() -> SystemAudioCaptureMode {
+        let defaultMode: SystemAudioCaptureMode
+        if #available(macOS 14.2, *) {
+            defaultMode = .coreAudioTap
+        } else {
+            defaultMode = .audioDevice
+        }
         let stored = SystemAudioCaptureMode(
             rawValue: UserDefaults.standard.string(forKey: "loomola.systemAudioCaptureMode") ?? ""
-        ) ?? .audioDevice
-        if stored == .screenCaptureKit && !allowsAppleSystemAudioCapture {
+        ) ?? defaultMode
+        if stored == .coreAudioTap {
+            if #available(macOS 14.2, *) {
+                return .coreAudioTap
+            }
             UserDefaults.standard.set(
                 SystemAudioCaptureMode.audioDevice.rawValue,
                 forKey: "loomola.systemAudioCaptureMode"
             )
             return .audioDevice
+        }
+        if stored == .screenCaptureKit && !allowsAppleSystemAudioCapture {
+            UserDefaults.standard.set(
+                defaultMode.rawValue,
+                forKey: "loomola.systemAudioCaptureMode"
+            )
+            return defaultMode
         }
         return stored
     }
@@ -174,9 +210,9 @@ final class RecorderViewModel: ObservableObject {
 
     func setSystemAudioCaptureMode(_ mode: SystemAudioCaptureMode) {
         guard mode != .screenCaptureKit || Self.allowsAppleSystemAudioCapture else {
-            systemAudioCaptureMode = .audioDevice
+            systemAudioCaptureMode = .coreAudioTap
             UserDefaults.standard.set(
-                SystemAudioCaptureMode.audioDevice.rawValue,
+                SystemAudioCaptureMode.coreAudioTap.rawValue,
                 forKey: "loomola.systemAudioCaptureMode"
             )
             return
@@ -996,11 +1032,11 @@ final class RecorderViewModel: ObservableObject {
             if includeMic {
                 recorderLog.error("startAudioNoteRecording — Apple system audio blocked; falling back to mic-only")
                 includeSystemAudio = false
-                statusMessage = "Recording with mic only to keep call audio stable. Choose a virtual audio device for system audio."
+                statusMessage = "Recording with mic only to keep call audio stable. Use the default System audio mode for call audio."
             } else {
                 recorderLog.error("startAudioNoteRecording — blocked: Apple system audio disabled and mic is off")
                 state = .signedInIdle
-                statusMessage = "Turn on Mic or choose a virtual system audio device before starting."
+                statusMessage = "Turn on Mic or use the default System audio mode before starting."
                 isStartingRecording = false
                 return
             }

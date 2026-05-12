@@ -35,6 +35,8 @@
 	<string>Loomola needs camera access to show and record your camera bubble.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Loomola needs microphone access to record narration.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Loomola needs system audio access to record meeting participants without changing what you hear.</string>
 	<key>NSScreenCaptureUsageDescription</key>
 	<string>Loomola needs screen recording access to capture the selected screen or window.</string>
 	<key>LSMinimumSystemVersion</key>

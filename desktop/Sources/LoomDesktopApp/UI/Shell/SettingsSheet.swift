@@ -241,7 +241,7 @@ struct SettingsSheet: View {
                 )
                 FieldPicker(
                     label: "System audio capture",
-                    placeholder: "Apple system audio",
+                    placeholder: "System audio",
                     icon: "speaker.wave.2",
                     options: systemAudioCaptureOptions,
                     selection: Binding(
@@ -269,8 +269,13 @@ struct SettingsSheet: View {
                         .font(DSFont.Body.sm())
                         .foregroundStyle(DSColor.Text.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                } else if viewModel.systemAudioCaptureMode == .coreAudioTap {
+                    Text("Uses Apple's Core Audio Tap so meeting audio keeps playing through your normal Mac output.")
+                        .font(DSFont.Body.sm())
+                        .foregroundStyle(DSColor.Text.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 } else {
-                    Text("Apple system audio is hidden by default because it can change live call playback volume on some setups.")
+                    Text("ScreenCaptureKit audio is hidden by default because it can change live call playback volume on some setups.")
                         .font(DSFont.Body.sm())
                         .foregroundStyle(DSColor.State.warning)
                         .fixedSize(horizontal: false, vertical: true)
@@ -473,10 +478,7 @@ struct SettingsSheet: View {
     }
 
     private var systemAudioCaptureOptions: [FieldPicker<SystemAudioCaptureMode>.Option<SystemAudioCaptureMode>] {
-        let modes: [SystemAudioCaptureMode] = RecorderViewModel.allowsAppleSystemAudioCapture
-            ? SystemAudioCaptureMode.allCases
-            : [.audioDevice]
-        return modes.map {
+        RecorderViewModel.systemAudioCaptureModesForSettings.map {
             .init(id: $0, title: "\($0.title) · \($0.detail)")
         }
     }

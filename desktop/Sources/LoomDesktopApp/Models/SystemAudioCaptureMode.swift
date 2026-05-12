@@ -1,6 +1,7 @@
 import Foundation
 
 enum SystemAudioCaptureMode: String, CaseIterable, Identifiable, Sendable {
+    case coreAudioTap
     case screenCaptureKit
     case audioDevice
 
@@ -8,8 +9,10 @@ enum SystemAudioCaptureMode: String, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
+        case .coreAudioTap:
+            return "System audio"
         case .screenCaptureKit:
-            return "Apple system audio"
+            return "ScreenCaptureKit audio"
         case .audioDevice:
             return "Virtual audio device"
         }
@@ -17,10 +20,12 @@ enum SystemAudioCaptureMode: String, CaseIterable, Identifiable, Sendable {
 
     var detail: String {
         switch self {
+        case .coreAudioTap:
+            return "No audio rerouting"
         case .screenCaptureKit:
             return "Experimental"
         case .audioDevice:
-            return "Best for stable calls"
+            return "Fallback"
         }
     }
 }

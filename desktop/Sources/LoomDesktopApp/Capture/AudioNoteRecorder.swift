@@ -13,7 +13,9 @@ final class AudioNoteRecorder {
     private let backend: BackendClient
     private var microphoneCapture: MicrophoneCaptureCoordinator?
     private let systemAudioCapture: SystemAudioCaptureCoordinator?
+    private let coreAudioTapCapture: CoreAudioTapCaptureCoordinator?
     private var systemAudioDeviceCapture: MicrophoneCaptureCoordinator?
+    private var activeSystemAudioCaptureMode: SystemAudioCaptureMode?
     private var session: AudioRecordingSession?
 
     /// Pause/resume bookkeeping. `paused` mirrors the flag both capture
@@ -59,6 +61,7 @@ final class AudioNoteRecorder {
         session = nil
         microphoneCapture = nil
         systemAudioDeviceCapture = nil
+        activeSystemAudioCaptureMode = nil
     }
 
     init(backend: BackendClient) {
@@ -68,6 +71,11 @@ final class AudioNoteRecorder {
         } else {
             systemAudioCapture = nil
         }
+        if #available(macOS 14.2, *) {
+            coreAudioTapCapture = CoreAudioTapCaptureCoordinator()
+        } else {
+            coreAudioTapCapture = nil
+        }
     }
 
     func start(
@@ -76,7 +84,7 @@ final class AudioNoteRecorder {
         includeSystemAudio: Bool,
         meetingContext: MeetingContext? = nil,
         microphoneDeviceID: String? = nil,
-        systemAudioCaptureMode: SystemAudioCaptureMode = .screenCaptureKit,
+        systemAudioCaptureMode: SystemAudioCaptureMode = .coreAudioTap,
         systemAudioDeviceID: String? = nil
     ) async throws -> AudioRecordingSession {
         guard session == nil else {
@@ -92,6 +100,9 @@ final class AudioNoteRecorder {
 
         let audioLevelSink = onAudioLevel
         systemAudioCapture?.onLevel = { level in
+            audioLevelSink?(level)
+        }
+        coreAudioTapCapture?.onLevel = { level in
             audioLevelSink?(level)
         }
 
@@ -123,11 +134,18 @@ final class AudioNoteRecorder {
                     throw AudioNoteRecorderError.missingLocalFileURL
                 }
                 switch systemAudioCaptureMode {
+                case .coreAudioTap:
+                    guard #available(macOS 14.2, *), let coreAudioTapCapture else {
+                        throw AudioNoteRecorderError.systemAudioUnavailable
+                    }
+                    try coreAudioTapCapture.start(outputURL: url)
+                    activeSystemAudioCaptureMode = .coreAudioTap
                 case .screenCaptureKit:
                     guard let systemAudioCapture else {
                         throw AudioNoteRecorderError.systemAudioUnavailable
                     }
                     try await systemAudioCapture.start(outputURL: url)
+                    activeSystemAudioCaptureMode = .screenCaptureKit
                 case .audioDevice:
                     guard let systemAudioDeviceID else {
                         throw AudioNoteRecorderError.systemAudioDeviceRequired
@@ -137,6 +155,7 @@ final class AudioNoteRecorder {
                         deviceID: systemAudioDeviceID,
                         audioLevelSink: audioLevelSink
                     )
+                    activeSystemAudioCaptureMode = .audioDevice
                 }
             }
             return nextSession
@@ -151,6 +170,7 @@ final class AudioNoteRecorder {
         paused = true
         pauseStartedAt = Date()
         microphoneCapture?.isPaused = true
+        coreAudioTapCapture?.isPaused = true
         systemAudioCapture?.isPaused = true
         systemAudioDeviceCapture?.isPaused = true
     }
@@ -161,6 +181,7 @@ final class AudioNoteRecorder {
         self.pauseStartedAt = nil
         paused = false
         microphoneCapture?.isPaused = false
+        coreAudioTapCapture?.isPaused = false
         systemAudioCapture?.isPaused = false
         systemAudioDeviceCapture?.isPaused = false
     }
@@ -179,6 +200,7 @@ final class AudioNoteRecorder {
             self.pauseStartedAt = nil
             paused = false
             microphoneCapture?.isPaused = false
+            coreAudioTapCapture?.isPaused = false
             systemAudioCapture?.isPaused = false
             systemAudioDeviceCapture?.isPaused = false
         }
@@ -193,15 +215,25 @@ final class AudioNoteRecorder {
             }
             microphoneCapture = nil
         }
-        if session.tracks.contains(.systemAudio),
-           let systemAudioDeviceCapture
-        {
-            if let systemAudioURL = try await systemAudioDeviceCapture.stop() {
-                localFiles[.systemAudio] = systemAudioURL
+        if session.tracks.contains(.systemAudio) {
+            switch activeSystemAudioCaptureMode {
+            case .audioDevice:
+                if let systemAudioURL = try await systemAudioDeviceCapture?.stop() {
+                    localFiles[.systemAudio] = systemAudioURL
+                }
+                systemAudioDeviceCapture = nil
+            case .screenCaptureKit:
+                if let systemAudioCapture {
+                    localFiles[.systemAudio] = try await systemAudioCapture.stop()
+                }
+            case .coreAudioTap:
+                if #available(macOS 14.2, *), let coreAudioTapCapture {
+                    localFiles[.systemAudio] = try await coreAudioTapCapture.stop()
+                }
+            case nil:
+                audioNoteRecorderLog.error("system audio selected but no active capture mode was recorded")
             }
-            self.systemAudioDeviceCapture = nil
-        } else if session.tracks.contains(.systemAudio), let systemAudioCapture {
-            localFiles[.systemAudio] = try await systemAudioCapture.stop()
+            activeSystemAudioCaptureMode = nil
         }
 
         for track in [TrackKind.mic, .systemAudio] {
@@ -249,6 +281,7 @@ final class AudioNoteRecorder {
         )
         try? FileManager.default.removeItem(at: session.directory)
         self.session = nil
+        activeSystemAudioCaptureMode = nil
         pausedAccumulatedSeconds = 0
         return response
     }
@@ -260,11 +293,21 @@ final class AudioNoteRecorder {
         if session.tracks.contains(.mic) {
             _ = try? await microphoneCapture?.stop()
         }
-        if session.tracks.contains(.systemAudio), let systemAudioDeviceCapture {
-            _ = try? await systemAudioDeviceCapture.stop()
-            self.systemAudioDeviceCapture = nil
-        } else if session.tracks.contains(.systemAudio), let systemAudioCapture {
-            _ = try? await systemAudioCapture.stop()
+        if session.tracks.contains(.systemAudio) {
+            switch activeSystemAudioCaptureMode {
+            case .audioDevice:
+                _ = try? await systemAudioDeviceCapture?.stop()
+                systemAudioDeviceCapture = nil
+            case .screenCaptureKit:
+                _ = try? await systemAudioCapture?.stop()
+            case .coreAudioTap:
+                if #available(macOS 14.2, *) {
+                    _ = try? await coreAudioTapCapture?.stop()
+                }
+            case nil:
+                break
+            }
+            activeSystemAudioCaptureMode = nil
         }
         if let recordingId = session.backendRecordingId {
             try? await backend.abort(recordingId: recordingId)
@@ -367,9 +410,9 @@ enum AudioNoteRecorderError: LocalizedError {
         case .missingLocalFileURL:
             return "The audio note is missing a local file path."
         case .systemAudioUnavailable:
-            return "System audio capture requires macOS 14 or newer."
+            return "System audio capture requires macOS 14.2 or newer."
         case .systemAudioDeviceRequired:
-            return "Choose a system audio device in Settings, or switch system audio back to Apple capture."
+            return "Choose a system audio device in Settings, or switch system audio back to the default system audio mode."
         case .noCompletedAudioTracks:
             return "No audio was captured. Check microphone and Screen & System Audio permissions, then try again."
         case .emptyMicrophoneTrack(let bytes):

@@ -47,6 +47,23 @@ enum AudioLevelSampler {
         return nil
     }
 
+    static func linearLevel(from pcmBuffer: AVAudioPCMBuffer) -> Double? {
+        guard let channelData = pcmBuffer.floatChannelData else { return nil }
+        let frameLength = Int(pcmBuffer.frameLength)
+        let channelCount = Int(pcmBuffer.format.channelCount)
+        if frameLength == 0 || channelCount == 0 { return nil }
+
+        var peak: Float = 0
+        for ch in 0..<channelCount {
+            let samples = channelData[ch]
+            for i in 0..<frameLength {
+                let sample = abs(samples[i])
+                if sample > peak { peak = sample }
+            }
+        }
+        return Double(min(max(peak, 0), 1))
+    }
+
     private static func level(fromFloat32Data data: Data) -> Double? {
         data.withUnsafeBytes { rawBuffer in
             let samples = rawBuffer.bindMemory(to: Float.self)
