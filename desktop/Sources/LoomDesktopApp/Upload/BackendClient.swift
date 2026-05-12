@@ -525,9 +525,37 @@ struct RecentRecordingDTO: Decodable, Equatable, Sendable {
     let kind: String  // "video" | "audio"
     let createdAt: String  // ISO 8601
     let durationSeconds: Double?
+    let status: String?
+    let transcriptReady: Bool?
     let thumbnailUrl: String?
     let folderId: String?
     let folderName: String?
+
+    init(
+        id: String,
+        slug: String,
+        title: String,
+        kind: String,
+        createdAt: String,
+        durationSeconds: Double?,
+        thumbnailUrl: String?,
+        folderId: String?,
+        folderName: String?,
+        status: String? = nil,
+        transcriptReady: Bool? = nil
+    ) {
+        self.id = id
+        self.slug = slug
+        self.title = title
+        self.kind = kind
+        self.createdAt = createdAt
+        self.durationSeconds = durationSeconds
+        self.status = status
+        self.transcriptReady = transcriptReady
+        self.thumbnailUrl = thumbnailUrl
+        self.folderId = folderId
+        self.folderName = folderName
+    }
 }
 
 struct ListFoldersResponse: Decodable, Equatable, Sendable {
@@ -701,6 +729,9 @@ struct EnhanceStatusResponse: Decodable, Sendable {
     let summary: String?
     let templateId: String?
     let generationStatus: String  // "pending" | "streaming" | "complete" | "failed"
+    let mediaStatus: String?
+    let transcriptReady: Bool?
+    let transcriptTextLength: Int?
 }
 
 struct ObsidianSyncedRequest: Encodable, Sendable {
@@ -757,5 +788,12 @@ enum BackendClientError: LocalizedError {
         case .badStatus(let code, _, _): return code == 502 || code == 503 || code == 504
         default: return false
         }
+    }
+
+    var apiErrorCode: String? {
+        guard case .badStatus(_, _, let body) = self,
+              let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any]
+        else { return nil }
+        return object["error"] as? String
     }
 }

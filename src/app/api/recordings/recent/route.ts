@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { listRecordings } from "@/db/queries/recordings";
 import { listImageAttachmentsForMediaIds } from "@/db/queries/notes";
 import { listFoldersForOwner } from "@/db/queries/folders";
+import { db } from "@/db";
+import { transcripts } from "@/db/schema";
+import { inArray } from "drizzle-orm";
 import { presignGet } from "@/lib/r2/presigned-get";
 import { requireAuth } from "@/lib/require-auth";
 
@@ -43,6 +46,22 @@ export async function GET(request: Request) {
     audioIds.length > 0
       ? await listImageAttachmentsForMediaIds(audioIds, user.id)
       : new Map();
+  const transcriptLengthByMediaId = new Map<string, number>();
+  if (audioIds.length > 0) {
+    const transcriptRows = await db
+      .select({
+        mediaObjectId: transcripts.mediaObjectId,
+        textLength: transcripts.fullText,
+      })
+      .from(transcripts)
+      .where(inArray(transcripts.mediaObjectId, audioIds));
+    for (const row of transcriptRows) {
+      transcriptLengthByMediaId.set(
+        row.mediaObjectId,
+        row.textLength.trim().length
+      );
+    }
+  }
 
   // One round trip for folder names. Only fetch when at least one
   // recording in the slice is filed.
@@ -75,6 +94,11 @@ export async function GET(request: Request) {
         // → arrives as a string. Coerce to a JS number so the desktop's
         // strict JSONDecoder accepts it as Double.
         durationSeconds: r.durationSeconds == null ? null : Number(r.durationSeconds),
+        status: r.status,
+        transcriptReady:
+          r.type === "audio"
+            ? (transcriptLengthByMediaId.get(r.id) ?? 0) > 0
+            : null,
         thumbnailUrl,
         folderId: r.folderId,
         folderName: r.folderId ? (folderNameById.get(r.folderId) ?? null) : null,

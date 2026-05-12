@@ -195,6 +195,8 @@ struct RecentRecording: Identifiable, Equatable {
     let kind: Kind
     let createdAt: Date
     let durationSeconds: Double?
+    let status: String?
+    let transcriptReady: Bool?
     let thumbnailURL: URL?
     var folderId: String?
     var folderName: String?
@@ -217,6 +219,8 @@ struct RecentRecording: Identifiable, Equatable {
             self.createdAt = alt.date(from: dto.createdAt) ?? Date()
         }
         self.durationSeconds = dto.durationSeconds
+        self.status = dto.status
+        self.transcriptReady = dto.transcriptReady
         self.thumbnailURL = dto.thumbnailUrl.flatMap { URL(string: $0) }
         self.folderId = dto.folderId
         self.folderName = dto.folderName

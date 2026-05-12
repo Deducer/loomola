@@ -33,6 +33,7 @@ export async function GET(
   if (!data) return granolaNotFound();
 
   const aiOutput = await getAiOutputByMedia(data.media.id);
+  const transcriptTextLength = data.transcript?.fullText.trim().length ?? 0;
   return NextResponse.json({
     titleSuggested: aiOutput?.titleSuggested ?? null,
     summary: aiOutput?.summary ?? null,
@@ -40,6 +41,9 @@ export async function GET(
     actionItems: aiOutput?.actionItems ?? null,
     templateId: aiOutput?.templateId ?? data.note?.templateId ?? DEFAULT_NOTE_TEMPLATE_ID,
     generationStatus: aiOutput?.generationStatusValue ?? "idle",
+    mediaStatus: data.media.status,
+    transcriptReady: Boolean(data.transcript && transcriptTextLength > 0),
+    transcriptTextLength,
   });
 }
 
@@ -55,6 +59,12 @@ export async function POST(
   if (!data.transcript) {
     return NextResponse.json(
       { error: "transcript_not_ready" },
+      { status: 409 }
+    );
+  }
+  if (data.transcript.fullText.trim().length === 0) {
+    return NextResponse.json(
+      { error: "transcript_empty" },
       { status: 409 }
     );
   }

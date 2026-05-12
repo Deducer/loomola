@@ -118,6 +118,8 @@ struct NoteWorkspaceView: View {
     /// AI-enhance state: idle | running | complete | failed.
     /// Drives the Generate-notes pill in review mode.
     @State private var enhanceStatus: EnhanceStatus = .idle
+    @State private var enhanceFailureMessage: String? = nil
+    @State private var enhanceFailureIsRetryable = true
     @State private var pollEnhanceTask: Task<Void, Never>? = nil
 
     private var isRecording: Bool {
@@ -740,26 +742,35 @@ struct NoteWorkspaceView: View {
                     .background(Capsule().fill(DSColor.Bg.surface))
                     .overlay { Capsule().strokeBorder(DSColor.Border.subtle, lineWidth: 1) }
                 case .failed:
-                    Button(action: startEnhance) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(DSColor.State.danger)
-                            Text("Try again")
-                                .font(DSFont.Body.md())
-                                .foregroundStyle(DSColor.Text.primary)
+                    if enhanceFailureIsRetryable {
+                        Button(action: startEnhance) {
+                            failedGenerateNotesPill
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(Capsule().fill(DSColor.Bg.surface))
-                        .overlay { Capsule().strokeBorder(DSColor.Border.subtle, lineWidth: 1) }
+                        .buttonStyle(.plain)
+                    } else {
+                        failedGenerateNotesPill
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .animation(LoomolaMotion.quick, value: enhanceStatus)
             Spacer()
         }
+    }
+
+    private var failedGenerateNotesPill: some View {
+        HStack(spacing: 8) {
+            Image(systemName: enhanceFailureIsRetryable ? "exclamationmark.triangle.fill" : "clock")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(enhanceFailureIsRetryable ? DSColor.State.danger : DSColor.Text.secondary)
+            Text(enhanceFailureMessage ?? "Try again")
+                .font(DSFont.Body.md())
+                .foregroundStyle(DSColor.Text.primary)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Capsule().fill(DSColor.Bg.surface))
+        .overlay { Capsule().strokeBorder(DSColor.Border.subtle, lineWidth: 1) }
+        .help(enhanceFailureMessage ?? "Try again")
     }
 
     // MARK: - Attachment preview overlay
@@ -1023,11 +1034,15 @@ struct NoteWorkspaceView: View {
                 if let backend = viewModel.backendClient {
                     do {
                         let note = try await backend.getNote(mediaId: recording.id)
+                        let enhancement = try? await backend.getEnhancementStatus(mediaId: recording.id)
                         await MainActor.run {
                             reviewBody = note.body ?? ""
                             reviewLastSaved = note.body ?? ""
                             if let templateId = note.templateId {
                                 selectedTemplateId = templateId
+                            }
+                            if let enhancement {
+                                applyEnhancementReadiness(enhancement)
                             }
                             loadingBody = false
                         }
@@ -1042,6 +1057,64 @@ struct NoteWorkspaceView: View {
     }
 
     // MARK: - AI enhance
+
+    private func applyEnhancementReadiness(_ status: EnhanceStatusResponse) {
+        guard status.transcriptReady == false else {
+            if enhanceStatus == .failed, enhanceFailureIsRetryable == false {
+                enhanceStatus = .idle
+                enhanceFailureMessage = nil
+                enhanceFailureIsRetryable = true
+            }
+            return
+        }
+
+        enhanceStatus = .failed
+        enhanceFailureIsRetryable = false
+        if status.mediaStatus == "failed" {
+            enhanceFailureMessage = "Recover upload first"
+        } else if status.mediaStatus == "uploading" || status.mediaStatus == "transcribing" {
+            enhanceFailureMessage = "Waiting for transcript"
+        } else if (status.transcriptTextLength ?? 0) == 0 {
+            enhanceFailureMessage = "No speech detected"
+        } else {
+            enhanceFailureMessage = "Waiting for transcript"
+        }
+    }
+
+    private func handleEnhanceStartFailure(_ error: Error) {
+        enhanceStatus = .failed
+        enhanceFailureIsRetryable = true
+
+        if let backendError = error as? BackendClientError {
+            switch backendError.apiErrorCode {
+            case .some("transcript_not_ready"):
+                enhanceFailureMessage = "Waiting for transcript"
+                enhanceFailureIsRetryable = false
+                showToast(message: "Transcript is still being prepared", tone: .warning)
+                return
+            case .some("transcript_empty"):
+                enhanceFailureMessage = "No speech detected"
+                enhanceFailureIsRetryable = false
+                showToast(message: "No speech was detected in this recording", tone: .error)
+                return
+            case .some("unknown_template"):
+                enhanceFailureMessage = "Choose a template"
+                showToast(message: "Template was not recognized", tone: .error)
+                return
+            default:
+                break
+            }
+
+            if backendError.isTransient {
+                enhanceFailureMessage = "Server unavailable"
+                showToast(message: "Loomola is temporarily unavailable", tone: .warning)
+                return
+            }
+        }
+
+        enhanceFailureMessage = "Try again"
+        showToast(message: "Couldn't start AI run", tone: .error)
+    }
 
     /// Kicks off a re-run of the AI title + summary pipeline against
     /// the latest transcript + the user's typed notes. Polls every 3s
@@ -1059,6 +1132,8 @@ struct NoteWorkspaceView: View {
         let bodyToFlush = reviewBody
 
         pollEnhanceTask?.cancel()
+        enhanceFailureMessage = nil
+        enhanceFailureIsRetryable = true
         enhanceStatus = .running
 
         pollEnhanceTask = Task { @MainActor in
@@ -1072,8 +1147,7 @@ struct NoteWorkspaceView: View {
                     templateId: selectedTemplateId
                 )
             } catch {
-                enhanceStatus = .failed
-                showToast(message: "Couldn't start AI run", tone: .error)
+                handleEnhanceStartFailure(error)
                 return
             }
 
@@ -1106,6 +1180,8 @@ struct NoteWorkspaceView: View {
                     return
                 case "failed":
                     enhanceStatus = .failed
+                    enhanceFailureMessage = "AI run failed"
+                    enhanceFailureIsRetryable = true
                     showToast(message: "AI run failed", tone: .error)
                     return
                 default:

@@ -35,6 +35,17 @@ final class OrphanRetryCoordinator {
     func retry(_ orphan: OrphanedRecording) async throws -> Outcome {
         log.notice("retry begin: orphan=\(orphan.id.uuidString, privacy: .public) tracks=\(orphan.tracks.count, privacy: .public) bytes=\(orphan.totalBytes(), privacy: .public)")
 
+        let originalNote: NoteBodyResponse?
+        let originalRecent: RecentRecordingDTO?
+        if let originalId = orphan.originalRecordingId {
+            originalNote = try? await backend.getNote(mediaId: originalId)
+            let recentResponse = try? await backend.recentRecordings(limit: 50, kind: "audio")
+            originalRecent = recentResponse?.items.first(where: { $0.id == originalId })
+        } else {
+            originalNote = nil
+            originalRecent = nil
+        }
+
         // 1. Best-effort abort of the original row. Don't fail the
         //    retry if abort 404s (the row may already be soft-deleted)
         //    or 5xx's — the new recording stands on its own.
@@ -50,13 +61,14 @@ final class OrphanRetryCoordinator {
         // 2. Fresh /api/recordings/start. Title carries through so the
         //    note appears with the user's intended title (or the AI-
         //    suggested title later via Generate Notes).
-        let trackList = orphan.tracks
+        let uploadTracks = usableTracks(for: orphan)
+        let trackList = uploadTracks
             .filter { $0 == .mic || $0 == .systemAudio }
             .map { StartRecordingRequest.Track(kind: $0, mimeType: "audio/mp4") }
         guard !trackList.isEmpty else {
             throw OrphanRetryError.noTracks
         }
-        let title = orphan.title ?? "Recovered audio note"
+        let title = orphan.title ?? originalRecent?.title ?? "Recovered audio note"
         let startRequest = StartRecordingRequest(
             type: .audio,
             tracks: trackList,
@@ -74,7 +86,7 @@ final class OrphanRetryCoordinator {
         // 3. Multipart upload each track's local file.
         let uploader = MultipartUploadCoordinator(backend: backend)
         var completedTracks: [TrackKind: [CompletedPart]] = [:]
-        for track in orphan.tracks {
+        for track in uploadTracks {
             let url: URL? = (track == .mic) ? orphan.micFileURL() : orphan.systemAudioFileURL()
             guard let fileURL = url else {
                 log.error("retry: no local file for track \(track.rawValue, privacy: .public)")
@@ -103,7 +115,34 @@ final class OrphanRetryCoordinator {
             )
         )
         log.notice("retry complete: slug=\(completeResponse.slug, privacy: .public)")
+
+        if let body = originalNote?.body, !body.isEmpty {
+            try? await backend.putNoteBody(mediaId: started.recordingId, body: body)
+        }
+        if let templateId = originalNote?.templateId, !templateId.isEmpty {
+            try? await backend.setNoteTemplate(mediaId: started.recordingId, templateId: templateId)
+        }
+        if let folderId = originalRecent?.folderId {
+            try? await backend.assignRecordingToFolder(recordingId: started.recordingId, folderId: folderId)
+        }
+
         return Outcome(recordingId: started.recordingId, slug: completeResponse.slug)
+    }
+
+    private func usableTracks(for orphan: OrphanedRecording) -> [TrackKind] {
+        orphan.tracks.filter { track in
+            let url = (track == .mic) ? orphan.micFileURL() : orphan.systemAudioFileURL()
+            guard let url,
+                  let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+                  let size = attrs[.size] as? NSNumber
+            else { return false }
+
+            if size.int64Value < 4096 {
+                log.notice("retry: skipping tiny \(track.rawValue, privacy: .public) file (\(size.int64Value, privacy: .public) bytes)")
+                return false
+            }
+            return true
+        }
     }
 }
 
