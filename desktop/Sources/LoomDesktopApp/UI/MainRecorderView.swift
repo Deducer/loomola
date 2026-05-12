@@ -61,43 +61,10 @@ struct MainRecorderView: View {
             }
         }
         .background(DSColor.Bg.canvas)
-        .toolbar {
-            // Home-mode chrome lives in the unified system toolbar
-            // (sidebar + wordmark on the left, settings + avatar on
-            // the right). When the workspace is open it adds its
-            // own toolbar items via `NoteWorkspaceView.toolbar`;
-            // SwiftUI merges items based on which view is currently
-            // rendered.
-            if noteTarget == nil {
-                ToolbarItem(placement: .navigation) {
-                    IconButton(
-                        icon: "sidebar.left",
-                        size: 26,
-                        action: {
-                            withAnimation(LoomolaMotion.quick) { sidebarOpen.toggle() }
-                        }
-                    )
-                    .help(sidebarOpen ? "Close sidebar (⌘S)" : "Open sidebar (⌘S)")
-                }
-                ToolbarItem(placement: .navigation) {
-                    HStack(spacing: DSSpacing.sm) {
-                        BrandLogoMark(size: 22)
-                        Text("Loomola")
-                            .font(DSFont.Body.lg())
-                            .foregroundStyle(DSColor.Text.primary)
-                            .lineLimit(1)
-                    }
-                    .frame(minWidth: 132, alignment: .leading)
-                    .padding(.trailing, DSSpacing.sm)
-                }
-            }
-        }
         .toolbarBackground(.hidden, for: .windowToolbar)
-        .overlay(alignment: .topTrailing) {
+        .overlay(alignment: .top) {
             if noteTarget == nil {
-                titleBarActions
-                    .padding(.top, 8)
-                    .padding(.trailing, DSSpacing.lg)
+                homeTitleBar
             }
         }
         .background(
@@ -177,6 +144,42 @@ struct MainRecorderView: View {
                 }
             }
         }
+    }
+
+    private var homeTitleBar: some View {
+        HStack(alignment: .center) {
+            HStack(spacing: DSSpacing.sm) {
+                titleBarSidebarButton
+                BrandLogoMark(size: 22)
+                Text("Loomola")
+                    .font(DSFont.Body.lg())
+                    .foregroundStyle(DSColor.Text.primary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            titleBarActions
+        }
+        .padding(.leading, 142)
+        .padding(.trailing, DSSpacing.lg)
+        .padding(.top, 7)
+        .frame(height: 44)
+    }
+
+    private var titleBarSidebarButton: some View {
+        Image(systemName: "sidebar.left")
+            .font(.system(size: 14, weight: .medium))
+            .foregroundStyle(DSColor.Text.secondary)
+            .frame(width: 28, height: 28)
+            .contentShape(Circle())
+            .overlay {
+                ActionHitArea {
+                    withAnimation(LoomolaMotion.quick) { sidebarOpen.toggle() }
+                }
+                .clipShape(Circle())
+            }
+            .help(sidebarOpen ? "Close sidebar (⌘S)" : "Open sidebar (⌘S)")
     }
 
     private var titleBarActions: some View {
