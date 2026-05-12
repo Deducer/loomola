@@ -163,8 +163,13 @@ struct MainRecorderView: View {
         }
         .padding(.leading, 142)
         .padding(.trailing, DSSpacing.lg)
-        .padding(.top, 7)
+        .padding(.top, 8)
         .frame(height: 44)
+        // The SwiftUI content root starts below the transparent
+        // macOS titlebar. Pull this custom chrome back into that
+        // titlebar zone so it sits on the same visual line as the
+        // traffic lights, matching Granola's premium window chrome.
+        .offset(y: -80)
     }
 
     private var titleBarSidebarButton: some View {
