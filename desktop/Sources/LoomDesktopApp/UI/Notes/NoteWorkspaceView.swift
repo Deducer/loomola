@@ -1402,9 +1402,57 @@ private struct GhostEllipsisButton: View {
                     .fill(hovering ? DSColor.Bg.subtle : Color.clear)
             )
             .contentShape(Circle())
-            .overlay { ActionHitArea(action: action) }
+            .overlay {
+                MouseDownHitArea(action: action)
+                    .clipShape(Circle())
+            }
             .onHover { hovering = $0 }
             .animation(LoomolaMotion.quick, value: hovering)
+    }
+}
+
+private struct MouseDownHitArea: NSViewRepresentable {
+    let action: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(action: action)
+    }
+
+    func makeNSView(context: Context) -> MouseDownActionView {
+        let view = MouseDownActionView()
+        view.action = context.coordinator.performAction
+        return view
+    }
+
+    func updateNSView(_ view: MouseDownActionView, context: Context) {
+        context.coordinator.action = action
+        view.action = context.coordinator.performAction
+    }
+
+    final class Coordinator {
+        var action: () -> Void
+
+        init(action: @escaping () -> Void) {
+            self.action = action
+        }
+
+        func performAction() {
+            action()
+        }
+    }
+}
+
+private final class MouseDownActionView: NSView {
+    var action: (() -> Void)?
+
+    override var acceptsFirstResponder: Bool { false }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        action?()
     }
 }
 
