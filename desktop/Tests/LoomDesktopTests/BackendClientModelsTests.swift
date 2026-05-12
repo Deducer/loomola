@@ -76,4 +76,30 @@ final class BackendClientModelsTests: XCTestCase {
         XCTAssertEqual(tracks.map { $0["kind"] as? String }, ["mic", "system-audio"])
         XCTAssertEqual(tracks.map { $0["mimeType"] as? String }, ["audio/mp4", "audio/mp4"])
     }
+
+    func testNoteTranscriptResponseDecodesParagraphsAndWordCount() throws {
+        let json = """
+        {
+          "fullText": "Hello world from Loomola",
+          "language": "en",
+          "provider": "deepgram",
+          "paragraphs": [
+            {
+              "speaker": "Speaker 1",
+              "startSec": 0.12,
+              "endSec": 1.44,
+              "text": "Hello world"
+            }
+          ]
+        }
+        """.data(using: .utf8)!
+
+        let response = try JSONDecoder().decode(NoteTranscriptResponse.self, from: json)
+
+        XCTAssertEqual(response.fullText, "Hello world from Loomola")
+        XCTAssertEqual(response.wordCount, 4)
+        XCTAssertEqual(response.paragraphs.first?.speaker, "Speaker 1")
+        XCTAssertEqual(response.paragraphs.first?.startSec, 0.12)
+        XCTAssertEqual(response.paragraphs.first?.text, "Hello world")
+    }
 }

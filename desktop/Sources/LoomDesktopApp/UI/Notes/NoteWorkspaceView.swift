@@ -62,11 +62,10 @@ enum NoteWorkspaceTarget: Equatable {
 ///   - Bottom controls (recording mode only): mini level-meter +
 ///     timer + Pause/Resume + Stop & upload
 ///
-/// The transcription-drawer expansion (Granola's chevron-next-to-
-/// waveform) is intentionally deferred — it requires Deepgram
-/// streaming, which we don't currently use (we batch-transcribe
-/// after upload). Rendered as a placeholder hint; tracked as a
-/// follow-up.
+/// Review mode includes a saved-transcript drawer for post-upload
+/// transcripts. Live, word-by-word transcription is still a separate
+/// follow-up because the current pipeline batch-transcribes after
+/// upload rather than streaming while recording.
 struct NoteWorkspaceView: View {
     @ObservedObject var viewModel: RecorderViewModel
     let target: NoteWorkspaceTarget
@@ -121,6 +120,13 @@ struct NoteWorkspaceView: View {
     @State private var enhanceFailureMessage: String? = nil
     @State private var enhanceFailureIsRetryable = true
     @State private var pollEnhanceTask: Task<Void, Never>? = nil
+
+    /// Persisted transcript from the server. v1 small win: this is
+    /// post-upload/batch transcript, not live streaming yet.
+    @State private var transcript: NoteTranscriptResponse? = nil
+    @State private var transcriptDrawerOpen = false
+    @State private var loadingTranscript = false
+    @State private var transcriptError: String? = nil
 
     private var isRecording: Bool {
         if case .recording = target { return true }
@@ -229,6 +235,14 @@ struct NoteWorkspaceView: View {
                     .padding(.horizontal, DSSpacing.lg)
                     .padding(.bottom, DSSpacing.lg)
             } else {
+                if transcriptDrawerOpen {
+                    transcriptDrawer
+                        .frame(maxWidth: 640)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.horizontal, DSSpacing.xl)
+                        .padding(.bottom, DSSpacing.sm)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
                 // Reviewing mode: green ✦ Generate-notes pill anchored
                 // bottom-center. POSTs /api/notes/<id>/enhance and
                 // polls until status flips to complete.
@@ -296,6 +310,7 @@ struct NoteWorkspaceView: View {
         .animation(LoomolaMotion.medium, value: toastMessage)
         .animation(LoomolaMotion.quick, value: previewedAttachment)
         .animation(LoomolaMotion.quick, value: workspaceHovering)
+        .animation(LoomolaMotion.medium, value: transcriptDrawerOpen)
         .onAppear { handleAppear() }
         .onDisappear {
             reviewAutosaveTask?.cancel()
@@ -699,63 +714,95 @@ struct NoteWorkspaceView: View {
     private var generateNotesBar: some View {
         HStack {
             Spacer()
-            Group {
-                switch enhanceStatus {
-                case .idle:
-                    Button(action: startEnhance) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "sparkles")
-                                .font(.system(size: 12, weight: .semibold))
-                            Text("Generate notes")
-                                .font(DSFont.Body.md())
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(Capsule().fill(DSColor.State.success))
-                    }
-                    .buttonStyle(.plain)
-                    .help("Re-run AI to refine title + summary from transcript and your notes")
-                case .running:
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .controlSize(.small)
-                            .tint(DSColor.Text.secondary)
-                        Text("Generating notes…")
-                            .font(DSFont.Body.md())
-                            .foregroundStyle(DSColor.Text.secondary)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(Capsule().fill(DSColor.Bg.surface))
-                    .overlay { Capsule().strokeBorder(DSColor.Border.subtle, lineWidth: 1) }
-                case .complete:
-                    HStack(spacing: 8) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(DSColor.State.success)
-                        Text("Notes updated")
-                            .font(DSFont.Body.md())
-                            .foregroundStyle(DSColor.Text.primary)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(Capsule().fill(DSColor.Bg.surface))
-                    .overlay { Capsule().strokeBorder(DSColor.Border.subtle, lineWidth: 1) }
-                case .failed:
-                    if enhanceFailureIsRetryable {
-                        Button(action: startEnhance) {
-                            failedGenerateNotesPill
-                        }
-                        .buttonStyle(.plain)
-                    } else {
-                        failedGenerateNotesPill
-                    }
-                }
+            HStack(spacing: DSSpacing.sm) {
+                transcriptTogglePill
+                generateNotesPill
             }
-            .animation(LoomolaMotion.quick, value: enhanceStatus)
             Spacer()
         }
+    }
+
+    @ViewBuilder
+    private var generateNotesPill: some View {
+        switch enhanceStatus {
+        case .idle:
+            Button(action: startEnhance) {
+                HStack(spacing: 8) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("Generate notes")
+                        .font(DSFont.Body.md())
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(Capsule().fill(DSColor.State.success))
+            }
+            .buttonStyle(.plain)
+            .help("Re-run AI to refine title + summary from transcript and your notes")
+        case .running:
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(DSColor.Text.secondary)
+                Text("Generating notes…")
+                    .font(DSFont.Body.md())
+                    .foregroundStyle(DSColor.Text.secondary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Capsule().fill(DSColor.Bg.surface))
+            .overlay { Capsule().strokeBorder(DSColor.Border.subtle, lineWidth: 1) }
+        case .complete:
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(DSColor.State.success)
+                Text("Notes updated")
+                    .font(DSFont.Body.md())
+                    .foregroundStyle(DSColor.Text.primary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Capsule().fill(DSColor.Bg.surface))
+            .overlay { Capsule().strokeBorder(DSColor.Border.subtle, lineWidth: 1) }
+        case .failed:
+            if enhanceFailureIsRetryable {
+                Button(action: startEnhance) {
+                    failedGenerateNotesPill
+                }
+                .buttonStyle(.plain)
+            } else {
+                failedGenerateNotesPill
+            }
+        }
+    }
+
+    private var transcriptTogglePill: some View {
+        Button {
+            transcriptDrawerOpen.toggle()
+            if transcriptDrawerOpen, transcript == nil, !loadingTranscript {
+                loadTranscript()
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "text.bubble")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(transcriptDrawerOpen ? DSColor.Accent.primary : DSColor.Text.secondary)
+                Text("Transcript")
+                    .font(DSFont.Body.md())
+                    .foregroundStyle(DSColor.Text.primary)
+                Image(systemName: transcriptDrawerOpen ? "chevron.down" : "chevron.up")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(DSColor.Text.tertiary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(Capsule().fill(DSColor.Bg.surface))
+            .overlay { Capsule().strokeBorder(DSColor.Border.subtle, lineWidth: 1) }
+        }
+        .buttonStyle(.plain)
+        .help("Show transcript")
     }
 
     private var failedGenerateNotesPill: some View {
@@ -772,6 +819,116 @@ struct NoteWorkspaceView: View {
         .background(Capsule().fill(DSColor.Bg.surface))
         .overlay { Capsule().strokeBorder(DSColor.Border.subtle, lineWidth: 1) }
         .help(enhanceFailureMessage ?? "Try again")
+    }
+
+    private var transcriptDrawer: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: DSSpacing.sm) {
+                Image(systemName: "text.bubble")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(DSColor.Text.secondary)
+                Text("Transcript")
+                    .font(DSFont.Body.md().weight(.semibold))
+                    .foregroundStyle(DSColor.Text.primary)
+                if let transcript, transcript.wordCount > 0 {
+                    Text("\(transcript.wordCount) words")
+                        .font(DSFont.Body.sm())
+                        .foregroundStyle(DSColor.Text.tertiary)
+                }
+                Spacer()
+                Button {
+                    copyTranscript()
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(DSColor.Text.secondary)
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .disabled(transcriptTextForCopy.isEmpty)
+                .opacity(transcriptTextForCopy.isEmpty ? 0.45 : 1)
+                .help("Copy transcript")
+                Button {
+                    transcriptDrawerOpen = false
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(DSColor.Text.secondary)
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .help("Hide transcript")
+            }
+            .padding(.horizontal, DSSpacing.lg)
+            .padding(.vertical, DSSpacing.sm)
+
+            Divider().overlay(DSColor.Border.subtle)
+
+            ScrollView {
+                transcriptContent
+                    .padding(DSSpacing.lg)
+            }
+            .frame(maxHeight: 260)
+        }
+        .background(RoundedRectangle(cornerRadius: DSRadius.lg).fill(DSColor.Bg.surfaceRaised))
+        .overlay {
+            RoundedRectangle(cornerRadius: DSRadius.lg)
+                .strokeBorder(DSColor.Border.subtle, lineWidth: 1)
+        }
+        .dsShadow(.raised)
+    }
+
+    @ViewBuilder
+    private var transcriptContent: some View {
+        if loadingTranscript {
+            HStack(spacing: DSSpacing.sm) {
+                ProgressView().controlSize(.small)
+                Text("Loading transcript…")
+                    .font(DSFont.Body.md())
+                    .foregroundStyle(DSColor.Text.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else if let transcriptError {
+            Text(transcriptError)
+                .font(DSFont.Body.md())
+                .foregroundStyle(DSColor.Text.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else if let transcript, !transcript.paragraphs.isEmpty {
+            VStack(alignment: .leading, spacing: DSSpacing.sm) {
+                ForEach(transcript.paragraphs) { paragraph in
+                    transcriptParagraph(paragraph)
+                }
+            }
+        } else if let transcript, !transcript.fullText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            Text(transcript.fullText)
+                .font(DSFont.Body.md())
+                .foregroundStyle(DSColor.Text.primary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            Text("Transcript will appear here after Deepgram finishes processing.")
+                .font(DSFont.Body.md())
+                .foregroundStyle(DSColor.Text.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func transcriptParagraph(_ paragraph: NoteTranscriptResponse.Paragraph) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let speaker = paragraph.speaker, !speaker.isEmpty {
+                Text(speaker)
+                    .font(DSFont.Body.sm())
+                    .foregroundStyle(DSColor.Text.tertiary)
+            }
+            Text(paragraph.text)
+                .font(DSFont.Body.md())
+                .foregroundStyle(DSColor.Text.primary)
+                .textSelection(.enabled)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: DSRadius.md).fill(DSColor.Bg.subtle))
     }
 
     // MARK: - Attachment preview overlay
@@ -994,6 +1151,48 @@ struct NoteWorkspaceView: View {
         }
     }
 
+    private var transcriptTextForCopy: String {
+        guard let transcript else { return "" }
+        if !transcript.paragraphs.isEmpty {
+            return transcript.paragraphs
+                .map { paragraph in
+                    let speakerPrefix = paragraph.speaker.map { "\($0): " } ?? ""
+                    return "\(speakerPrefix)\(paragraph.text)"
+                }
+                .joined(separator: "\n\n")
+        }
+        return transcript.fullText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func loadTranscript() {
+        guard case .reviewing(let recording) = target else { return }
+        guard let backend = viewModel.backendClient else { return }
+        guard !loadingTranscript else { return }
+
+        loadingTranscript = true
+        transcriptError = nil
+
+        Task { @MainActor in
+            do {
+                let response = try await backend.getNoteTranscript(mediaId: recording.id)
+                transcript = response
+                loadingTranscript = false
+            } catch {
+                transcriptError = "Transcript isn't ready yet."
+                loadingTranscript = false
+            }
+        }
+    }
+
+    private func copyTranscript() {
+        let text = transcriptTextForCopy
+        guard !text.isEmpty else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+        showToast(message: "Transcript copied")
+    }
+
     private func handleAppear() {
         // Auto-focus the body editor so the user can start typing
         // immediately — Granola does this. Slight delay so the
@@ -1031,6 +1230,7 @@ struct NoteWorkspaceView: View {
             reviewFolderName = recording.folderName
             reviewBody = ""
             loadingBody = true
+            loadTranscript()
             Task {
                 if let backend = viewModel.backendClient {
                     do {

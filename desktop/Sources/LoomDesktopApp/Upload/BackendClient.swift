@@ -119,6 +119,10 @@ actor BackendClient {
         try await get(path: "/api/notes/\(mediaId)")
     }
 
+    func getNoteTranscript(mediaId: String) async throws -> NoteTranscriptResponse {
+        try await get(path: "/api/notes/\(mediaId)/transcript")
+    }
+
     func setNoteTemplate(mediaId: String, templateId: String) async throws {
         let _: EmptyResponse = try await jsonRequest(
             method: "PATCH",
@@ -599,6 +603,28 @@ struct NoteBodyRequest: Encodable, Sendable {
 struct NoteBodyResponse: Decodable, Sendable {
     let body: String?
     let templateId: String?
+}
+
+struct NoteTranscriptResponse: Decodable, Sendable {
+    struct Paragraph: Decodable, Identifiable, Sendable {
+        let speaker: String?
+        let startSec: Double
+        let endSec: Double
+        let text: String
+
+        var id: String {
+            "\(startSec)-\(endSec)-\(text)"
+        }
+    }
+
+    let fullText: String
+    let language: String?
+    let provider: String?
+    let paragraphs: [Paragraph]
+
+    var wordCount: Int {
+        fullText.split { $0.isWhitespace || $0.isNewline }.count
+    }
 }
 
 struct NoteTemplateSelectionRequest: Encodable, Sendable {
