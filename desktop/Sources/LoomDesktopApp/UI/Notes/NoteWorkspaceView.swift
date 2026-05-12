@@ -119,6 +119,8 @@ struct NoteWorkspaceView: View {
     @State private var enhanceStatus: EnhanceStatus = .idle
     @State private var enhanceFailureMessage: String? = nil
     @State private var enhanceFailureIsRetryable = true
+    @State private var transcriptRetryAvailable = false
+    @State private var transcriptRetrying = false
     @State private var pollEnhanceTask: Task<Void, Never>? = nil
 
     /// Persisted transcript from the server. v1 small win: this is
@@ -757,7 +759,13 @@ struct NoteWorkspaceView: View {
             .background(Capsule().fill(DSColor.Bg.surface))
             .overlay { Capsule().strokeBorder(DSColor.Border.subtle, lineWidth: 1) }
         case .failed:
-            if enhanceFailureIsRetryable {
+            if transcriptRetryAvailable {
+                Button(action: retryTranscript) {
+                    failedGenerateNotesPill
+                }
+                .buttonStyle(.plain)
+                .disabled(transcriptRetrying)
+            } else if enhanceFailureIsRetryable {
                 Button(action: startEnhance) {
                     failedGenerateNotesPill
                 }
@@ -797,9 +805,9 @@ struct NoteWorkspaceView: View {
 
     private var failedGenerateNotesPill: some View {
         HStack(spacing: 8) {
-            Image(systemName: enhanceFailureIsRetryable ? "exclamationmark.triangle.fill" : "clock")
+            Image(systemName: transcriptRetryAvailable ? "arrow.clockwise" : (enhanceFailureIsRetryable ? "exclamationmark.triangle.fill" : "clock"))
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(enhanceFailureIsRetryable ? DSColor.State.danger : DSColor.Text.secondary)
+                .foregroundStyle((enhanceFailureIsRetryable || transcriptRetryAvailable) ? DSColor.State.warning : DSColor.Text.secondary)
             Text(enhanceFailureMessage ?? "Try again")
                 .font(DSFont.Body.md())
                 .foregroundStyle(DSColor.Text.primary)
@@ -894,6 +902,11 @@ struct NoteWorkspaceView: View {
                 .font(DSFont.Body.md())
                 .foregroundStyle(DSColor.Text.primary)
                 .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else if transcript != nil {
+            Text("No speech was saved in this transcript. Use Retry transcript if the recording should contain speech.")
+                .font(DSFont.Body.md())
+                .foregroundStyle(DSColor.Text.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
             Text("Transcript will appear here after Deepgram finishes processing.")
@@ -1256,15 +1269,21 @@ struct NoteWorkspaceView: View {
                 enhanceFailureMessage = nil
                 enhanceFailureIsRetryable = true
             }
+            transcriptRetryAvailable = false
+            transcriptRetrying = false
             return
         }
 
         enhanceStatus = .failed
         enhanceFailureIsRetryable = false
+        transcriptRetryAvailable = false
         if status.mediaStatus == "failed" {
             enhanceFailureMessage = "Recover upload first"
         } else if status.mediaStatus == "uploading" || status.mediaStatus == "transcribing" {
             enhanceFailureMessage = "Waiting for transcript"
+        } else if status.canRetryTranscript == true {
+            transcriptRetryAvailable = true
+            enhanceFailureMessage = status.transcriptState == "empty" ? "Retry transcript" : "Prepare transcript"
         } else if (status.transcriptTextLength ?? 0) == 0 {
             enhanceFailureMessage = "No speech detected"
         } else {
@@ -1281,12 +1300,14 @@ struct NoteWorkspaceView: View {
             case .some("transcript_not_ready"):
                 enhanceFailureMessage = "Waiting for transcript"
                 enhanceFailureIsRetryable = false
+                transcriptRetryAvailable = false
                 showToast(message: "Transcript is still being prepared", tone: .warning)
                 return
             case .some("transcript_empty"):
-                enhanceFailureMessage = "No speech detected"
+                enhanceFailureMessage = "Retry transcript"
                 enhanceFailureIsRetryable = false
-                showToast(message: "No speech was detected in this recording", tone: .error)
+                transcriptRetryAvailable = true
+                showToast(message: "Transcript is empty. Try preparing it again.", tone: .warning)
                 return
             case .some("unknown_template"):
                 enhanceFailureMessage = "Choose a template"
@@ -1305,6 +1326,35 @@ struct NoteWorkspaceView: View {
 
         enhanceFailureMessage = "Try again"
         showToast(message: "Couldn't start AI run", tone: .error)
+    }
+
+    private func retryTranscript() {
+        guard case .reviewing(let recording) = target else { return }
+        guard let backend = viewModel.backendClient else { return }
+        guard !transcriptRetrying else { return }
+
+        pollEnhanceTask?.cancel()
+        transcriptRetrying = true
+        transcriptRetryAvailable = false
+        enhanceStatus = .failed
+        enhanceFailureIsRetryable = false
+        enhanceFailureMessage = "Preparing transcript"
+        transcript = nil
+        transcriptError = nil
+
+        Task { @MainActor in
+            do {
+                try await backend.retryNoteTranscript(mediaId: recording.id)
+                transcriptRetrying = false
+                enhanceFailureMessage = "Waiting for transcript"
+                showToast(message: "Transcript retry started")
+            } catch {
+                transcriptRetrying = false
+                transcriptRetryAvailable = true
+                enhanceFailureMessage = "Retry transcript"
+                showToast(message: "Couldn't retry transcript", tone: .error)
+            }
+        }
     }
 
     /// Kicks off a re-run of the AI title + summary pipeline against

@@ -247,6 +247,16 @@ actor BackendClient {
         try await get(path: "/api/notes/\(mediaId)/enhance")
     }
 
+    /// Re-enqueue Deepgram transcription for an audio note whose
+    /// transcript is missing or empty. Used for recovery, not normal
+    /// generate-notes flow.
+    func retryNoteTranscript(mediaId: String) async throws {
+        let _: EmptyResponse = try await post(
+            path: "/api/notes/\(mediaId)/transcript/retry",
+            body: EmptyRequest()
+        )
+    }
+
     func serverVersion() async throws -> ServerVersionResponse {
         try await get(path: "/api/health/version")
     }
@@ -758,6 +768,8 @@ struct EnhanceStatusResponse: Decodable, Sendable {
     let mediaStatus: String?
     let transcriptReady: Bool?
     let transcriptTextLength: Int?
+    let transcriptState: String?
+    let canRetryTranscript: Bool?
 }
 
 struct ObsidianSyncedRequest: Encodable, Sendable {

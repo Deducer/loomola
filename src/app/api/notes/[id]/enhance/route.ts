@@ -34,6 +34,13 @@ export async function GET(
 
   const aiOutput = await getAiOutputByMedia(data.media.id);
   const transcriptTextLength = data.transcript?.fullText.trim().length ?? 0;
+  const transcriptState = !data.transcript
+    ? "missing"
+    : transcriptTextLength > 0
+      ? "ready"
+      : "empty";
+  const audioSourceKey =
+    data.media.r2MixedKey ?? data.media.r2MicKey ?? data.media.r2SystemaudioKey;
   return NextResponse.json({
     titleSuggested: aiOutput?.titleSuggested ?? null,
     summary: aiOutput?.summary ?? null,
@@ -44,6 +51,8 @@ export async function GET(
     mediaStatus: data.media.status,
     transcriptReady: Boolean(data.transcript && transcriptTextLength > 0),
     transcriptTextLength,
+    transcriptState,
+    canRetryTranscript: transcriptState !== "ready" && Boolean(audioSourceKey),
   });
 }
 

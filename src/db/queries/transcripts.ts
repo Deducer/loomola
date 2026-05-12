@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { transcripts } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 
 export type Transcript = typeof transcripts.$inferSelect;
 
@@ -21,19 +21,42 @@ export async function insertTranscript(params: {
   fullText: string;
   wordTimestamps: WordTimestamp[];
 }): Promise<Transcript> {
-  const [row] = await db
-    .insert(transcripts)
-    .values({
-      mediaObjectId: params.mediaObjectId,
-      deepgramRequestId: params.deepgramRequestId,
-      provider: params.provider ?? "deepgram",
-      providerRequestId: params.providerRequestId ?? params.deepgramRequestId,
-      language: params.language,
-      fullText: params.fullText,
-      wordTimestamps: params.wordTimestamps,
-    })
-    .returning();
-  return row;
+  return db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select()
+      .from(transcripts)
+      .where(eq(transcripts.mediaObjectId, params.mediaObjectId))
+      .orderBy(desc(transcripts.createdAt))
+      .limit(1);
+
+    // Deepgram can occasionally deliver an empty callback. Never let
+    // a late empty retry clobber a transcript that already has text.
+    if (
+      existing &&
+      existing.fullText.trim().length > 0 &&
+      params.fullText.trim().length === 0
+    ) {
+      return existing;
+    }
+
+    await tx
+      .delete(transcripts)
+      .where(eq(transcripts.mediaObjectId, params.mediaObjectId));
+
+    const [row] = await tx
+      .insert(transcripts)
+      .values({
+        mediaObjectId: params.mediaObjectId,
+        deepgramRequestId: params.deepgramRequestId,
+        provider: params.provider ?? "deepgram",
+        providerRequestId: params.providerRequestId ?? params.deepgramRequestId,
+        language: params.language,
+        fullText: params.fullText,
+        wordTimestamps: params.wordTimestamps,
+      })
+      .returning();
+    return row;
+  });
 }
 
 export async function getTranscriptByRecording(
@@ -43,6 +66,7 @@ export async function getTranscriptByRecording(
     .select()
     .from(transcripts)
     .where(eq(transcripts.mediaObjectId, mediaObjectId))
+    .orderBy(desc(transcripts.createdAt))
     .limit(1);
   return row ?? null;
 }
