@@ -1,4 +1,10 @@
 import Foundation
+import OSLog
+
+private let audioNoteRecorderLog = Logger(
+    subsystem: "cloud.dissonance.loom.desktop",
+    category: "audio-note-recorder"
+)
 
 @MainActor
 final class AudioNoteRecorder {
@@ -198,6 +204,23 @@ final class AudioNoteRecorder {
             localFiles[.systemAudio] = try await systemAudioCapture.stop()
         }
 
+        for track in [TrackKind.mic, .systemAudio] {
+            guard let url = localFiles[track] else {
+                if session.tracks.contains(track) {
+                    audioNoteRecorderLog.error("missing selected local track: \(track.rawValue, privacy: .public)")
+                }
+                continue
+            }
+            let bytes = Self.fileSize(url)
+            audioNoteRecorderLog.notice("local track ready: \(track.rawValue, privacy: .public) bytes=\(bytes, privacy: .public) path=\(url.path, privacy: .public)")
+            if bytes < Self.minimumUsableTrackBytes {
+                if track == .mic {
+                    throw AudioNoteRecorderError.emptyMicrophoneTrack(bytes)
+                }
+                throw AudioNoteRecorderError.emptySystemAudioTrack(bytes)
+            }
+        }
+
         let uploader = MultipartUploadCoordinator(backend: backend)
         var completedTracks: [TrackKind: [CompletedPart]] = [:]
         for track in [TrackKind.mic, .systemAudio] {
@@ -308,6 +331,15 @@ final class AudioNoteRecorder {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
     }
+
+    private static let minimumUsableTrackBytes: Int64 = 4096
+
+    private static func fileSize(_ url: URL) -> Int64 {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let size = attrs[.size] as? NSNumber
+        else { return 0 }
+        return size.int64Value
+    }
 }
 
 enum AudioNoteRecorderError: LocalizedError {
@@ -319,6 +351,8 @@ enum AudioNoteRecorderError: LocalizedError {
     case systemAudioUnavailable
     case systemAudioDeviceRequired
     case noCompletedAudioTracks
+    case emptyMicrophoneTrack(Int64)
+    case emptySystemAudioTrack(Int64)
 
     var errorDescription: String? {
         switch self {
@@ -338,6 +372,10 @@ enum AudioNoteRecorderError: LocalizedError {
             return "Choose a system audio device in Settings, or switch system audio back to Apple capture."
         case .noCompletedAudioTracks:
             return "No audio was captured. Check microphone and Screen & System Audio permissions, then try again."
+        case .emptyMicrophoneTrack(let bytes):
+            return "Microphone recording was empty (\(bytes) bytes). Check the selected microphone and try again."
+        case .emptySystemAudioTrack(let bytes):
+            return "System audio recording was empty (\(bytes) bytes). Check Screen & System Audio permission and try again."
         }
     }
 }

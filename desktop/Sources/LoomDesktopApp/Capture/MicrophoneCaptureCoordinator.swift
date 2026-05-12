@@ -3,12 +3,11 @@ import CoreAudio
 import CoreMedia
 import Foundation
 
-/// Captures microphone audio. Audio-note recording uses AVCaptureSession
-/// because it coexists better with Zoom/Meet already owning the call audio
-/// stack. The video-compositor path still uses AVAudioEngine so it can feed
-/// CMSampleBuffers directly into the MP4 compositor. Voice processing is
-/// intentionally opt-in because macOS can route meeting playback through
-/// the voice-processing unit, which makes Zoom/Meet sound muted or ducked.
+/// Captures microphone audio. Audio-note recording uses AVAudioEngine's
+/// PCM buffer path so the exact samples that drive the live meter are also
+/// written to disk. Voice processing is intentionally opt-in because macOS
+/// can route meeting playback through the voice-processing unit, which makes
+/// Zoom/Meet sound muted or ducked.
 final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, @unchecked Sendable {
     var onLevel: ((Double) -> Void)?
 
@@ -50,11 +49,6 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
         outputURL: URL?,
         voiceProcessingEnabled: Bool = false
     ) throws {
-        if outputURL != nil, onSampleBuffer == nil, !voiceProcessingEnabled {
-            try startCaptureSession(deviceID: deviceID, outputURL: outputURL)
-            return
-        }
-
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
 
