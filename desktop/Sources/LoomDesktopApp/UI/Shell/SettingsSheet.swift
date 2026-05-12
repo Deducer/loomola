@@ -15,6 +15,9 @@ struct SettingsSheet: View {
     @State private var diagnosticsExpanded = false
     @State private var preferences = UserPreferencesDTO.defaults
     @State private var preferencesStatus: String?
+    @State private var serverVersion: ServerVersionResponse?
+    @State private var serverVersionStatus: String = "Not checked"
+    @State private var isCheckingServerVersion = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -50,6 +53,7 @@ struct SettingsSheet: View {
         }
         .task {
             await loadPreferences()
+            await checkServerVersion()
         }
     }
 
@@ -573,6 +577,7 @@ struct SettingsSheet: View {
         Section(title: "Diagnostics", subtitle: nil) {
             DisclosureGroup(isExpanded: $diagnosticsExpanded) {
                 VStack(alignment: .leading, spacing: DSSpacing.md) {
+                    versionHealthCard
                     HStack(spacing: DSSpacing.sm) {
                         SecondaryButton("Test video backend", icon: "checkmark.seal") {
                             viewModel.startAndAbortBackendHandshake()
@@ -596,6 +601,96 @@ struct SettingsSheet: View {
                     .font(DSFont.Body.sm())
                     .foregroundStyle(DSColor.Text.secondary)
             }
+        }
+    }
+
+    private var versionHealthCard: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.sm) {
+            HStack(alignment: .firstTextBaseline, spacing: DSSpacing.sm) {
+                Text("Version health")
+                    .font(DSFont.Body.lg())
+                    .foregroundStyle(DSColor.Text.primary)
+                versionPill
+                Spacer()
+                SecondaryButton(isCheckingServerVersion ? "Checking..." : "Check", icon: "arrow.clockwise") {
+                    Task { await checkServerVersion() }
+                }
+                .disabled(isCheckingServerVersion)
+            }
+            diagnosticRow(label: "Desktop", value: BuildStamp.commit)
+            diagnosticRow(label: "Server", value: serverVersion?.commit ?? "Unknown")
+            diagnosticRow(label: "API", value: BuildStamp.apiBaseURL)
+            if let buildTime = serverVersion?.buildTime {
+                diagnosticRow(label: "Server built", value: buildTime)
+            }
+            Text(serverVersionStatus)
+                .font(DSFont.Body.sm())
+                .foregroundStyle(versionStatusColor)
+        }
+        .padding(DSSpacing.md)
+        .background(DSColor.Bg.subtle, in: RoundedRectangle(cornerRadius: DSRadius.md))
+    }
+
+    private var versionPill: some View {
+        let (label, kind): (String, Pill.Kind) = {
+            guard let serverVersion else { return ("Unchecked", .warning) }
+            let serverCommit = BuildStamp.normalize(commit: serverVersion.commit)
+            if serverCommit == "unknown" || serverCommit.isEmpty {
+                return ("Unknown", .warning)
+            }
+            return serverCommit == BuildStamp.comparableCommit
+                ? ("Matched", .success)
+                : ("Mismatch", .warning)
+        }()
+        return Pill(label, kind: kind)
+    }
+
+    private var versionStatusColor: Color {
+        guard let serverVersion else { return DSColor.Text.tertiary }
+        let serverCommit = BuildStamp.normalize(commit: serverVersion.commit)
+        if serverCommit == "unknown" || serverCommit.isEmpty {
+            return DSColor.State.warning
+        }
+        return serverCommit == BuildStamp.comparableCommit
+            ? DSColor.State.success
+            : DSColor.State.warning
+    }
+
+    private func diagnosticRow(label: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: DSSpacing.sm) {
+            Text(label)
+                .font(DSFont.Body.sm())
+                .foregroundStyle(DSColor.Text.secondary)
+                .frame(width: 82, alignment: .leading)
+            Text(value)
+                .font(DSFont.Mono.body())
+                .foregroundStyle(DSColor.Text.primary)
+                .textSelection(.enabled)
+            Spacer()
+        }
+    }
+
+    @MainActor
+    private func checkServerVersion() async {
+        guard let backend = viewModel.backendClient else {
+            serverVersionStatus = "Sign in to check the server version."
+            return
+        }
+        isCheckingServerVersion = true
+        defer { isCheckingServerVersion = false }
+        do {
+            let version = try await backend.serverVersion()
+            serverVersion = version
+            let serverCommit = BuildStamp.normalize(commit: version.commit)
+            if serverCommit == "unknown" || serverCommit.isEmpty {
+                serverVersionStatus = "Server did not publish a commit. Deployment may need build metadata."
+            } else if serverCommit == BuildStamp.comparableCommit {
+                serverVersionStatus = "Desktop and server are on the same build."
+            } else {
+                serverVersionStatus = "Desktop is \(BuildStamp.comparableCommit); server is \(serverCommit). Reinstall or wait for deploy if you just pushed."
+            }
+        } catch {
+            serverVersionStatus = "Version check failed: \(error.localizedDescription)"
         }
     }
 }

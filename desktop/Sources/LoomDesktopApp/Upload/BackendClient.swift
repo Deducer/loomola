@@ -243,6 +243,10 @@ actor BackendClient {
         try await get(path: "/api/notes/\(mediaId)/enhance")
     }
 
+    func serverVersion() async throws -> ServerVersionResponse {
+        try await get(path: "/api/health/version")
+    }
+
     private func inferContentType(for url: URL) -> String {
         switch url.pathExtension.lowercased() {
         case "png": return "image/png"
@@ -551,6 +555,13 @@ struct CreateFolderResponse: Decodable, Sendable {
 
 struct BulkDeleteRequest: Encodable, Sendable {
     let ids: [String]
+}
+
+struct ServerVersionResponse: Decodable, Equatable, Sendable {
+    let app: String
+    let commit: String
+    let buildTime: String?
+    let environment: String?
 }
 
 struct NoteBodyRequest: Encodable, Sendable {

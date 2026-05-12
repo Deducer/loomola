@@ -73,7 +73,7 @@ struct RecentStrip: View {
                     .help("Show all")
                 }
                 Spacer()
-                if captureMode == .audio && !selectedIds.isEmpty {
+                if !selectedIds.isEmpty {
                     bulkHeaderActions
                 } else if !filteredItems.isEmpty && captureMode == .video {
                     Text("View all")
@@ -111,7 +111,40 @@ struct RecentStrip: View {
     private var videoGrid: some View {
         HStack(alignment: .top, spacing: DSSpacing.lg) {
             ForEach(filteredItems.prefix(3)) { recording in
-                RecentCard(recording: recording) { open(recording: recording) }
+                RecentCard(
+                    recording: recording,
+                    folders: service.folders,
+                    isSelected: selectedIds.contains(recording.id),
+                    selectionActive: !selectedIds.isEmpty,
+                    onOpen: { open(recording: recording) },
+                    onToggleSelected: { toggleSelected(recording.id) },
+                    onAssignFolder: { newFolderId in
+                        Task {
+                            await service.assignFolder(
+                                recordingId: recording.id,
+                                folderId: newFolderId
+                            )
+                        }
+                    },
+                    onCreateFolder: { name in
+                        do {
+                            let folder = try await service.createFolder(name: name)
+                            await service.assignFolder(
+                                recordingId: recording.id,
+                                folderId: folder.id
+                            )
+                            return folder
+                        } catch {
+                            return nil
+                        }
+                    },
+                    onDelete: {
+                        Task {
+                            await service.bulkDelete(ids: [recording.id])
+                        }
+                    },
+                    onCopyLink: { copyShareLink(recording) }
+                )
             }
             Spacer()
         }
@@ -258,7 +291,7 @@ struct RecentStrip: View {
                 .foregroundStyle(DSColor.State.danger)
             }
             .buttonStyle(.plain)
-            .alert("Delete \(selectedIds.count) note\(selectedIds.count == 1 ? "" : "s")?", isPresented: $showDeleteConfirm) {
+            .alert("Delete \(selectedIds.count) \(selectedKindName)\(selectedIds.count == 1 ? "" : "s")?", isPresented: $showDeleteConfirm) {
                 Button("Cancel", role: .cancel) {}
                 Button("Delete", role: .destructive) {
                     let ids = selectedIds
@@ -366,6 +399,13 @@ struct RecentStrip: View {
         }
     }
 
+    private var selectedKindName: String {
+        switch captureMode {
+        case .video: return "recording"
+        case .audio: return "note"
+        }
+    }
+
     private func open(recording: RecentRecording) {
         switch recording.kind {
         case .audio:
@@ -387,5 +427,14 @@ struct RecentStrip: View {
         if let url = URL(string: "https://loom.dissonance.cloud") {
             NSWorkspace.shared.open(url)
         }
+    }
+
+    private func copyShareLink(_ recording: RecentRecording) {
+        guard let url = URL(string: "https://loom.dissonance.cloud/v/\(recording.slug)") else {
+            return
+        }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(url.absoluteString, forType: .string)
     }
 }

@@ -9,6 +9,11 @@ enum BuildStamp {
     static let commit: String = readPlistValue(key: "LOOM_BUILD_COMMIT") ?? "dev"
     static let date: String = readPlistValue(key: "LOOM_BUILD_DATE") ?? "unknown"
     static let appVersion: String = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0"
+    static let apiBaseURL: String = readPlistValue(key: "LOOM_API_BASE_URL") ?? "unknown"
+
+    static var comparableCommit: String {
+        normalize(commit: commit)
+    }
 
     /// Compact "Loomola 0.1.0 · 88c9035 · 2026-05-05" for the
     /// Settings sheet footer. Drops the time portion of the build
@@ -30,5 +35,14 @@ enum BuildStamp {
               let dict = plist as? [String: String]
         else { return nil }
         return dict[key]
+    }
+
+    static func normalize(commit: String) -> String {
+        let trimmed = commit.trimmingCharacters(in: .whitespacesAndNewlines)
+        let withoutDirty = trimmed.replacingOccurrences(of: "-dirty", with: "")
+        if withoutDirty.count >= 7 {
+            return String(withoutDirty.prefix(7))
+        }
+        return withoutDirty
     }
 }
