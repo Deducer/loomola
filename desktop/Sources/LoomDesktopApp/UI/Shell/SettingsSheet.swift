@@ -18,6 +18,8 @@ struct SettingsSheet: View {
     @State private var serverVersion: ServerVersionResponse?
     @State private var serverVersionStatus: String = "Not checked"
     @State private var isCheckingServerVersion = false
+    @State private var sourceRefreshStatus: String?
+    @State private var isRefreshingSources = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -269,10 +271,20 @@ struct SettingsSheet: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 HStack {
-                    Spacer()
-                    SecondaryButton("Refresh sources", icon: "arrow.clockwise") {
-                        viewModel.refreshCaptureSources()
+                    if let sourceRefreshStatus {
+                        Text(sourceRefreshStatus)
+                            .font(DSFont.Body.sm())
+                            .foregroundStyle(DSColor.Text.tertiary)
+                            .lineLimit(2)
                     }
+                    Spacer()
+                    SecondaryButton(
+                        isRefreshingSources ? "Refreshing..." : "Refresh sources",
+                        icon: "arrow.clockwise"
+                    ) {
+                        refreshSourcesFromSettings()
+                    }
+                    .disabled(isRefreshingSources)
                 }
             }
         }
@@ -463,6 +475,17 @@ struct SettingsSheet: View {
 
     private var retentionSelection: String {
         preferences.transcriptRetentionDays.map(String.init) ?? "forever"
+    }
+
+    private func refreshSourcesFromSettings() {
+        isRefreshingSources = true
+        sourceRefreshStatus = "Refreshing..."
+        viewModel.refreshCaptureSources()
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            isRefreshingSources = false
+            sourceRefreshStatus = "Found \(viewModel.captureSources.cameras.count) camera(s) and \(viewModel.captureSources.microphones.count) audio device(s)."
+        }
     }
 
     private func loadPreferences() async {
