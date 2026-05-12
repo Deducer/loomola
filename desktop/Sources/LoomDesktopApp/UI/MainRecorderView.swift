@@ -22,6 +22,7 @@ struct MainRecorderView: View {
     @State private var folderFilterId: String? = nil
     @State private var hostWindow: NSWindow?
     @State private var windowIsFullScreen = false
+    @State private var windowIsExpanded = false
     /// Granola-shape one-window note workspace. When non-nil, the
     /// main window swaps its content for the workspace UI; nil
     /// shows the home shell (sidebar + capture / Recent strip).
@@ -72,7 +73,7 @@ struct MainRecorderView: View {
             WindowAccessor { window in
                 hostWindow = window
                 WindowChrome.applyTallTitleBar(to: window)
-                updateWindowFullScreenState(window)
+                updateWindowLayoutState(window)
                 updateWindowCloseState(window)
             }
         )
@@ -95,11 +96,15 @@ struct MainRecorderView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { notification in
             guard notification.object as? NSWindow === hostWindow else { return }
-            windowIsFullScreen = true
+            updateWindowLayoutState()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { notification in
             guard notification.object as? NSWindow === hostWindow else { return }
-            windowIsFullScreen = false
+            updateWindowLayoutState()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResizeNotification)) { notification in
+            guard notification.object as? NSWindow === hostWindow else { return }
+            updateWindowLayoutState()
         }
         .task {
             await viewModel.restoreSession()
@@ -184,6 +189,10 @@ struct MainRecorderView: View {
 
     private var homeChromeYOffset: CGFloat {
         windowIsFullScreen ? -8 : -48
+    }
+
+    private var homeContentTopPadding: CGFloat {
+        windowIsExpanded ? DSSpacing.xxl : DSSpacing.lg
     }
 
     private var titleBarSidebarButton: some View {
@@ -289,6 +298,7 @@ struct MainRecorderView: View {
                 recentService: viewModel.recentRecordings,
                 captureMode: $captureMode,
                 folderFilterId: $folderFilterId,
+                topContentPadding: homeContentTopPadding,
                 onOpenLiveAudioNote: { noteTarget = .recording },
                 onOpenAudioNote: { recording in
                     noteTarget = .reviewing(recording: recording)
@@ -323,9 +333,20 @@ struct MainRecorderView: View {
         window?.standardWindowButton(.closeButton)?.isEnabled = (viewModel.activeRecordingKind == nil)
     }
 
-    private func updateWindowFullScreenState(_ window: NSWindow? = nil) {
+    private func updateWindowLayoutState(_ window: NSWindow? = nil) {
         let window = window ?? hostWindow
         windowIsFullScreen = window?.styleMask.contains(.fullScreen) ?? false
+
+        guard let window, let screen = window.screen else {
+            windowIsExpanded = false
+            return
+        }
+
+        let visibleFrame = screen.visibleFrame
+        windowIsExpanded =
+            windowIsFullScreen ||
+            window.frame.width >= visibleFrame.width * 0.9 ||
+            window.frame.height >= visibleFrame.height * 0.86
     }
 
     private func updateMeetingPromptWindow() {

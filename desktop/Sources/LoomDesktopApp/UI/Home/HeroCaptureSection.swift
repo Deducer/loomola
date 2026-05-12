@@ -9,7 +9,7 @@ struct HeroCaptureSection: View {
     @Binding var captureMode: CaptureMode
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DSSpacing.lg) {
+        VStack(alignment: .leading, spacing: DSSpacing.md) {
             modeSelector
             actions
             divider

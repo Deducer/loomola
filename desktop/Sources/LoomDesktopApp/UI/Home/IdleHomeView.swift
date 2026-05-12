@@ -7,6 +7,7 @@ struct IdleHomeView: View {
     @ObservedObject var recentService: RecentRecordingsService
     @Binding var captureMode: CaptureMode
     @Binding var folderFilterId: String?
+    let topContentPadding: CGFloat
     let onOpenLiveAudioNote: () -> Void
     let onOpenAudioNote: (RecentRecording) -> Void
 
@@ -21,7 +22,7 @@ struct IdleHomeView: View {
                 Text("Capture")
                     .font(DSFont.Display.xl())
                     .foregroundStyle(DSColor.Text.primary)
-                    .padding(.top, DSSpacing.lg)
+                    .padding(.top, topContentPadding)
 
                 if viewModel.activeRecordingKind == .audio {
                     activeAudioRecordingCard
@@ -54,7 +55,7 @@ struct IdleHomeView: View {
             HeroCaptureSection(viewModel: viewModel, captureMode: $captureMode)
         }
         .padding(.horizontal, DSSpacing.xl)
-        .padding(.vertical, DSSpacing.xl)
+        .padding(.vertical, DSSpacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(DSColor.Bg.surface, in: RoundedRectangle(cornerRadius: DSRadius.lg))
         .dsShadow(.subtle)
