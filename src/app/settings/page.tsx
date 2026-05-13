@@ -27,13 +27,11 @@ export default async function SettingsPage() {
         preferences={{
           transcriptionLanguage: preferences.transcriptionLanguage,
           summaryLanguage: preferences.summaryLanguage,
-          transcriptRetentionDays: preferences.transcriptRetentionDays,
           meetingDetectionEnabled: preferences.meetingDetectionEnabled,
           floatingRecordingIndicatorEnabled:
             preferences.floatingRecordingIndicatorEnabled,
           notifyFirstView: preferences.notifyFirstView,
           notifyComments: preferences.notifyComments,
-          notifyMarketing: preferences.notifyMarketing,
         }}
       />
     </div>

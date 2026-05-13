@@ -5,10 +5,7 @@ import Link from "next/link";
 import {
   Bell,
   BookOpen,
-  CalendarDays,
   Cloud,
-  Database,
-  Globe,
   MonitorDot,
   UserRound,
 } from "lucide-react";
@@ -19,7 +16,6 @@ import { ThemeToggle } from "@/components/ui/theme-toggle";
 import {
   SUMMARY_LANGUAGE_OPTIONS,
   TRANSCRIPTION_LANGUAGE_OPTIONS,
-  TRANSCRIPT_RETENTION_OPTIONS,
   type SummaryLanguage,
   type TranscriptionLanguage,
   type UserPreferencesPatch,
@@ -29,12 +25,10 @@ import { cn } from "@/lib/cn";
 type PreferencesView = {
   transcriptionLanguage: string;
   summaryLanguage: string;
-  transcriptRetentionDays: number | null;
   meetingDetectionEnabled: boolean;
   floatingRecordingIndicatorEnabled: boolean;
   notifyFirstView: boolean;
   notifyComments: boolean;
-  notifyMarketing: boolean;
 };
 
 type Props = {
@@ -45,9 +39,8 @@ type Props = {
 const sections = [
   { id: "general", label: "General", icon: MonitorDot },
   { id: "language", label: "Language", icon: BookOpen },
-  { id: "calendar", label: "Calendar", icon: CalendarDays },
   { id: "notifications", label: "Notifications", icon: Bell },
-  { id: "connectors", label: "Connectors", icon: Cloud },
+  { id: "import", label: "Import", icon: Cloud },
   { id: "profile", label: "Profile", icon: UserRound },
 ] as const;
 
@@ -73,13 +66,11 @@ export function SettingsPreferencesClient({ email, preferences }: Props) {
         setPrefs({
           transcriptionLanguage: data.preferences.transcriptionLanguage,
           summaryLanguage: data.preferences.summaryLanguage,
-          transcriptRetentionDays: data.preferences.transcriptRetentionDays,
           meetingDetectionEnabled: data.preferences.meetingDetectionEnabled,
           floatingRecordingIndicatorEnabled:
             data.preferences.floatingRecordingIndicatorEnabled,
           notifyFirstView: data.preferences.notifyFirstView,
           notifyComments: data.preferences.notifyComments,
-          notifyMarketing: data.preferences.notifyMarketing,
         });
       } catch {
         setPrefs(previous);
@@ -164,37 +155,6 @@ export function SettingsPreferencesClient({ email, preferences }: Props) {
             }
             options={SUMMARY_LANGUAGE_OPTIONS}
           />
-          <SelectRow
-            title="Transcript retention"
-            description="Saved as the account policy; cleanup enforcement is next."
-            value={String(prefs.transcriptRetentionDays ?? "forever")}
-            disabled={disabled}
-            onChange={(value) =>
-              patch({
-                transcriptRetentionDays:
-                  value === "forever" ? null : (Number(value) as 30 | 90 | 365),
-              })
-            }
-            options={TRANSCRIPT_RETENTION_OPTIONS.map((option) => ({
-              value: option.value === null ? "forever" : String(option.value),
-              label: option.label,
-            }))}
-          />
-        </SettingsSection>
-
-        <SettingsSection id="calendar" title="Calendar">
-          <ConnectorRow
-            title="Google Calendar"
-            description="Not connected"
-            action="Connect"
-            disabled
-          />
-          <ConnectorRow
-            title="Outlook Calendar"
-            description="Not connected"
-            action="Connect"
-            disabled
-          />
         </SettingsSection>
 
         <SettingsSection id="notifications" title="Notifications">
@@ -212,29 +172,9 @@ export function SettingsPreferencesClient({ email, preferences }: Props) {
             disabled={disabled}
             onChange={(checked) => patch({ notifyComments: checked })}
           />
-          <ToggleRow
-            title="Product updates"
-            description="Reserved for occasional product notes."
-            checked={prefs.notifyMarketing}
-            disabled={disabled}
-            onChange={(checked) => patch({ notifyMarketing: checked })}
-          />
         </SettingsSection>
 
-        <SettingsSection id="connectors" title="Connectors">
-          <ConnectorRow
-            title="Obsidian"
-            description="Desktop sync is configured in the macOS app."
-            action="Open desktop"
-            disabled
-          />
-          <ConnectorRow
-            title="Chrome bridge"
-            description="Installed from the desktop app for meeting detection."
-            action="Desktop only"
-            disabled
-            icon={<Globe className="h-4 w-4" />}
-          />
+        <SettingsSection id="import" title="Import">
           <ConnectorRow
             title="Granola import"
             description="Bring notes, transcripts, people, and lists into Loomola."
@@ -254,13 +194,6 @@ export function SettingsPreferencesClient({ email, preferences }: Props) {
                 </Button>
               </form>
             }
-          />
-          <ConnectorRow
-            title="Workspace"
-            description="Single-user workspace"
-            action="Team settings"
-            disabled
-            icon={<Database className="h-4 w-4" />}
           />
         </SettingsSection>
       </div>
@@ -392,15 +325,11 @@ function ConnectorRow({
   description,
   action,
   href,
-  disabled = false,
-  icon,
 }: {
   title: string;
   description: string;
   action: string;
   href?: string;
-  disabled?: boolean;
-  icon?: React.ReactNode;
 }) {
   const control = href ? (
     <Link href={href}>
@@ -409,7 +338,7 @@ function ConnectorRow({
       </Button>
     </Link>
   ) : (
-    <Button variant="outline" size="sm" disabled={disabled}>
+    <Button variant="outline" size="sm">
       {action}
     </Button>
   );
@@ -418,12 +347,7 @@ function ConnectorRow({
     <Row
       title={title}
       description={description}
-      control={
-        <div className="flex items-center gap-2">
-          {icon}
-          {control}
-        </div>
-      }
+      control={control}
     />
   );
 }

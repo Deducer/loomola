@@ -397,9 +397,8 @@ struct NoteWorkspaceView: View {
             if case .reviewing = target {
                 menuItem(label: "Open on web", icon: "arrow.up.right.square", tint: DSColor.Text.primary) {
                     showRowMenu = false
-                    if case .reviewing(let recording) = target,
-                       let url = URL(string: "https://loom.dissonance.cloud/notes/\(recording.slug)") {
-                        NSWorkspace.shared.open(url)
+                    if case .reviewing(let recording) = target {
+                        viewModel.openWebNote(slug: recording.slug)
                     }
                 }
             }

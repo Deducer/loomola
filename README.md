@@ -11,7 +11,7 @@ Self-hosted screen recording + AI meeting notes. Open-source alternative to Loom
 Two products in one self-hosted codebase, gated by a single env flag (`ENABLE_GRANOLA`):
 
 - **Screen recording (Loom-shape).** Screen + camera + mic + system audio, captured in the browser via the [companion Chrome extension](extension/). Branded share pages with comments, view tracking, AI-generated titles, summaries, chapters, action items, and hover-scrub thumbnails.
-- **AI meeting notes (Granola-shape).** Real-time audio transcription from a native macOS desktop app. Live notepad while the meeting runs. AI-enhanced summary on stop. Attendee tracking, folder organization, speaker attribution.
+- **AI meeting notes (Granola-shape).** Real-time audio transcription from a native macOS desktop app. Live notepad while the meeting runs. Manual AI notes generation when the user is ready. Attendee tracking, folder organization, speaker attribution.
 
 Both surfaces use the same Postgres / R2 / Deepgram / Claude pipeline. Same `media_objects` table with a `type` column, so adding a third product (something like MacWhisper, say) reuses everything.
 
@@ -94,6 +94,8 @@ A pre-recorded setup walkthrough covering Cloudflare R2, Deepgram, Doppler, Cool
 - **Migration tools**: Granola to Loomola CLI (`migrate/`) using the official Granola Business API. Imports notes, transcripts, summaries, attendees, folders, speaker attribution. Loom import is the next major build.
 
 See [`ROADMAP.md`](ROADMAP.md) for the full status table.
+
+For user-facing release notes, see [`CHANGELOG.md`](CHANGELOG.md).
 
 ## What's NOT here yet
 

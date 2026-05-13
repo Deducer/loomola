@@ -260,9 +260,7 @@ struct MainRecorderView: View {
     ///   - .video → stopLocalRecordingAndUpload
     ///   - .audio → no-op (audio note has its own start/stop UX)
     private func openDashboard() {
-        if let url = URL(string: "https://loom.dissonance.cloud") {
-            NSWorkspace.shared.open(url)
-        }
+        viewModel.openLibrary()
         showAccountMenu = false
     }
 

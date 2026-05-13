@@ -141,7 +141,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openDashboard() {
-        NSWorkspace.shared.open(URL(string: "https://loom.dissonance.cloud")!)
+        let url = (try? DesktopAuthConfiguration.fromEnvironment().apiBaseURL)
+            ?? URL(string: "https://loom.dissonance.cloud")!
+        NSWorkspace.shared.open(url)
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

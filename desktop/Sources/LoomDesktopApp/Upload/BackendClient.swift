@@ -740,63 +740,46 @@ struct UserPreferencesResponse: Decodable, Sendable {
 struct UserPreferencesDTO: Decodable, Equatable, Sendable {
     var transcriptionLanguage: String
     var summaryLanguage: String
-    var transcriptRetentionDays: Int?
     var meetingDetectionEnabled: Bool
     var floatingRecordingIndicatorEnabled: Bool
     var notifyFirstView: Bool
     var notifyComments: Bool
-    var notifyMarketing: Bool
 
     static let defaults = UserPreferencesDTO(
         transcriptionLanguage: "en",
         summaryLanguage: "same-as-transcript",
-        transcriptRetentionDays: nil,
         meetingDetectionEnabled: true,
         floatingRecordingIndicatorEnabled: true,
         notifyFirstView: true,
-        notifyComments: true,
-        notifyMarketing: false
+        notifyComments: true
     )
 }
 
 struct UpdateUserPreferencesRequest: Encodable, Sendable {
     var transcriptionLanguage: String?
     var summaryLanguage: String?
-    var transcriptRetentionDays: Int?
-    var encodeTranscriptRetentionDays = false
     var meetingDetectionEnabled: Bool?
     var floatingRecordingIndicatorEnabled: Bool?
     var notifyFirstView: Bool?
     var notifyComments: Bool?
-    var notifyMarketing: Bool?
 
     enum CodingKeys: String, CodingKey {
         case transcriptionLanguage
         case summaryLanguage
-        case transcriptRetentionDays
         case meetingDetectionEnabled
         case floatingRecordingIndicatorEnabled
         case notifyFirstView
         case notifyComments
-        case notifyMarketing
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encodeIfPresent(transcriptionLanguage, forKey: .transcriptionLanguage)
         try container.encodeIfPresent(summaryLanguage, forKey: .summaryLanguage)
-        if encodeTranscriptRetentionDays {
-            if let transcriptRetentionDays {
-                try container.encode(transcriptRetentionDays, forKey: .transcriptRetentionDays)
-            } else {
-                try container.encodeNil(forKey: .transcriptRetentionDays)
-            }
-        }
         try container.encodeIfPresent(meetingDetectionEnabled, forKey: .meetingDetectionEnabled)
         try container.encodeIfPresent(floatingRecordingIndicatorEnabled, forKey: .floatingRecordingIndicatorEnabled)
         try container.encodeIfPresent(notifyFirstView, forKey: .notifyFirstView)
         try container.encodeIfPresent(notifyComments, forKey: .notifyComments)
-        try container.encodeIfPresent(notifyMarketing, forKey: .notifyMarketing)
     }
 }
 

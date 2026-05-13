@@ -471,6 +471,50 @@ final class RecorderViewModel: ObservableObject {
             : "Floating recording indicator disabled."
     }
 
+    func applySyncedUserPreferences(_ preferences: UserPreferencesDTO) {
+        meetingDetectionEnabled = preferences.meetingDetectionEnabled
+        UserDefaults.standard.set(
+            preferences.meetingDetectionEnabled,
+            forKey: "loomola.meetingDetectionEnabled"
+        )
+        if preferences.meetingDetectionEnabled {
+            if accessToken != nil {
+                startMeetingWatch()
+            }
+        } else {
+            meetingWatchTask?.cancel()
+            meetingWatchTask = nil
+            applyMeetingContext(nil)
+        }
+
+        floatingRecordingIndicatorEnabled = preferences.floatingRecordingIndicatorEnabled
+        UserDefaults.standard.set(
+            preferences.floatingRecordingIndicatorEnabled,
+            forKey: "loomola.floatingRecordingIndicatorEnabled"
+        )
+    }
+
+    func refreshUserPreferencesFromBackend(showStatus: Bool = false) {
+        guard let backendClient else { return }
+        Task { [weak self] in
+            do {
+                let response = try await backendClient.getUserPreferences()
+                await MainActor.run {
+                    self?.applySyncedUserPreferences(response.preferences)
+                    if showStatus {
+                        self?.statusMessage = "Preferences synced."
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    if showStatus {
+                        self?.statusMessage = "Preferences sync failed: \(error.localizedDescription)"
+                    }
+                }
+            }
+        }
+    }
+
     func setLiveTranscriptionEnabled(_ enabled: Bool) {
         guard liveTranscriptionEnabled != enabled else { return }
         liveTranscriptionEnabled = enabled
@@ -1645,14 +1689,30 @@ final class RecorderViewModel: ObservableObject {
         if meetingDetectionEnabled {
             startMeetingWatch()
         }
+        refreshUserPreferencesFromBackend()
     }
 
     func openActiveAudioNote() {
-        guard let configuration else { return }
         let url = activeAudioRecordingSlug
-            .map { configuration.apiBaseURL.appending(path: "notes").appending(path: $0) }
-            ?? configuration.apiBaseURL
+            .map { webURL(pathComponents: ["notes", $0]) }
+            ?? webURL()
         NSWorkspace.shared.open(url)
+    }
+
+    func openLibrary() {
+        NSWorkspace.shared.open(webURL())
+    }
+
+    func openWebNote(slug: String) {
+        NSWorkspace.shared.open(webURL(pathComponents: ["notes", slug]))
+    }
+
+    private func webURL(pathComponents: [String] = []) -> URL {
+        var url = configuration?.apiBaseURL ?? URL(string: "https://loom.dissonance.cloud")!
+        for component in pathComponents {
+            url = url.appending(path: component)
+        }
+        return url
     }
 
     private func recordAudioLevel(_ level: Double) {

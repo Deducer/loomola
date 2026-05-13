@@ -148,27 +148,6 @@ struct SettingsSheet: View {
                         }
                     )
                 )
-                FieldPicker(
-                    label: "Transcript retention",
-                    placeholder: "Policy saved; cleanup next",
-                    icon: "archivebox",
-                    options: transcriptRetentionOptions,
-                    selection: Binding(
-                        get: { retentionSelection },
-                        set: { value in
-                            guard let value else { return }
-                            preferences.transcriptRetentionDays = value == "forever"
-                                ? nil
-                                : Int(value)
-                            savePreferences(
-                                UpdateUserPreferencesRequest(
-                                    transcriptRetentionDays: preferences.transcriptRetentionDays,
-                                    encodeTranscriptRetentionDays: true
-                                )
-                            )
-                        }
-                    )
-                )
                 if let preferencesStatus {
                     Text(preferencesStatus)
                         .font(DSFont.Body.sm())
@@ -203,19 +182,6 @@ struct SettingsSheet: View {
                             preferences.notifyComments = enabled
                             savePreferences(
                                 UpdateUserPreferencesRequest(notifyComments: enabled)
-                            )
-                        }
-                    )
-                )
-                settingsToggleRow(
-                    title: "Product updates",
-                    subtitle: "Reserved for occasional Loomola product notes.",
-                    isOn: Binding(
-                        get: { preferences.notifyMarketing },
-                        set: { enabled in
-                            preferences.notifyMarketing = enabled
-                            savePreferences(
-                                UpdateUserPreferencesRequest(notifyMarketing: enabled)
                             )
                         }
                     )
@@ -478,23 +444,10 @@ struct SettingsSheet: View {
         ]
     }
 
-    private var transcriptRetentionOptions: [FieldPicker<String>.Option<String>] {
-        [
-            .init(id: "forever", title: "Forever"),
-            .init(id: "30", title: "30 days"),
-            .init(id: "90", title: "90 days"),
-            .init(id: "365", title: "1 year")
-        ]
-    }
-
     private var systemAudioCaptureOptions: [FieldPicker<SystemAudioCaptureMode>.Option<SystemAudioCaptureMode>] {
         RecorderViewModel.systemAudioCaptureModesForSettings.map {
             .init(id: $0, title: "\($0.title) · \($0.detail)")
         }
-    }
-
-    private var retentionSelection: String {
-        preferences.transcriptRetentionDays.map(String.init) ?? "forever"
     }
 
     private func refreshSourcesFromSettings() {
@@ -513,10 +466,7 @@ struct SettingsSheet: View {
         do {
             let response = try await backend.getUserPreferences()
             preferences = response.preferences
-            viewModel.setMeetingDetectionEnabled(response.preferences.meetingDetectionEnabled)
-            viewModel.setFloatingRecordingIndicatorEnabled(
-                response.preferences.floatingRecordingIndicatorEnabled
-            )
+            viewModel.applySyncedUserPreferences(response.preferences)
             preferencesStatus = nil
         } catch {
             preferencesStatus = "Preferences unavailable: \(error.localizedDescription)"
@@ -558,9 +508,7 @@ struct SettingsSheet: View {
                 }
                 HStack(spacing: DSSpacing.sm) {
                     SecondaryButton("Open library", icon: "rectangle.stack") {
-                        if let url = URL(string: "https://loom.dissonance.cloud") {
-                            NSWorkspace.shared.open(url)
-                        }
+                        viewModel.openLibrary()
                     }
                     SecondaryButton("Sign out", icon: "rectangle.portrait.and.arrow.right") {
                         onDismiss()
@@ -609,9 +557,7 @@ struct SettingsSheet: View {
                 if let rescuedSlug = orphan.rescuedSlug {
                     Pill("Rescued", kind: .success)
                     SecondaryButton("Open", icon: "arrow.up.right.square") {
-                        if let url = URL(string: "https://loom.dissonance.cloud/notes/\(rescuedSlug)") {
-                            NSWorkspace.shared.open(url)
-                        }
+                        viewModel.openWebNote(slug: rescuedSlug)
                     }
                 }
             }

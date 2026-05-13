@@ -140,12 +140,13 @@ The runnable dev app can currently test:
 
 - Email/password sign-in to Supabase.
 - Saved session restore from the macOS Keychain.
-- `Test Backend`: creates a desktop-shaped `media_objects` upload row, then aborts it.
-- `Test Audio Backend`: creates a Granola audio upload row with mic + system-audio tracks, then aborts it.
+- `Test video backend`: creates a desktop-shaped `media_objects` upload row, then aborts it.
+- `Test audio backend`: creates a Granola audio upload row with mic + system-audio tracks, then aborts it.
 - `Refresh Sources`: lists displays, windows, cameras, and microphones.
 - `Start Recording`: records the first display to a local MP4 on macOS 15+, then `Stop` uploads it through the existing backend as the composite track.
-- `Start Audio Note`: records selected mic/system audio to `.m4a`, then `Stop Audio` uploads it through the Granola audio backend.
-- `Discard Audio`: stops the active audio note, aborts the backend row, and deletes local temp files.
+- `Start audio note`: records selected mic/system audio to `.m4a`, streams live transcription, then `Stop` uploads it through the Granola audio backend.
+- `Discard recording`: stops the active audio note, aborts the backend row, and deletes local temp files.
+- `Generate notes`: manually spends AI credits after the user has finished writing/editing manual notes.
 - Browser meeting detection: after installing the native messaging host, Meet/Teams/Zoom web calls can trigger the same consent-first "Meeting ready" prompt.
 - Menu bar `Show Bubble Overlay`: shows a draggable circular camera bubble.
 
