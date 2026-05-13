@@ -337,22 +337,20 @@ struct NoteWorkspaceView: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            // Hover-only ellipsis. Sits in the top-right corner of
-            // the workspace body, ~12pt from each edge — same
-            // position the workspace's internal title-bar HStack
-            // had before the Stage-8 toolbar-items refactor.
-            if workspaceHovering || showRowMenu {
-                GhostEllipsisButton {
-                    showRowMenu.toggle()
-                }
-                .popover(isPresented: $showRowMenu, arrowEdge: .top) {
-                    rowMenu
-                }
-                .padding(.top, noteChromeTopPadding)
-                .padding(.trailing, DSSpacing.lg)
-                .offset(y: chromeYOffset)
-                .transition(.opacity)
+            // Keep the hit target mounted even when the dots are
+            // visually quiet. The lifted titlebar area is outside
+            // parts of the workspace hover region, so conditionally
+            // removing this view makes the dots vanish under the
+            // cursor before SwiftUI can enter the button hover state.
+            GhostEllipsisButton(isVisible: workspaceHovering || showRowMenu) {
+                showRowMenu.toggle()
             }
+            .popover(isPresented: $showRowMenu, arrowEdge: .top) {
+                rowMenu
+            }
+            .padding(.top, noteChromeTopPadding)
+            .padding(.trailing, DSSpacing.lg)
+            .offset(y: chromeYOffset)
         }
         .animation(LoomolaMotion.quick, value: isDropTargeted)
         .animation(LoomolaMotion.medium, value: toastMessage)
@@ -2230,22 +2228,26 @@ private struct HomeBackButton: View {
 /// Granola-shape ⋯ — bare three dots that gain a circle bg on
 /// hover. Not a "button" until you hover it.
 private struct GhostEllipsisButton: View {
+    let isVisible: Bool
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
-        Image(systemName: "ellipsis")
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(hovering ? DSColor.Text.primary.opacity(0.72) : DSColor.Text.tertiary)
-            .frame(width: 32, height: 32)
-            .background(
+        let showing = isVisible || hovering
+
+        ZStack {
+            Circle()
+                .fill(hovering ? DSColor.Bg.subtle.opacity(0.94) : Color.clear)
+            if hovering {
                 Circle()
-                    .fill(hovering ? DSColor.Bg.subtle.opacity(0.94) : Color.clear)
-            )
-            .overlay {
-                Circle()
-                    .strokeBorder(hovering ? DSColor.Border.subtle.opacity(0.55) : Color.clear, lineWidth: 1)
+                    .strokeBorder(DSColor.Border.subtle.opacity(0.55), lineWidth: 1)
             }
+            Image(systemName: "ellipsis")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(hovering ? DSColor.Text.primary.opacity(0.72) : DSColor.Text.tertiary)
+                .opacity(showing ? 1 : 0)
+        }
+            .frame(width: 32, height: 32)
             .contentShape(Circle())
             .overlay {
                 MouseDownHitArea(action: action)
@@ -2253,6 +2255,7 @@ private struct GhostEllipsisButton: View {
             }
             .onHover { hovering = $0 }
             .animation(LoomolaMotion.quick, value: hovering)
+            .animation(LoomolaMotion.quick, value: isVisible)
     }
 }
 
