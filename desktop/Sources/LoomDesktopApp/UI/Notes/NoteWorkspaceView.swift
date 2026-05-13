@@ -141,11 +141,16 @@ struct NoteWorkspaceView: View {
     @State private var notesGeneratedForCurrentTranscript = false
     @State private var transcriptUpdatedAfterGeneration = false
     @State private var lastGeneratedTranscriptFingerprint: String? = nil
+    @State private var transcriptSearchVisible = false
+    @State private var transcriptSearchQuery = ""
+    @FocusState private var transcriptSearchFocused: Bool
 
     private var isRecording: Bool {
         if case .recording = target { return true }
         return false
     }
+
+    private var transcriptDrawerMaxWidth: CGFloat { 720 }
 
     /// Title bound to the right state container depending on mode.
     private var titleBinding: Binding<String> {
@@ -247,7 +252,7 @@ struct NoteWorkspaceView: View {
             if isRecording {
                 if transcriptDrawerOpen {
                     transcriptDrawer
-                        .frame(maxWidth: 640)
+                        .frame(maxWidth: transcriptDrawerMaxWidth)
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.horizontal, DSSpacing.xl)
                         .padding(.bottom, DSSpacing.sm)
@@ -268,7 +273,7 @@ struct NoteWorkspaceView: View {
             } else {
                 if transcriptDrawerOpen {
                     transcriptDrawer
-                        .frame(maxWidth: 640)
+                        .frame(maxWidth: transcriptDrawerMaxWidth)
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.horizontal, DSSpacing.xl)
                         .padding(.bottom, DSSpacing.sm)
@@ -332,6 +337,13 @@ struct NoteWorkspaceView: View {
         .animation(LoomolaMotion.quick, value: previewedAttachment)
         .animation(LoomolaMotion.quick, value: workspaceHovering)
         .animation(LoomolaMotion.medium, value: transcriptDrawerOpen)
+        .background(
+            Button("") {
+                openTranscriptSearch()
+            }
+            .keyboardShortcut("f", modifiers: .command)
+            .opacity(0)
+        )
         .onAppear { handleAppear() }
         .onDisappear {
             reviewAutosaveTask?.cancel()
@@ -913,6 +925,12 @@ struct NoteWorkspaceView: View {
     private var transcriptDrawer: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: DSSpacing.sm) {
+                TranscriptToolbarIconButton(
+                    icon: "magnifyingglass",
+                    help: "Find in transcript (⌘F)",
+                    isActive: transcriptSearchVisible,
+                    action: toggleTranscriptSearch
+                )
                 Image(systemName: "text.bubble")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(DSColor.Text.secondary)
@@ -953,6 +971,13 @@ struct NoteWorkspaceView: View {
             .padding(.top, DSSpacing.md)
             .padding(.bottom, DSSpacing.xs)
 
+            if transcriptSearchVisible {
+                transcriptSearchBar
+                    .padding(.horizontal, DSSpacing.lg)
+                    .padding(.bottom, DSSpacing.sm)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+
             ScrollView {
                 Group {
                     if isRecording {
@@ -973,6 +998,45 @@ struct NoteWorkspaceView: View {
                 .strokeBorder(DSColor.Border.subtle, lineWidth: 1)
         }
         .dsShadow(.raised)
+        .animation(LoomolaMotion.quick, value: transcriptSearchVisible)
+    }
+
+    private var transcriptSearchBar: some View {
+        HStack(spacing: DSSpacing.sm) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(DSColor.Text.tertiary)
+            TextField("Find in transcript", text: $transcriptSearchQuery)
+                .textFieldStyle(.plain)
+                .font(DSFont.Body.sm())
+                .foregroundStyle(DSColor.Text.primary)
+                .focused($transcriptSearchFocused)
+            if !normalizedTranscriptSearchQuery.isEmpty {
+                Text("\(transcriptSearchMatchCount)")
+                    .font(DSFont.Body.sm())
+                    .foregroundStyle(DSColor.Text.tertiary)
+                Button {
+                    transcriptSearchQuery = ""
+                    transcriptSearchFocused = true
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(DSColor.Text.tertiary)
+                }
+                .buttonStyle(.plain)
+                .help("Clear search")
+            }
+        }
+        .padding(.horizontal, DSSpacing.md)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
+                .fill(DSColor.Bg.subtle.opacity(0.72))
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
+                .strokeBorder(DSColor.Border.subtle.opacity(0.65), lineWidth: 1)
+        }
     }
 
     @ViewBuilder
@@ -1135,6 +1199,7 @@ struct NoteWorkspaceView: View {
         let alignment: Alignment = isMine ? .trailing : .leading
         let horizontalAlignment: HorizontalAlignment = isMine ? .trailing : .leading
         let speaker = bubble.speaker?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isSearchMatch = transcriptBubbleMatchesSearch(bubble)
 
         return HStack(alignment: .bottom, spacing: 0) {
             if isMine { Spacer(minLength: 54) }
@@ -1142,13 +1207,13 @@ struct NoteWorkspaceView: View {
                 if let speaker, !speaker.isEmpty {
                     Text(speaker)
                         .font(DSFont.Body.sm())
-                        .foregroundStyle(DSColor.Text.tertiary)
+                        .foregroundStyle(DSColor.Text.tertiary.opacity(0.9))
                         .padding(.horizontal, 4)
                 }
                 Text(bubble.text)
-                    .font(DSFont.Body.md().weight(.medium))
-                    .lineSpacing(2)
-                    .foregroundStyle(bubble.isInterim ? DSColor.Text.secondary : DSColor.Text.primary)
+                    .font(.system(size: 13, weight: .regular))
+                    .lineSpacing(2.5)
+                    .foregroundStyle(bubble.isInterim ? DSColor.Text.secondary : DSColor.Text.primary.opacity(0.9))
                     .textSelection(.enabled)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
@@ -1158,11 +1223,16 @@ struct NoteWorkspaceView: View {
                     )
                     .overlay {
                         RoundedRectangle(cornerRadius: 11, style: .continuous)
-                            .strokeBorder(transcriptBubbleStroke(source: bubble.source), lineWidth: 1)
-                            .opacity(bubble.source == .systemAudio ? 0.75 : 0)
+                            .strokeBorder(
+                                isSearchMatch
+                                    ? DSColor.Accent.primary.opacity(0.7)
+                                    : transcriptBubbleStroke(source: bubble.source),
+                                lineWidth: isSearchMatch ? 1.4 : 1
+                            )
+                            .opacity(isSearchMatch || bubble.source == .systemAudio ? 0.75 : 0)
                     }
             }
-            .frame(maxWidth: 500, alignment: alignment)
+            .frame(maxWidth: 560, alignment: alignment)
             if !isMine { Spacer(minLength: 54) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1172,11 +1242,11 @@ struct NoteWorkspaceView: View {
         let fill: Color
         switch source {
         case .microphone:
-            fill = DSColor.Bg.subtle
+            fill = DSColor.Bg.subtle.opacity(0.76)
         case .systemAudio:
-            fill = DSColor.Bg.surface
+            fill = DSColor.Bg.surface.opacity(0.82)
         case .none:
-            fill = DSColor.Bg.subtle
+            fill = DSColor.Bg.subtle.opacity(0.74)
         }
         return isInterim ? fill.opacity(0.68) : fill
     }
@@ -1191,6 +1261,61 @@ struct NoteWorkspaceView: View {
             .fullText
             .split { $0.isWhitespace || $0.isNewline }
             .count
+    }
+
+    private var normalizedTranscriptSearchQuery: String {
+        transcriptSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var transcriptSearchMatchCount: Int {
+        let query = normalizedTranscriptSearchQuery
+        guard !query.isEmpty else { return 0 }
+        return transcriptSearchableTexts.reduce(0) { count, text in
+            count + text.localizedCaseInsensitiveOccurrenceCount(of: query)
+        }
+    }
+
+    private var transcriptSearchableTexts: [String] {
+        if isRecording {
+            return liveTranscriptBubbles.map(\.text)
+        }
+        if let transcript, !transcript.paragraphs.isEmpty {
+            return transcript.paragraphs.map(\.text)
+        }
+        if let transcript {
+            let text = transcript.fullText.trimmingCharacters(in: .whitespacesAndNewlines)
+            return text.isEmpty ? [] : [text]
+        }
+        return []
+    }
+
+    private func transcriptBubbleMatchesSearch(_ bubble: TranscriptDisplayBubble) -> Bool {
+        let query = normalizedTranscriptSearchQuery
+        guard !query.isEmpty else { return false }
+        return bubble.text.localizedCaseInsensitiveContains(query)
+    }
+
+    private func openTranscriptSearch() {
+        if !transcriptDrawerOpen {
+            transcriptDrawerOpen = true
+            if !isRecording, transcript == nil, !loadingTranscript {
+                loadTranscript()
+            }
+        }
+        transcriptSearchVisible = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            transcriptSearchFocused = true
+        }
+    }
+
+    private func toggleTranscriptSearch() {
+        if transcriptSearchVisible {
+            transcriptSearchVisible = false
+            transcriptSearchQuery = ""
+            transcriptSearchFocused = false
+        } else {
+            openTranscriptSearch()
+        }
     }
 
     private func transcriptSource(forSpeaker speaker: String?) -> LiveTranscriptAudioSource? {
@@ -2105,6 +2230,35 @@ private struct GhostEllipsisButton: View {
     }
 }
 
+private struct TranscriptToolbarIconButton: View {
+    let icon: String
+    let help: String
+    let isActive: Bool
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Image(systemName: icon)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(isActive ? DSColor.Text.secondary : DSColor.Text.tertiary)
+            .frame(width: 28, height: 28)
+            .background(
+                Circle()
+                    .fill((hovering || isActive) ? DSColor.Bg.subtle : Color.clear)
+            )
+            .contentShape(Circle())
+            .overlay {
+                ActionHitArea(action: action)
+                    .clipShape(Circle())
+            }
+            .help(help)
+            .onHover { hovering = $0 }
+            .animation(LoomolaMotion.quick, value: hovering)
+            .animation(LoomolaMotion.quick, value: isActive)
+    }
+}
+
 private struct MouseDownHitArea: NSViewRepresentable {
     let action: () -> Void
 
@@ -2325,5 +2479,22 @@ private struct WorkspaceMenuItem: View {
         .contentShape(Rectangle())
         .overlay { ActionHitArea(action: action) }
         .onHover { hovering = $0 }
+    }
+}
+
+private extension String {
+    func localizedCaseInsensitiveOccurrenceCount(of needle: String) -> Int {
+        guard !needle.isEmpty else { return 0 }
+        var count = 0
+        var searchRange = startIndex..<endIndex
+        while let range = range(
+            of: needle,
+            options: [.caseInsensitive, .diacriticInsensitive],
+            range: searchRange
+        ) {
+            count += 1
+            searchRange = range.upperBound..<endIndex
+        }
+        return count
     }
 }
