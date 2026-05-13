@@ -75,6 +75,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
       const Plyr = (await import("plyr")).default;
       if (cancelled || !videoRef.current) return;
       plyrRef.current = new Plyr(videoRef.current, {
+        // Self-host the SVG sprite so CSP does not block Plyr's default CDN.
+        iconUrl: "/plyr.svg",
         // Show elapsed time with total duration in "0:45 / 1:52" format,
         // not Plyr's default countdown (which renders weirdly when seconds
         // go briefly negative due to floating-point precision).
