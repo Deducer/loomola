@@ -167,6 +167,10 @@ struct NoteWorkspaceView: View {
     }
 
     private var noteChromeLeadingPadding: CGFloat { 112 }
+    /// Shared titlebar grid for every note-workspace chrome icon.
+    /// Keep left/right actions on this same top padding so their
+    /// visual centers bisect the macOS traffic-light centers.
+    private var noteChromeTopPadding: CGFloat { DSSpacing.md }
 
     /// Title bound to the right state container depending on mode.
     private var titleBinding: Binding<String> {
@@ -321,7 +325,7 @@ struct NoteWorkspaceView: View {
             HomeBackButton(action: onClose)
                 .help(isRecording ? "Hide" : "Close")
                 .padding(.leading, noteChromeLeadingPadding)
-                .padding(.top, DSSpacing.sm)
+                .padding(.top, noteChromeTopPadding)
                 .offset(y: chromeYOffset)
         }
         .onContinuousHover { phase in
@@ -344,7 +348,7 @@ struct NoteWorkspaceView: View {
                 .popover(isPresented: $showRowMenu, arrowEdge: .top) {
                     rowMenu
                 }
-                .padding(.top, DSSpacing.md)
+                .padding(.top, noteChromeTopPadding)
                 .padding(.trailing, DSSpacing.lg)
                 .offset(y: chromeYOffset)
                 .transition(.opacity)
