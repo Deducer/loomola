@@ -42,7 +42,7 @@ struct MarkdownTextEditor: NSViewRepresentable {
         textView.isAutomaticSpellingCorrectionEnabled = false
         textView.smartInsertDeleteEnabled = false
         textView.font = MarkdownStyle.body
-        textView.textColor = NSColor.labelColor
+        textView.textColor = MarkdownStyle.bodyColor
         textView.insertionPointColor = NSColor(named: "AccentColor")
             ?? NSColor.systemBlue
         textView.backgroundColor = .clear
@@ -108,7 +108,7 @@ struct MarkdownTextEditor: NSViewRepresentable {
             storage.setAttributes(
                 [
                     .font: baseFont,
-                    .foregroundColor: NSColor.labelColor,
+                    .foregroundColor: MarkdownStyle.bodyColor,
                 ],
                 range: full
             )
@@ -157,6 +157,7 @@ struct MarkdownTextEditor: NSViewRepresentable {
                 let level = max(1, min(3, levelRange.length))
                 let font = MarkdownStyle.heading(level: level)
                 storage.addAttribute(.font, value: font, range: match.range)
+                storage.addAttribute(.foregroundColor, value: MarkdownStyle.headingColor, range: match.range)
                 // Hide the `#…# ` prefix (level + 1 chars including
                 // the trailing space).
                 let prefix = NSRange(
@@ -238,7 +239,7 @@ final class MarkdownTextView: NSTextView {
             let origin = NSPoint(x: 5 + insets.width, y: insets.height)
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: MarkdownStyle.body,
-                .foregroundColor: NSColor.tertiaryLabelColor,
+                .foregroundColor: MarkdownStyle.placeholderColor,
             ]
             (placeholderString as NSString).draw(at: origin, withAttributes: attrs)
         }
@@ -248,6 +249,18 @@ final class MarkdownTextView: NSTextView {
 private enum MarkdownStyle {
     static let body = NSFont.systemFont(ofSize: 14)
     static let bold = NSFont.boldSystemFont(ofSize: 14)
+    static let bodyColor = dynamicColor(
+        light: NSColor(red: 0.180, green: 0.184, blue: 0.208, alpha: 1),
+        dark: NSColor(red: 0.760, green: 0.760, blue: 0.725, alpha: 1)
+    )
+    static let headingColor = dynamicColor(
+        light: NSColor(red: 0.082, green: 0.086, blue: 0.102, alpha: 1),
+        dark: NSColor(red: 0.850, green: 0.850, blue: 0.805, alpha: 1)
+    )
+    static let placeholderColor = dynamicColor(
+        light: NSColor(red: 0.541, green: 0.549, blue: 0.584, alpha: 1),
+        dark: NSColor(red: 0.416, green: 0.427, blue: 0.471, alpha: 1)
+    )
     static var italic: NSFont {
         let manager = NSFontManager.shared
         return manager.convert(body, toHaveTrait: .italicFontMask)
@@ -259,6 +272,13 @@ private enum MarkdownStyle {
         case 2: return NSFont.boldSystemFont(ofSize: 18)
         case 3: return NSFont.boldSystemFont(ofSize: 16)
         default: return NSFont.boldSystemFont(ofSize: 14)
+        }
+    }
+
+    private static func dynamicColor(light: NSColor, dark: NSColor) -> NSColor {
+        NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            return isDark ? dark : light
         }
     }
 }

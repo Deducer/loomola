@@ -78,6 +78,7 @@ private struct TranscriptDisplayBubble: Identifiable, Equatable {
 struct NoteWorkspaceView: View {
     @ObservedObject var viewModel: RecorderViewModel
     let target: NoteWorkspaceTarget
+    let chromeYOffset: CGFloat
     let onClose: () -> Void
 
     /// Local body editor state for review mode (we fetch from
@@ -151,6 +152,21 @@ struct NoteWorkspaceView: View {
     }
 
     private var transcriptDrawerMaxWidth: CGFloat { 720 }
+
+    private var shouldShowGenerateNotesBar: Bool {
+        !isRecording || shouldShowGenerateNotesPill
+    }
+
+    private var shouldShowGenerateNotesPill: Bool {
+        switch enhanceStatus {
+        case .idle:
+            return transcriptUpdatedAfterGeneration || !notesGeneratedForCurrentTranscript
+        case .running, .complete, .failed:
+            return true
+        }
+    }
+
+    private var noteChromeLeadingPadding: CGFloat { 112 }
 
     /// Title bound to the right state container depending on mode.
     private var titleBinding: Binding<String> {
@@ -258,7 +274,7 @@ struct NoteWorkspaceView: View {
                         .padding(.bottom, DSSpacing.sm)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
-                if viewModel.isAudioNotePaused {
+                if viewModel.isAudioNotePaused && shouldShowGenerateNotesBar {
                     generateNotesBar
                         .padding(.horizontal, DSSpacing.lg)
                         .padding(.bottom, DSSpacing.sm)
@@ -304,8 +320,9 @@ struct NoteWorkspaceView: View {
         .overlay(alignment: .topLeading) {
             HomeBackButton(action: onClose)
                 .help(isRecording ? "Hide" : "Close")
-                .padding(.leading, DSSpacing.md)
+                .padding(.leading, noteChromeLeadingPadding)
                 .padding(.top, DSSpacing.sm)
+                .offset(y: chromeYOffset)
         }
         .onContinuousHover { phase in
             switch phase {
@@ -329,6 +346,7 @@ struct NoteWorkspaceView: View {
                 }
                 .padding(.top, DSSpacing.md)
                 .padding(.trailing, DSSpacing.lg)
+                .offset(y: chromeYOffset)
                 .transition(.opacity)
             }
         }
@@ -566,7 +584,7 @@ struct NoteWorkspaceView: View {
         WorkspacePill(
             icon: "book.closed",
             label: selectedTemplate?.name ?? "Template",
-            isActive: true,
+            isActive: false,
             action: { showTemplatePicker.toggle() }
         )
         .popover(isPresented: $showTemplatePicker, arrowEdge: .top) {
@@ -1213,7 +1231,7 @@ struct NoteWorkspaceView: View {
                 Text(bubble.text)
                     .font(.system(size: 13, weight: .regular))
                     .lineSpacing(2.5)
-                    .foregroundStyle(bubble.isInterim ? DSColor.Text.secondary : DSColor.Text.primary.opacity(0.9))
+                    .foregroundStyle(bubble.isInterim ? DSColor.Text.secondary.opacity(0.85) : DSColor.Text.primary.opacity(0.82))
                     .textSelection(.enabled)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)

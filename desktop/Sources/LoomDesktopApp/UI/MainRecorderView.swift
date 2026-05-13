@@ -289,6 +289,7 @@ struct MainRecorderView: View {
             NoteWorkspaceView(
                 viewModel: viewModel,
                 target: target,
+                chromeYOffset: homeChromeYOffset,
                 onClose: { noteTarget = nil }
             )
         } else if viewModel.state == .signedOut {
