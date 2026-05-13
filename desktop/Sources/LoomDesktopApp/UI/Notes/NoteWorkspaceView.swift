@@ -2236,12 +2236,16 @@ private struct GhostEllipsisButton: View {
     var body: some View {
         Image(systemName: "ellipsis")
             .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(hovering ? DSColor.Text.secondary : DSColor.Text.tertiary)
-            .frame(width: 24, height: 24)
+            .foregroundStyle(hovering ? DSColor.Text.primary.opacity(0.72) : DSColor.Text.tertiary)
+            .frame(width: 32, height: 32)
             .background(
                 Circle()
-                    .fill(hovering ? DSColor.Bg.subtle : Color.clear)
+                    .fill(hovering ? DSColor.Bg.subtle.opacity(0.94) : Color.clear)
             )
+            .overlay {
+                Circle()
+                    .strokeBorder(hovering ? DSColor.Border.subtle.opacity(0.55) : Color.clear, lineWidth: 1)
+            }
             .contentShape(Circle())
             .overlay {
                 MouseDownHitArea(action: action)
