@@ -201,6 +201,32 @@ struct RecentRecording: Identifiable, Equatable {
     var folderId: String?
     var folderName: String?
 
+    init(
+        id: String,
+        slug: String,
+        title: String,
+        kind: Kind,
+        createdAt: Date,
+        durationSeconds: Double?,
+        status: String?,
+        transcriptReady: Bool?,
+        thumbnailURL: URL?,
+        folderId: String?,
+        folderName: String?
+    ) {
+        self.id = id
+        self.slug = slug
+        self.title = title
+        self.kind = kind
+        self.createdAt = createdAt
+        self.durationSeconds = durationSeconds
+        self.status = status
+        self.transcriptReady = transcriptReady
+        self.thumbnailURL = thumbnailURL
+        self.folderId = folderId
+        self.folderName = folderName
+    }
+
     init?(dto: RecentRecordingDTO) {
         self.id = dto.id
         self.slug = dto.slug

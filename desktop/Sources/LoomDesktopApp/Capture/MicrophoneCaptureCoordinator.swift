@@ -10,6 +10,7 @@ import Foundation
 /// Zoom/Meet sound muted or ducked.
 final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, @unchecked Sendable {
     var onLevel: ((Double) -> Void)?
+    var onPCMBuffer: ((AVAudioPCMBuffer) -> Void)?
 
     /// Compositor hook. When set, every mic `CMSampleBuffer` is also
     /// forwarded here so the CompositeRecorder can mux mic audio into
@@ -237,6 +238,7 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
         // wants PCM directly). No CMSampleBuffer round-trip needed
         // for this path.
         try? writer?.append(buffer)
+        onPCMBuffer?(buffer)
 
         // Composite path: the bubble compositor still consumes
         // CMSampleBuffer, so build one for the callback.

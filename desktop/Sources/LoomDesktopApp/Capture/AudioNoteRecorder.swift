@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import OSLog
 
@@ -9,6 +10,7 @@ private let audioNoteRecorderLog = Logger(
 @MainActor
 final class AudioNoteRecorder {
     var onAudioLevel: ((Double) -> Void)?
+    var onLiveAudioBuffer: ((LiveTranscriptAudioSource, AVAudioPCMBuffer) -> Void)?
 
     private let backend: BackendClient
     private var microphoneCapture: MicrophoneCaptureCoordinator?
@@ -99,11 +101,18 @@ final class AudioNoteRecorder {
         }
 
         let audioLevelSink = onAudioLevel
+        let liveAudioSink = onLiveAudioBuffer
         systemAudioCapture?.onLevel = { level in
             audioLevelSink?(level)
         }
+        systemAudioCapture?.onPCMBuffer = { buffer in
+            liveAudioSink?(.systemAudio, buffer)
+        }
         coreAudioTapCapture?.onLevel = { level in
             audioLevelSink?(level)
+        }
+        coreAudioTapCapture?.onPCMBuffer = { buffer in
+            liveAudioSink?(.systemAudio, buffer)
         }
 
         let directory = try Self.createSessionDirectory()
@@ -153,7 +162,8 @@ final class AudioNoteRecorder {
                     systemAudioDeviceCapture = try await startSystemAudioDeviceCapture(
                         primaryURL: url,
                         deviceID: systemAudioDeviceID,
-                        audioLevelSink: audioLevelSink
+                        audioLevelSink: audioLevelSink,
+                        liveAudioSink: liveAudioSink
                     )
                     activeSystemAudioCaptureMode = .audioDevice
                 }
@@ -335,7 +345,12 @@ final class AudioNoteRecorder {
         // up. Headphone users (the typical recording-a-call case)
         // get clean mic audio either way because there's no
         // acoustic feedback path.
-        let plain = makeMicrophoneCapture(audioLevelSink: audioLevelSink)
+        let plain = makeMicrophoneCapture(
+            audioLevelSink: audioLevelSink,
+            liveAudioSink: onLiveAudioBuffer.map { sink in
+                { buffer in sink(.microphone, buffer) }
+            }
+        )
         try await plain.startWithTimeout(
             deviceID: deviceID,
             outputURL: primaryURL,
@@ -347,9 +362,15 @@ final class AudioNoteRecorder {
     private func startSystemAudioDeviceCapture(
         primaryURL: URL,
         deviceID: String,
-        audioLevelSink: ((Double) -> Void)?
+        audioLevelSink: ((Double) -> Void)?,
+        liveAudioSink: ((LiveTranscriptAudioSource, AVAudioPCMBuffer) -> Void)?
     ) async throws -> MicrophoneCaptureCoordinator {
-        let capture = makeMicrophoneCapture(audioLevelSink: audioLevelSink)
+        let capture = makeMicrophoneCapture(
+            audioLevelSink: audioLevelSink,
+            liveAudioSink: liveAudioSink.map { sink in
+                { buffer in sink(.systemAudio, buffer) }
+            }
+        )
         try await capture.startWithTimeout(
             deviceID: deviceID,
             outputURL: primaryURL,
@@ -359,11 +380,15 @@ final class AudioNoteRecorder {
     }
 
     private func makeMicrophoneCapture(
-        audioLevelSink: ((Double) -> Void)?
+        audioLevelSink: ((Double) -> Void)?,
+        liveAudioSink: ((AVAudioPCMBuffer) -> Void)? = nil
     ) -> MicrophoneCaptureCoordinator {
         let capture = MicrophoneCaptureCoordinator()
         capture.onLevel = { level in
             audioLevelSink?(level)
+        }
+        capture.onPCMBuffer = { buffer in
+            liveAudioSink?(buffer)
         }
         return capture
     }

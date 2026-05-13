@@ -62,10 +62,9 @@ enum NoteWorkspaceTarget: Equatable {
 ///   - Bottom controls (recording mode only): mini level-meter +
 ///     timer + Pause/Resume + Stop & upload
 ///
-/// Review mode includes a saved-transcript drawer for post-upload
-/// transcripts. Live, word-by-word transcription is still a separate
-/// follow-up because the current pipeline batch-transcribes after
-/// upload rather than streaming while recording.
+/// Review mode includes a saved-transcript drawer. Recording mode
+/// uses Deepgram's live stream so the user can visually verify words
+/// during the call and press Generate notes only when ready.
 struct NoteWorkspaceView: View {
     @ObservedObject var viewModel: RecorderViewModel
     let target: NoteWorkspaceTarget
@@ -233,9 +232,23 @@ struct NoteWorkspaceView: View {
             }
 
             if isRecording {
+                if transcriptDrawerOpen {
+                    transcriptDrawer
+                        .frame(maxWidth: 640)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.horizontal, DSSpacing.xl)
+                        .padding(.bottom, DSSpacing.sm)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+                if viewModel.isAudioNotePaused {
+                    generateNotesBar
+                        .padding(.horizontal, DSSpacing.lg)
+                        .padding(.bottom, DSSpacing.sm)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
                 // No divider — Granola's restraint pattern.
                 recordingControlBar
-                    .frame(maxWidth: 480)
+                    .frame(maxWidth: viewModel.isAudioNotePaused ? 520 : 480)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.horizontal, DSSpacing.lg)
                     .padding(.bottom, DSSpacing.lg)
@@ -591,12 +604,22 @@ struct NoteWorkspaceView: View {
                 AudioLevelMeter(
                     level: viewModel.isAudioNotePaused ? 0 : viewModel.audioLevel
                 )
-                Image(systemName: "chevron.up")
+                Image(systemName: transcriptDrawerOpen ? "chevron.down" : "chevron.up")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(DSColor.Text.tertiary)
             }
             .padding(.leading, 14)
             .padding(.trailing, 12)
+            .contentShape(Rectangle())
+            .overlay {
+                ActionHitArea {
+                    transcriptDrawerOpen.toggle()
+                    if transcriptDrawerOpen, !isRecording, transcript == nil, !loadingTranscript {
+                        loadTranscript()
+                    }
+                }
+            }
+            .help(isRecording ? "Show live transcript" : "Show transcript")
 
             pillSeparator
 
@@ -630,10 +653,13 @@ struct NoteWorkspaceView: View {
 
             if viewModel.isAudioNotePaused {
                 // ▶ Resume — primary action when paused.
-                Image(systemName: "play.fill")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(DSColor.Accent.primary)
-                    .frame(width: 12, height: 12)
+                HStack(spacing: 7) {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 10, weight: .bold))
+                    Text("Resume")
+                        .font(DSFont.Body.md().weight(.semibold))
+                }
+                    .foregroundStyle(DSColor.State.success)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .contentShape(Rectangle())
@@ -698,7 +724,7 @@ struct NoteWorkspaceView: View {
             .frame(width: 1, height: 24)
     }
 
-    // MARK: - Generate-notes bar (reviewing mode only)
+    // MARK: - Generate-notes bar
 
     /// Bottom-anchored AI-enhance pill. ✦ Generate notes (idle) →
     /// "Generating…" with spinner (running) → "Notes updated" check
@@ -781,7 +807,7 @@ struct NoteWorkspaceView: View {
     private var transcriptTogglePill: some View {
         Button {
             transcriptDrawerOpen.toggle()
-            if transcriptDrawerOpen, transcript == nil, !loadingTranscript {
+            if transcriptDrawerOpen, !isRecording, transcript == nil, !loadingTranscript {
                 loadTranscript()
             }
         } label: {
@@ -789,7 +815,7 @@ struct NoteWorkspaceView: View {
                 Image(systemName: "text.bubble")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(transcriptDrawerOpen ? DSColor.Accent.primary : DSColor.Text.secondary)
-                Text("Transcript")
+                Text(isRecording ? "Live transcript" : "Transcript")
                     .font(DSFont.Body.md())
                     .foregroundStyle(DSColor.Text.primary)
                 Image(systemName: transcriptDrawerOpen ? "chevron.down" : "chevron.up")
@@ -802,7 +828,7 @@ struct NoteWorkspaceView: View {
             .overlay { Capsule().strokeBorder(DSColor.Border.subtle, lineWidth: 1) }
         }
         .buttonStyle(.plain)
-        .help("Show transcript")
+        .help(isRecording ? "Show live transcript" : "Show transcript")
     }
 
     private var failedGenerateNotesPill: some View {
@@ -827,11 +853,12 @@ struct NoteWorkspaceView: View {
                 Image(systemName: "text.bubble")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(DSColor.Text.secondary)
-                Text("Transcript")
+                Text(isRecording ? "Live transcript" : "Transcript")
                     .font(DSFont.Body.md().weight(.semibold))
                     .foregroundStyle(DSColor.Text.primary)
-                if let transcript, transcript.wordCount > 0 {
-                    Text("\(transcript.wordCount) words")
+                let wordCount = isRecording ? liveTranscriptWordCount : (transcript?.wordCount ?? 0)
+                if wordCount > 0 {
+                    Text("\(wordCount) words")
                         .font(DSFont.Body.sm())
                         .foregroundStyle(DSColor.Text.tertiary)
                 }
@@ -865,8 +892,14 @@ struct NoteWorkspaceView: View {
             Divider().overlay(DSColor.Border.subtle)
 
             ScrollView {
-                transcriptContent
-                    .padding(DSSpacing.lg)
+                Group {
+                    if isRecording {
+                        liveTranscriptContent
+                    } else {
+                        transcriptContent
+                    }
+                }
+                .padding(DSSpacing.lg)
             }
             .frame(maxHeight: 260)
         }
@@ -916,6 +949,105 @@ struct NoteWorkspaceView: View {
                 .foregroundStyle(DSColor.Text.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    @ViewBuilder
+    private var liveTranscriptContent: some View {
+        let segments = viewModel.liveTranscription.segments
+        let hasInterim = viewModel.liveTranscription.interimBySource.values.contains {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+
+        if !viewModel.liveTranscriptionEnabled {
+            Text("Live transcription is off. Turn it on in Settings.")
+                .font(DSFont.Body.md())
+                .foregroundStyle(DSColor.Text.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else if segments.isEmpty && !hasInterim {
+            liveTranscriptEmptyState
+        } else {
+            VStack(alignment: .leading, spacing: DSSpacing.sm) {
+                ForEach(segments) { segment in
+                    liveTranscriptSegment(segment)
+                }
+                ForEach(LiveTranscriptAudioSource.allCases, id: \.self) { source in
+                    if let interim = viewModel.liveTranscription.interimBySource[source],
+                       !interim.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        liveTranscriptInterim(source: source, text: interim)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var liveTranscriptEmptyState: some View {
+        switch viewModel.liveTranscription.status {
+        case .disabled:
+            Text("Live transcription is off. Turn it on in Settings.")
+                .font(DSFont.Body.md())
+                .foregroundStyle(DSColor.Text.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        case .unavailable(let message):
+            Text(message.isEmpty ? "Live transcription could not start. Batch transcript will still run after upload." : message)
+                .font(DSFont.Body.md())
+                .foregroundStyle(DSColor.Text.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        case .connecting:
+            HStack(spacing: DSSpacing.sm) {
+                ProgressView().controlSize(.small)
+                Text("Connecting live transcript…")
+                    .font(DSFont.Body.md())
+                    .foregroundStyle(DSColor.Text.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        case .idle, .streaming:
+            Text("Listening…")
+                .font(DSFont.Body.md())
+                .foregroundStyle(DSColor.Text.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func liveTranscriptSegment(_ segment: LiveTranscriptSegment) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(segment.source.displayName)
+                .font(DSFont.Body.sm())
+                .foregroundStyle(DSColor.Text.tertiary)
+            Text(segment.text)
+                .font(DSFont.Body.md())
+                .foregroundStyle(DSColor.Text.primary)
+                .textSelection(.enabled)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: DSRadius.md).fill(DSColor.Bg.subtle))
+    }
+
+    private func liveTranscriptInterim(source: LiveTranscriptAudioSource, text: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(source.displayName)
+                .font(DSFont.Body.sm())
+                .foregroundStyle(DSColor.Text.tertiary)
+            Text(text)
+                .font(DSFont.Body.md())
+                .foregroundStyle(DSColor.Text.secondary)
+                .italic()
+                .textSelection(.enabled)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: DSRadius.md).fill(DSColor.Bg.subtle.opacity(0.65)))
+    }
+
+    private var liveTranscriptWordCount: Int {
+        viewModel.liveTranscription
+            .snapshot(includeInterim: true)
+            .fullText
+            .split { $0.isWhitespace || $0.isNewline }
+            .count
     }
 
     private func transcriptParagraph(_ paragraph: NoteTranscriptResponse.Paragraph) -> some View {
@@ -1157,6 +1289,12 @@ struct NoteWorkspaceView: View {
     }
 
     private var transcriptTextForCopy: String {
+        if isRecording {
+            return viewModel.liveTranscription
+                .snapshot(includeInterim: true)
+                .fullText
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
         guard let transcript else { return "" }
         if !transcript.paragraphs.isEmpty {
             return transcript.paragraphs
@@ -1195,7 +1333,7 @@ struct NoteWorkspaceView: View {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
-        showToast(message: "Transcript copied")
+        showToast(message: isRecording ? "Live transcript copied" : "Transcript copied")
     }
 
     private func handleAppear() {
@@ -1300,12 +1438,26 @@ struct NoteWorkspaceView: View {
         if let backendError = error as? BackendClientError {
             switch backendError.apiErrorCode {
             case .some("transcript_not_ready"):
+                if isRecording {
+                    enhanceFailureMessage = "No transcript yet"
+                    enhanceFailureIsRetryable = true
+                    transcriptRetryAvailable = false
+                    showToast(message: "Live transcript is still warming up", tone: .warning)
+                    return
+                }
                 enhanceFailureMessage = "Waiting for transcript"
                 enhanceFailureIsRetryable = false
                 transcriptRetryAvailable = false
                 showToast(message: "Transcript is still being prepared", tone: .warning)
                 return
             case .some("transcript_empty"):
+                if isRecording {
+                    enhanceFailureMessage = "No speech yet"
+                    enhanceFailureIsRetryable = true
+                    transcriptRetryAvailable = false
+                    showToast(message: "No speech captured yet", tone: .warning)
+                    return
+                }
                 enhanceFailureMessage = "Retry transcript"
                 enhanceFailureIsRetryable = false
                 transcriptRetryAvailable = true
@@ -1365,14 +1517,35 @@ struct NoteWorkspaceView: View {
     /// completion the title and body bindings update in-place so the
     /// editor reflects the new copy without a re-fetch.
     private func startEnhance() {
-        guard case .reviewing(let recording) = target else { return }
         guard let backend = viewModel.backendClient else { return }
         guard enhanceStatus != .running else { return }
+
+        let mediaId: String
+        let bodyToFlush: String
+        let isActiveRecording: Bool
+        let shouldPersistStoppedLiveTranscript: Bool
+        switch target {
+        case .recording:
+            guard let activeId = viewModel.activeAudioRecordingId else {
+                showToast(message: "Recording is still starting", tone: .warning)
+                return
+            }
+            mediaId = activeId
+            bodyToFlush = viewModel.liveNotesBody
+            isActiveRecording = true
+            shouldPersistStoppedLiveTranscript = false
+        case .reviewing(let recording):
+            mediaId = recording.id
+            bodyToFlush = reviewBody
+            isActiveRecording = false
+            shouldPersistStoppedLiveTranscript =
+                recording.status == "uploading" &&
+                viewModel.liveTranscription.hasTranscriptText
+        }
 
         // Flush any pending autosave so the AI run sees the user's
         // latest typed notes (it reads `notes.body` server-side).
         reviewAutosaveTask?.cancel()
-        let bodyToFlush = reviewBody
 
         pollEnhanceTask?.cancel()
         enhanceFailureMessage = nil
@@ -1381,12 +1554,18 @@ struct NoteWorkspaceView: View {
 
         pollEnhanceTask = Task { @MainActor in
             do {
-                if bodyToFlush != reviewLastSaved {
-                    try? await backend.putNoteBody(mediaId: recording.id, body: bodyToFlush)
+                if isActiveRecording {
+                    _ = await viewModel.flushActiveAudioNoteDraft()
+                    _ = await viewModel.persistActiveLiveTranscript()
+                } else if bodyToFlush != reviewLastSaved {
+                    try? await backend.putNoteBody(mediaId: mediaId, body: bodyToFlush)
                     reviewLastSaved = bodyToFlush
                 }
+                if shouldPersistStoppedLiveTranscript {
+                    _ = await viewModel.persistLiveTranscript(mediaId: mediaId)
+                }
                 try await backend.enhanceNote(
-                    mediaId: recording.id,
+                    mediaId: mediaId,
                     templateId: selectedTemplateId
                 )
             } catch {
@@ -1399,17 +1578,24 @@ struct NoteWorkspaceView: View {
             while Date() < deadline {
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
                 if Task.isCancelled { return }
-                guard let status = try? await backend.getEnhancementStatus(mediaId: recording.id) else {
+                guard let status = try? await backend.getEnhancementStatus(mediaId: mediaId) else {
                     continue
                 }
                 switch status.generationStatus {
                 case "complete":
-                    if let suggested = status.titleSuggested, !suggested.isEmpty {
-                        reviewTitle = suggested
-                    }
-                    if let summary = status.summary, !summary.isEmpty {
-                        reviewBody = summary
-                        reviewLastSaved = summary
+                    if isActiveRecording {
+                        viewModel.applyGeneratedAudioNote(
+                            title: status.titleSuggested,
+                            body: status.summary
+                        )
+                    } else {
+                        if let suggested = status.titleSuggested, !suggested.isEmpty {
+                            reviewTitle = suggested
+                        }
+                        if let summary = status.summary, !summary.isEmpty {
+                            reviewBody = summary
+                            reviewLastSaved = summary
+                        }
                     }
                     if let templateId = status.templateId {
                         selectedTemplateId = templateId

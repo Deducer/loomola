@@ -6,6 +6,7 @@ import ScreenCaptureKit
 @available(macOS 14.0, *)
 final class SystemAudioCaptureCoordinator: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     var onLevel: ((Double) -> Void)?
+    var onPCMBuffer: ((AVAudioPCMBuffer) -> Void)?
 
     private var stream: SCStream?
     private var writer: AudioAssetWriter?
@@ -63,10 +64,36 @@ final class SystemAudioCaptureCoordinator: NSObject, SCStreamOutput, SCStreamDel
         guard type == .audio else { return }
         if paused { return }
         try? writer?.append(sampleBuffer)
+        if let pcmBuffer = makePCMBuffer(from: sampleBuffer) {
+            onPCMBuffer?(pcmBuffer)
+        }
         if let level = AudioLevelSampler.linearLevel(from: sampleBuffer) {
             onLevel?(level)
         }
     }
+}
+
+@available(macOS 14.0, *)
+private func makePCMBuffer(from sampleBuffer: CMSampleBuffer) -> AVAudioPCMBuffer? {
+    guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer),
+          let asbdPtr = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription)
+    else { return nil }
+    let frameCount = CMSampleBufferGetNumSamples(sampleBuffer)
+    guard frameCount > 0 else { return nil }
+    guard let format = AVAudioFormat(streamDescription: asbdPtr) else { return nil }
+    guard let pcmBuffer = AVAudioPCMBuffer(
+        pcmFormat: format,
+        frameCapacity: AVAudioFrameCount(frameCount)
+    ) else { return nil }
+    pcmBuffer.frameLength = AVAudioFrameCount(frameCount)
+    let status = CMSampleBufferCopyPCMDataIntoAudioBufferList(
+        sampleBuffer,
+        at: 0,
+        frameCount: Int32(frameCount),
+        into: pcmBuffer.mutableAudioBufferList
+    )
+    guard status == noErr else { return nil }
+    return pcmBuffer
 }
 
 @available(macOS 14.0, *)

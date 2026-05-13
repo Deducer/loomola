@@ -147,6 +147,9 @@ struct MainRecorderView: View {
         .onReceive(NotificationCenter.default.publisher(for: RecorderCommands.toggleRecording)) { _ in
             handleToggleRecording()
         }
+        .onReceive(NotificationCenter.default.publisher(for: RecorderCommands.discardRecordingAndQuit)) { _ in
+            handleDiscardRecordingAndQuit()
+        }
         .onChange(of: viewModel.state) { _, newState in
             // After a successful upload, hold the "Uploaded" success
             // surface for ~1.5s, then slide back to idle so the user
@@ -157,6 +160,18 @@ struct MainRecorderView: View {
                     viewModel.acknowledgeUploadComplete()
                 }
             }
+        }
+    }
+
+    private func handleDiscardRecordingAndQuit() {
+        Task { @MainActor in
+            await viewModel.discardActiveRecordingForQuit()
+            RecorderCommands.isVideoRecording = false
+            RecorderCommands.isAudioRecording = false
+            recordingStatusOverlay.hide()
+            videoRecordingWindow.hide()
+            noteTarget = nil
+            NSApp.reply(toApplicationShouldTerminate: true)
         }
     }
 
@@ -408,9 +423,15 @@ struct MainRecorderView: View {
         if viewModel.activeRecordingKind == .audio {
             noteTarget = .recording
         } else if case .recording = noteTarget {
-            // Active recording ended (Stop & upload, or Discard).
-            // Tear the workspace down so the user lands on home.
-            noteTarget = nil
+            // Active recording ended. Stop & upload keeps the note
+            // open in review mode so the Generate notes pill is right
+            // where the user expects it; Discard has no review target.
+            if let recording = viewModel.lastStoppedAudioRecordingForReview {
+                noteTarget = .reviewing(recording: recording)
+                viewModel.clearLastStoppedAudioRecordingForReview()
+            } else {
+                noteTarget = nil
+            }
         }
     }
 }

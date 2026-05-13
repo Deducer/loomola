@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import CoreGraphics
 import Foundation
 import OSLog
@@ -56,6 +57,8 @@ final class RecorderViewModel: ObservableObject {
         UserDefaults.standard.object(forKey: "loomola.meetingDetectionEnabled") as? Bool ?? true
     @Published private(set) var floatingRecordingIndicatorEnabled: Bool =
         UserDefaults.standard.object(forKey: "loomola.floatingRecordingIndicatorEnabled") as? Bool ?? true
+    @Published private(set) var liveTranscriptionEnabled: Bool =
+        UserDefaults.standard.object(forKey: "loomola.liveTranscriptionEnabled") as? Bool ?? true
     @Published private(set) var nativeMessagingStatus = "Chrome bridge can be installed after the extension is loaded."
     @Published private(set) var isInstallingNativeMessagingHost = false
     @Published private(set) var captureSources = CaptureSourceSnapshot(
@@ -99,6 +102,7 @@ final class RecorderViewModel: ObservableObject {
     private var accessToken: String?
     private(set) var backendClient: BackendClient?
     private var audioNoteRecorder: AudioNoteRecorder?
+    let liveTranscription = LiveTranscriptionCoordinator()
     private var obsidianExportWriter: ObsidianExportWriter?
     private var obsidianRealtimeSubscriber: ObsidianRealtimeSubscriber?
     private var obsidianSyncTask: Task<Void, Never>?
@@ -108,6 +112,8 @@ final class RecorderViewModel: ObservableObject {
     private var dismissedMeetingContext: MeetingContext?
     private var autoSuggestedAudioTitle: String?
     private var audioTitleAutosaveTask: Task<Void, Never>?
+    private var liveTranscriptionCancellable: AnyCancellable?
+    @Published private(set) var lastStoppedAudioRecordingForReview: RecentRecording?
     private var lastSyncedAudioTitle: String = ""
     private var lastAudioLevelUpdate = Date.distantPast
     private let captureSourceProvider: CaptureSourceProvider?
@@ -267,7 +273,16 @@ final class RecorderViewModel: ObservableObject {
                         self?.recordAudioLevel(level)
                     }
                 }
+                recorder.onLiveAudioBuffer = { [weak self] source, buffer in
+                    guard let copy = buffer.loomolaCopyForAsyncUse() else { return }
+                    Task { @MainActor in
+                        self?.liveTranscription.append(buffer: copy, source: source)
+                    }
+                }
                 return recorder
+            }
+            liveTranscriptionCancellable = liveTranscription.objectWillChange.sink { [weak self] _ in
+                self?.objectWillChange.send()
             }
             obsidianExportWriter = backendClient.map { ObsidianExportWriter(backend: $0) }
             obsidianRealtimeSubscriber = ObsidianRealtimeSubscriber(configuration: config) { [weak self] in
@@ -379,6 +394,7 @@ final class RecorderViewModel: ObservableObject {
             meetingWatchTask = nil
             audioTitleAutosaveTask = nil
             lastSyncedAudioTitle = ""
+            lastStoppedAudioRecordingForReview = nil
             obsidianSyncInFlight = false
             meetingContext = nil
             meetingPromptContext = nil
@@ -387,6 +403,7 @@ final class RecorderViewModel: ObservableObject {
             activeAudioRecordingSlug = nil
             activeAudioRecordingId = nil
             audioLevel = 0
+            liveTranscription.reset()
             try? await authService.signOut()
             accessToken = nil
             activeRecordingKind = nil
@@ -452,6 +469,25 @@ final class RecorderViewModel: ObservableObject {
         statusMessage = enabled
             ? "Floating recording indicator enabled."
             : "Floating recording indicator disabled."
+    }
+
+    func setLiveTranscriptionEnabled(_ enabled: Bool) {
+        guard liveTranscriptionEnabled != enabled else { return }
+        liveTranscriptionEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: "loomola.liveTranscriptionEnabled")
+        if enabled, activeRecordingKind == .audio, let backendClient {
+            liveTranscription.start(
+                backend: backendClient,
+                includeMic: includeMicInAudioNote,
+                includeSystemAudio: includeSystemAudioInAudioNote,
+                enabled: true
+            )
+        } else if !enabled {
+            liveTranscription.stop()
+        }
+        statusMessage = enabled
+            ? "Live transcription enabled."
+            : "Live transcription disabled."
     }
 
     func startRecordingPlaceholder() {
@@ -1076,6 +1112,14 @@ final class RecorderViewModel: ObservableObject {
             return
         }
         recorderLog.notice("startAudioNoteRecording — Task launching (mic=\(includeMic, privacy: .public), sys=\(includeSystemAudio, privacy: .public), sysMode=\(systemAudioCaptureMode.rawValue, privacy: .public))")
+        if let backendClient {
+            liveTranscription.start(
+                backend: backendClient,
+                includeMic: includeMic,
+                includeSystemAudio: includeSystemAudio,
+                enabled: liveTranscriptionEnabled
+            )
+        }
         Task {
             do {
                 let session = try await startAudioNoteSessionWithRetry(
@@ -1104,6 +1148,7 @@ final class RecorderViewModel: ObservableObject {
                 statusMessage = "Recording audio note with \(session.tracks.count) track(s)."
                 isStartingRecording = false
             } catch {
+                liveTranscription.stop()
                 recorderLog.error("startAudioNoteRecording — FAILED: \(error.localizedDescription, privacy: .public) (\(String(describing: error), privacy: .public))")
                 activeRecordingKind = nil
                 activeAudioRecordingStartedAt = nil
@@ -1167,6 +1212,7 @@ final class RecorderViewModel: ObservableObject {
               !isAudioNotePaused
         else { return }
         audioNoteRecorder.pause()
+        liveTranscription.pause()
         isAudioNotePaused = true
         audioNotePausedAt = Date()
     }
@@ -1181,6 +1227,7 @@ final class RecorderViewModel: ObservableObject {
               let pausedAt = audioNotePausedAt
         else { return }
         audioNoteRecorder.resume()
+        liveTranscription.resume()
         audioNotePausedAccumulatedSeconds += Date().timeIntervalSince(pausedAt)
         audioNotePausedAt = nil
         isAudioNotePaused = false
@@ -1199,8 +1246,25 @@ final class RecorderViewModel: ObservableObject {
         audioTitleAutosaveTask?.cancel()
         audioTitleAutosaveTask = nil
         let pendingMediaId = activeAudioRecordingId
+        let pendingSlug = activeAudioRecordingSlug
         let pendingTitle = audioTitle
         let pendingBody = liveNotesBody
+        if let pendingMediaId, let pendingSlug {
+            let title = pendingTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            lastStoppedAudioRecordingForReview = RecentRecording(
+                id: pendingMediaId,
+                slug: pendingSlug,
+                title: title.isEmpty ? "New note" : title,
+                kind: .audio,
+                createdAt: activeAudioRecordingStartedAt ?? Date(),
+                durationSeconds: nil,
+                status: "uploading",
+                transcriptReady: liveTranscription.hasTranscriptText,
+                thumbnailURL: nil,
+                folderId: nil,
+                folderName: nil
+            )
+        }
         activeRecordingKind = nil
         activeAudioRecordingStartedAt = nil
         activeAudioRecordingSlug = nil
@@ -1230,6 +1294,13 @@ final class RecorderViewModel: ObservableObject {
                 }
                 if let mediaId = pendingMediaId {
                     _ = await persistAudioTitle(mediaId: mediaId, title: pendingTitle)
+                    let snapshot = await liveTranscription.finishAndSnapshot()
+                    if !snapshot.fullText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        try? await backendClient?.persistLiveTranscript(
+                            mediaId: mediaId,
+                            snapshot: snapshot
+                        )
+                    }
                 }
                 state = .uploading(progress: 0.2)
                 let complete = try await audioNoteRecorder.stopAndUpload()
@@ -1271,6 +1342,10 @@ final class RecorderViewModel: ObservableObject {
                 statusMessage = "Audio note upload failed: \(recoveryHint)"
             }
         }
+    }
+
+    func clearLastStoppedAudioRecordingForReview() {
+        lastStoppedAudioRecordingForReview = nil
     }
 
     // MARK: - Live notes autosave
@@ -1369,7 +1444,64 @@ final class RecorderViewModel: ObservableObject {
         }
     }
 
+    @discardableResult
+    func flushActiveAudioNoteDraft() async -> Bool {
+        let notesOK = await flushLiveNotes()
+        let titleOK = await flushActiveAudioTitle()
+        return notesOK || titleOK
+    }
+
+    @discardableResult
+    func persistActiveLiveTranscript() async -> Bool {
+        guard let backendClient,
+              let mediaId = activeAudioRecordingId
+        else { return false }
+        return await persistLiveTranscript(mediaId: mediaId, backend: backendClient)
+    }
+
+    @discardableResult
+    func persistLiveTranscript(mediaId: String) async -> Bool {
+        guard let backendClient else { return false }
+        return await persistLiveTranscript(mediaId: mediaId, backend: backendClient)
+    }
+
+    @discardableResult
+    private func persistLiveTranscript(mediaId: String, backend: BackendClient) async -> Bool {
+        return await liveTranscription.persistSnapshot(
+            mediaId: mediaId,
+            backend: backend
+        )
+    }
+
+    func applyGeneratedAudioNote(title: String?, body: String?) {
+        if let title, !title.isEmpty {
+            audioTitle = title
+            lastSyncedAudioTitle = title
+        }
+        if let body, !body.isEmpty {
+            liveNotesBody = body
+            lastSyncedNotesBody = body
+        }
+    }
+
+    func discardActiveRecordingForQuit() async {
+        switch activeRecordingKind {
+        case .video:
+            cancelLocalRecording()
+        case .audio:
+            await discardAudioNoteRecording()
+        case nil:
+            break
+        }
+    }
+
     func cancelAudioNoteRecording() {
+        Task {
+            await discardAudioNoteRecording()
+        }
+    }
+
+    private func discardAudioNoteRecording() async {
         guard let audioNoteRecorder else { return }
         notesAutosaveTask?.cancel()
         notesAutosaveTask = nil
@@ -1378,20 +1510,20 @@ final class RecorderViewModel: ObservableObject {
         lastSyncedAudioTitle = ""
         state = .finalizing
         statusMessage = "Discarding audio note..."
-        Task {
-            await audioNoteRecorder.cancel()
-            activeRecordingKind = nil
-            activeAudioRecordingStartedAt = nil
-            activeAudioRecordingSlug = nil
-            activeAudioRecordingId = nil
-            isAudioNotePaused = false
-            audioNotePausedAt = nil
-            audioNotePausedAccumulatedSeconds = 0
-            audioLevel = 0
-            liveNotesBody = ""
-            state = .signedInIdle
-            statusMessage = "Audio note discarded."
-        }
+        await audioNoteRecorder.cancel()
+        liveTranscription.reset()
+        activeRecordingKind = nil
+        activeAudioRecordingStartedAt = nil
+        activeAudioRecordingSlug = nil
+        activeAudioRecordingId = nil
+        isAudioNotePaused = false
+        audioNotePausedAt = nil
+        audioNotePausedAccumulatedSeconds = 0
+        audioLevel = 0
+        liveNotesBody = ""
+        lastStoppedAudioRecordingForReview = nil
+        state = .signedInIdle
+        statusMessage = "Audio note discarded."
     }
 
     // MARK: - Orphan recovery

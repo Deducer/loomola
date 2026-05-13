@@ -143,10 +143,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let alert = NSAlert()
         alert.messageText = "Recording in progress"
-        alert.informativeText = "End and upload, or discard the current recording before quitting Loomola."
+        alert.informativeText = "Quit Loomola and discard the current recording?"
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Keep Recording")
-        alert.runModal()
+        let discardButton = alert.addButton(withTitle: "Discard & Quit")
+        discardButton.hasDestructiveAction = true
+
+        let response = alert.runModal()
+        if response == .alertSecondButtonReturn {
+            RecorderCommands.postDiscardRecordingAndQuit()
+            return .terminateLater
+        }
+
         AppActivation.bringRecorderToFront()
         return .terminateCancel
     }

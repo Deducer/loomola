@@ -131,6 +131,23 @@ actor BackendClient {
         try await get(path: "/api/notes/\(mediaId)/transcript")
     }
 
+    func createLiveTranscriptionToken() async throws -> LiveTranscriptionTokenResponse {
+        try await post(
+            path: "/api/transcribe/live-token",
+            body: LiveTranscriptionTokenRequest(ttlSeconds: 3600)
+        )
+    }
+
+    func persistLiveTranscript(
+        mediaId: String,
+        snapshot: LiveTranscriptSnapshot
+    ) async throws {
+        let _: EmptyResponse = try await post(
+            path: "/api/notes/\(mediaId)/transcript/live",
+            body: snapshot
+        )
+    }
+
     func setNoteTemplate(mediaId: String, templateId: String) async throws {
         let _: EmptyResponse = try await jsonRequest(
             method: "PATCH",
@@ -655,6 +672,30 @@ struct NoteTranscriptResponse: Decodable, Sendable {
     var wordCount: Int {
         fullText.split { $0.isWhitespace || $0.isNewline }.count
     }
+}
+
+struct LiveTranscriptionTokenRequest: Encodable, Sendable {
+    let ttlSeconds: Int
+}
+
+struct LiveTranscriptionTokenResponse: Decodable, Sendable {
+    let accessToken: String
+    let expiresIn: Double
+}
+
+struct LiveTranscriptSnapshot: Encodable, Sendable {
+    struct Word: Encodable, Sendable {
+        let word: String
+        let start: Double
+        let end: Double
+        let confidence: Double?
+        let speaker: Int?
+    }
+
+    let fullText: String
+    let language: String?
+    let providerRequestId: String?
+    let words: [Word]
 }
 
 struct NoteTemplateSelectionRequest: Encodable, Sendable {

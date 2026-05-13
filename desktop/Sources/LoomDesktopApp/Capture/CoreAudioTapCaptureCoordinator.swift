@@ -10,6 +10,7 @@ private let coreAudioTapLog = Logger(
 
 final class CoreAudioTapCaptureCoordinator: @unchecked Sendable {
     var onLevel: ((Double) -> Void)?
+    var onPCMBuffer: ((AVAudioPCMBuffer) -> Void)?
 
     private let sampleQueue = DispatchQueue(label: "cloud.dissonance.loom.desktop.core-audio-tap-samples")
     private var writer: AudioAssetWriter?
@@ -127,6 +128,7 @@ final class CoreAudioTapCaptureCoordinator: @unchecked Sendable {
         guard let format, let writer else { return }
         guard let pcmBuffer = makePCMBuffer(from: inputData, format: format) else { return }
         try? writer.append(pcmBuffer)
+        onPCMBuffer?(pcmBuffer)
         if let level = AudioLevelSampler.linearLevel(from: pcmBuffer) {
             onLevel?(level)
         }

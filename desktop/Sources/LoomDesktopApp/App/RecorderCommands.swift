@@ -16,8 +16,18 @@ enum RecorderCommands {
     /// uses it to refresh titles; AppDelegate uses it to guard Quit.
     static let videoRecordingStateChanged = Notification.Name("loomola.videoRecordingStateChanged")
 
+    /// Posted by AppDelegate when the user chooses Discard & Quit
+    /// from the Cmd-Q safety dialog. MainRecorderView owns the view
+    /// model, so it performs the actual recorder teardown and then
+    /// replies to AppKit's pending termination request.
+    static let discardRecordingAndQuit = Notification.Name("loomola.discardRecordingAndQuit")
+
     static func postToggleRecording() {
         NotificationCenter.default.post(name: toggleRecording, object: nil)
+    }
+
+    static func postDiscardRecordingAndQuit() {
+        NotificationCenter.default.post(name: discardRecordingAndQuit, object: nil)
     }
 
     /// Set by the view model whenever a video composite recording

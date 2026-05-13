@@ -106,6 +106,16 @@ struct SettingsSheet: View {
                         }
                     )
                 )
+                settingsToggleRow(
+                    title: "Live transcription",
+                    subtitle: "Send audio to Deepgram while recording so transcripts are ready immediately.",
+                    isOn: Binding(
+                        get: { viewModel.liveTranscriptionEnabled },
+                        set: { enabled in
+                            viewModel.setLiveTranscriptionEnabled(enabled)
+                        }
+                    )
+                )
                 FieldPicker(
                     label: "Transcription language",
                     placeholder: "English",

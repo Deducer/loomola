@@ -59,6 +59,55 @@ export async function insertTranscript(params: {
   });
 }
 
+export async function insertLiveTranscript(params: {
+  mediaObjectId: string;
+  providerRequestId?: string | null;
+  language: string;
+  fullText: string;
+  wordTimestamps: WordTimestamp[];
+}): Promise<{ transcript: Transcript; inserted: boolean }> {
+  return db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select()
+      .from(transcripts)
+      .where(eq(transcripts.mediaObjectId, params.mediaObjectId))
+      .orderBy(desc(transcripts.createdAt))
+      .limit(1);
+
+    // Live snapshots are an immediate-review bridge. Once the durable
+    // batch transcript exists, a late live save must never replace it.
+    if (
+      existing &&
+      existing.provider !== "deepgram-live" &&
+      existing.fullText.trim().length > 0
+    ) {
+      return { transcript: existing, inserted: false };
+    }
+
+    if (params.fullText.trim().length === 0 && existing) {
+      return { transcript: existing, inserted: false };
+    }
+
+    await tx
+      .delete(transcripts)
+      .where(eq(transcripts.mediaObjectId, params.mediaObjectId));
+
+    const [row] = await tx
+      .insert(transcripts)
+      .values({
+        mediaObjectId: params.mediaObjectId,
+        deepgramRequestId: params.providerRequestId ?? null,
+        provider: "deepgram-live",
+        providerRequestId: params.providerRequestId ?? null,
+        language: params.language,
+        fullText: params.fullText,
+        wordTimestamps: params.wordTimestamps,
+      })
+      .returning();
+    return { transcript: row, inserted: true };
+  });
+}
+
 export async function getTranscriptByRecording(
   mediaObjectId: string
 ): Promise<Transcript | null> {
