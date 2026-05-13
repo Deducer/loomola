@@ -49,6 +49,16 @@ enum NoteWorkspaceTarget: Equatable {
     case reviewing(recording: RecentRecording)
 }
 
+private struct TranscriptDisplayBubble: Identifiable, Equatable {
+    let id: String
+    let source: LiveTranscriptAudioSource?
+    let speaker: String?
+    let text: String
+    let isInterim: Bool
+    let startSec: Double
+    let endSec: Double
+}
+
 /// Granola-shape note workspace, embedded directly in the main
 /// window when `MainRecorderView.noteTarget != nil`.
 ///
@@ -128,6 +138,9 @@ struct NoteWorkspaceView: View {
     @State private var transcriptDrawerOpen = false
     @State private var loadingTranscript = false
     @State private var transcriptError: String? = nil
+    @State private var notesGeneratedForCurrentTranscript = false
+    @State private var transcriptUpdatedAfterGeneration = false
+    @State private var lastGeneratedTranscriptFingerprint: String? = nil
 
     private var isRecording: Bool {
         if case .recording = target { return true }
@@ -326,6 +339,15 @@ struct NoteWorkspaceView: View {
         }
         .onChange(of: reviewBody) { _, newValue in
             scheduleReviewAutosave(newValue)
+        }
+        .onChange(of: viewModel.liveTranscription.segments) { _, _ in
+            markTranscriptUpdatedAfterGenerationIfNeeded()
+        }
+        .onChange(of: viewModel.liveTranscription.interimBySource) { _, _ in
+            markTranscriptUpdatedAfterGenerationIfNeeded()
+        }
+        .onChange(of: transcript?.fullText ?? "") { _, _ in
+            markTranscriptUpdatedAfterGenerationIfNeeded()
         }
     }
 
@@ -746,20 +768,24 @@ struct NoteWorkspaceView: View {
     private var generateNotesPill: some View {
         switch enhanceStatus {
         case .idle:
-            Button(action: startEnhance) {
-                HStack(spacing: 8) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text("Generate notes")
-                        .font(DSFont.Body.md())
+            if transcriptUpdatedAfterGeneration {
+                transcriptUpdatedPill
+            } else if !notesGeneratedForCurrentTranscript {
+                Button(action: startEnhance) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("Generate notes")
+                            .font(DSFont.Body.md())
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(Capsule().fill(DSColor.State.success))
                 }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(Capsule().fill(DSColor.State.success))
+                .buttonStyle(.plain)
+                .help("Generate title + summary from transcript and your notes")
             }
-            .buttonStyle(.plain)
-            .help("Re-run AI to refine title + summary from transcript and your notes")
         case .running:
             HStack(spacing: 8) {
                 ProgressView()
@@ -802,6 +828,43 @@ struct NoteWorkspaceView: View {
                 failedGenerateNotesPill
             }
         }
+    }
+
+    private var transcriptUpdatedPill: some View {
+        HStack(spacing: DSSpacing.sm) {
+            HStack(spacing: 7) {
+                Circle()
+                    .fill(DSColor.Accent.primary)
+                    .frame(width: 5, height: 5)
+                Text("Transcript updated")
+                    .font(DSFont.Body.md())
+                    .foregroundStyle(DSColor.Text.primary)
+            }
+            Button(action: startEnhance) {
+                Text("Regenerate notes")
+                    .font(DSFont.Body.md().weight(.medium))
+                    .foregroundStyle(DSColor.Text.primary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(
+                        RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
+                            .fill(DSColor.Bg.subtle)
+                    )
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 8)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
+                .fill(DSColor.Bg.surfaceRaised)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
+                .strokeBorder(DSColor.Border.subtle, lineWidth: 1)
+        }
+        .help("Transcript changed since the last AI note generation")
     }
 
     private var transcriptTogglePill: some View {
@@ -851,10 +914,10 @@ struct NoteWorkspaceView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: DSSpacing.sm) {
                 Image(systemName: "text.bubble")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(DSColor.Text.secondary)
                 Text(isRecording ? "Live transcript" : "Transcript")
-                    .font(DSFont.Body.md().weight(.semibold))
+                    .font(DSFont.Body.md().weight(.medium))
                     .foregroundStyle(DSColor.Text.primary)
                 let wordCount = isRecording ? liveTranscriptWordCount : (transcript?.wordCount ?? 0)
                 if wordCount > 0 {
@@ -887,9 +950,8 @@ struct NoteWorkspaceView: View {
                 .help("Hide transcript")
             }
             .padding(.horizontal, DSSpacing.lg)
-            .padding(.vertical, DSSpacing.sm)
-
-            Divider().overlay(DSColor.Border.subtle)
+            .padding(.top, DSSpacing.md)
+            .padding(.bottom, DSSpacing.xs)
 
             ScrollView {
                 Group {
@@ -899,13 +961,15 @@ struct NoteWorkspaceView: View {
                         transcriptContent
                     }
                 }
-                .padding(DSSpacing.lg)
+                .padding(.horizontal, DSSpacing.lg)
+                .padding(.top, DSSpacing.sm)
+                .padding(.bottom, DSSpacing.lg)
             }
-            .frame(maxHeight: 260)
+            .frame(maxHeight: 300)
         }
-        .background(RoundedRectangle(cornerRadius: DSRadius.lg).fill(DSColor.Bg.surfaceRaised))
+        .background(RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous).fill(DSColor.Bg.surfaceRaised))
         .overlay {
-            RoundedRectangle(cornerRadius: DSRadius.lg)
+            RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous)
                 .strokeBorder(DSColor.Border.subtle, lineWidth: 1)
         }
         .dsShadow(.raised)
@@ -927,9 +991,20 @@ struct NoteWorkspaceView: View {
                 .foregroundStyle(DSColor.Text.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else if let transcript, !transcript.paragraphs.isEmpty {
-            VStack(alignment: .leading, spacing: DSSpacing.sm) {
+            VStack(alignment: .leading, spacing: DSSpacing.md) {
                 ForEach(transcript.paragraphs) { paragraph in
-                    transcriptParagraph(paragraph)
+                    let source = transcriptSource(forSpeaker: paragraph.speaker)
+                    transcriptBubble(
+                        TranscriptDisplayBubble(
+                            id: paragraph.id,
+                            source: source,
+                            speaker: source?.displayName ?? paragraph.speaker,
+                            text: paragraph.text,
+                            isInterim: false,
+                            startSec: paragraph.startSec,
+                            endSec: paragraph.endSec
+                        )
+                    )
                 }
             }
         } else if let transcript, !transcript.fullText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -966,15 +1041,9 @@ struct NoteWorkspaceView: View {
         } else if segments.isEmpty && !hasInterim {
             liveTranscriptEmptyState
         } else {
-            VStack(alignment: .leading, spacing: DSSpacing.sm) {
-                ForEach(segments) { segment in
-                    liveTranscriptSegment(segment)
-                }
-                ForEach(LiveTranscriptAudioSource.allCases, id: \.self) { source in
-                    if let interim = viewModel.liveTranscription.interimBySource[source],
-                       !interim.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        liveTranscriptInterim(source: source, text: interim)
-                    }
+            VStack(alignment: .leading, spacing: DSSpacing.md) {
+                ForEach(liveTranscriptBubbles) { bubble in
+                    transcriptBubble(bubble)
                 }
             }
         }
@@ -1009,37 +1078,111 @@ struct NoteWorkspaceView: View {
         }
     }
 
-    private func liveTranscriptSegment(_ segment: LiveTranscriptSegment) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(segment.source.displayName)
-                .font(DSFont.Body.sm())
-                .foregroundStyle(DSColor.Text.tertiary)
-            Text(segment.text)
-                .font(DSFont.Body.md())
-                .foregroundStyle(DSColor.Text.primary)
-                .textSelection(.enabled)
+    private var liveTranscriptBubbles: [TranscriptDisplayBubble] {
+        var bubbles: [TranscriptDisplayBubble] = []
+        for segment in viewModel.liveTranscription.segments {
+            let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+            if let last = bubbles.last,
+               last.source == segment.source,
+               !last.isInterim,
+               segment.startSec - last.endSec < 2.5 {
+                bubbles[bubbles.count - 1] = TranscriptDisplayBubble(
+                    id: last.id,
+                    source: last.source,
+                    speaker: last.speaker,
+                    text: [last.text, text].joined(separator: " "),
+                    isInterim: false,
+                    startSec: last.startSec,
+                    endSec: segment.endSec
+                )
+            } else {
+                bubbles.append(
+                    TranscriptDisplayBubble(
+                        id: segment.id.uuidString,
+                        source: segment.source,
+                        speaker: segment.source.displayName,
+                        text: text,
+                        isInterim: false,
+                        startSec: segment.startSec,
+                        endSec: segment.endSec
+                    )
+                )
+            }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: DSRadius.md).fill(DSColor.Bg.subtle))
+
+        for source in LiveTranscriptAudioSource.allCases {
+            if let interim = viewModel.liveTranscription.interimBySource[source],
+               !interim.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                bubbles.append(
+                    TranscriptDisplayBubble(
+                        id: "interim-\(source.rawValue)",
+                        source: source,
+                        speaker: source.displayName,
+                        text: interim.trimmingCharacters(in: .whitespacesAndNewlines),
+                        isInterim: true,
+                        startSec: bubbles.last?.endSec ?? 0,
+                        endSec: bubbles.last?.endSec ?? 0
+                    )
+                )
+            }
+        }
+        return bubbles
     }
 
-    private func liveTranscriptInterim(source: LiveTranscriptAudioSource, text: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(source.displayName)
-                .font(DSFont.Body.sm())
-                .foregroundStyle(DSColor.Text.tertiary)
-            Text(text)
-                .font(DSFont.Body.md())
-                .foregroundStyle(DSColor.Text.secondary)
-                .italic()
-                .textSelection(.enabled)
+    private func transcriptBubble(_ bubble: TranscriptDisplayBubble) -> some View {
+        let isMine = bubble.source == .microphone
+        let alignment: Alignment = isMine ? .trailing : .leading
+        let horizontalAlignment: HorizontalAlignment = isMine ? .trailing : .leading
+        let speaker = bubble.speaker?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return HStack(alignment: .bottom, spacing: 0) {
+            if isMine { Spacer(minLength: 54) }
+            VStack(alignment: horizontalAlignment, spacing: 5) {
+                if let speaker, !speaker.isEmpty {
+                    Text(speaker)
+                        .font(DSFont.Body.sm())
+                        .foregroundStyle(DSColor.Text.tertiary)
+                        .padding(.horizontal, 4)
+                }
+                Text(bubble.text)
+                    .font(DSFont.Body.md().weight(.medium))
+                    .lineSpacing(2)
+                    .foregroundStyle(bubble.isInterim ? DSColor.Text.secondary : DSColor.Text.primary)
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                            .fill(transcriptBubbleFill(source: bubble.source, isInterim: bubble.isInterim))
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                            .strokeBorder(transcriptBubbleStroke(source: bubble.source), lineWidth: 1)
+                            .opacity(bubble.source == .systemAudio ? 0.75 : 0)
+                    }
+            }
+            .frame(maxWidth: 500, alignment: alignment)
+            if !isMine { Spacer(minLength: 54) }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: DSRadius.md).fill(DSColor.Bg.subtle.opacity(0.65)))
+    }
+
+    private func transcriptBubbleFill(source: LiveTranscriptAudioSource?, isInterim: Bool) -> Color {
+        let fill: Color
+        switch source {
+        case .microphone:
+            fill = DSColor.Bg.subtle
+        case .systemAudio:
+            fill = DSColor.Bg.surface
+        case .none:
+            fill = DSColor.Bg.subtle
+        }
+        return isInterim ? fill.opacity(0.68) : fill
+    }
+
+    private func transcriptBubbleStroke(source: LiveTranscriptAudioSource?) -> Color {
+        source == .systemAudio ? DSColor.Border.subtle : .clear
     }
 
     private var liveTranscriptWordCount: Int {
@@ -1050,22 +1193,13 @@ struct NoteWorkspaceView: View {
             .count
     }
 
-    private func transcriptParagraph(_ paragraph: NoteTranscriptResponse.Paragraph) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if let speaker = paragraph.speaker, !speaker.isEmpty {
-                Text(speaker)
-                    .font(DSFont.Body.sm())
-                    .foregroundStyle(DSColor.Text.tertiary)
-            }
-            Text(paragraph.text)
-                .font(DSFont.Body.md())
-                .foregroundStyle(DSColor.Text.primary)
-                .textSelection(.enabled)
+    private func transcriptSource(forSpeaker speaker: String?) -> LiveTranscriptAudioSource? {
+        guard transcript?.provider == "deepgram-live" else { return nil }
+        switch speaker {
+        case "Speaker 1": return .microphone
+        case "Speaker 2": return .systemAudio
+        default: return nil
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: DSRadius.md).fill(DSColor.Bg.subtle))
     }
 
     // MARK: - Attachment preview overlay
@@ -1307,6 +1441,47 @@ struct NoteWorkspaceView: View {
         return transcript.fullText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private var currentTranscriptFingerprint: String {
+        if isRecording {
+            return viewModel.liveTranscription
+                .snapshot(includeInterim: true)
+                .fullText
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard let transcript else { return "" }
+        return transcriptFingerprint(from: transcript)
+    }
+
+    private func transcriptFingerprint(from response: NoteTranscriptResponse) -> String {
+        let paragraphText = response.paragraphs
+            .map { paragraph in
+                [
+                    paragraph.speaker ?? "",
+                    String(format: "%.2f", paragraph.startSec),
+                    paragraph.text.trimmingCharacters(in: .whitespacesAndNewlines),
+                ].joined(separator: "|")
+            }
+            .joined(separator: "\n")
+        let normalized = paragraphText.isEmpty ? response.fullText : paragraphText
+        return normalized.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func rememberGeneratedTranscript(fingerprint: String? = nil) {
+        notesGeneratedForCurrentTranscript = true
+        transcriptUpdatedAfterGeneration = false
+        lastGeneratedTranscriptFingerprint = fingerprint ?? currentTranscriptFingerprint
+    }
+
+    private func markTranscriptUpdatedAfterGenerationIfNeeded() {
+        guard notesGeneratedForCurrentTranscript else { return }
+        guard enhanceStatus != .running else { return }
+        guard let lastGeneratedTranscriptFingerprint else { return }
+
+        let current = currentTranscriptFingerprint
+        guard !current.isEmpty else { return }
+        transcriptUpdatedAfterGeneration = current != lastGeneratedTranscriptFingerprint
+    }
+
     private func loadTranscript() {
         guard case .reviewing(let recording) = target else { return }
         guard let backend = viewModel.backendClient else { return }
@@ -1319,6 +1494,9 @@ struct NoteWorkspaceView: View {
             do {
                 let response = try await backend.getNoteTranscript(mediaId: recording.id)
                 transcript = response
+                if notesGeneratedForCurrentTranscript {
+                    rememberGeneratedTranscript(fingerprint: transcriptFingerprint(from: response))
+                }
                 loadingTranscript = false
             } catch {
                 transcriptError = "Transcript isn't ready yet."
@@ -1337,6 +1515,10 @@ struct NoteWorkspaceView: View {
     }
 
     private func handleAppear() {
+        notesGeneratedForCurrentTranscript = false
+        transcriptUpdatedAfterGeneration = false
+        lastGeneratedTranscriptFingerprint = nil
+
         // Auto-focus the body editor so the user can start typing
         // immediately — Granola does this. Slight delay so the
         // SwiftUI focus system has time to wire up after appear.
@@ -1387,6 +1569,12 @@ struct NoteWorkspaceView: View {
                             }
                             if let enhancement {
                                 applyEnhancementReadiness(enhancement)
+                                if enhancement.generationStatus == "complete" {
+                                    notesGeneratedForCurrentTranscript = true
+                                    if let transcript {
+                                        rememberGeneratedTranscript(fingerprint: transcriptFingerprint(from: transcript))
+                                    }
+                                }
                             }
                             loadingBody = false
                         }
@@ -1600,6 +1788,7 @@ struct NoteWorkspaceView: View {
                     if let templateId = status.templateId {
                         selectedTemplateId = templateId
                     }
+                    rememberGeneratedTranscript()
                     enhanceStatus = .complete
                     showToast(message: "Notes updated")
                     // Auto-revert pill after a beat so it's
