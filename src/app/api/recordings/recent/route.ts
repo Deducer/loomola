@@ -68,7 +68,7 @@ export async function GET(request: Request) {
       return {
         id: r.id,
         slug: r.slug,
-        title: r.aiTitle ?? r.title ?? "Untitled",
+        title: r.title ?? r.aiTitle ?? "Untitled",
         kind: r.type,
         createdAt: r.createdAt.toISOString(),
         // `media_objects.duration_seconds` is a Drizzle `numeric` column
