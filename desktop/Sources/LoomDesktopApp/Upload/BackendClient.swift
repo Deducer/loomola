@@ -78,6 +78,14 @@ actor BackendClient {
         )
     }
 
+    func updateRecordingTitle(recordingId: String, title: String) async throws {
+        let _: EmptyResponse = try await jsonRequest(
+            method: "PATCH",
+            path: "/api/recordings/\(recordingId)",
+            body: RecordingTitleRequest(title: title)
+        )
+    }
+
     func createFolder(name: String, parentId: String? = nil) async throws -> FolderDTO {
         let response: CreateFolderResponse = try await post(
             path: "/api/folders",
@@ -592,6 +600,10 @@ struct FolderDTO: Decodable, Equatable, Sendable, Identifiable {
 
 struct AssignFolderRequest: Encodable, Sendable {
     let folderId: String?
+}
+
+struct RecordingTitleRequest: Encodable, Sendable {
+    let title: String
 }
 
 struct CreateFolderRequest: Encodable, Sendable {

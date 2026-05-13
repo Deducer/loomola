@@ -139,7 +139,10 @@ struct NoteWorkspaceView: View {
     private var titleBinding: Binding<String> {
         switch target {
         case .recording:
-            return $viewModel.audioTitle
+            return Binding(
+                get: { viewModel.audioTitle },
+                set: { viewModel.setAudioTitle($0) }
+            )
         case .reviewing:
             return $reviewTitle
         }
@@ -396,9 +399,8 @@ struct NoteWorkspaceView: View {
     }
 
     private var isTitleEditable: Bool {
-        // Title editable during recording (synced via PUT) and
-        // during review (TODO: wire title PUT — for now read-only
-        // in review).
+        // Title edits during recording are debounced to the backend.
+        // Review-mode renaming is a separate polish pass.
         switch target {
         case .recording: return true
         case .reviewing: return false

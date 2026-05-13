@@ -107,6 +107,8 @@ final class RecorderViewModel: ObservableObject {
     private var obsidianSyncInFlight = false
     private var dismissedMeetingContext: MeetingContext?
     private var autoSuggestedAudioTitle: String?
+    private var audioTitleAutosaveTask: Task<Void, Never>?
+    private var lastSyncedAudioTitle: String = ""
     private var lastAudioLevelUpdate = Date.distantPast
     private let captureSourceProvider: CaptureSourceProvider?
     private let screenCaptureCoordinator: ScreenCaptureCoordinator?
@@ -370,10 +372,13 @@ final class RecorderViewModel: ObservableObject {
             obsidianSyncTask?.cancel()
             obsidianRealtimeTask?.cancel()
             meetingWatchTask?.cancel()
+            audioTitleAutosaveTask?.cancel()
             await obsidianRealtimeSubscriber?.stop()
             obsidianSyncTask = nil
             obsidianRealtimeTask = nil
             meetingWatchTask = nil
+            audioTitleAutosaveTask = nil
+            lastSyncedAudioTitle = ""
             obsidianSyncInFlight = false
             meetingContext = nil
             meetingPromptContext = nil
@@ -1088,6 +1093,7 @@ final class RecorderViewModel: ObservableObject {
                 activeAudioRecordingStartedAt = Date()
                 activeAudioRecordingSlug = session.backendSlug
                 activeAudioRecordingId = session.backendRecordingId
+                lastSyncedAudioTitle = title ?? ""
                 isAudioNotePaused = false
                 audioNotePausedAt = nil
                 audioNotePausedAccumulatedSeconds = 0
@@ -1190,7 +1196,10 @@ final class RecorderViewModel: ObservableObject {
         // nothing happened.
         notesAutosaveTask?.cancel()
         notesAutosaveTask = nil
+        audioTitleAutosaveTask?.cancel()
+        audioTitleAutosaveTask = nil
         let pendingMediaId = activeAudioRecordingId
+        let pendingTitle = audioTitle
         let pendingBody = liveNotesBody
         activeRecordingKind = nil
         activeAudioRecordingStartedAt = nil
@@ -1218,6 +1227,9 @@ final class RecorderViewModel: ObservableObject {
                         mediaId: mediaId,
                         body: pendingBody
                     )
+                }
+                if let mediaId = pendingMediaId {
+                    _ = await persistAudioTitle(mediaId: mediaId, title: pendingTitle)
                 }
                 state = .uploading(progress: 0.2)
                 let complete = try await audioNoteRecorder.stopAndUpload()
@@ -1262,6 +1274,52 @@ final class RecorderViewModel: ObservableObject {
     }
 
     // MARK: - Live notes autosave
+
+    func setAudioTitle(_ title: String) {
+        audioTitle = title
+        scheduleAudioTitleAutosave()
+    }
+
+    private func scheduleAudioTitleAutosave() {
+        audioTitleAutosaveTask?.cancel()
+        guard activeRecordingKind == .audio, activeAudioRecordingId != nil else {
+            return
+        }
+        audioTitleAutosaveTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            guard !Task.isCancelled else { return }
+            _ = await self?.flushActiveAudioTitle()
+        }
+    }
+
+    @discardableResult
+    private func flushActiveAudioTitle() async -> Bool {
+        guard let mediaId = activeAudioRecordingId else { return false }
+        return await persistAudioTitle(mediaId: mediaId, title: audioTitle)
+    }
+
+    @discardableResult
+    private func persistAudioTitle(mediaId: String, title: String) async -> Bool {
+        guard let backendClient else { return false }
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != autoSuggestedAudioTitle else { return false }
+        guard trimmed != lastSyncedAudioTitle else { return true }
+
+        do {
+            try await backendClient.updateRecordingTitle(
+                recordingId: mediaId,
+                title: trimmed
+            )
+            lastSyncedAudioTitle = trimmed
+            recorderLog.notice("audio title synced for \(mediaId, privacy: .public)")
+            _recentService?.refresh()
+            return true
+        } catch {
+            recorderLog.error("audio title sync failed for \(mediaId, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            statusMessage = "Couldn't save title yet. Loomola will retry when the note finishes."
+            return false
+        }
+    }
 
     /// Background task that watches `liveNotesBody` for changes and
     /// debounces a PUT /api/notes/<mediaId> for the active recording.
@@ -1315,6 +1373,9 @@ final class RecorderViewModel: ObservableObject {
         guard let audioNoteRecorder else { return }
         notesAutosaveTask?.cancel()
         notesAutosaveTask = nil
+        audioTitleAutosaveTask?.cancel()
+        audioTitleAutosaveTask = nil
+        lastSyncedAudioTitle = ""
         state = .finalizing
         statusMessage = "Discarding audio note..."
         Task {
