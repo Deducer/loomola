@@ -81,7 +81,7 @@ fi
 "$ROOT_DIR/scripts/setup-signing-identity.sh"
 
 HEAD_COMMIT="$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
-if [[ "$HEAD_COMMIT" != "unknown" ]] && ! git -C "$REPO_ROOT" diff --quiet --ignore-submodules HEAD -- 2>/dev/null; then
+if [[ "$HEAD_COMMIT" != "unknown" ]] && ! git -C "$REPO_ROOT" diff --quiet --ignore-submodules HEAD -- . ':(exclude).claude/settings.local.json' 2>/dev/null; then
   HEAD_COMMIT="$HEAD_COMMIT-dirty"
 fi
 echo
