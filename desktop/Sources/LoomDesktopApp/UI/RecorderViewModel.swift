@@ -1073,8 +1073,8 @@ final class RecorderViewModel: ObservableObject {
         recorderLog.notice("startAudioNoteRecording — Task launching (mic=\(includeMic, privacy: .public), sys=\(includeSystemAudio, privacy: .public), sysMode=\(systemAudioCaptureMode.rawValue, privacy: .public))")
         Task {
             do {
-                recorderLog.notice("startAudioNoteRecording — calling audioNoteRecorder.start")
-                let session = try await audioNoteRecorder.start(
+                let session = try await startAudioNoteSessionWithRetry(
+                    recorder: audioNoteRecorder,
                     title: title,
                     includeMic: includeMic,
                     includeSystemAudio: includeSystemAudio,
@@ -1106,6 +1106,46 @@ final class RecorderViewModel: ObservableObject {
                 isStartingRecording = false
             }
         }
+    }
+
+    private func startAudioNoteSessionWithRetry(
+        recorder: AudioNoteRecorder,
+        title: String?,
+        includeMic: Bool,
+        includeSystemAudio: Bool,
+        meetingContext: MeetingContext?,
+        microphoneDeviceID: String?,
+        systemAudioCaptureMode: SystemAudioCaptureMode,
+        systemAudioDeviceID: String?
+    ) async throws -> AudioRecordingSession {
+        let maxAttempts = 3
+        var lastError: Error?
+        for attempt in 1...maxAttempts {
+            do {
+                recorderLog.notice("startAudioNoteRecording — calling audioNoteRecorder.start attempt=\(attempt, privacy: .public)")
+                return try await recorder.start(
+                    title: title,
+                    includeMic: includeMic,
+                    includeSystemAudio: includeSystemAudio,
+                    meetingContext: meetingContext,
+                    microphoneDeviceID: microphoneDeviceID,
+                    systemAudioCaptureMode: systemAudioCaptureMode,
+                    systemAudioDeviceID: systemAudioDeviceID
+                )
+            } catch {
+                lastError = error
+                guard Self.isTransientStartError(error), attempt < maxAttempts else {
+                    throw error
+                }
+                let nextAttempt = attempt + 1
+                recorderLog.warning(
+                    "startAudioNoteRecording — transient start failure, retrying attempt=\(nextAttempt, privacy: .public)/\(maxAttempts, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                )
+                statusMessage = "Loomola is temporarily unavailable. Retrying audio note start \(nextAttempt) of \(maxAttempts)..."
+                try await Task.sleep(nanoseconds: UInt64(nextAttempt) * 1_000_000_000)
+            }
+        }
+        throw lastError ?? AudioNoteStartRetryError.exhaustedWithoutError
     }
 
     /// Pause the active audio-note capture. The mic + system-audio
@@ -1544,6 +1584,21 @@ final class RecorderViewModel: ObservableObject {
         let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
         return (attributes?[.size] as? NSNumber)?.int64Value ?? 0
     }
+
+    private static func isTransientStartError(_ error: Error) -> Bool {
+        if let backendError = error as? BackendClientError {
+            return backendError.isTransient
+        }
+        let nsError = error as NSError
+        guard nsError.domain == NSURLErrorDomain else { return false }
+        return [
+            NSURLErrorTimedOut,
+            NSURLErrorCannotFindHost,
+            NSURLErrorCannotConnectToHost,
+            NSURLErrorNetworkConnectionLost,
+            NSURLErrorNotConnectedToInternet
+        ].contains(nsError.code)
+    }
 }
 
 enum RecorderState: Equatable {
@@ -1585,6 +1640,14 @@ enum DesktopRecordingKind: Equatable {
 
 enum RecorderViewModelError: Error {
     case missingAccessToken
+}
+
+private enum AudioNoteStartRetryError: LocalizedError {
+    case exhaustedWithoutError
+
+    var errorDescription: String? {
+        "Audio note could not start after retrying."
+    }
 }
 
 enum RestoreSessionError: Error {

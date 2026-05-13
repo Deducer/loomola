@@ -24,6 +24,10 @@ struct IdleHomeView: View {
                     .foregroundStyle(DSColor.Text.primary)
                     .padding(.top, topContentPadding)
 
+                if let message = homeStatusMessage {
+                    homeStatusBanner(message)
+                }
+
                 if viewModel.activeRecordingKind == .audio {
                     activeAudioRecordingCard
                 } else {
@@ -48,6 +52,37 @@ struct IdleHomeView: View {
             .padding(.bottom, DSSpacing.xxl)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private var homeStatusMessage: String? {
+        switch viewModel.state {
+        case .failed:
+            return viewModel.statusMessage
+        default:
+            return nil
+        }
+    }
+
+    private func homeStatusBanner(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: DSSpacing.sm) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(DSColor.State.warning)
+                .padding(.top, 2)
+            Text(message)
+                .font(DSFont.Body.sm())
+                .foregroundStyle(DSColor.Text.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: DSSpacing.md)
+        }
+        .padding(.horizontal, DSSpacing.md)
+        .padding(.vertical, DSSpacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(DSColor.Bg.surfaceRaised, in: RoundedRectangle(cornerRadius: DSRadius.md))
+        .overlay(
+            RoundedRectangle(cornerRadius: DSRadius.md)
+                .strokeBorder(DSColor.Border.subtle, lineWidth: 1)
+        )
     }
 
     private var heroCard: some View {
