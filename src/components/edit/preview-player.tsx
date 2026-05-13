@@ -33,7 +33,10 @@ export function PreviewPlayer({
     (async () => {
       const Plyr = (await import("plyr")).default;
       if (cancelled || !videoRef.current) return;
-      const player = new Plyr(videoRef.current);
+      const player = new Plyr(videoRef.current, {
+        // Self-host the SVG sprite so CSP does not block Plyr's default CDN.
+        iconUrl: "/plyr.svg",
+      });
       plyrRef.current = player;
       player.on("timeupdate", () => {
         const t = player.currentTime ?? 0;
