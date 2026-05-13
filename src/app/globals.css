@@ -135,6 +135,14 @@ html, body {
   transform: translate(-50%, -50%) scale(1.08);
 }
 
+@media (max-width: 640px) {
+  .plyr-rounded .plyr__control--overlaid {
+    /* Mobile controls visually occupy the lower video area, so center the
+       large play affordance in the unobscured preview frame. */
+    top: calc(50% - 32px);
+  }
+}
+
 /*
  * Soften Plyr's default controls gradient. The library defaults to
  *   linear-gradient(transparent, #000000bf)  (≈75% black at the floor)
