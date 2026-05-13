@@ -97,6 +97,7 @@ struct NoteWorkspaceView: View {
     @State private var showFolderPicker = false
     @State private var showRowMenu = false
     @State private var loadingBody = false
+    @State private var bodyEditorMeasuredHeight: CGFloat = 320
     @FocusState private var bodyFocused: Bool
 
     /// Image attachments associated with the note. Populated from
@@ -626,10 +627,11 @@ struct NoteWorkspaceView: View {
         ZStack(alignment: .topLeading) {
             MarkdownTextEditor(
                 text: bodyBinding,
+                measuredHeight: $bodyEditorMeasuredHeight,
                 placeholder: loadingBody ? "Loading…" : "Write notes",
                 isFocused: $bodyFocused
             )
-            .frame(minHeight: 320)
+            .frame(height: max(320, bodyEditorMeasuredHeight))
             // Pull 5pt back to compensate for NSTextView's internal
             // text container inset so the heading text origin lines
             // up with the title row above.
@@ -709,9 +711,9 @@ struct NoteWorkspaceView: View {
                 // ▶ Resume — primary action when paused.
                 HStack(spacing: 7) {
                     Image(systemName: "play.fill")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.system(size: 10, weight: .semibold))
                     Text("Resume")
-                        .font(DSFont.Body.md().weight(.semibold))
+                        .font(DSFont.Body.md().weight(.medium))
                 }
                     .foregroundStyle(DSColor.State.success)
                     .padding(.horizontal, 14)

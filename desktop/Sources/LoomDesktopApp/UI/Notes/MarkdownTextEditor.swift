@@ -23,6 +23,7 @@ import SwiftUI
 ///     them, port a proper parser; v1 doesn't need it.
 struct MarkdownTextEditor: NSViewRepresentable {
     @Binding var text: String
+    @Binding var measuredHeight: CGFloat
     let placeholder: String
     let isFocused: FocusState<Bool>.Binding
 
@@ -47,11 +48,19 @@ struct MarkdownTextEditor: NSViewRepresentable {
             ?? NSColor.systemBlue
         textView.backgroundColor = .clear
         textView.drawsBackground = false
+        textView.isHorizontallyResizable = false
+        textView.isVerticallyResizable = true
+        textView.autoresizingMask = [.width]
+        textView.minSize = NSSize(width: 0, height: 0)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(width: scrollView.contentSize.width, height: CGFloat.greatestFiniteMagnitude)
         textView.textContainerInset = NSSize(width: 0, height: 4)
         textView.delegate = context.coordinator
         textView.placeholderString = placeholder
         textView.string = text
         context.coordinator.applyAttributes(to: textView)
+        context.coordinator.reportHeight(for: textView)
 
         scrollView.documentView = textView
         return scrollView
@@ -59,6 +68,7 @@ struct MarkdownTextEditor: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? MarkdownTextView else { return }
+        textView.textContainer?.containerSize = NSSize(width: scrollView.contentSize.width, height: CGFloat.greatestFiniteMagnitude)
         if textView.string != text {
             // External update (e.g., body fetched from server) —
             // replace the whole text, then re-tokenize.
@@ -67,6 +77,7 @@ struct MarkdownTextEditor: NSViewRepresentable {
             textView.setSelectedRange(savedRange)
             context.coordinator.applyAttributes(to: textView)
         }
+        context.coordinator.reportHeight(for: textView)
         // Push focus state into the responder chain when the view
         // becomes focused via FocusState. SwiftUI's @FocusState
         // doesn't auto-bridge to NSView focus.
@@ -91,6 +102,7 @@ struct MarkdownTextEditor: NSViewRepresentable {
             guard let textView = notification.object as? MarkdownTextView else { return }
             parent.text = textView.string
             applyAttributes(to: textView)
+            reportHeight(for: textView)
         }
 
         /// Re-runs the full tokenizer over the storage. Cheap for
@@ -137,6 +149,22 @@ struct MarkdownTextEditor: NSViewRepresentable {
                 font: MarkdownStyle.mono
             )
             storage.endEditing()
+            reportHeight(for: textView)
+        }
+
+        func reportHeight(for textView: MarkdownTextView) {
+            guard let layoutManager = textView.layoutManager,
+                  let textContainer = textView.textContainer
+            else { return }
+            guard textContainer.containerSize.width > 24 else { return }
+            layoutManager.ensureLayout(for: textContainer)
+            let usedHeight = layoutManager.usedRect(for: textContainer).height
+            let insetHeight = textView.textContainerInset.height * 2
+            let nextHeight = ceil(max(320, usedHeight + insetHeight + 16))
+            guard abs(parent.measuredHeight - nextHeight) > 1 else { return }
+            DispatchQueue.main.async {
+                self.parent.measuredHeight = nextHeight
+            }
         }
 
         private func applyHeadings(in plain: NSString, storage: NSTextStorage) {
