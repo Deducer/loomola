@@ -909,6 +909,10 @@ final class RecorderViewModel: ObservableObject {
                 // Finalize composite MP4.
                 let outputURL = try await compositor.finish()
                 let durationSeconds = max(Date().timeIntervalSince(startedAt), 1)
+                let outputBytes = Self.fileSize(outputURL)
+                recorderLog.notice(
+                    "video upload: finalized composite bytes=\(outputBytes, privacy: .public) duration=\(durationSeconds, privacy: .public) path=\(outputURL.path, privacy: .public)"
+                )
 
                 state = .uploading(progress: 0.1)
                 statusMessage = "Creating upload row..."
@@ -919,14 +923,28 @@ final class RecorderViewModel: ObservableObject {
                         brandProfileId: nil
                     )
                 )
+                recorderLog.notice(
+                    "video upload: backend row created id=\(start.recordingId, privacy: .public) slug=\(start.slug, privacy: .public)"
+                )
                 let uploader = MultipartUploadCoordinator(backend: backendClient)
-                statusMessage = "Uploading composite MP4..."
+                statusMessage = "Uploading video..."
                 let parts = try await uploader.uploadFile(
                     url: outputURL,
                     recordingId: start.recordingId,
                     track: .composite
+                ) { [weak self] progress in
+                    await MainActor.run {
+                        guard let self else { return }
+                        let uploadProgress = 0.1 + (progress.fraction * 0.78)
+                        self.state = .uploading(progress: min(uploadProgress, 0.88))
+                        self.statusMessage = "Uploading video part \(progress.completedParts) of \(progress.totalParts)..."
+                    }
+                }
+                recorderLog.notice(
+                    "video upload: uploaded composite parts=\(parts.count, privacy: .public) recording=\(start.recordingId, privacy: .public)"
                 )
                 state = .uploading(progress: 0.9)
+                statusMessage = "Processing recording..."
                 let complete = try await backendClient.complete(
                     recordingId: start.recordingId,
                     request: CompleteRecordingRequest(
@@ -934,13 +952,17 @@ final class RecorderViewModel: ObservableObject {
                         durationSeconds: durationSeconds
                     )
                 )
+                recorderLog.notice(
+                    "video upload: complete accepted slug=\(complete.slug, privacy: .public)"
+                )
                 state = .complete(slug: complete.slug)
-                statusMessage = "Uploaded. Recording slug: \(complete.slug)"
+                statusMessage = "Uploaded. Transcription will finish in the background."
                 // Refresh the Recent strip so the freshly-uploaded
                 // recording appears immediately instead of waiting
                 // for the 60-second polling tick.
                 _recentService?.refresh()
             } catch {
+                recorderLog.error("video upload: failed \(error.localizedDescription, privacy: .public)")
                 state = .failed(message: error.localizedDescription)
                 statusMessage = "Composite upload failed: \(error.localizedDescription)"
             }
@@ -1516,6 +1538,11 @@ final class RecorderViewModel: ObservableObject {
 
     private func canListCaptureSourcesWithoutPrompt() -> Bool {
         CGPreflightScreenCaptureAccess()
+    }
+
+    private static func fileSize(_ url: URL) -> Int64 {
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        return (attributes?[.size] as? NSNumber)?.int64Value ?? 0
     }
 }
 

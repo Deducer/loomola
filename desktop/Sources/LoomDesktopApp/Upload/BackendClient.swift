@@ -361,20 +361,28 @@ actor BackendClient {
         body: RequestBody
     ) async throws -> ResponseBody {
         let token = try await accessTokenProvider()
-        var request = URLRequest(url: makeURL(path: path))
+        let url = makeURL(path: path)
+        var request = URLRequest(url: url)
         request.httpMethod = method
+        request.timeoutInterval = 60
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.httpBody = try JSONEncoder().encode(body)
+        log.notice("\(method, privacy: .public) \(url.absoluteString, privacy: .public) (json, \(request.httpBody?.count ?? 0, privacy: .public) bytes)")
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else {
+            log.error("\(method, privacy: .public) \(path, privacy: .public) — non-HTTP response")
             throw BackendClientError.nonHTTPResponse(path: path)
         }
+        log.notice("\(method, privacy: .public) \(url.absoluteString, privacy: .public) → \(http.statusCode, privacy: .public) (\(data.count, privacy: .public) bytes)")
         if let serviceErr = detectServiceUnavailable(data: data, response: http, path: path) {
+            log.error("\(method, privacy: .public) \(path, privacy: .public) — service unavailable (HTML brownout, status=\(http.statusCode, privacy: .public))")
             throw serviceErr
         }
         guard (200..<300).contains(http.statusCode) else {
+            let bodyPreview = String(data: data.prefix(400), encoding: .utf8) ?? "<binary>"
+            log.error("\(method, privacy: .public) \(path, privacy: .public) → \(http.statusCode, privacy: .public) body=\(bodyPreview, privacy: .public)")
             throw BackendClientError.badStatus(statusCode: http.statusCode, path: path, body: data)
         }
         if ResponseBody.self == EmptyResponse.self {

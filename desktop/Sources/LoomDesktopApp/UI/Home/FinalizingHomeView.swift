@@ -8,7 +8,7 @@ import SwiftUI
 ///
 /// Three sub-states drive the copy + indicator:
 ///   - .finalizing → "Finalizing recording…" with indeterminate spinner
-///   - .uploading(progress) → "Uploading…" with determinate progress bar
+///   - .uploading(progress) → staged upload/processing copy with a determinate progress bar
 ///   - .complete → "Uploaded" with a brief success state before the
 ///     parent router routes back to IdleHomeView
 struct FinalizingHomeView: View {
@@ -63,7 +63,8 @@ struct FinalizingHomeView: View {
     private var headline: String {
         switch viewModel.state {
         case .finalizing: return "Finalizing recording"
-        case .uploading: return "Uploading"
+        case .uploading(let progress):
+            return progress >= 0.89 ? "Processing recording" : "Uploading video"
         case .complete: return "Uploaded"
         case .failed: return "Upload failed"
         default: return "Finalizing"
@@ -75,9 +76,12 @@ struct FinalizingHomeView: View {
         case .finalizing:
             return "Stitching audio, video, and bubble into the final file."
         case .uploading:
-            return "Sending to your library. This usually takes a few seconds."
+            if !viewModel.statusMessage.isEmpty {
+                return "\(viewModel.statusMessage) Long recordings can take a few minutes."
+            }
+            return "Sending to your library. Long recordings can take a few minutes."
         case .complete(let slug):
-            return "Available at /v/\(slug)"
+            return "Saved at /v/\(slug). Transcript and AI notes continue in the background."
         case .failed(let message):
             return message
         default:
