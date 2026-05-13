@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
     private var bubbleHotkey: GlobalHotkey?
     private var recordHotkey: GlobalHotkey?
+    private var wasVideoRecording = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         bootLog.notice("applicationDidFinishLaunching — Loomola booted, OSLog plumbing alive")
@@ -27,17 +28,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // so "Start Recording" ↔ "Stop Recording" tracks reality.
         // Also auto-show the bubble overlay when video recording
         // starts — that's the 95% case for what the user wants
-        // visible. We don't auto-hide on stop; the user knows ⌥⇧B.
+        // visible. Auto-hide on video stop so the desktop returns to
+        // a clean idle state; the user can still pull it back with
+        // ⌥⇧B, and the next video recording auto-shows it again.
         NotificationCenter.default.addObserver(
             forName: RecorderCommands.videoRecordingStateChanged,
             object: nil,
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.statusItem?.menu?.update()
-                if RecorderCommands.isVideoRecording, self?.bubbleOverlay.isVisible == false {
-                    self?.bubbleOverlay.showPlaceholder()
+                guard let self else { return }
+                self.statusItem?.menu?.update()
+                let isVideoRecording = RecorderCommands.isVideoRecording
+                if isVideoRecording, self.bubbleOverlay.isVisible == false {
+                    self.bubbleOverlay.showPlaceholder()
+                } else if !isVideoRecording, self.wasVideoRecording {
+                    self.bubbleOverlay.hide()
                 }
+                self.wasVideoRecording = isVideoRecording
             }
         }
         Task { @MainActor in
