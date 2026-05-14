@@ -41,7 +41,7 @@ This repo hosts **two products on one codebase**, gated by a single env flag:
 
 ## Creator User (single-user auth today)
 
-- Email: `theiancross@gmail.com`
+- Email: `<owner-email — see git config>`
 - Initial password stored in `.env.local` as `TEST_CREATOR_PASSWORD` — reset via Supabase UI when convenient.
 - Multi-tenant / team invites is explicitly out of Stage 1 scope.
 

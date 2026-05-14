@@ -28,7 +28,7 @@ const SOURCE_DIR =
   "/private/var/folders/rx/p_9flz6x2_ngmypgmds0cj040000gn/T/loom-audio-3D1FB16F-569D-4370-AB1B-C856384C2EA1";
 const MIC_PATH = join(SOURCE_DIR, "mic.m4a");
 const SYS_PATH = join(SOURCE_DIR, "system-audio.m4a");
-const OWNER_ID = "612bc4b4-2a6c-4721-8820-f256e4eb0ef6"; // theiancross@gmail.com
+const OWNER_ID = "612bc4b4-2a6c-4721-8820-f256e4eb0ef6"; // you@example.com
 const DURATION_SECONDS = 4362.453333;
 // File mtime was 16:16 local (21:16 UTC); a 72.7-min recording ends there means
 // it started at ~15:04 local = 20:04 UTC.

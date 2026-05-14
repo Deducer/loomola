@@ -1412,7 +1412,7 @@ Expected: a run of 201s followed by a 429. Total 201-count across all runs this 
 
 - [ ] **Step 4: Smoke the email**
 
-Open a real inbox you control (the one the Supabase owner account uses — `theiancross@gmail.com` per `CLAUDE.md`). Post a comment from an incognito browser at a specific timestamp, e.g.:
+Open a real inbox you control (the one the Supabase owner account uses — `you@example.com` per `CLAUDE.md`). Post a comment from an incognito browser at a specific timestamp, e.g.:
 ```bash
 curl -s -X POST "https://loom.dissonance.cloud/api/v/V2LyopYmWS/comments" \
   -H "content-type: application/json" \

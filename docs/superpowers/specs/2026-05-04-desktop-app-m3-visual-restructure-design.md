@@ -229,7 +229,7 @@ Settings
 │   ├── Test audio backend
 │   └── Capture sources detail (the old CaptureSourcesView)
 └── Account
-    ├── Signed in as theiancross@gmail.com
+    ├── Signed in as you@example.com
     ├── Open dashboard
     └── Sign out
 ```
@@ -242,7 +242,7 @@ Click the avatar circle to open a small popover (`NSPopover` with custom view):
 
 ```
 ┌─────────────────────────┐
-│ theiancross@gmail.com    │
+│ you@example.com    │
 │ Pro plan • 12.4 GB used  │  ← (storage/plan optional, may defer)
 ├─────────────────────────┤
 │ Open dashboard           │

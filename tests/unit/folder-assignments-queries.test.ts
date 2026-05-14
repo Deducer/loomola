@@ -37,7 +37,7 @@ const createdMediaIds: string[] = [];
 const createdFolderIds: string[] = [];
 
 async function findTestOwnerId() {
-  const email = process.env.TEST_CREATOR_EMAIL ?? "theiancross@gmail.com";
+  const email = process.env.TEST_CREATOR_EMAIL ?? "test-owner@example.com";
   const rows = await db.execute<{ id: string }>(
     sql`SELECT id::text AS id FROM auth.users WHERE email = ${email} LIMIT 1`
   );

@@ -1,9 +1,10 @@
 // POST /api/contact
 //
-// Public landing-page contact form. Sends an email via Mailgun to
-// theiancross@gmail.com with the visitor's question or feature request.
-// Spam protection: a hidden honeypot field plus a sliding-window rate
-// limit keyed on the visitor IP hash (3 submissions per hour).
+// Public landing-page contact form. Sends an email via Mailgun to the
+// owner's inbox (configured via CONTACT_INBOX env var) with the
+// visitor's question or feature request. Spam protection: a hidden
+// honeypot field plus a sliding-window rate limit keyed on the visitor
+// IP hash (3 submissions per hour).
 //
 // This endpoint is allowlisted in src/lib/supabase/middleware.ts so
 // unauthenticated visitors can hit it.
@@ -14,7 +15,7 @@ import { sendEmail } from "@/lib/mail/mailgun";
 import { checkRateLimit } from "@/lib/rate-limit/check";
 import { hashVisitor } from "@/lib/viewer/visitor-id";
 
-const CONTACT_INBOX = "theiancross@gmail.com";
+const CONTACT_INBOX = process.env.CONTACT_INBOX;
 
 const TOPIC_LABELS = {
   setup: "Self-hosted setup help",
@@ -41,6 +42,14 @@ const schema = z.object({
 });
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  if (!CONTACT_INBOX) {
+    console.error("[contact] CONTACT_INBOX env var is not set");
+    return NextResponse.json(
+      { error: "Contact form is misconfigured. Please try again later." },
+      { status: 503 }
+    );
+  }
+
   let json: unknown;
   try {
     json = await req.json();

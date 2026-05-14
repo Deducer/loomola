@@ -20,7 +20,7 @@ Optional owner overrides:
 
 ```text
 MCP_OWNER_ID=<auth.users.id>
-MCP_OWNER_EMAIL=theiancross@gmail.com
+MCP_OWNER_EMAIL=you@example.com
 ```
 
 If neither is set, v1 uses the first `auth.users` row because Loomola is single-user today.
