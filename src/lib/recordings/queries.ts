@@ -94,9 +94,11 @@ function titleFor(row: {
   return row.title ?? row.aiTitle ?? "Untitled";
 }
 
-function parseAttendeeIds(value: unknown): string[] {
+export function parseAttendeeIds(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return value.filter((item): item is string => typeof item === "string");
+  return value.filter(
+    (item): item is string => typeof item === "string" && UUID_RE.test(item)
+  );
 }
 
 async function attendeesForRows(

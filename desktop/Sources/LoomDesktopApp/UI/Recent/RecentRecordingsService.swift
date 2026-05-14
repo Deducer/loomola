@@ -80,22 +80,49 @@ final class RecentRecordingsService: ObservableObject {
         // each media kind separately prevents a run of recent notes
         // from crowding all Loom videos out of the desktop's Video
         // Recent section.
-        async let videoItemsResponse = backend.recentRecordings(limit: limit, kind: "video")
-        async let audioItemsResponse = backend.recentRecordings(limit: limit, kind: "audio")
+        async let videoItemsResponse = fetchRecent(kind: "video")
+        async let audioItemsResponse = fetchRecent(kind: "audio")
         async let foldersResponse = backend.listFolders()
-        do {
-            let (videoResponse, audioResponse) = try await (videoItemsResponse, audioItemsResponse)
-            let combined = videoResponse.items + audioResponse.items
-            let mapped = combined
+
+        let (videoResult, audioResult) = await (videoItemsResponse, audioItemsResponse)
+
+        var combined: [RecentRecordingDTO] = []
+        var failures: [String] = []
+        var hadSuccessfulSection = false
+
+        switch videoResult {
+        case .success(let response):
+            hadSuccessfulSection = true
+            combined.append(contentsOf: response.items)
+        case .failure(let error):
+            failures.append("videos: \(error.localizedDescription)")
+            log.error("video recents refresh failed: \(error.localizedDescription, privacy: .public)")
+        }
+
+        switch audioResult {
+        case .success(let response):
+            hadSuccessfulSection = true
+            combined.append(contentsOf: response.items)
+        case .failure(let error):
+            failures.append("notes: \(error.localizedDescription)")
+            log.error("audio recents refresh failed: \(error.localizedDescription, privacy: .public)")
+        }
+
+        if hadSuccessfulSection {
+            items = combined
                 .compactMap { RecentRecording(dto: $0) }
                 .sorted { $0.createdAt > $1.createdAt }
-            items = mapped
-            lastError = nil
-            log.notice("fetched \(videoResponse.items.count, privacy: .public) video(s), \(audioResponse.items.count, privacy: .public) note(s); \(mapped.count, privacy: .public) decoded")
-        } catch {
-            lastError = error.localizedDescription
-            log.error("refresh failed: \(error.localizedDescription, privacy: .public)")
         }
+
+        if failures.isEmpty {
+            lastError = nil
+        } else {
+            lastError = failures.joined(separator: "; ")
+        }
+        let videoCount = (try? videoResult.get().items.count) ?? 0
+        let audioCount = (try? audioResult.get().items.count) ?? 0
+        log.notice("fetched \(videoCount, privacy: .public) video(s), \(audioCount, privacy: .public) note(s); \(self.items.count, privacy: .public) decoded")
+
         // Folders fetch is a soft dependency — failure here just
         // disables the folder picker, doesn't block the rows.
         do {
@@ -103,6 +130,14 @@ final class RecentRecordingsService: ObservableObject {
             folders = response.folders
         } catch {
             log.error("folders fetch failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private func fetchRecent(kind: String) async -> Result<RecentRecordingsResponse, Error> {
+        do {
+            return .success(try await backend.recentRecordings(limit: limit, kind: kind))
+        } catch {
+            return .failure(error)
         }
     }
 
