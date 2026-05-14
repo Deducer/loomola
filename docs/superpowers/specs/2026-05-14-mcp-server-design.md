@@ -253,6 +253,14 @@ Write `tests/integration/mcp-tools.test.ts` that spins up a test server, calls e
 
 Each Phase 2 tool follows the M3 pattern. Skip if scope tight.
 
+### Build status (2026-05-14)
+
+- M1 shipped in `feat(mcp): add server skeleton and auth`.
+- M2 shipped in `refactor(mcp): extract read query services`.
+- M3 shipped in `feat(mcp): add phase 1 read tools`.
+- M4 shipped in `docs(mcp): add smoke and setup docs`.
+- M5 / Phase 2 deferred. `loomola_people` and `loomola_folder` are thin follow-ups; `loomola_search_by_speaker` needs a chunk/speaker attribution design first.
+
 ---
 
 ## Acceptance Criteria

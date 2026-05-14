@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate.ts",
-    "smoke": "doppler run --project dissonance-cloud --config prd_loom -- node scripts/e2e-smoke.mjs"
+    "smoke": "doppler run --project dissonance-cloud --config prd_loom -- node scripts/e2e-smoke.mjs",
+    "mcp-smoke": "doppler run --project dissonance-cloud --config prd_loom -- tsx scripts/mcp-smoke.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.71",

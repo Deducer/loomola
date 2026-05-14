@@ -303,6 +303,16 @@ A 72-min audio recording was almost lost on 2026-05-06: a Coolify brownout retur
 | **Tests** | New `OrphanedRecordingStoreTests` covers capture / round-trip / mark-rescued / discard. All 96 desktop tests + 247 server unit tests pass. |
 | **Helper scripts kept around for incident response** | `scripts/diag-latest-audio.mjs` (latest audio note's full state — DB row + transcript + AI outputs + pg-boss jobs), `scripts/rescue-orphan-audio-note.mjs` (mix raw mic + system tracks locally with ffmpeg, upload to R2, insert media_objects row, enqueue transcribe), `scripts/wake-prod-boss.mjs` (hits an authed enhance endpoint with bearer token to wake pg-boss when silently dead). |
 
+## Stage 10 — Local MCP server (✅ Phase 1 shipped 2026-05-14)
+
+| Milestone | Status | What it ships |
+|---|---|---|
+| M1 | ✅ shipped | `/api/mcp` Streamable HTTP skeleton, `MCP_TOKEN` bearer auth, loopback guard, and `loomola_ping`. |
+| M2 | ✅ shipped | Shared read services for recent media, media detail hydration, semantic search, and JSONB-backed action items. Existing `/api/recordings/recent` response shape preserved. |
+| M3 | ✅ shipped | Phase 1 read-only tools: `loomola_search`, `loomola_recent_recordings`, `loomola_recent_meetings`, `loomola_get_media`, `loomola_action_items`. |
+| M4 | ✅ shipped | `npm run mcp-smoke`, setup docs, AGENTS.md infrastructure row, and spec open-question answers. |
+| Phase 2 | 💡 deferred | `loomola_people`, `loomola_folder`, and speaker-restricted semantic search. Speaker search needs a chunk/speaker attribution design before it should ship. |
+
 ## Open follow-ups (next milestones to spec)
 
 | Topic | Why | Rough effort |

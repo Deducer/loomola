@@ -38,6 +38,7 @@ This repo hosts **two products on one codebase**, gated by a single env flag:
 | Anthropic (Claude) | `ANTHROPIC_API_KEY` (Doppler) | Sonnet 4.6 via Vercel AI SDK; provider-agnostic (swappable) |
 | Mailgun | `MAILGUN_API_KEY`, `MAILGUN_DOMAIN=mg.dissonance.cloud`, `MAIL_FROM_ADDRESS` (Doppler) | Used for new-comment + first-view-per-visitor notifications to recording owner |
 | Feature flag: `ENABLE_GRANOLA` | Doppler (`prd_loom`) | `'true'` enables the Granola product (audio meeting notes) on top of Loom. `'false'` / unset = Loom-only. Read by every server-side gate; client UI hides Notes-tab when false. Set per-deploy. |
+| MCP server | `http://localhost:3000/api/mcp` | Streamable HTTP MCP endpoint for local agents. Bearer token is `MCP_TOKEN` in Doppler; loopback-only unless `MCP_ALLOW_PUBLIC=true`. Phase 1 is read-only: search, recent recordings, recent meetings, get media, action items. |
 
 ## Creator User (single-user auth today)
 
