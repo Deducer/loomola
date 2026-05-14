@@ -65,7 +65,7 @@ describe("MCP auth", () => {
         request({
           authorization: "Bearer secret",
           host: "loom.dissonance.cloud",
-          "x-forwarded-for": "100.94.207.47",
+          "x-forwarded-for": "100.96.0.1",
         }),
         { MCP_TOKEN: "secret" }
       );
@@ -77,7 +77,7 @@ describe("MCP auth", () => {
         request({
           authorization: "Bearer secret",
           host: "loom.dissonance.cloud",
-          "x-real-ip": "100.116.165.9",
+          "x-real-ip": "100.100.0.1",
         }),
         { MCP_TOKEN: "secret" }
       );
