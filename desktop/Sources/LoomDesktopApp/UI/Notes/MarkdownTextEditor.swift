@@ -12,15 +12,15 @@ import SwiftUI
 ///
 /// Supported in v1:
 ///   • `# `, `## `, `### ` heading lines (size + weight scaled)
+///   • `- ` and `* ` unordered lists (drawn as bullets)
 ///   • `**bold**` runs
 ///   • `*italic*` runs
 ///   • `` `code` `` mono runs
 ///
 /// Out of scope (deliberately minimal — meeting-note usage):
-///   • Lists, links, blockquotes, code blocks, tables. Each adds
-///     edge cases (line-prefix continuations, click-through links,
-///     fenced multiline regions). When a real meeting note needs
-///     them, port a proper parser; v1 doesn't need it.
+///   • Links, blockquotes, code blocks, tables. Each adds edge
+///     cases (click-through links, fenced multiline regions,
+///     editable grids). Generated notes avoid tables and use bullets.
 struct MarkdownTextEditor: NSViewRepresentable {
     @Binding var text: String
     @Binding var measuredHeight: CGFloat
@@ -130,6 +130,7 @@ struct MarkdownTextEditor: NSViewRepresentable {
 
             let plain = storage.string as NSString
             applyHeadings(in: plain, storage: storage)
+            textView.renderedBulletMarkers = applyUnorderedLists(in: plain, storage: storage)
             applyInlineRuns(
                 pattern: "(?<!\\*)\\*\\*([^*\\n]+)\\*\\*(?!\\*)",
                 markerLength: 2,
@@ -199,6 +200,38 @@ struct MarkdownTextEditor: NSViewRepresentable {
             }
         }
 
+        private func applyUnorderedLists(
+            in plain: NSString,
+            storage: NSTextStorage
+        ) -> [RenderedBulletMarker] {
+            guard let regex = try? NSRegularExpression(
+                pattern: "^(\\s{0,12})([-*])\\s+",
+                options: [.anchorsMatchLines]
+            ) else { return [] }
+
+            let full = NSRange(location: 0, length: plain.length)
+            var markers: [RenderedBulletMarker] = []
+            regex.enumerateMatches(in: plain as String, range: full) { match, _, _ in
+                guard let match = match else { return }
+                let leadingWhitespace = plain.substring(with: match.range(at: 1))
+                let indentLevel = leadingWhitespace.reduce(0) { total, char in
+                    total + (char == "\t" ? 2 : 1)
+                }
+                let visualIndent = CGFloat(indentLevel) * 10
+                let paragraphRange = plain.paragraphRange(for: match.range)
+
+                let paragraphStyle = NSMutableParagraphStyle()
+                paragraphStyle.firstLineHeadIndent = visualIndent + 22
+                paragraphStyle.headIndent = visualIndent + 22
+                paragraphStyle.paragraphSpacing = 4
+                paragraphStyle.lineSpacing = 1.5
+                storage.addAttribute(.paragraphStyle, value: paragraphStyle, range: paragraphRange)
+                hideMarker(match.range, in: storage)
+                markers.append(RenderedBulletMarker(range: match.range, indent: visualIndent))
+            }
+            return markers
+        }
+
         private func applyInlineRuns(
             pattern: String,
             markerLength: Int,
@@ -257,14 +290,23 @@ struct MarkdownTextEditor: NSViewRepresentable {
     }
 }
 
+fileprivate struct RenderedBulletMarker {
+    let range: NSRange
+    let indent: CGFloat
+}
+
 /// NSTextView subclass that draws a placeholder string when empty
 /// and routes through coalesced text-storage edits to dodge the
 /// SwiftUI-update loop.
 final class MarkdownTextView: NSTextView {
     var placeholderString: String = ""
+    fileprivate var renderedBulletMarkers: [RenderedBulletMarker] = [] {
+        didSet { needsDisplay = true }
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
+        drawRenderedBulletMarkers()
         if string.isEmpty {
             let insets = textContainerInset
             let origin = NSPoint(x: 5 + insets.width, y: insets.height)
@@ -273,6 +315,41 @@ final class MarkdownTextView: NSTextView {
                 .foregroundColor: MarkdownStyle.placeholderColor,
             ]
             (placeholderString as NSString).draw(at: origin, withAttributes: attrs)
+        }
+    }
+
+    private func drawRenderedBulletMarkers() {
+        guard !renderedBulletMarkers.isEmpty,
+              let layoutManager,
+              let textContainer
+        else { return }
+        layoutManager.ensureLayout(for: textContainer)
+
+        let textLength = (string as NSString).length
+        guard textLength > 0 else { return }
+        let containerOrigin = textContainerOrigin
+        MarkdownStyle.bulletColor.setFill()
+
+        for marker in renderedBulletMarkers {
+            guard marker.range.location < textLength else { continue }
+            let characterRange = NSRange(location: marker.range.location, length: 1)
+            let glyphRange = layoutManager.glyphRange(
+                forCharacterRange: characterRange,
+                actualCharacterRange: nil
+            )
+            guard glyphRange.location < layoutManager.numberOfGlyphs else { continue }
+            let lineRect = layoutManager.lineFragmentRect(
+                forGlyphAt: glyphRange.location,
+                effectiveRange: nil
+            )
+            let bulletSize: CGFloat = 5.5
+            let bulletRect = NSRect(
+                x: containerOrigin.x + marker.indent + 4,
+                y: containerOrigin.y + lineRect.midY - bulletSize / 2,
+                width: bulletSize,
+                height: bulletSize
+            )
+            NSBezierPath(ovalIn: bulletRect).fill()
         }
     }
 }
@@ -291,6 +368,10 @@ private enum MarkdownStyle {
     static let placeholderColor = dynamicColor(
         light: NSColor(red: 0.541, green: 0.549, blue: 0.584, alpha: 1),
         dark: NSColor(red: 0.416, green: 0.427, blue: 0.471, alpha: 1)
+    )
+    static let bulletColor = dynamicColor(
+        light: NSColor(red: 0.430, green: 0.438, blue: 0.486, alpha: 1),
+        dark: NSColor(red: 0.545, green: 0.552, blue: 0.596, alpha: 1)
     )
     static var italic: NSFont {
         let manager = NSFontManager.shared

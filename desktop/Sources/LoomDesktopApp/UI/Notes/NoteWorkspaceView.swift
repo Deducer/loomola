@@ -1785,14 +1785,22 @@ struct NoteWorkspaceView: View {
                         let enhancement = try? await backend.getEnhancementStatus(mediaId: recording.id)
                         await MainActor.run {
                             let savedBody = note.body ?? ""
-                            let generatedBody =
+                            let savedTrimmed = savedBody.trimmingCharacters(in: .whitespacesAndNewlines)
+                            let generatedRaw =
                                 enhancement?.generationStatus == "complete"
                                 ? enhancement?.summary?.trimmingCharacters(in: .whitespacesAndNewlines)
                                 : nil
-                            let displayBody =
-                                savedBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                ? (generatedBody ?? savedBody)
-                                : savedBody
+                            let generatedBody = generatedRaw
+                                .map(MarkdownDisplayNormalizer.normalizeGeneratedNotes)?
+                                .trimmingCharacters(in: .whitespacesAndNewlines)
+                            let displayBody: String
+                            if savedTrimmed.isEmpty {
+                                displayBody = generatedBody ?? savedBody
+                            } else if generatedRaw == savedTrimmed {
+                                displayBody = MarkdownDisplayNormalizer.normalizeGeneratedNotes(savedBody)
+                            } else {
+                                displayBody = savedBody
+                            }
                             reviewBody = displayBody
                             reviewLastSaved = displayBody
                             if let templateId = note.templateId {
@@ -2044,7 +2052,8 @@ struct NoteWorkspaceView: View {
             reviewTitle = suggested
         }
 
-        guard let summary = status.summary, !summary.isEmpty else { return }
+        guard let rawSummary = status.summary, !rawSummary.isEmpty else { return }
+        let summary = MarkdownDisplayNormalizer.normalizeGeneratedNotes(rawSummary)
         await revealGeneratedNotesBody(summary, isActiveRecording: isActiveRecording)
 
         if isActiveRecording {

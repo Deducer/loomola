@@ -122,6 +122,8 @@ export function buildAudioNotesEnhancementPrompt(params: {
     "- Preserve verbatim any phrase, sentence, or bullet the user wrote that is specific, opinionated, or stylistically distinctive.",
     "- Expand sparse shorthand only when the transcript gives clear context.",
     "- Structure the output with markdown headings and bullets.",
+    "- Do not use markdown tables or horizontal rules; use heading sections and bullet lists for tasks, owners, and notes.",
+    "- Use normal markdown bold (`**text**`), never doubled bold markers like `****text****`.",
     "- Include action items only when supported by the notes or transcript.",
     "- Use attached images as visual context when they clarify slides, whiteboards, product screens, diagrams, or UI bugs.",
     "- Do not invent attendees, decisions, or commitments.",
