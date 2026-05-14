@@ -162,7 +162,7 @@ struct NoteWorkspaceView: View {
     private var shouldShowGenerateNotesPill: Bool {
         switch enhanceStatus {
         case .idle:
-            return transcriptUpdatedAfterGeneration || !notesGeneratedForCurrentTranscript
+            return true
         case .running, .complete, .failed:
             return true
         }
@@ -815,20 +815,17 @@ struct NoteWorkspaceView: View {
             if transcriptUpdatedAfterGeneration {
                 transcriptUpdatedPill
             } else if !notesGeneratedForCurrentTranscript {
-                Button(action: startEnhance) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text("Generate notes")
-                            .font(DSFont.Body.md())
-                    }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(Capsule().fill(DSColor.State.success))
-                }
-                .buttonStyle(.plain)
-                .help("Generate title + summary from transcript and your notes")
+                generateActionPill(
+                    label: "Generate notes",
+                    icon: "sparkles",
+                    emphasized: true
+                )
+            } else {
+                generateActionPill(
+                    label: "Regenerate notes",
+                    icon: "arrow.clockwise",
+                    emphasized: false
+                )
             }
         case .running:
             EmptyView()
@@ -861,6 +858,34 @@ struct NoteWorkspaceView: View {
                 failedGenerateNotesPill
             }
         }
+    }
+
+    private func generateActionPill(
+        label: String,
+        icon: String,
+        emphasized: Bool
+    ) -> some View {
+        Button(action: startEnhance) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(label)
+                    .font(DSFont.Body.md())
+            }
+            .foregroundStyle(emphasized ? .white : DSColor.Text.primary)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(
+                Capsule().fill(emphasized ? DSColor.State.success : DSColor.Bg.surface)
+            )
+            .overlay {
+                if !emphasized {
+                    Capsule().strokeBorder(DSColor.Border.subtle, lineWidth: 1)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .help("\(label) from transcript and your notes")
     }
 
     private var transcriptUpdatedPill: some View {
@@ -1759,8 +1784,17 @@ struct NoteWorkspaceView: View {
                         let note = try await backend.getNote(mediaId: recording.id)
                         let enhancement = try? await backend.getEnhancementStatus(mediaId: recording.id)
                         await MainActor.run {
-                            reviewBody = note.body ?? ""
-                            reviewLastSaved = note.body ?? ""
+                            let savedBody = note.body ?? ""
+                            let generatedBody =
+                                enhancement?.generationStatus == "complete"
+                                ? enhancement?.summary?.trimmingCharacters(in: .whitespacesAndNewlines)
+                                : nil
+                            let displayBody =
+                                savedBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                ? (generatedBody ?? savedBody)
+                                : savedBody
+                            reviewBody = displayBody
+                            reviewLastSaved = displayBody
                             if let templateId = note.templateId {
                                 selectedTemplateId = templateId
                             }

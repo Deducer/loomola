@@ -122,6 +122,7 @@ export function NotePageClient({
   speakerAssignments,
 }: NotePageClientProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const titleRef = useRef<HTMLTextAreaElement | null>(null);
   const [body, setBody] = useState(initialBody);
   const [title, setTitle] = useState(initialTitle ?? "");
   const [templateId, setTemplateId] = useState(initialTemplateId);
@@ -216,6 +217,13 @@ export function NotePageClient({
     }, 600);
     return () => window.clearTimeout(timer);
   }, [body, lastSavedBody, mediaId]);
+
+  useEffect(() => {
+    const element = titleRef.current;
+    if (!element) return;
+    element.style.height = "0px";
+    element.style.height = `${element.scrollHeight}px`;
+  }, [title]);
 
   const refreshEnhancement = useCallback(async () => {
     const response = await fetch(`/api/notes/${mediaId}/enhance`);
@@ -554,13 +562,23 @@ export function NotePageClient({
         </div>
 
         <section className="mt-6">
-          <input
+          <textarea
+            ref={titleRef}
             value={title}
-            onChange={(event) => setTitle(event.target.value)}
+            rows={1}
+            onChange={(event) =>
+              setTitle(event.target.value.replace(/\s*\n+\s*/g, " "))
+            }
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                event.currentTarget.blur();
+              }
+            }}
             onBlur={saveTitle}
             placeholder="New note"
             className={cn(
-              "w-full border-none bg-transparent px-0 text-[1.5rem] font-semibold leading-tight tracking-normal text-text outline-none placeholder:font-serif placeholder:italic placeholder:text-text-subtle sm:text-[1.75rem]",
+              "block max-h-40 min-h-[2.1rem] w-full resize-none overflow-hidden border-none bg-transparent px-0 text-[1.5rem] font-semibold leading-tight tracking-normal text-text outline-none placeholder:font-serif placeholder:italic placeholder:text-text-subtle sm:min-h-[2.45rem] sm:text-[1.75rem]",
               !title.trim() && "italic text-text-subtle"
             )}
           />
