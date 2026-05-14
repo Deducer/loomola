@@ -1,12 +1,6 @@
 import { NextResponse } from "next/server";
-import { listRecordings } from "@/db/queries/recordings";
-import { listImageAttachmentsForMediaIds } from "@/db/queries/notes";
-import { listFoldersForOwner } from "@/db/queries/folders";
-import { db } from "@/db";
-import { transcripts } from "@/db/schema";
-import { inArray } from "drizzle-orm";
-import { presignGet } from "@/lib/r2/presigned-get";
 import { requireAuth } from "@/lib/require-auth";
+import { recentMediaItems } from "@/lib/recordings/queries";
 
 /// Slim list of recent recordings for the desktop app's idle home
 /// strip. Mirrors the dashboard's listRecordings query but returns
@@ -36,75 +30,23 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "invalid_kind" }, { status: 400 });
   }
 
-  const all = await listRecordings(user.id);
-  const filtered = kind === null ? all : all.filter((r) => r.type === kind);
-  const slice = filtered.slice(0, limit);
-
-  // One round trip for all audio attachments instead of N+1.
-  const audioIds = slice.filter((r) => r.type === "audio").map((r) => r.id);
-  const attachments =
-    audioIds.length > 0
-      ? await listImageAttachmentsForMediaIds(audioIds, user.id)
-      : new Map();
-  const transcriptLengthByMediaId = new Map<string, number>();
-  if (audioIds.length > 0) {
-    const transcriptRows = await db
-      .select({
-        mediaObjectId: transcripts.mediaObjectId,
-        textLength: transcripts.fullText,
-      })
-      .from(transcripts)
-      .where(inArray(transcripts.mediaObjectId, audioIds));
-    for (const row of transcriptRows) {
-      transcriptLengthByMediaId.set(
-        row.mediaObjectId,
-        row.textLength.trim().length
-      );
-    }
-  }
-
-  // One round trip for folder names. Only fetch when at least one
-  // recording in the slice is filed.
-  const sliceHasFolder = slice.some((r) => r.folderId != null);
-  const folderNameById = new Map<string, string>();
-  if (sliceHasFolder) {
-    const folders = await listFoldersForOwner(user.id);
-    for (const f of folders) folderNameById.set(f.id, f.name);
-  }
-
-  const items = await Promise.all(
-    slice.map(async (r) => {
-      let thumbnailUrl: string | null = null;
-      if (r.type === "audio") {
-        const list = attachments.get(r.id) ?? [];
-        const firstImage = list[0];
-        if (firstImage) {
-          thumbnailUrl = await presignGet(firstImage.r2Key);
-        }
-      } else if (r.compositeThumbnailKey) {
-        thumbnailUrl = await presignGet(r.compositeThumbnailKey);
-      }
-      return {
-        id: r.id,
-        slug: r.slug,
-        title: r.title ?? r.aiTitle ?? "Untitled",
-        kind: r.type,
-        createdAt: r.createdAt.toISOString(),
-        // `media_objects.duration_seconds` is a Drizzle `numeric` column
-        // → arrives as a string. Coerce to a JS number so the desktop's
-        // strict JSONDecoder accepts it as Double.
-        durationSeconds: r.durationSeconds == null ? null : Number(r.durationSeconds),
-        status: r.status,
-        transcriptReady:
-          r.type === "audio"
-            ? (transcriptLengthByMediaId.get(r.id) ?? 0) > 0
-            : null,
-        thumbnailUrl,
-        folderId: r.folderId,
-        folderName: r.folderId ? (folderNameById.get(r.folderId) ?? null) : null,
-      };
-    })
-  );
+  const items = (await recentMediaItems({
+    ownerId: user.id,
+    type: kind ?? undefined,
+    limit,
+  })).map((r) => ({
+    id: r.id,
+    slug: r.slug,
+    title: r.title,
+    kind: r.type,
+    createdAt: r.createdAt.toISOString(),
+    durationSeconds: r.durationSeconds,
+    status: r.status,
+    transcriptReady: r.transcriptReady,
+    thumbnailUrl: r.thumbnailUrl,
+    folderId: r.folderId,
+    folderName: r.folderName,
+  }));
 
   return NextResponse.json({ items });
 }

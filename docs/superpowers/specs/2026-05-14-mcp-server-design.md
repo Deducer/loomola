@@ -314,7 +314,7 @@ After Codex finishes, the operator (Ian) does:
 
 1. **Embedding helper location.** Where does the existing code embed text for the `vector(1536)` columns? Find it during M3; reuse it for `loomola_search`. Document the path here once found.
 
-2. **Action-items table shape.** Is there a dedicated `action_items` table or are action items inlined as JSONB on `media_objects`? Check the schema, document, and use whichever exists.
+2. **Action-items table shape.** Answer: there is no dedicated `action_items` table. Action items are stored as JSONB on `ai_outputs.action_items`, shaped by `src/lib/ai/schemas.ts` as `{ text, timestamp_sec }[]`. Phase 1 exposes them as read-only "open" items; `status: "done"` returns an empty list because no persisted completion state exists yet.
 
 3. **Speaker assignment data shape.** For Phase 2 `loomola_search_by_speaker`, find the existing speaker-assignment table/columns. If the data isn't there yet (Stage 1 may not have shipped speaker attribution), defer this tool entirely.
 

@@ -1,6 +1,9 @@
 import { timingSafeEqual } from "node:crypto";
 
-type Env = Pick<NodeJS.ProcessEnv, "MCP_TOKEN" | "MCP_ALLOW_PUBLIC">;
+type Env = {
+  MCP_TOKEN?: string;
+  MCP_ALLOW_PUBLIC?: string;
+};
 
 export type McpAuthResult =
   | { ok: true }
@@ -51,13 +54,18 @@ export function isLoopbackRequest(request: Request): boolean {
 
 export function verifyMcpRequest(
   request: Request,
-  env: Env = process.env
+  env?: Env
 ): McpAuthResult {
-  if (!isLoopbackRequest(request) && env.MCP_ALLOW_PUBLIC !== "true") {
+  const source = env ?? {
+    MCP_TOKEN: process.env.MCP_TOKEN,
+    MCP_ALLOW_PUBLIC: process.env.MCP_ALLOW_PUBLIC,
+  };
+
+  if (!isLoopbackRequest(request) && source.MCP_ALLOW_PUBLIC !== "true") {
     return { ok: false, status: 403 };
   }
 
-  const expected = env.MCP_TOKEN;
+  const expected = source.MCP_TOKEN;
   const actual = parseBearerToken(request.headers.get("authorization"));
   if (!expected || !actual || !constantTimeEqual(actual, expected)) {
     return { ok: false, status: 401 };
