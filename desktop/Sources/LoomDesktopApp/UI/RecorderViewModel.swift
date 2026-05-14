@@ -13,6 +13,7 @@ final class RecorderViewModel: ObservableObject {
     @Published var email = ""
     @Published var password = ""
     @Published var audioTitle = ""
+    @Published private(set) var audioTitleManuallyEdited = false
     @Published var includeMicInAudioNote = true
     @Published var includeSystemAudioInAudioNote =
         RecorderViewModel.defaultIncludeSystemAudioInAudioNote()
@@ -394,6 +395,7 @@ final class RecorderViewModel: ObservableObject {
             meetingWatchTask = nil
             audioTitleAutosaveTask = nil
             lastSyncedAudioTitle = ""
+            audioTitleManuallyEdited = false
             lastStoppedAudioRecordingForReview = nil
             obsidianSyncInFlight = false
             meetingContext = nil
@@ -1182,6 +1184,7 @@ final class RecorderViewModel: ObservableObject {
                 activeAudioRecordingSlug = session.backendSlug
                 activeAudioRecordingId = session.backendRecordingId
                 lastSyncedAudioTitle = title ?? ""
+                audioTitleManuallyEdited = title != nil
                 isAudioNotePaused = false
                 audioNotePausedAt = nil
                 audioNotePausedAccumulatedSeconds = 0
@@ -1396,7 +1399,13 @@ final class RecorderViewModel: ObservableObject {
 
     func setAudioTitle(_ title: String) {
         audioTitle = title
+        audioTitleManuallyEdited = isUserOwnedAudioTitle(title)
         scheduleAudioTitleAutosave()
+    }
+
+    private func isUserOwnedAudioTitle(_ title: String) -> Bool {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty && trimmed != autoSuggestedAudioTitle
     }
 
     private func scheduleAudioTitleAutosave() {
@@ -1518,7 +1527,7 @@ final class RecorderViewModel: ObservableObject {
     }
 
     func applyGeneratedAudioNote(title: String?, body: String?) {
-        if let title, !title.isEmpty {
+        if let title, !title.isEmpty, shouldApplyGeneratedAudioTitle {
             audioTitle = title
             lastSyncedAudioTitle = title
         }
@@ -1526,6 +1535,11 @@ final class RecorderViewModel: ObservableObject {
             liveNotesBody = body
             lastSyncedNotesBody = body
         }
+    }
+
+    private var shouldApplyGeneratedAudioTitle: Bool {
+        !audioTitleManuallyEdited &&
+            audioTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     func discardActiveRecordingForQuit() async {
@@ -1552,6 +1566,7 @@ final class RecorderViewModel: ObservableObject {
         audioTitleAutosaveTask?.cancel()
         audioTitleAutosaveTask = nil
         lastSyncedAudioTitle = ""
+        audioTitleManuallyEdited = false
         state = .finalizing
         statusMessage = "Discarding audio note..."
         await audioNoteRecorder.cancel()
@@ -1811,6 +1826,7 @@ final class RecorderViewModel: ObservableObject {
             if audioTitle == autoSuggestedAudioTitle {
                 audioTitle = ""
             }
+            audioTitleManuallyEdited = isUserOwnedAudioTitle(audioTitle)
             autoSuggestedAudioTitle = nil
             return
         }
@@ -1818,6 +1834,7 @@ final class RecorderViewModel: ObservableObject {
         if audioTitle == autoSuggestedAudioTitle {
             audioTitle = ""
         }
+        audioTitleManuallyEdited = isUserOwnedAudioTitle(audioTitle)
         autoSuggestedAudioTitle = context.suggestedTitle
 
         if dismissedMeetingContext != context && activeRecordingKind == nil {

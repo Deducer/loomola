@@ -133,6 +133,7 @@ struct NoteWorkspaceView: View {
     @State private var transcriptRetryAvailable = false
     @State private var transcriptRetrying = false
     @State private var pollEnhanceTask: Task<Void, Never>? = nil
+    @State private var suppressReviewAutosave = false
 
     /// Persisted transcript from the server. v1 small win: this is
     /// post-upload/batch transcript, not live streaming yet.
@@ -782,16 +783,23 @@ struct NoteWorkspaceView: View {
     // MARK: - Generate-notes bar
 
     /// Bottom-anchored AI-enhance pill. ✦ Generate notes (idle) →
-    /// "Generating…" with spinner (running) → "Notes updated" check
-    /// (complete, ~2.5s) → back to idle. Reads + writes title and
-    /// body via the same bindings as the editors so updates reflect
-    /// immediately without re-fetching from the server.
+    /// "Writing notes" with spinner (running) → line-by-line reveal
+    /// of the generated body → "Notes updated" check (complete,
+    /// ~2.5s) → back to idle. Reads + writes title and body via the
+    /// same bindings as the editors so updates reflect immediately
+    /// without re-fetching from the server.
     private var generateNotesBar: some View {
         HStack {
             Spacer()
-            HStack(spacing: DSSpacing.sm) {
-                transcriptTogglePill
-                generateNotesPill
+            if enhanceStatus == .running {
+                writingNotesBar
+                    .frame(maxWidth: 640)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            } else {
+                HStack(spacing: DSSpacing.sm) {
+                    transcriptTogglePill
+                    generateNotesPill
+                }
             }
             Spacer()
         }
@@ -820,18 +828,7 @@ struct NoteWorkspaceView: View {
                 .help("Generate title + summary from transcript and your notes")
             }
         case .running:
-            HStack(spacing: 8) {
-                ProgressView()
-                    .controlSize(.small)
-                    .tint(DSColor.Text.secondary)
-                Text("Generating notes…")
-                    .font(DSFont.Body.md())
-                    .foregroundStyle(DSColor.Text.secondary)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(Capsule().fill(DSColor.Bg.surface))
-            .overlay { Capsule().strokeBorder(DSColor.Border.subtle, lineWidth: 1) }
+            EmptyView()
         case .complete:
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.circle.fill")
@@ -900,6 +897,30 @@ struct NoteWorkspaceView: View {
         .help("Transcript changed since the last AI note generation")
     }
 
+    private var writingNotesBar: some View {
+        HStack(spacing: DSSpacing.md) {
+            ProgressView()
+                .controlSize(.small)
+                .tint(DSColor.State.success)
+            Text("Writing notes")
+                .font(DSFont.Body.md().weight(.semibold))
+                .foregroundStyle(DSColor.State.success)
+            Spacer()
+        }
+        .frame(height: 52)
+        .padding(.horizontal, 18)
+        .background(
+            RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous)
+                .fill(DSColor.Bg.surfaceRaised)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous)
+                .strokeBorder(DSColor.Border.strong.opacity(0.72), lineWidth: 1)
+        }
+        .dsShadow(.raised)
+        .help("Writing generated notes")
+    }
+
     private var transcriptTogglePill: some View {
         Button {
             transcriptDrawerOpen.toggle()
@@ -944,74 +965,95 @@ struct NoteWorkspaceView: View {
     }
 
     private var transcriptDrawer: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: DSSpacing.sm) {
-                TranscriptToolbarIconButton(
-                    icon: "magnifyingglass",
-                    help: "Find in transcript (⌘F)",
-                    isActive: transcriptSearchVisible,
-                    action: toggleTranscriptSearch
-                )
-                Image(systemName: "text.bubble")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(DSColor.Text.secondary)
-                Text(isRecording ? "Live transcript" : "Transcript")
-                    .font(DSFont.Body.md().weight(.medium))
-                    .foregroundStyle(DSColor.Text.primary)
-                let wordCount = isRecording ? liveTranscriptWordCount : (transcript?.wordCount ?? 0)
-                if wordCount > 0 {
-                    Text("\(wordCount) words")
-                        .font(DSFont.Body.sm())
-                        .foregroundStyle(DSColor.Text.tertiary)
-                }
-                Spacer()
-                Button {
-                    copyTranscript()
-                } label: {
-                    Image(systemName: "doc.on.doc")
-                        .font(.system(size: 12, weight: .semibold))
+        ScrollViewReader { proxy in
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: DSSpacing.sm) {
+                    TranscriptToolbarIconButton(
+                        icon: "magnifyingglass",
+                        help: "Find in transcript (⌘F)",
+                        isActive: transcriptSearchVisible,
+                        action: toggleTranscriptSearch
+                    )
+                    Image(systemName: "text.bubble")
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(DSColor.Text.secondary)
-                        .frame(width: 28, height: 28)
-                }
-                .buttonStyle(.plain)
-                .disabled(transcriptTextForCopy.isEmpty)
-                .opacity(transcriptTextForCopy.isEmpty ? 0.45 : 1)
-                .help("Copy transcript")
-                Button {
-                    transcriptDrawerOpen = false
-                } label: {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(DSColor.Text.secondary)
-                        .frame(width: 28, height: 28)
-                }
-                .buttonStyle(.plain)
-                .help("Hide transcript")
-            }
-            .padding(.horizontal, DSSpacing.lg)
-            .padding(.top, DSSpacing.md)
-            .padding(.bottom, DSSpacing.xs)
-
-            if transcriptSearchVisible {
-                transcriptSearchBar
-                    .padding(.horizontal, DSSpacing.lg)
-                    .padding(.bottom, DSSpacing.sm)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-
-            ScrollView {
-                Group {
-                    if isRecording {
-                        liveTranscriptContent
-                    } else {
-                        transcriptContent
+                    Text(isRecording ? "Live transcript" : "Transcript")
+                        .font(DSFont.Body.md().weight(.medium))
+                        .foregroundStyle(DSColor.Text.primary)
+                    let wordCount = isRecording ? liveTranscriptWordCount : (transcript?.wordCount ?? 0)
+                    if wordCount > 0 {
+                        Text("\(wordCount) words")
+                            .font(DSFont.Body.sm())
+                            .foregroundStyle(DSColor.Text.tertiary)
                     }
+                    Spacer()
+                    Button {
+                        withAnimation(LoomolaMotion.medium) {
+                            proxy.scrollTo("transcript-bottom", anchor: .bottom)
+                        }
+                    } label: {
+                        Image(systemName: "arrow.down.to.line")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(DSColor.Text.secondary)
+                            .frame(width: 28, height: 28)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(transcriptTextForCopy.isEmpty)
+                    .opacity(transcriptTextForCopy.isEmpty ? 0.45 : 1)
+                    .help("Jump to bottom")
+                    Button {
+                        copyTranscript()
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(DSColor.Text.secondary)
+                            .frame(width: 28, height: 28)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(transcriptTextForCopy.isEmpty)
+                    .opacity(transcriptTextForCopy.isEmpty ? 0.45 : 1)
+                    .help("Copy transcript")
+                    Button {
+                        transcriptDrawerOpen = false
+                    } label: {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(DSColor.Text.secondary)
+                            .frame(width: 28, height: 28)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Hide transcript")
                 }
                 .padding(.horizontal, DSSpacing.lg)
-                .padding(.top, DSSpacing.sm)
-                .padding(.bottom, DSSpacing.lg)
+                .padding(.top, DSSpacing.md)
+                .padding(.bottom, DSSpacing.xs)
+
+                if transcriptSearchVisible {
+                    transcriptSearchBar
+                        .padding(.horizontal, DSSpacing.lg)
+                        .padding(.bottom, DSSpacing.sm)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Group {
+                            if isRecording {
+                                liveTranscriptContent
+                            } else {
+                                transcriptContent
+                            }
+                        }
+                        Color.clear
+                            .frame(height: 1)
+                            .id("transcript-bottom")
+                    }
+                    .padding(.horizontal, DSSpacing.lg)
+                    .padding(.top, DSSpacing.sm)
+                    .padding(.bottom, DSSpacing.lg)
+                }
+                .frame(maxHeight: 300)
             }
-            .frame(maxHeight: 300)
         }
         .background(RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous).fill(DSColor.Bg.surfaceRaised))
         .overlay {
@@ -1076,7 +1118,7 @@ struct NoteWorkspaceView: View {
                 .foregroundStyle(DSColor.Text.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else if let transcript, !transcript.paragraphs.isEmpty {
-            VStack(alignment: .leading, spacing: DSSpacing.md) {
+            LazyVStack(alignment: .leading, spacing: DSSpacing.md) {
                 ForEach(transcript.paragraphs) { paragraph in
                     let source = transcriptSource(forSpeaker: paragraph.speaker)
                     transcriptBubble(
@@ -1126,7 +1168,7 @@ struct NoteWorkspaceView: View {
         } else if segments.isEmpty && !hasInterim {
             liveTranscriptEmptyState
         } else {
-            VStack(alignment: .leading, spacing: DSSpacing.md) {
+            LazyVStack(alignment: .leading, spacing: DSSpacing.md) {
                 ForEach(liveTranscriptBubbles) { bubble in
                     transcriptBubble(bubble)
                 }
@@ -1277,11 +1319,17 @@ struct NoteWorkspaceView: View {
     }
 
     private var liveTranscriptWordCount: Int {
-        viewModel.liveTranscription
-            .snapshot(includeInterim: true)
-            .fullText
-            .split { $0.isWhitespace || $0.isNewline }
-            .count
+        let finalWords = viewModel.liveTranscription.segments.reduce(0) { total, segment in
+            total + countWords(in: segment.text)
+        }
+        let interimWords = viewModel.liveTranscription.interimBySource.values.reduce(0) { total, text in
+            total + countWords(in: text)
+        }
+        return finalWords + interimWords
+    }
+
+    private func countWords(in text: String) -> Int {
+        text.split { $0.isWhitespace || $0.isNewline }.count
     }
 
     private var normalizedTranscriptSearchQuery: String {
@@ -1846,10 +1894,11 @@ struct NoteWorkspaceView: View {
     }
 
     /// Kicks off a re-run of the AI title + summary pipeline against
-    /// the latest transcript + the user's typed notes. Polls every 3s
-    /// until the server reports `complete` (or `failed`). On
-    /// completion the title and body bindings update in-place so the
-    /// editor reflects the new copy without a re-fetch.
+    /// the latest transcript + the user's typed notes. Polls with a
+    /// short interval until the server reports `complete` (or
+    /// `failed`). On completion the title and body bindings update
+    /// in-place so the editor reflects the new copy without a
+    /// re-fetch.
     private func startEnhance() {
         guard let backend = viewModel.backendClient else { return }
         guard enhanceStatus != .running else { return }
@@ -1907,30 +1956,18 @@ struct NoteWorkspaceView: View {
                 return
             }
 
-            // Poll up to 60s @ 3s intervals.
+            // Poll up to 60s with a short interval so the reveal
+            // starts quickly after the server finishes.
             let deadline = Date().addingTimeInterval(60)
             while Date() < deadline {
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
                 if Task.isCancelled { return }
                 guard let status = try? await backend.getEnhancementStatus(mediaId: mediaId) else {
                     continue
                 }
                 switch status.generationStatus {
                 case "complete":
-                    if isActiveRecording {
-                        viewModel.applyGeneratedAudioNote(
-                            title: status.titleSuggested,
-                            body: status.summary
-                        )
-                    } else {
-                        if let suggested = status.titleSuggested, !suggested.isEmpty {
-                            reviewTitle = suggested
-                        }
-                        if let summary = status.summary, !summary.isEmpty {
-                            reviewBody = summary
-                            reviewLastSaved = summary
-                        }
-                    }
+                    await applyGeneratedNotesResult(status, isActiveRecording: isActiveRecording)
                     if let templateId = status.templateId {
                         selectedTemplateId = templateId
                     }
@@ -1958,9 +1995,78 @@ struct NoteWorkspaceView: View {
         }
     }
 
+    private func applyGeneratedNotesResult(
+        _ status: EnhanceStatusResponse,
+        isActiveRecording: Bool
+    ) async {
+        if isActiveRecording {
+            viewModel.applyGeneratedAudioNote(title: status.titleSuggested, body: nil)
+        } else if let suggested = status.titleSuggested,
+                  !suggested.isEmpty,
+                  reviewTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            reviewTitle = suggested
+        }
+
+        guard let summary = status.summary, !summary.isEmpty else { return }
+        await revealGeneratedNotesBody(summary, isActiveRecording: isActiveRecording)
+
+        if isActiveRecording {
+            viewModel.applyGeneratedAudioNote(title: nil, body: summary)
+        } else {
+            reviewLastSaved = summary
+        }
+    }
+
+    private func revealGeneratedNotesBody(
+        _ finalBody: String,
+        isActiveRecording: Bool
+    ) async {
+        let lines = finalBody.components(separatedBy: "\n")
+        let nonEmptyLineCount = max(
+            1,
+            lines.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count
+        )
+        let secondsPerLine = min(0.09, max(0.025, 4.5 / Double(nonEmptyLineCount)))
+        var nextBody = ""
+
+        if !isActiveRecording {
+            suppressReviewAutosave = true
+        }
+        defer {
+            if !isActiveRecording {
+                suppressReviewAutosave = false
+            }
+        }
+
+        updateDisplayedBody("", isActiveRecording: isActiveRecording)
+
+        for index in lines.indices {
+            if Task.isCancelled { return }
+            if index > 0 { nextBody += "\n" }
+            nextBody += lines[index]
+            withAnimation(.linear(duration: 0.05)) {
+                updateDisplayedBody(nextBody, isActiveRecording: isActiveRecording)
+            }
+            let trimmed = lines[index].trimmingCharacters(in: .whitespacesAndNewlines)
+            let delay = trimmed.isEmpty ? 25_000_000 : UInt64(secondsPerLine * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: delay)
+        }
+
+        updateDisplayedBody(finalBody, isActiveRecording: isActiveRecording)
+    }
+
+    private func updateDisplayedBody(_ body: String, isActiveRecording: Bool) {
+        if isActiveRecording {
+            viewModel.liveNotesBody = body
+        } else {
+            reviewBody = body
+        }
+    }
+
     private func scheduleReviewAutosave(_ next: String) {
         guard case .reviewing(let recording) = target else { return }
         guard !loadingBody else { return }
+        guard !suppressReviewAutosave else { return }
         guard next != reviewLastSaved else { return }
         reviewAutosaveTask?.cancel()
         reviewAutosaveTask = Task { @MainActor in

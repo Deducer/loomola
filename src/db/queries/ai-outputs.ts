@@ -88,6 +88,16 @@ export async function updateTitleSummary(
       generationStatusValue: "complete",
       generatedAt: new Date(),
     })
+      .where(eq(aiOutputs.mediaObjectId, mediaObjectId));
+}
+
+export async function markAiOutputFailed(mediaObjectId: string): Promise<void> {
+  await db
+    .update(aiOutputs)
+    .set({
+      generationStatusValue: "failed",
+      generatedAt: new Date(),
+    })
     .where(eq(aiOutputs.mediaObjectId, mediaObjectId));
 }
 

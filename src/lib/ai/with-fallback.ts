@@ -1,5 +1,11 @@
-import { generateObject } from "ai";
-import type { LanguageModel, ModelMessage } from "ai";
+import { generateObject, generateText } from "ai";
+import type {
+  CallSettings,
+  FinishReason,
+  LanguageModel,
+  ModelMessage,
+  Prompt,
+} from "ai";
 import type { z } from "zod";
 import { getLlm, getFallbackLlm } from "./client";
 
@@ -20,6 +26,12 @@ type GenerateObjectWithFallbackArgs<T> = {
   | { messages: ModelMessage[]; prompt?: never }
 );
 
+type GenerateTextWithFallbackArgs = CallSettings &
+  Prompt & {
+    /** Override the primary model. Defaults to `getLlm()`. */
+    model?: LanguageModel;
+  };
+
 /**
  * Wraps `generateObject` with a one-shot fallback to OpenRouter when the
  * primary provider returns a non-retryable error (credit balance, auth,
@@ -29,12 +41,15 @@ type GenerateObjectWithFallbackArgs<T> = {
  */
 export async function generateObjectWithFallback<T>(
   args: GenerateObjectWithFallbackArgs<T>
-): Promise<{ object: T }> {
+): Promise<{ object: T; finishReason: FinishReason }> {
   const { model: overrideModel, ...rest } = args;
   const primary = overrideModel ?? getLlm();
   try {
     const result = await generateObject({ model: primary, ...rest });
-    return { object: result.object as T };
+    return {
+      object: result.object as T,
+      finishReason: result.finishReason,
+    };
   } catch (err) {
     const fallback = getFallbackLlm();
     if (!fallback || !isNonRetryableProviderError(err)) throw err;
@@ -43,7 +58,36 @@ export async function generateObjectWithFallback<T>(
       err instanceof Error ? err.message : String(err)
     );
     const result = await generateObject({ model: fallback, ...rest });
-    return { object: result.object as T };
+    return {
+      object: result.object as T,
+      finishReason: result.finishReason,
+    };
+  }
+}
+
+export async function generateTextWithFallback(
+  args: GenerateTextWithFallbackArgs
+): Promise<{ text: string; finishReason: FinishReason }> {
+  const { model: overrideModel, ...rest } = args;
+  const primary = overrideModel ?? getLlm();
+  try {
+    const result = await generateText({ model: primary, ...rest });
+    return {
+      text: result.text,
+      finishReason: result.finishReason,
+    };
+  } catch (err) {
+    const fallback = getFallbackLlm();
+    if (!fallback || !isNonRetryableProviderError(err)) throw err;
+    console.warn(
+      "[ai-fallback] primary failed non-retryably, falling back to OpenRouter:",
+      err instanceof Error ? err.message : String(err)
+    );
+    const result = await generateText({ model: fallback, ...rest });
+    return {
+      text: result.text,
+      finishReason: result.finishReason,
+    };
   }
 }
 

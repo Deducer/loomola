@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   buildAudioNotesEnhancementMessages,
   buildAudioNotesEnhancementPrompt,
+  minimumEnhancedNotesChars,
+  validateAudioNotesEnhancement,
 } from "@/lib/queue/jobs/generate-title-summary";
 import { getNoteTemplate } from "@/lib/ai/note-templates";
 
@@ -23,6 +25,7 @@ describe("buildAudioNotesEnhancementPrompt", () => {
     expect(prompt).toContain("Use attached images");
     expect(prompt).toContain("Preserve verbatim");
     expect(prompt).toContain("Do not invent");
+    expect(prompt).toContain("Use the entire transcript");
   });
 
   it("adds the selected template instructions", () => {
@@ -62,5 +65,48 @@ describe("buildAudioNotesEnhancementPrompt", () => {
         mediaType: "image/png",
       },
     ]);
+  });
+
+  it("rejects tiny completed notes for long transcripts", () => {
+    const transcript = "Customer and team discussed the project. ".repeat(3000);
+    const minChars = minimumEnhancedNotesChars(transcript.trim().length);
+    expect(minChars).toBeGreaterThan(700);
+
+    expect(
+      validateAudioNotesEnhancement({
+        transcript,
+        summary: "## Highlights\n\n- One short bullet.",
+        finishReason: "stop",
+      })
+    ).toEqual({
+      ok: false,
+      reason: `summary too short for transcript (34 < ${minChars} chars)`,
+    });
+  });
+
+  it("rejects outputs that ended because of the token limit", () => {
+    expect(
+      validateAudioNotesEnhancement({
+        transcript: "Short transcript.",
+        summary: "## Summary\n\nUseful notes.",
+        finishReason: "length",
+      })
+    ).toEqual({
+      ok: false,
+      reason: "model hit output token limit",
+    });
+  });
+
+  it("rejects long-transcript summaries that end mid-phrase", () => {
+    expect(
+      validateAudioNotesEnhancement({
+        transcript: "A long meeting transcript. ".repeat(300),
+        summary: "## Highlights\n\n- The team decided to",
+        finishReason: "stop",
+      })
+    ).toEqual({
+      ok: false,
+      reason: "summary appears abruptly truncated",
+    });
   });
 });

@@ -1,8 +1,12 @@
-import { generateObjectWithFallback } from "@/lib/ai/with-fallback";
-import { enhancedNotesSchema, titleSummarySchema } from "@/lib/ai/schemas";
+import {
+  generateObjectWithFallback,
+  generateTextWithFallback,
+} from "@/lib/ai/with-fallback";
+import { titleSummarySchema } from "@/lib/ai/schemas";
 import { db } from "@/db";
 import { mediaObjects } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { z } from "zod";
 import {
   getNotesByMediaObjectForJob,
   listNoteAttachmentsForJob,
@@ -10,10 +14,11 @@ import {
 import { getTranscriptByRecording } from "@/db/queries/transcripts";
 import {
   updateTitleSummary,
+  markAiOutputFailed,
   flipToReadyIfComplete,
 } from "@/db/queries/ai-outputs";
 import { presignGet } from "@/lib/r2/presigned-get";
-import type { ModelMessage } from "ai";
+import type { FinishReason, ModelMessage } from "ai";
 import {
   buildTemplateInstruction,
   DEFAULT_NOTE_TEMPLATE_ID,
@@ -27,6 +32,72 @@ export const TITLE_SUMMARY_JOB = "generate_title_summary";
 
 export type TitleSummaryJobData = { mediaObjectId: string };
 
+const LONG_AUDIO_TRANSCRIPT_CHARS = 20_000;
+
+const audioNoteTitleSchema = z.object({
+  title: z
+    .string()
+    .min(3)
+    .max(120)
+    .describe("A concise meeting-note title — 3 to 12 words, sentence case, no trailing period."),
+});
+
+export function minimumEnhancedNotesChars(transcriptChars: number): number {
+  if (transcriptChars < LONG_AUDIO_TRANSCRIPT_CHARS) return 0;
+  return Math.min(2_500, Math.max(700, Math.floor(transcriptChars * 0.012)));
+}
+
+function looksAbruptlyTruncated(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return true;
+  if (/[.!?)]$/.test(trimmed) || trimmed.endsWith("```")) return false;
+  const lastWord = trimmed.split(/\s+/).at(-1)?.toLowerCase() ?? "";
+  return [
+    "a",
+    "an",
+    "and",
+    "as",
+    "at",
+    "but",
+    "for",
+    "from",
+    "in",
+    "of",
+    "on",
+    "or",
+    "that",
+    "the",
+    "to",
+    "with",
+  ].includes(lastWord);
+}
+
+export function validateAudioNotesEnhancement(params: {
+  transcript: string;
+  summary: string;
+  finishReason?: FinishReason;
+}): { ok: true } | { ok: false; reason: string } {
+  if (params.finishReason === "length") {
+    return { ok: false, reason: "model hit output token limit" };
+  }
+
+  const transcriptChars = params.transcript.trim().length;
+  const summary = params.summary.trim();
+  const minChars = minimumEnhancedNotesChars(transcriptChars);
+  if (minChars > 0 && summary.length < minChars) {
+    return {
+      ok: false,
+      reason: `summary too short for transcript (${summary.length} < ${minChars} chars)`,
+    };
+  }
+
+  if (transcriptChars >= 4_000 && looksAbruptlyTruncated(summary)) {
+    return { ok: false, reason: "summary appears abruptly truncated" };
+  }
+
+  return { ok: true };
+}
+
 export function buildAudioNotesEnhancementPrompt(params: {
   title: string | null;
   sourceContextHint?: string | null;
@@ -37,6 +108,7 @@ export function buildAudioNotesEnhancementPrompt(params: {
   transcript: string;
 }): string {
   const template = params.template ?? getNoteTemplate(DEFAULT_NOTE_TEMPLATE_ID);
+  const transcriptCharCount = params.transcript.trim().length;
   return [
     "You are an AI meeting note-taker. The user hand-typed raw notes during a meeting, and you also have the transcript.",
     "",
@@ -54,10 +126,15 @@ export function buildAudioNotesEnhancementPrompt(params: {
     "- Use attached images as visual context when they clarify slides, whiteboards, product screens, diagrams, or UI bugs.",
     "- Do not invent attendees, decisions, or commitments.",
     "- Match the user's apparent voice: terse notes stay terse; detailed notes can become detailed.",
+    "- Use the entire transcript, from beginning to end. Do not stop after the first topic.",
+    "- For long transcripts, return substantial notes with multiple supported sections and concrete bullets. A brief abstract is a failure.",
+    "- Finish the final sentence or bullet completely; never end mid-phrase.",
+    "- Return only the polished markdown notes. Do not wrap the notes in JSON or code fences.",
     "",
     `Current title: ${params.title?.trim() || "Untitled note"}`,
     `Source context: ${params.sourceContextHint?.trim() || "Unknown"}`,
     `Selected template id: ${template.id}`,
+    `Transcript length: ${transcriptCharCount} characters`,
     `Attached images: ${
       params.attachmentNames?.length
         ? params.attachmentNames.join(", ")
@@ -96,6 +173,36 @@ export function buildAudioNotesEnhancementMessages(params: {
       ],
     },
   ];
+}
+
+async function generateAudioNoteTitle(params: {
+  existingTitle: string | null;
+  generatedNotes: string;
+  sourceContextHint?: string | null;
+}): Promise<string> {
+  const existing = params.existingTitle?.trim();
+  if (existing) return existing;
+
+  const { object } = await generateObjectWithFallback({
+    schema: audioNoteTitleSchema,
+    schemaName: "AudioNoteTitle",
+    prompt: [
+      "Write a concise title for these meeting notes.",
+      "",
+      "Rules:",
+      "- 3 to 12 words.",
+      "- Sentence case.",
+      "- No trailing period.",
+      "- Do not invent project or company names that are not present.",
+      "",
+      `Source context: ${params.sourceContextHint?.trim() || "Unknown"}`,
+      "",
+      "# Generated notes",
+      params.generatedNotes.slice(0, 8_000),
+    ].join("\n"),
+  });
+
+  return object.title;
 }
 
 export async function runTitleSummaryJob(
@@ -151,9 +258,7 @@ export async function runTitleSummaryJob(
       rawNotes: note?.body ?? "",
       transcript: text,
     });
-    const { object } = await generateObjectWithFallback({
-      schema: enhancedNotesSchema,
-      schemaName: "EnhancedNotes",
+    const { text: summary, finishReason } = await generateTextWithFallback({
       // Sized for 5-6 hour event recordings (the longest practical case),
       // which can produce ~15-25K output tokens of structured markdown.
       // Sonnet 4.6 supports up to 64K output tokens natively; 32K is well
@@ -164,10 +269,26 @@ export async function runTitleSummaryJob(
         imageAttachments,
       }),
     });
+    const validation = validateAudioNotesEnhancement({
+      transcript: text,
+      summary,
+      finishReason,
+    });
+    if (!validation.ok) {
+      await markAiOutputFailed(data.mediaObjectId);
+      throw new Error(
+        `[title-summary] incomplete audio note output for ${data.mediaObjectId}: ${validation.reason}`
+      );
+    }
+    const title = await generateAudioNoteTitle({
+      existingTitle: media.title,
+      generatedNotes: summary,
+      sourceContextHint: media.sourceContextHint,
+    });
 
-    await updateTitleSummary(data.mediaObjectId, object);
+    await updateTitleSummary(data.mediaObjectId, { title, summary });
     console.log(
-      `[title-summary] enhanced audio note for ${data.mediaObjectId}: "${object.title}"`
+      `[title-summary] enhanced audio note for ${data.mediaObjectId}: "${title}"`
     );
     return;
   }

@@ -74,7 +74,10 @@ struct MarkdownTextEditor: NSViewRepresentable {
             // replace the whole text, then re-tokenize.
             let savedRange = textView.selectedRange()
             textView.string = text
-            textView.setSelectedRange(savedRange)
+            let length = (text as NSString).length
+            let safeLocation = min(savedRange.location, length)
+            let safeLength = min(savedRange.length, length - safeLocation)
+            textView.setSelectedRange(NSRange(location: safeLocation, length: safeLength))
             context.coordinator.applyAttributes(to: textView)
         }
         context.coordinator.reportHeight(for: textView)
