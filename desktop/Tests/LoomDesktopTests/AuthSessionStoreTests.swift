@@ -27,4 +27,26 @@ final class AuthSessionStoreTests: XCTestCase {
         XCTAssertNil(try store.loadAccessToken())
         XCTAssertNil(try store.loadRefreshToken())
     }
+
+    func testDesktopAuthServiceDecodesAccessTokenClaims() throws {
+        let payload = #"{"sub":"612bc4b4-2a6c-4721-8820-f256e4eb0ef6","email":"ian@example.com"}"#
+        let token = [
+            "header",
+            Self.base64URL(payload.data(using: .utf8)!),
+            "signature"
+        ].joined(separator: ".")
+
+        let claims = DesktopAuthService.decodeAccessTokenClaims(token)
+
+        XCTAssertEqual(claims.sub, "612bc4b4-2a6c-4721-8820-f256e4eb0ef6")
+        XCTAssertEqual(claims.email, "ian@example.com")
+    }
+
+    private static func base64URL(_ data: Data) -> String {
+        data
+            .base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
 }

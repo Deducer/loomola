@@ -339,11 +339,11 @@ final class RecorderViewModel: ObservableObject {
                 recorderLog.notice("restoreSession — returned nil (no saved session)")
             }
         } catch RestoreSessionError.timedOut {
-            statusMessage = "Couldn't restore session within 10s. Sign in again."
             recorderLog.error("restoreSession — timed out after 10s (Supabase setSession hung)")
+            await restoreFromStoredToken(reason: "setSession timed out")
         } catch {
-            statusMessage = "Saved session could not be restored. Sign in again."
             recorderLog.error("restoreSession — failed: \(error.localizedDescription, privacy: .public)")
+            await restoreFromStoredToken(reason: error.localizedDescription)
         }
     }
 
@@ -1665,11 +1665,28 @@ final class RecorderViewModel: ObservableObject {
     }
 
     private func apply(session: Session) {
-        accessToken = session.accessToken
-        recorderLog.notice("apply(session:) — accessToken set, state → signedInIdle")
+        applyAuthenticatedSession(
+            accessToken: session.accessToken,
+            email: session.user.email,
+            userId: session.user.id,
+            status: "Signed in from saved session.",
+            logSource: "supabase session"
+        )
+    }
+
+    private func applyAuthenticatedSession(
+        accessToken: String,
+        email: String?,
+        userId: UUID?,
+        status: String,
+        logSource: String
+    ) {
+        self.accessToken = accessToken
+        recorderLog.notice("applyAuthenticatedSession — accessToken set from \(logSource, privacy: .public), state → signedInIdle")
         state = .signedInIdle
-        if email.isEmpty {
-            email = session.user.email ?? ""
+        statusMessage = status
+        if self.email.isEmpty {
+            self.email = email ?? ""
         }
         // Eagerly construct the recent service if not yet built, then
         // kick a fresh refresh.
@@ -1700,11 +1717,38 @@ final class RecorderViewModel: ObservableObject {
             refreshCaptureSources()
         }
         startObsidianAutoSync()
-        startObsidianRealtimeSync(userId: session.user.id)
+        if let userId {
+            startObsidianRealtimeSync(userId: userId)
+        }
         if meetingDetectionEnabled {
             startMeetingWatch()
         }
         refreshUserPreferencesFromBackend()
+    }
+
+    private func restoreFromStoredToken(reason: String) async {
+        guard let authService else {
+            statusMessage = "Saved session could not be restored. Sign in again."
+            return
+        }
+        do {
+            guard let snapshot = try await authService.loadStoredSessionSnapshot() else {
+                statusMessage = "Saved session could not be restored. Sign in again."
+                recorderLog.notice("restoreSession fallback — no stored access token")
+                return
+            }
+            applyAuthenticatedSession(
+                accessToken: snapshot.accessToken,
+                email: snapshot.email,
+                userId: snapshot.userId,
+                status: "Signed in from saved access token.",
+                logSource: "stored token fallback after \(reason)"
+            )
+            recorderLog.notice("restoreSession fallback — applied stored access token")
+        } catch {
+            statusMessage = "Saved session could not be restored. Sign in again."
+            recorderLog.error("restoreSession fallback — failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     func openActiveAudioNote() {
