@@ -38,8 +38,8 @@ const audioNoteTitleSchema = z.object({
   title: z
     .string()
     .min(3)
-    .max(120)
-    .describe("A concise meeting-note title — 3 to 12 words, sentence case, no trailing period."),
+    .max(70)
+    .describe("A concise meeting-note title, 3 to 8 words, 70 characters or fewer, sentence case, no trailing period."),
 });
 
 export function minimumEnhancedNotesChars(transcriptChars: number): number {
@@ -149,6 +149,28 @@ export function buildAudioNotesEnhancementPrompt(params: {
   ].join("\n");
 }
 
+export function buildAudioNoteTitlePrompt(params: {
+  generatedNotes: string;
+  sourceContextHint?: string | null;
+}): string {
+  return [
+    "Write a concise title for these meeting notes.",
+    "",
+    "Rules:",
+    "- 3 to 8 words.",
+    "- 70 characters or fewer.",
+    "- Sentence case.",
+    "- No subtitles, dashes, or colon-separated second clauses.",
+    "- No trailing period.",
+    "- Do not invent project or company names that are not present.",
+    "",
+    `Source context: ${params.sourceContextHint?.trim() || "Unknown"}`,
+    "",
+    "# Generated notes",
+    params.generatedNotes.slice(0, 8_000),
+  ].join("\n");
+}
+
 export function buildAudioNotesEnhancementMessages(params: {
   prompt: string;
   imageAttachments: Array<{
@@ -186,20 +208,7 @@ async function generateAudioNoteTitle(params: {
   const { object } = await generateObjectWithFallback({
     schema: audioNoteTitleSchema,
     schemaName: "AudioNoteTitle",
-    prompt: [
-      "Write a concise title for these meeting notes.",
-      "",
-      "Rules:",
-      "- 3 to 12 words.",
-      "- Sentence case.",
-      "- No trailing period.",
-      "- Do not invent project or company names that are not present.",
-      "",
-      `Source context: ${params.sourceContextHint?.trim() || "Unknown"}`,
-      "",
-      "# Generated notes",
-      params.generatedNotes.slice(0, 8_000),
-    ].join("\n"),
+    prompt: buildAudioNoteTitlePrompt(params),
   });
 
   return object.title;

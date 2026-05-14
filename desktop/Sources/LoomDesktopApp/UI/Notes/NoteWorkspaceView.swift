@@ -450,11 +450,14 @@ struct NoteWorkspaceView: View {
     // MARK: - Title
 
     private var titleEditor: some View {
-        TextField(titlePlaceholder, text: titleBinding)
+        TextField(titlePlaceholder, text: titleBinding, axis: .vertical)
             .textFieldStyle(.plain)
             .font(DSFont.Display.xl())
             .foregroundStyle(DSColor.Text.primary)
             .tint(DSColor.Accent.primary)
+            .lineLimit(1...4)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .allowsHitTesting(isTitleEditable)
             .focusable(isTitleEditable)
     }

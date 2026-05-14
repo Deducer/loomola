@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildAudioNoteTitlePrompt,
   buildAudioNotesEnhancementMessages,
   buildAudioNotesEnhancementPrompt,
   minimumEnhancedNotesChars,
@@ -8,6 +9,18 @@ import {
 import { getNoteTemplate } from "@/lib/ai/note-templates";
 
 describe("buildAudioNotesEnhancementPrompt", () => {
+  it("keeps generated titles short enough for the desktop header", () => {
+    const prompt = buildAudioNoteTitlePrompt({
+      sourceContextHint: "Zoom: Documentary film production weekly progress",
+      generatedNotes:
+        "# Highlights\n\n- The team discussed reviewer feedback, imagery, voiceover, and next cuts.",
+    });
+
+    expect(prompt).toContain("3 to 8 words");
+    expect(prompt).toContain("70 characters or fewer");
+    expect(prompt).toContain("No subtitles, dashes, or colon-separated second clauses");
+  });
+
   it("anchors the prompt on raw notes and transcript context", () => {
     const prompt = buildAudioNotesEnhancementPrompt({
       title: "Customer call",
