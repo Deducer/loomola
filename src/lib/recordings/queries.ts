@@ -7,6 +7,7 @@ import {
   notes,
   people,
   speakerAssignments,
+  summaryEmbeddings,
   transcripts,
 } from "@/db/schema";
 import { listImageAttachmentsForMediaIds } from "@/db/queries/notes";
@@ -300,5 +301,59 @@ export async function searchMedia(_params: {
   since?: string;
   embedding?: number[];
 }): Promise<{ results: SearchMediaResult[]; totalCandidates: number }> {
-  throw new Error("searchMedia is implemented in M3 with the MCP search tool");
+  if (!_params.embedding) {
+    throw new Error("search_embedding_required");
+  }
+
+  const vector = `[${_params.embedding.join(",")}]`;
+  const conditions = [
+    eq(mediaObjects.ownerId, _params.ownerId),
+    isNull(mediaObjects.deletedAt),
+  ];
+  if (_params.type !== "any") conditions.push(eq(mediaObjects.type, _params.type));
+  if (_params.since) conditions.push(gte(mediaObjects.createdAt, new Date(_params.since)));
+
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(mediaObjects)
+    .innerJoin(
+      summaryEmbeddings,
+      eq(summaryEmbeddings.mediaObjectId, mediaObjects.id)
+    )
+    .where(and(...conditions));
+
+  const rows = await db
+    .select({
+      id: mediaObjects.id,
+      slug: mediaObjects.slug,
+      type: mediaObjects.type,
+      title: mediaObjects.title,
+      aiTitle: aiOutputs.titleSuggested,
+      summary: aiOutputs.summary,
+      createdAt: mediaObjects.createdAt,
+      similarity: sql<number>`1 - (${summaryEmbeddings.embedding} <=> ${vector}::vector)`,
+    })
+    .from(mediaObjects)
+    .innerJoin(
+      summaryEmbeddings,
+      eq(summaryEmbeddings.mediaObjectId, mediaObjects.id)
+    )
+    .leftJoin(aiOutputs, eq(aiOutputs.mediaObjectId, mediaObjects.id))
+    .where(and(...conditions))
+    .orderBy(sql`${summaryEmbeddings.embedding} <=> ${vector}::vector`)
+    .limit(_params.limit);
+
+  return {
+    results: rows.map((row) => ({
+      id: row.id,
+      slug: row.slug,
+      type: row.type,
+      title: titleFor(row),
+      summary: row.summary,
+      createdAt: row.createdAt,
+      similarity: Number(row.similarity),
+      shareUrl: mediaShareUrl(row),
+    })),
+    totalCandidates: count ?? 0,
+  };
 }

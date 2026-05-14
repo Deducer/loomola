@@ -312,15 +312,15 @@ After Codex finishes, the operator (Ian) does:
 
 ## Open Questions (Codex: answer in this section as you decide; do not stop to ask)
 
-1. **Embedding helper location.** Where does the existing code embed text for the `vector(1536)` columns? Find it during M3; reuse it for `loomola_search`. Document the path here once found.
+1. **Embedding helper location.** Answer: `src/lib/embeddings/openai.ts` exposes `getEmbeddingAdapter()`, defaulting to `EMBEDDING_PROVIDER=openai` and `text-embedding-3-small` with 1536 dimensions. `loomola_search` reuses that helper and queries `summary_embeddings.embedding` via pgvector cosine distance.
 
 2. **Action-items table shape.** Answer: there is no dedicated `action_items` table. Action items are stored as JSONB on `ai_outputs.action_items`, shaped by `src/lib/ai/schemas.ts` as `{ text, timestamp_sec }[]`. Phase 1 exposes them as read-only "open" items; `status: "done"` returns an empty list because no persisted completion state exists yet.
 
-3. **Speaker assignment data shape.** For Phase 2 `loomola_search_by_speaker`, find the existing speaker-assignment table/columns. If the data isn't there yet (Stage 1 may not have shipped speaker attribution), defer this tool entirely.
+3. **Speaker assignment data shape.** Answer: speaker mapping exists in `speaker_assignments` (`media_object_id`, `speaker_idx`, `person_id`, `display_label_override`, suggestion/dismissal metadata) and joins to `people`. Phase 2 `loomola_search_by_speaker` is deferred because the indexed `summary_embeddings` rows are media-level and `transcript_chunks` do not currently persist speaker attribution, so speaker-restricted semantic search would need a chunk/speaker join design rather than a thin Phase 1 variant.
 
 4. **Streamable HTTP transport stateful vs stateless.** Answer: v1 uses the MCP SDK's stateless per-request `WebStandardStreamableHTTPServerTransport` with JSON responses enabled. The route is read-only, does not send server-initiated notifications, and Next.js route handlers map cleanly to a fresh web-standard `Request`/`Response` per call. That avoids module-global session maps during dev hot reloads and still speaks Streamable HTTP to Claude Code/Codex clients.
 
-5. **Tool response truncation.** Some transcripts will be 50–80KB. The spec says truncate to 30K with a flag. Confirm 30K is the right number; if MCP clients have shown trouble at 30K, tune down. Document.
+5. **Tool response truncation.** Answer: keep the 30K character limit for `loomola_get_media` transcript output. It preserves full useful context for normal meetings while staying below the point where MCP clients start getting unwieldy. The tool returns `transcriptTruncated: true` when it cuts the transcript, and all other transcript content remains available in the database for future paginated/chunked tools.
 
 ---
 

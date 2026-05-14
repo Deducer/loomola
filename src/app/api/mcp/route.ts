@@ -1,34 +1,9 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { verifyMcpRequest } from "./auth";
+import { createLoomolaMcpServer } from "./server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function createServer(): McpServer {
-  const server = new McpServer({
-    name: "loomola",
-    version: "0.1.0",
-  });
-
-  server.registerTool(
-    "loomola_ping",
-    {
-      title: "Loomola MCP ping",
-      description: "Health check for the Loomola MCP server.",
-    },
-    async () => ({
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify({ ok: true, ts: Date.now() }),
-        },
-      ],
-    })
-  );
-
-  return server;
-}
 
 async function handleMcpRequest(request: Request): Promise<Response> {
   const auth = verifyMcpRequest(request);
@@ -38,7 +13,7 @@ async function handleMcpRequest(request: Request): Promise<Response> {
     sessionIdGenerator: undefined,
     enableJsonResponse: true,
   });
-  const server = createServer();
+  const server = createLoomolaMcpServer();
 
   try {
     await server.connect(transport);
