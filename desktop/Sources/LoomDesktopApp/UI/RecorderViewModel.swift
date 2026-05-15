@@ -68,6 +68,8 @@ final class RecorderViewModel: ObservableObject {
         cameras: [],
         microphones: []
     )
+    @Published private(set) var recorderReadiness =
+        RecorderReadinessSnapshot.checking(mode: .video)
     /// User's chosen camera + mic device ids. nil means "system default."
     /// Persisted to UserDefaults so the choice carries across launches.
     @Published var selectedCameraDeviceID: String? = UserDefaults.standard
@@ -117,6 +119,9 @@ final class RecorderViewModel: ObservableObject {
     @Published private(set) var lastStoppedAudioRecordingForReview: RecentRecording?
     private var lastSyncedAudioTitle: String = ""
     private var lastAudioLevelUpdate = Date.distantPast
+    private var recorderReadinessMode: RecorderReadinessMode = .video
+    private var readinessRefreshTask: Task<Void, Never>?
+    private var lastBackendReadinessStatus: BackendReadinessStatus = .unknown
     private let captureSourceProvider: CaptureSourceProvider?
     private let screenCaptureCoordinator: ScreenCaptureCoordinator?
     private let nativeMessagingInstaller = NativeMessagingHostInstaller()
@@ -202,6 +207,7 @@ final class RecorderViewModel: ObservableObject {
         // If the camera is currently running (bubble visible or
         // composite recording in progress), swap the input now.
         CameraCaptureCoordinator.shared.requestPermissionAndStart(deviceID: id)
+        scheduleReadinessRefresh(checkBackend: false)
     }
 
     /// Persist the chosen mic ID. The active composite recording (if
@@ -215,6 +221,7 @@ final class RecorderViewModel: ObservableObject {
         } else {
             UserDefaults.standard.removeObject(forKey: "loomola.selectedMicDeviceID")
         }
+        scheduleReadinessRefresh(checkBackend: false)
     }
 
     func setSystemAudioCaptureMode(_ mode: SystemAudioCaptureMode) {
@@ -224,10 +231,12 @@ final class RecorderViewModel: ObservableObject {
                 SystemAudioCaptureMode.coreAudioTap.rawValue,
                 forKey: "loomola.systemAudioCaptureMode"
             )
+            scheduleReadinessRefresh(checkBackend: false)
             return
         }
         systemAudioCaptureMode = mode
         UserDefaults.standard.set(mode.rawValue, forKey: "loomola.systemAudioCaptureMode")
+        scheduleReadinessRefresh(checkBackend: false)
     }
 
     func setSelectedSystemAudioDevice(id: String?) {
@@ -237,6 +246,7 @@ final class RecorderViewModel: ObservableObject {
         } else {
             UserDefaults.standard.removeObject(forKey: "loomola.selectedSystemAudioDeviceID")
         }
+        scheduleReadinessRefresh(checkBackend: false)
     }
 
     var needsSystemAudioDeviceSelection: Bool {
@@ -388,11 +398,13 @@ final class RecorderViewModel: ObservableObject {
             obsidianSyncTask?.cancel()
             obsidianRealtimeTask?.cancel()
             meetingWatchTask?.cancel()
+            readinessRefreshTask?.cancel()
             audioTitleAutosaveTask?.cancel()
             await obsidianRealtimeSubscriber?.stop()
             obsidianSyncTask = nil
             obsidianRealtimeTask = nil
             meetingWatchTask = nil
+            readinessRefreshTask = nil
             audioTitleAutosaveTask = nil
             lastSyncedAudioTitle = ""
             audioTitleManuallyEdited = false
@@ -412,6 +424,27 @@ final class RecorderViewModel: ObservableObject {
             activeAudioRecordingStartedAt = nil
             state = .signedOut
             statusMessage = "Signed out."
+            lastBackendReadinessStatus = .unknown
+            recorderReadiness = RecorderReadinessEvaluator.evaluate(
+                RecorderReadinessInput(
+                    mode: recorderReadinessMode,
+                    isSignedIn: false,
+                    backendStatus: .unknown,
+                    permissionStatus: PermissionChecker.currentStatus(),
+                    captureSources: captureSources,
+                    captureSourcesLoaded: hasLoadedCaptureSources(captureSources),
+                    selectedCameraDeviceID: selectedCameraDeviceID,
+                    selectedMicDeviceID: selectedMicDeviceID,
+                    includeMic: includeMicInAudioNote,
+                    includeSystemAudio: includeSystemAudioInAudioNote,
+                    systemAudioCaptureMode: systemAudioCaptureMode,
+                    selectedSystemAudioDeviceID: selectedSystemAudioDeviceID,
+                    allowsAppleSystemAudioCapture: Self.allowsAppleSystemAudioCapture,
+                    supportsScreenCaptureKit: screenCaptureCoordinator != nil,
+                    hasMainScreen: NSScreen.main != nil,
+                    hasUnrescuedOrphans: OrphanedRecordingStore.shared.hasUnrescuedOrphans
+                )
+            )
         }
     }
 
@@ -612,6 +645,151 @@ final class RecorderViewModel: ObservableObject {
         }
     }
 
+    func setReadinessMode(_ mode: RecorderReadinessMode) {
+        guard recorderReadinessMode != mode else { return }
+        recorderReadinessMode = mode
+        recorderReadiness = .checking(mode: mode)
+        scheduleReadinessRefresh(checkBackend: false)
+    }
+
+    func refreshRecorderReadiness() {
+        scheduleReadinessRefresh(checkBackend: true)
+    }
+
+    private func scheduleReadinessRefresh(checkBackend requestedBackendCheck: Bool) {
+        let shouldCheckBackend = requestedBackendCheck ||
+            (accessToken != nil && lastBackendReadinessStatus != .reachable)
+        readinessRefreshTask?.cancel()
+        readinessRefreshTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            guard let self, !Task.isCancelled else { return }
+            _ = await self.runReadinessRefresh(
+                checkBackend: shouldCheckBackend,
+                forceSourceRefresh: false
+            )
+        }
+    }
+
+    @discardableResult
+    private func runReadinessRefresh(
+        mode requestedMode: RecorderReadinessMode? = nil,
+        checkBackend: Bool,
+        forceSourceRefresh: Bool
+    ) async -> RecorderReadinessSnapshot {
+        if let requestedMode {
+            recorderReadinessMode = requestedMode
+        }
+
+        let mode = recorderReadinessMode
+        if checkBackend {
+            recorderReadiness = .checking(mode: mode)
+            lastBackendReadinessStatus = .checking
+        }
+
+        var sources = captureSources
+        if shouldRefreshCaptureSourcesForReadiness(mode: mode, force: forceSourceRefresh),
+           let captureSourceProvider
+        {
+            do {
+                sources = try await captureSourceProvider.snapshot()
+                captureSources = sources
+                if let context = ChromeMeetingSignalStore.readLatest() ?? MeetingDetector.detect(from: sources) {
+                    applyMeetingContext(context)
+                }
+            } catch {
+                recorderLog.warning("readiness source refresh failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+
+        let isSignedIn = accessToken != nil && state != .signedOut
+        if checkBackend {
+            if let backendClient, isSignedIn {
+                lastBackendReadinessStatus = await checkBackendReadiness(backendClient)
+            } else {
+                lastBackendReadinessStatus = .unreachable("Sign in before recording.")
+            }
+        }
+
+        let snapshot = RecorderReadinessEvaluator.evaluate(
+            RecorderReadinessInput(
+                mode: mode,
+                isSignedIn: isSignedIn,
+                backendStatus: lastBackendReadinessStatus,
+                permissionStatus: PermissionChecker.currentStatus(),
+                captureSources: sources,
+                captureSourcesLoaded: hasLoadedCaptureSources(sources),
+                selectedCameraDeviceID: selectedCameraDeviceID,
+                selectedMicDeviceID: selectedMicDeviceID,
+                includeMic: includeMicInAudioNote,
+                includeSystemAudio: includeSystemAudioInAudioNote,
+                systemAudioCaptureMode: systemAudioCaptureMode,
+                selectedSystemAudioDeviceID: selectedSystemAudioDeviceID,
+                allowsAppleSystemAudioCapture: Self.allowsAppleSystemAudioCapture,
+                supportsScreenCaptureKit: screenCaptureCoordinator != nil,
+                hasMainScreen: NSScreen.main != nil,
+                hasUnrescuedOrphans: OrphanedRecordingStore.shared.hasUnrescuedOrphans
+            )
+        )
+        recorderReadiness = snapshot
+        return snapshot
+    }
+
+    private func hardPreflight(_ mode: RecorderReadinessMode) async -> Bool {
+        let snapshot = await runReadinessRefresh(
+            mode: mode,
+            checkBackend: true,
+            forceSourceRefresh: true
+        )
+        guard snapshot.canStart else {
+            if state != .signedOut {
+                state = .signedInIdle
+            }
+            statusMessage = snapshot.primaryIssue?.message ?? "Loomola is not ready to record yet."
+            return false
+        }
+        return true
+    }
+
+    private func checkBackendReadiness(_ backendClient: BackendClient) async -> BackendReadinessStatus {
+        await withTaskGroup(of: BackendReadinessStatus.self) { group in
+            group.addTask {
+                do {
+                    _ = try await backendClient.serverVersion()
+                    return .reachable
+                } catch {
+                    return .unreachable(error.localizedDescription)
+                }
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                return .unreachable("Connection check timed out.")
+            }
+            let result = await group.next() ?? .unreachable("Connection check failed.")
+            group.cancelAll()
+            return result
+        }
+    }
+
+    private func shouldRefreshCaptureSourcesForReadiness(
+        mode: RecorderReadinessMode,
+        force: Bool
+    ) -> Bool {
+        guard force || !hasLoadedCaptureSources(captureSources) else { return false }
+        switch mode {
+        case .video:
+            return canListCaptureSourcesWithoutPrompt()
+        case .audio:
+            return canListCaptureSourcesWithoutPrompt() && includeSystemAudioInAudioNote
+        }
+    }
+
+    private func hasLoadedCaptureSources(_ sources: CaptureSourceSnapshot) -> Bool {
+        !sources.displays.isEmpty ||
+            !sources.windows.isEmpty ||
+            !sources.cameras.isEmpty ||
+            !sources.microphones.isEmpty
+    }
+
     private func refreshCaptureSources(showStatus: Bool) {
         let hasChromeContext = refreshChromeMeetingContext(showStatus: false)
         guard let captureSourceProvider else {
@@ -634,6 +812,7 @@ final class RecorderViewModel: ObservableObject {
                 if showStatus || (context != nil && context != previousContext) {
                     statusMessage = "Found \(snapshot.displays.count) display(s), \(snapshot.windows.count) window(s), \(snapshot.cameras.count) camera(s), and \(snapshot.microphones.count) mic(s).\(detected)"
                 }
+                scheduleReadinessRefresh(checkBackend: false)
             } catch {
                 if showStatus && !hasChromeContext {
                     statusMessage = "Could not list capture sources: \(error.localizedDescription)"
@@ -722,6 +901,13 @@ final class RecorderViewModel: ObservableObject {
     }
 
     func startLocalRecording() {
+        Task { @MainActor in
+            guard await hardPreflight(.video) else { return }
+            startLocalRecordingAfterReadiness()
+        }
+    }
+
+    private func startLocalRecordingAfterReadiness() {
         guard #available(macOS 14.0, *) else {
             statusMessage = "ScreenCaptureKit requires macOS 14 or newer."
             return
@@ -1104,6 +1290,13 @@ final class RecorderViewModel: ObservableObject {
     }
 
     func startAudioNoteRecording() {
+        Task { @MainActor in
+            guard await hardPreflight(.audio) else { return }
+            startAudioNoteRecordingAfterReadiness()
+        }
+    }
+
+    private func startAudioNoteRecordingAfterReadiness() {
         recorderLog.notice("startAudioNoteRecording — entered (isStartingRecording=\(self.isStartingRecording, privacy: .public), activeRecordingKind=\(String(describing: self.activeRecordingKind), privacy: .public))")
         guard !isStartingRecording else {
             recorderLog.error("startAudioNoteRecording — blocked: isStartingRecording=true")
@@ -1724,6 +1917,7 @@ final class RecorderViewModel: ObservableObject {
             startMeetingWatch()
         }
         refreshUserPreferencesFromBackend()
+        scheduleReadinessRefresh(checkBackend: true)
     }
 
     private func restoreFromStoredToken(reason: String) async {

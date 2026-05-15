@@ -92,6 +92,8 @@ struct MainRecorderView: View {
         }
         .onAppear {
             AppActivation.bringRecorderToFront()
+            viewModel.setReadinessMode(captureMode.readinessMode)
+            viewModel.refreshRecorderReadiness()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { notification in
             guard notification.object as? NSWindow === hostWindow else { return }
@@ -116,6 +118,10 @@ struct MainRecorderView: View {
                 captureMode = .audio
             }
         }
+        .onChange(of: captureMode) { _, mode in
+            viewModel.setReadinessMode(mode.readinessMode)
+            updateMeetingPromptWindow()
+        }
         .onChange(of: viewModel.activeRecordingKind) { _, kind in
             updateMeetingPromptWindow()
             updateRecordingStatusOverlay()
@@ -130,9 +136,11 @@ struct MainRecorderView: View {
         }
         .onChange(of: viewModel.includeMicInAudioNote) { _, _ in
             updateMeetingPromptWindow()
+            viewModel.refreshRecorderReadiness()
         }
         .onChange(of: viewModel.includeSystemAudioInAudioNote) { _, _ in
             updateMeetingPromptWindow()
+            viewModel.refreshRecorderReadiness()
         }
         .onChange(of: viewModel.floatingRecordingIndicatorEnabled) { _, _ in
             updateRecordingStatusOverlay()
@@ -297,8 +305,12 @@ struct MainRecorderView: View {
                 onComplete: {
                     permissionStatus = PermissionChecker.currentStatus()
                     dismissedPreflight = !permissionStatus.requiredMissing
+                    viewModel.refreshRecorderReadiness()
                 },
-                onSkip: { dismissedPreflight = true }
+                onSkip: {
+                    dismissedPreflight = true
+                    viewModel.refreshRecorderReadiness()
+                }
             )
         } else if viewModel.activeRecordingKind == .video {
             // Video keeps its dedicated full-window recording surface.
@@ -338,6 +350,7 @@ struct MainRecorderView: View {
         viewModel.state == .signedOut ||
             viewModel.activeRecordingKind != nil ||
             viewModel.isStartingRecording ||
+            !viewModel.recorderReadiness.canStart ||
             (!viewModel.includeMicInAudioNote && !viewModel.includeSystemAudioInAudioNote)
     }
 

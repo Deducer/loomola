@@ -11,6 +11,7 @@ struct HeroCaptureSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DSSpacing.md) {
             modeSelector
+            readinessStatus
             actions
             divider
             pickers
@@ -60,7 +61,12 @@ struct HeroCaptureSection: View {
                 ) {
                     viewModel.startLocalRecording()
                 }
-                .disabled(viewModel.state == .signedOut || viewModel.activeRecordingKind != nil || viewModel.isStartingRecording)
+                .disabled(
+                    viewModel.state == .signedOut ||
+                        viewModel.activeRecordingKind != nil ||
+                        viewModel.isStartingRecording ||
+                        !viewModel.recorderReadiness.canStart
+                )
             }
         }
     }
@@ -188,8 +194,16 @@ struct HeroCaptureSection: View {
         viewModel.state == .signedOut ||
             viewModel.activeRecordingKind != nil ||
             viewModel.isStartingRecording ||
+            !viewModel.recorderReadiness.canStart ||
             (!viewModel.includeMicInAudioNote && !viewModel.includeSystemAudioInAudioNote) ||
             viewModel.needsSystemAudioDeviceSelection
+    }
+
+    private var readinessStatus: some View {
+        RecorderReadinessInlineStatus(
+            snapshot: viewModel.recorderReadiness,
+            refresh: { viewModel.refreshRecorderReadiness() }
+        )
     }
 }
 
@@ -220,6 +234,95 @@ enum CaptureMode: String, CaseIterable, Hashable {
         switch self {
         case .video: return DSColor.Accent.primary
         case .audio: return DSColor.State.success
+        }
+    }
+
+    var readinessMode: RecorderReadinessMode {
+        switch self {
+        case .video: return .video
+        case .audio: return .audio
+        }
+    }
+}
+
+private struct RecorderReadinessInlineStatus: View {
+    let snapshot: RecorderReadinessSnapshot
+    let refresh: () -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: DSSpacing.md) {
+            statusGlyph
+                .frame(width: 18, height: 18)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(snapshot.summary)
+                    .font(DSFont.Body.md())
+                    .foregroundStyle(DSColor.Text.primary)
+                    .lineLimit(1)
+                if let detailText {
+                    Text(detailText)
+                        .font(DSFont.Body.sm())
+                        .foregroundStyle(DSColor.Text.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Spacer(minLength: DSSpacing.md)
+
+            Image(systemName: "arrow.clockwise")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(DSColor.Text.secondary)
+                .frame(width: 28, height: 28)
+                .background(Circle().fill(DSColor.Bg.subtle))
+                .contentShape(Circle())
+                .overlay {
+                    ActionHitArea(action: refresh)
+                        .clipShape(Circle())
+                }
+                .help("Run setup check")
+        }
+        .padding(.horizontal, DSSpacing.md)
+        .padding(.vertical, DSSpacing.sm)
+        .background(
+            DSColor.Bg.surfaceRaised,
+            in: RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
+                .strokeBorder(statusColor.opacity(0.42), lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private var statusGlyph: some View {
+        switch snapshot.state {
+        case .checking:
+            ProgressView()
+                .controlSize(.small)
+                .tint(DSColor.Accent.primary)
+        case .ready:
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(DSColor.State.success)
+        case .degraded:
+            Image(systemName: "exclamationmark.circle.fill")
+                .foregroundStyle(DSColor.State.warning)
+        case .blocked:
+            Image(systemName: "xmark.circle.fill")
+                .foregroundStyle(DSColor.State.recording)
+        }
+    }
+
+    private var detailText: String? {
+        snapshot.primaryIssue?.message ?? snapshot.detail
+    }
+
+    private var statusColor: Color {
+        switch snapshot.state {
+        case .checking: return DSColor.Accent.primary
+        case .ready: return DSColor.State.success
+        case .degraded: return DSColor.State.warning
+        case .blocked: return DSColor.State.recording
         }
     }
 }
