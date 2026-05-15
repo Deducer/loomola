@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Pencil } from "lucide-react";
+import { ExternalLink, Pencil } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -95,18 +95,21 @@ export function EditHeader({
       </div>
       {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
 
-      <div className="mt-4 flex items-center gap-3 rounded-lg border border-border bg-bg-subtle p-3">
-        <code className="flex-1 truncate rounded-md bg-bg-elevated px-3 py-2 font-mono text-xs text-text-muted">
+      <div className="mt-4 flex flex-col gap-3 rounded-lg border border-border bg-bg-subtle p-3 sm:flex-row sm:items-center">
+        <code className="min-w-0 truncate rounded-md bg-bg-elevated px-3 py-2 font-mono text-xs text-text-muted sm:flex-1">
           {shareUrl}
         </code>
-        <CopyLinkButton url={shareUrl} />
-        <Link
-          href={`/v/${slug}`}
-          target="_blank"
-          className="rounded-md border border-border-strong px-3 py-1.5 text-xs text-text-muted hover:border-accent hover:text-text"
-        >
-          View public →
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <CopyLinkButton url={shareUrl} className="shrink-0" />
+          <Link
+            href={`/v/${slug}`}
+            target="_blank"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-xs text-text-muted hover:border-accent hover:text-text"
+          >
+            View public
+            <ExternalLink className="h-3.5 w-3.5" />
+          </Link>
+        </div>
       </div>
     </div>
   );

@@ -15,17 +15,19 @@ export function CommentList({
   comments,
   isOwner,
   onSeek,
+  emptyMessage = "No comments yet — be the first to leave one below.",
 }: {
   comments: CommentRow[];
   isOwner: boolean;
   onSeek: (sec: number) => void;
+  emptyMessage?: string;
 }) {
   if (comments.length === 0) {
     return (
       <div className="mt-3 rounded-xl border border-dashed border-border bg-bg-subtle/40 p-8 text-center">
         <MessageSquare className="mx-auto h-5 w-5 text-text-subtle" />
         <p className="mt-2 text-sm text-text-subtle">
-          No comments yet — be the first to leave one below.
+          {emptyMessage}
         </p>
       </div>
     );

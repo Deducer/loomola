@@ -10,6 +10,7 @@ export function EditShell({
   downloads,
   analytics,
   danger,
+  stickyPreview = true,
 }: {
   preview: ReactNode;
   header: ReactNode;
@@ -18,6 +19,7 @@ export function EditShell({
   downloads: ReactNode;
   analytics: ReactNode;
   danger: ReactNode;
+  stickyPreview?: boolean;
 }) {
   // Keyed slot list — `downloads` and `analytics` are conditionally
   // null, which makes React 19's positional key inference ambiguous
@@ -38,7 +40,9 @@ export function EditShell({
           gets the lion's share of the page, and settings stay visually
           tight (no sprawled, half-empty cards on wide screens). */}
       <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <aside className="lg:sticky lg:top-6 lg:self-start">
+        <aside
+          className={stickyPreview ? "lg:sticky lg:top-6 lg:self-start" : ""}
+        >
           {preview}
         </aside>
         <div className="space-y-10">

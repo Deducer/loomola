@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { VideoPlayer, type VideoPlayerHandle } from "./video-player";
 import { TranscriptPanel } from "./transcript-panel";
 import { ChaptersList } from "./chapters-list";
@@ -34,6 +40,9 @@ export type ViewerShellProps = {
   trimEndSec: number | null;
   durationSec: number | null;
   previewThumbnailsVttUrl: string | null;
+  afterPlayer?: ReactNode;
+  stickyPlayer?: boolean;
+  showCommentForm?: boolean;
 };
 
 export function ViewerShell({
@@ -51,6 +60,9 @@ export function ViewerShell({
   trimEndSec,
   durationSec,
   previewThumbnailsVttUrl,
+  afterPlayer,
+  stickyPlayer = false,
+  showCommentForm = true,
 }: ViewerShellProps) {
   const playerRef = useRef<VideoPlayerHandle | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
@@ -97,8 +109,8 @@ export function ViewerShell({
     }
   }, []);
 
-  return (
-    <div>
+  const playerBlock = (
+    <>
       <VideoPlayer
         ref={playerRef}
         slug={slug}
@@ -120,6 +132,17 @@ export function ViewerShell({
           isPlaying={isPlaying}
           getCurrentTime={getCurrentTime}
         />
+      )}
+      {afterPlayer}
+    </>
+  );
+
+  return (
+    <div>
+      {stickyPlayer ? (
+        <div className="lg:sticky lg:top-6 lg:z-20">{playerBlock}</div>
+      ) : (
+        playerBlock
       )}
 
       <SummaryBlock summary={summary} />
@@ -143,6 +166,7 @@ export function ViewerShell({
             onSeek={handleSeek}
             getCurrentTime={getCurrentTime}
             onCommentAdded={addOptimisticComment}
+            showForm={showCommentForm}
           />
         }
         commentCount={comments.length}

@@ -18,6 +18,7 @@ export function CommentsSection({
   onSeek,
   getCurrentTime,
   onCommentAdded,
+  showForm = true,
 }: {
   comments: CommentRow[];
   slug: string;
@@ -25,15 +26,27 @@ export function CommentsSection({
   onSeek: (sec: number) => void;
   getCurrentTime: () => number;
   onCommentAdded?: (comment: CommentRow) => void;
+  showForm?: boolean;
 }) {
   return (
     <div>
-      <CommentList comments={comments} isOwner={isOwner} onSeek={onSeek} />
-      <CommentForm
-        slug={slug}
-        getCurrentTime={getCurrentTime}
-        onCommentAdded={onCommentAdded}
+      <CommentList
+        comments={comments}
+        isOwner={isOwner}
+        onSeek={onSeek}
+        emptyMessage={
+          showForm
+            ? undefined
+            : "No comments yet. Viewer comments will appear here."
+        }
       />
+      {showForm && (
+        <CommentForm
+          slug={slug}
+          getCurrentTime={getCurrentTime}
+          onCommentAdded={onCommentAdded}
+        />
+      )}
     </div>
   );
 }
