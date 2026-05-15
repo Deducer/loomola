@@ -29,4 +29,20 @@ final class WindowChromeLayoutTests: XCTestCase {
             )
         }
     }
+
+    func testTopChromeExplicitlyIgnoresTheTitlebarSafeArea() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let guardedFiles = [
+            root.appending(path: "Sources/LoomDesktopApp/UI/MainRecorderView.swift"),
+            root.appending(path: "Sources/LoomDesktopApp/UI/Notes/NoteWorkspaceView.swift")
+        ]
+
+        for file in guardedFiles {
+            let source = try String(contentsOf: file)
+            XCTAssertTrue(
+                source.contains(".ignoresSafeArea(.container, edges: .top)"),
+                "\(file.lastPathComponent) must pin custom chrome into the macOS titlebar band."
+            )
+        }
+    }
 }

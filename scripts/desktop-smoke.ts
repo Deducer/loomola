@@ -106,6 +106,125 @@ print(String(data: data, encoding: .utf8)!)
 `;
 }
 
+function titlebarAlignmentProbeScript(): string {
+  return `
+import AppKit
+import Foundation
+
+let imagePath = CommandLine.arguments[1]
+func fail(_ message: String) -> Never {
+    FileHandle.standardError.write(Data((message + "\\n").utf8))
+    exit(1)
+}
+
+guard let image = NSImage(contentsOfFile: imagePath),
+      let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+    fail("could not load screenshot at \\(imagePath)")
+}
+
+let width = cgImage.width
+let height = cgImage.height
+var pixels = [UInt8](repeating: 0, count: width * height * 4)
+guard let context = CGContext(
+    data: &pixels,
+    width: width,
+    height: height,
+    bitsPerComponent: 8,
+    bytesPerRow: width * 4,
+    space: CGColorSpaceCreateDeviceRGB(),
+    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+) else {
+    fail("could not create pixel context")
+}
+context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+func pixel(_ x: Int, _ y: Int) -> (Int, Int, Int) {
+    let i = (y * width + x) * 4
+    return (Int(pixels[i]), Int(pixels[i + 1]), Int(pixels[i + 2]))
+}
+
+func isTrafficLight(_ r: Int, _ g: Int, _ b: Int) -> Bool {
+    (r > 180 && g < 120 && b < 120)
+        || (r > 180 && g > 130 && b < 100)
+        || (g > 130 && r < 140 && b < 140)
+}
+
+func isChromePixel(_ r: Int, _ g: Int, _ b: Int) -> Bool {
+    let sum = r + g + b
+    let spread = max(r, g, b) - min(r, g, b)
+    let brightNeutral = sum > 210 && spread < 150
+    let logoPurple = b > 120 && r > 70 && g < 180
+    let logoGreen = g > 120 && b > 80 && r < 180
+    return brightNeutral || logoPurple || logoGreen
+}
+
+var trafficYTotal = 0.0
+var trafficCount = 0
+var trafficMaxX = 0
+for y in 0..<min(height, 260) {
+    for x in 0..<min(width, 360) {
+        let (r, g, b) = pixel(x, y)
+        if isTrafficLight(r, g, b) {
+            trafficYTotal += Double(y)
+            trafficCount += 1
+            trafficMaxX = max(trafficMaxX, x)
+        }
+    }
+}
+
+if trafficCount <= 100 {
+    trafficYTotal = 0
+    trafficCount = 0
+    trafficMaxX = 260
+    for y in 0..<min(height, 180) {
+        for x in 0..<min(width, 230) {
+            let (r, g, b) = pixel(x, y)
+            let sum = r + g + b
+            let spread = max(r, g, b) - min(r, g, b)
+            if sum > 120 && sum < 260 && spread < 30 {
+                trafficYTotal += Double(y)
+                trafficCount += 1
+            }
+        }
+    }
+}
+
+guard trafficCount > 100 else {
+    fail("could not locate macOS traffic lights in screenshot")
+}
+
+let trafficY = trafficYTotal / Double(trafficCount)
+let xStart = min(width - 1, trafficMaxX + 60)
+let xEnd = min(width, 900)
+let yStart = max(0, Int(trafficY) - 30)
+let yEnd = min(height, Int(trafficY) + 180)
+
+var chromeYTotal = 0.0
+var chromeCount = 0
+for y in yStart..<yEnd {
+    for x in xStart..<xEnd {
+        let (r, g, b) = pixel(x, y)
+        if isChromePixel(r, g, b) && !isTrafficLight(r, g, b) {
+            chromeYTotal += Double(y)
+            chromeCount += 1
+        }
+    }
+}
+guard chromeCount > 80 else {
+    fail("could not locate Loomola titlebar chrome in screenshot")
+}
+
+let chromeY = chromeYTotal / Double(chromeCount)
+let delta = abs(chromeY - trafficY)
+let tolerance = 20.0
+guard delta <= tolerance else {
+    fail(String(format: "titlebar chrome center is %.1fpx from traffic-light center (trafficY=%.1f chromeY=%.1f tolerance=%.1f)", delta, trafficY, chromeY, tolerance))
+}
+
+print(String(format: "trafficY=%.1f chromeY=%.1f delta=%.1fpx", trafficY, chromeY, delta))
+`;
+}
+
 function getOnscreenLoomolaWindows(): Array<{
   number: number;
   name: string;
@@ -135,6 +254,9 @@ async function assertDesktopChromeLayoutGuard(): Promise<void> {
     const source = await readFile(path.join(process.cwd(), file), "utf8");
     if (source.includes("chromeYOffset") || source.includes("homeChromeYOffset")) {
       throw new Error(`${file} reintroduced geometry-dependent titlebar Y offsets`);
+    }
+    if (!source.includes(".ignoresSafeArea(.container, edges: .top)")) {
+      throw new Error(`${file} does not pin custom chrome into the macOS titlebar band`);
     }
   }
 }
@@ -244,9 +366,13 @@ async function main() {
     }
     const [window] = windows;
     console.log(`    window=${window.number} ${JSON.stringify(window.bounds)}`);
+    const outPath = shouldCapture
+      ? "/tmp/loomola-desktop-smoke.png"
+      : "/tmp/loomola-desktop-smoke-titlebar.png";
+    run("screencapture", ["-x", "-l", String(window.number), outPath]);
+    const alignment = run("swift", ["-", outPath], titlebarAlignmentProbeScript());
+    console.log(`    titlebar=${alignment}`);
     if (shouldCapture) {
-      const outPath = "/tmp/loomola-desktop-smoke.png";
-      run("screencapture", ["-x", "-l", String(window.number), outPath]);
       console.log(`    captured=${outPath}`);
     }
   });

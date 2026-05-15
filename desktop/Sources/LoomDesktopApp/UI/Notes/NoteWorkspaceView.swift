@@ -318,6 +318,7 @@ struct NoteWorkspaceView: View {
         }
         .overlay(alignment: .topLeading) {
             noteChromeBar
+                .ignoresSafeArea(.container, edges: .top)
         }
         .onContinuousHover { phase in
             switch phase {

@@ -66,6 +66,7 @@ struct MainRecorderView: View {
         .overlay(alignment: .top) {
             if noteTarget == nil {
                 homeTitleBar
+                    .ignoresSafeArea(.container, edges: .top)
             }
         }
         .background(
