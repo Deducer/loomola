@@ -45,3 +45,14 @@ enum WindowChrome {
         window.toolbarStyle = .unified
     }
 }
+
+enum WindowChromeLayout {
+    static let topPadding: CGFloat = DSSpacing.md
+    static let barHeight: CGFloat = 44
+    static let homeLeadingPadding: CGFloat = 142
+    static let noteLeadingPadding: CGFloat = 112
+    static let trailingPadding: CGFloat = DSSpacing.lg
+    static let homeContentTopPaddingNormal: CGFloat = 72
+    static let homeContentTopPaddingExpanded: CGFloat = 64
+    static let noteContentTopPadding: CGFloat = 88
+}

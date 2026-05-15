@@ -126,6 +126,19 @@ async function readConfig(): Promise<DesktopConfig> {
   };
 }
 
+async function assertDesktopChromeLayoutGuard(): Promise<void> {
+  const guardedFiles = [
+    "desktop/Sources/LoomDesktopApp/UI/MainRecorderView.swift",
+    "desktop/Sources/LoomDesktopApp/UI/Notes/NoteWorkspaceView.swift",
+  ];
+  for (const file of guardedFiles) {
+    const source = await readFile(path.join(process.cwd(), file), "utf8");
+    if (source.includes("chromeYOffset") || source.includes("homeChromeYOffset")) {
+      throw new Error(`${file} reintroduced geometry-dependent titlebar Y offsets`);
+    }
+  }
+}
+
 async function readStoredSession(): Promise<StoredAuthSession> {
   const raw = await readFile(authSessionPath, "utf8");
   return JSON.parse(raw);
@@ -215,6 +228,8 @@ async function main() {
     }
     console.log(`    bundle=${config.buildCommit} built=${config.buildDate}`);
   });
+
+  await step("desktop chrome layout has no Y-offset regression path", assertDesktopChromeLayoutGuard);
 
   await step("launch Loomola and find an onscreen CoreGraphics window", async () => {
     run("open", [appPath]);

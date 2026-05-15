@@ -198,19 +198,17 @@ struct MainRecorderView: View {
 
             titleBarActions
         }
-        .padding(.leading, 142)
-        .padding(.trailing, DSSpacing.lg)
-        .padding(.top, 8)
-        .frame(height: 44)
-        .offset(y: homeChromeYOffset)
-    }
-
-    private var homeChromeYOffset: CGFloat {
-        windowIsExpanded ? 0 : -32
+        .padding(.leading, WindowChromeLayout.homeLeadingPadding)
+        .padding(.trailing, WindowChromeLayout.trailingPadding)
+        .padding(.top, WindowChromeLayout.topPadding)
+        .frame(height: WindowChromeLayout.barHeight + WindowChromeLayout.topPadding, alignment: .top)
+        .frame(maxWidth: .infinity, alignment: .top)
     }
 
     private var homeContentTopPadding: CGFloat {
-        windowIsExpanded ? DSSpacing.xxl : DSSpacing.lg
+        windowIsExpanded
+            ? WindowChromeLayout.homeContentTopPaddingExpanded
+            : WindowChromeLayout.homeContentTopPaddingNormal
     }
 
     private var titleBarSidebarButton: some View {
@@ -291,7 +289,6 @@ struct MainRecorderView: View {
             NoteWorkspaceView(
                 viewModel: viewModel,
                 target: target,
-                chromeYOffset: homeChromeYOffset,
                 onClose: { noteTarget = nil }
             )
         } else if viewModel.state == .signedOut {

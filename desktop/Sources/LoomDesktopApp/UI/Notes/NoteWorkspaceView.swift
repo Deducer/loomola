@@ -78,7 +78,6 @@ private struct TranscriptDisplayBubble: Identifiable, Equatable {
 struct NoteWorkspaceView: View {
     @ObservedObject var viewModel: RecorderViewModel
     let target: NoteWorkspaceTarget
-    let chromeYOffset: CGFloat
     let onClose: () -> Void
 
     /// Local body editor state for review mode (we fetch from
@@ -168,12 +167,6 @@ struct NoteWorkspaceView: View {
         }
     }
 
-    private var noteChromeLeadingPadding: CGFloat { 112 }
-    /// Shared titlebar grid for every note-workspace chrome icon.
-    /// Keep left/right actions on this same top padding so their
-    /// visual centers bisect the macOS traffic-light centers.
-    private var noteChromeTopPadding: CGFloat { DSSpacing.md }
-
     /// Title bound to the right state container depending on mode.
     private var titleBinding: Binding<String> {
         switch target {
@@ -242,7 +235,7 @@ struct NoteWorkspaceView: View {
                 .frame(maxWidth: 640, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.horizontal, DSSpacing.xl)
-                .padding(.top, DSSpacing.lg)
+                .padding(.top, WindowChromeLayout.noteContentTopPadding)
                 .padding(.bottom, DSSpacing.xxl)
             }
             // Drag images anywhere over the editor area. Whole-body
@@ -324,11 +317,7 @@ struct NoteWorkspaceView: View {
             }
         }
         .overlay(alignment: .topLeading) {
-            HomeBackButton(action: onClose)
-                .help(isRecording ? "Hide" : "Close")
-                .padding(.leading, noteChromeLeadingPadding)
-                .padding(.top, noteChromeTopPadding)
-                .offset(y: chromeYOffset)
+            noteChromeBar
         }
         .onContinuousHover { phase in
             switch phase {
@@ -337,22 +326,6 @@ struct NoteWorkspaceView: View {
             case .ended:
                 workspaceHovering = false
             }
-        }
-        .overlay(alignment: .topTrailing) {
-            // Keep the hit target mounted even when the dots are
-            // visually quiet. The lifted titlebar area is outside
-            // parts of the workspace hover region, so conditionally
-            // removing this view makes the dots vanish under the
-            // cursor before SwiftUI can enter the button hover state.
-            GhostEllipsisButton(isVisible: workspaceHovering || showRowMenu) {
-                showRowMenu.toggle()
-            }
-            .popover(isPresented: $showRowMenu, arrowEdge: .top) {
-                rowMenu
-            }
-            .padding(.top, noteChromeTopPadding)
-            .padding(.trailing, DSSpacing.lg)
-            .offset(y: chromeYOffset)
         }
         .animation(LoomolaMotion.quick, value: isDropTargeted)
         .animation(LoomolaMotion.medium, value: toastMessage)
@@ -386,6 +359,30 @@ struct NoteWorkspaceView: View {
     }
 
     // MARK: - ⋯ menu content
+
+    private var noteChromeBar: some View {
+        HStack(alignment: .center) {
+            HomeBackButton(action: onClose)
+                .help(isRecording ? "Hide" : "Close")
+
+            Spacer()
+
+            // Keep the hit target mounted even when the dots are
+            // visually quiet so the menu does not vanish under the
+            // pointer before SwiftUI can enter the button hover state.
+            GhostEllipsisButton(isVisible: workspaceHovering || showRowMenu) {
+                showRowMenu.toggle()
+            }
+            .popover(isPresented: $showRowMenu, arrowEdge: .top) {
+                rowMenu
+            }
+        }
+        .padding(.leading, WindowChromeLayout.noteLeadingPadding)
+        .padding(.trailing, WindowChromeLayout.trailingPadding)
+        .padding(.top, WindowChromeLayout.topPadding)
+        .frame(height: WindowChromeLayout.barHeight + WindowChromeLayout.topPadding, alignment: .top)
+        .frame(maxWidth: .infinity, alignment: .top)
+    }
 
     private var rowMenu: some View {
         VStack(alignment: .leading, spacing: 0) {
