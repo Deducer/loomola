@@ -7,6 +7,7 @@ import {
   validateAudioNotesEnhancement,
 } from "@/lib/queue/jobs/generate-title-summary";
 import { getNoteTemplate } from "@/lib/ai/note-templates";
+import { normalizeGeneratedNotesMarkdown } from "@/lib/ai/normalize-generated-notes";
 
 describe("buildAudioNotesEnhancementPrompt", () => {
   it("keeps generated titles short enough for the desktop header", () => {
@@ -39,6 +40,8 @@ describe("buildAudioNotesEnhancementPrompt", () => {
     expect(prompt).toContain("Preserve verbatim");
     expect(prompt).toContain("Do not invent");
     expect(prompt).toContain("Use the entire transcript");
+    expect(prompt).toContain("Do not use markdown tables or horizontal rules");
+    expect(prompt).toContain("Never write a line that is only `---`");
   });
 
   it("adds the selected template instructions", () => {
@@ -121,5 +124,30 @@ describe("buildAudioNotesEnhancementPrompt", () => {
       ok: false,
       reason: "summary appears abruptly truncated",
     });
+  });
+});
+
+describe("normalizeGeneratedNotesMarkdown", () => {
+  it("converts task tables into bullets and removes generated dividers", () => {
+    const normalized = normalizeGeneratedNotesMarkdown(`
+## Next Week
+
+| Task | Owner | Notes |
+|------|-------|-------|
+| Retry first sequence shot | Omar | Report back Monday |
+| Check timeline | Ian/Jeremy | Sarah traveling overseas |
+
+---
+
+- ****Reviewer notes**** arrived.
+`);
+
+    expect(normalized).not.toContain("| Task | Owner | Notes |");
+    expect(normalized).not.toContain("|------|-------|-------|");
+    expect(normalized).not.toMatch(/(^|\n)\s*---\s*(\n|$)/);
+    expect(normalized).not.toContain("****");
+    expect(normalized).toContain("- **Retry first sequence shot** (Omar): Report back Monday");
+    expect(normalized).toContain("- **Check timeline** (Ian/Jeremy): Sarah traveling overseas");
+    expect(normalized).toContain("- **Reviewer notes** arrived.");
   });
 });

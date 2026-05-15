@@ -7,10 +7,10 @@ import {
 } from "@/db/queries/recordings";
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const user = await requireAuth();
+  const user = await requireAuth(request);
   const { id } = await params;
   const ok = await softDeleteRecording(id, user.id);
   if (!ok) {
@@ -27,7 +27,7 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const user = await requireAuth();
+  const user = await requireAuth(request);
   const { id } = await params;
   const body = await request.json().catch(() => ({}));
   const parsed = titleSchema.safeParse(body);

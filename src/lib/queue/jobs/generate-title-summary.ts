@@ -27,6 +27,7 @@ import {
 } from "@/lib/ai/note-templates";
 import { getUserPreferences } from "@/db/queries/user-preferences";
 import { buildSummaryLanguageInstruction } from "@/lib/preferences/user-preferences";
+import { normalizeGeneratedNotesMarkdown } from "@/lib/ai/normalize-generated-notes";
 
 export const TITLE_SUMMARY_JOB = "generate_title_summary";
 
@@ -123,6 +124,7 @@ export function buildAudioNotesEnhancementPrompt(params: {
     "- Expand sparse shorthand only when the transcript gives clear context.",
     "- Structure the output with markdown headings and bullets.",
     "- Do not use markdown tables or horizontal rules; use heading sections and bullet lists for tasks, owners, and notes.",
+    "- Never write a line that is only `---`.",
     "- Use normal markdown bold (`**text**`), never doubled bold markers like `****text****`.",
     "- Include action items only when supported by the notes or transcript.",
     "- Use attached images as visual context when they clarify slides, whiteboards, product screens, diagrams, or UI bugs.",
@@ -280,9 +282,10 @@ export async function runTitleSummaryJob(
         imageAttachments,
       }),
     });
+    const normalizedSummary = normalizeGeneratedNotesMarkdown(summary);
     const validation = validateAudioNotesEnhancement({
       transcript: text,
-      summary,
+      summary: normalizedSummary,
       finishReason,
     });
     if (!validation.ok) {
@@ -293,11 +296,14 @@ export async function runTitleSummaryJob(
     }
     const title = await generateAudioNoteTitle({
       existingTitle: media.title,
-      generatedNotes: summary,
+      generatedNotes: normalizedSummary,
       sourceContextHint: media.sourceContextHint,
     });
 
-    await updateTitleSummary(data.mediaObjectId, { title, summary });
+    await updateTitleSummary(data.mediaObjectId, {
+      title,
+      summary: normalizedSummary,
+    });
     console.log(
       `[title-summary] enhanced audio note for ${data.mediaObjectId}: "${title}"`
     );
