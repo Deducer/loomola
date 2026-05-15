@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The big "you came here to do this" surface on the idle home view.
@@ -7,12 +8,10 @@ import SwiftUI
 struct HeroCaptureSection: View {
     @ObservedObject var viewModel: RecorderViewModel
     @Binding var captureMode: CaptureMode
-    let onOpenRecovery: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: DSSpacing.md) {
             modeSelector
-            readinessStatus
             actions
             divider
             pickers
@@ -128,11 +127,13 @@ struct HeroCaptureSection: View {
         switch captureMode {
         case .video:
             HStack(spacing: DSSpacing.lg) {
+                readinessStatus
                 microphonePicker
                 cameraPicker
             }
         case .audio:
             HStack(spacing: DSSpacing.lg) {
+                readinessStatus
                 microphonePicker
                 if viewModel.includeSystemAudioInAudioNote &&
                     viewModel.systemAudioCaptureMode == .audioDevice
@@ -202,10 +203,10 @@ struct HeroCaptureSection: View {
 
     private var readinessStatus: some View {
         RecorderReadinessInlineStatus(
-            snapshot: viewModel.recorderReadiness,
-            refresh: { viewModel.refreshRecorderReadiness() },
-            openRecovery: onOpenRecovery
+            viewModel: viewModel,
+            snapshot: viewModel.recorderReadiness
         )
+        .frame(width: 148, alignment: .leading)
     }
 }
 
@@ -248,11 +249,12 @@ enum CaptureMode: String, CaseIterable, Hashable {
 }
 
 private struct RecorderReadinessInlineStatus: View {
+    @ObservedObject var viewModel: RecorderViewModel
     let snapshot: RecorderReadinessSnapshot
-    let refresh: () -> Void
-    let openRecovery: () -> Void
 
+    @ObservedObject private var orphanStore = OrphanedRecordingStore.shared
     @State private var hovering = false
+    @State private var showDetails = false
 
     var body: some View {
         HStack(alignment: .center, spacing: DSSpacing.sm) {
@@ -264,49 +266,40 @@ private struct RecorderReadinessInlineStatus: View {
                 .foregroundStyle(DSColor.Text.primary)
                 .lineLimit(1)
 
-            if hovering, let detailText {
-                Text(detailText)
-                    .font(DSFont.Body.sm())
-                    .foregroundStyle(DSColor.Text.secondary)
-                    .lineLimit(1)
-                    .transition(.opacity.combined(with: .move(edge: .leading)))
-            }
-
-            if hovering {
-                Spacer(minLength: DSSpacing.sm)
-                if showsRecoveryAction {
-                    iconAction("tray.full.fill", action: openRecovery)
-                }
-                iconAction("arrow.clockwise", action: refresh)
+            if hasDetails {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(DSColor.Text.tertiary)
+                    .rotationEffect(.degrees(showDetails ? 180 : 0))
             }
         }
         .padding(.horizontal, DSSpacing.md)
         .padding(.vertical, DSSpacing.sm)
-        .frame(maxWidth: hovering ? .infinity : nil, alignment: .leading)
         .background(
             Capsule(style: .continuous)
-                .fill(hovering ? DSColor.Bg.surfaceRaised : DSColor.Bg.subtle)
+                .fill(hovering || showDetails ? DSColor.Bg.surfaceRaised : DSColor.Bg.subtle)
         )
         .overlay(
             Capsule(style: .continuous)
                 .strokeBorder(statusColor.opacity(borderOpacity), lineWidth: 1)
         )
         .contentShape(Capsule(style: .continuous))
+        .overlay {
+            ActionHitArea(isEnabled: hasDetails) {
+                showDetails.toggle()
+            }
+            .clipShape(Capsule(style: .continuous))
+        }
+        .popover(isPresented: $showDetails, arrowEdge: .bottom) {
+            RecorderReadinessPopover(
+                viewModel: viewModel,
+                snapshot: snapshot,
+                orphanStore: orphanStore
+            )
+        }
         .onHover { hovering = $0 }
         .animation(LoomolaMotion.quick, value: hovering)
-    }
-
-    private func iconAction(_ systemName: String, action: @escaping () -> Void) -> some View {
-        Image(systemName: systemName)
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(DSColor.Text.secondary)
-            .frame(width: 26, height: 26)
-            .background(Circle().fill(DSColor.Bg.subtle))
-            .contentShape(Circle())
-            .overlay {
-                ActionHitArea(action: action)
-                    .clipShape(Circle())
-            }
+        .animation(LoomolaMotion.quick, value: showDetails)
     }
 
     @ViewBuilder
@@ -316,14 +309,10 @@ private struct RecorderReadinessInlineStatus: View {
             ProgressView()
                 .controlSize(.small)
                 .tint(DSColor.Accent.primary)
-        case .ready:
+        case .ready, .degraded:
             Image(systemName: "checkmark")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(DSColor.State.success)
-        case .degraded:
-            Image(systemName: "exclamationmark")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(DSColor.State.warning)
         case .blocked:
             Image(systemName: "xmark")
                 .font(.system(size: 13, weight: .semibold))
@@ -339,10 +328,6 @@ private struct RecorderReadinessInlineStatus: View {
         }
     }
 
-    private var detailText: String? {
-        snapshot.primaryIssue?.message ?? snapshot.detail
-    }
-
     private var statusColor: Color {
         switch snapshot.state {
         case .checking: return DSColor.Accent.primary
@@ -353,10 +338,145 @@ private struct RecorderReadinessInlineStatus: View {
     }
 
     private var borderOpacity: Double {
-        hovering || snapshot.state != .ready ? 0.42 : 0.14
+        hovering || showDetails || snapshot.state != .ready ? 0.42 : 0.14
     }
 
-    private var showsRecoveryAction: Bool {
-        snapshot.issues.contains { $0.id == "orphaned-recording" }
+    private var hasDetails: Bool {
+        snapshot.state != .checking && !snapshot.issues.isEmpty
+    }
+}
+
+private struct RecorderReadinessPopover: View {
+    @ObservedObject var viewModel: RecorderViewModel
+    let snapshot: RecorderReadinessSnapshot
+    @ObservedObject var orphanStore: OrphanedRecordingStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.md) {
+            if let orphan = firstUnrescuedOrphan {
+                recoveryCard(orphan)
+            }
+
+            ForEach(otherIssues, id: \.id) { issue in
+                issueRow(issue)
+            }
+        }
+        .padding(DSSpacing.lg)
+        .frame(width: 360, alignment: .leading)
+        .background(DSColor.Bg.surface)
+    }
+
+    private func recoveryCard(_ orphan: OrphanedRecording) -> some View {
+        VStack(alignment: .leading, spacing: DSSpacing.md) {
+            HStack(alignment: .firstTextBaseline, spacing: DSSpacing.sm) {
+                Text("Recovery")
+                    .font(DSFont.Body.lg())
+                    .foregroundStyle(DSColor.Text.primary)
+                Spacer()
+                if viewModel.orphanRetryInProgress == orphan.id {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(DSColor.Accent.primary)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(orphan.title?.isEmpty == false ? orphan.title! : "Unsaved audio recording")
+                    .font(DSFont.Body.md())
+                    .foregroundStyle(DSColor.Text.primary)
+                    .lineLimit(1)
+                Text(orphanSubtitle(orphan))
+                    .font(DSFont.Body.sm())
+                    .foregroundStyle(DSColor.Text.secondary)
+                    .lineLimit(1)
+            }
+
+            if let lastError = orphan.lastError, !lastError.isEmpty {
+                Text(lastError)
+                    .font(DSFont.Body.sm())
+                    .foregroundStyle(DSColor.Text.tertiary)
+                    .lineLimit(2)
+            }
+
+            HStack(spacing: DSSpacing.sm) {
+                popoverIconButton(
+                    icon: "arrow.up.circle.fill",
+                    tint: DSColor.Accent.primary,
+                    disabled: viewModel.orphanRetryInProgress != nil
+                ) {
+                    viewModel.retryOrphan(orphan)
+                }
+                popoverIconButton(icon: "folder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([orphan.storageDirectory])
+                }
+                popoverIconButton(
+                    icon: "trash",
+                    tint: DSColor.State.recording,
+                    disabled: viewModel.orphanRetryInProgress == orphan.id
+                ) {
+                    viewModel.discardOrphan(orphan)
+                }
+            }
+        }
+        .padding(DSSpacing.md)
+        .background(DSColor.Bg.surfaceRaised, in: RoundedRectangle(cornerRadius: DSRadius.md))
+        .overlay(
+            RoundedRectangle(cornerRadius: DSRadius.md)
+                .strokeBorder(DSColor.Border.subtle, lineWidth: 1)
+        )
+    }
+
+    private func issueRow(_ issue: RecorderReadinessIssue) -> some View {
+        HStack(alignment: .top, spacing: DSSpacing.sm) {
+            Image(systemName: issue.severity == .blocker ? "xmark" : "circle.fill")
+                .font(.system(size: issue.severity == .blocker ? 11 : 6, weight: .semibold))
+                .foregroundStyle(issue.severity == .blocker ? DSColor.State.recording : DSColor.State.warning)
+                .frame(width: 14, height: 18)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(issue.title)
+                    .font(DSFont.Body.md())
+                    .foregroundStyle(DSColor.Text.primary)
+                Text(issue.message)
+                    .font(DSFont.Body.sm())
+                    .foregroundStyle(DSColor.Text.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func popoverIconButton(
+        icon: String,
+        tint: Color = DSColor.Text.secondary,
+        disabled: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Image(systemName: icon)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(disabled ? DSColor.Text.tertiary : tint)
+            .frame(width: 30, height: 30)
+            .background(Circle().fill(DSColor.Bg.subtle))
+            .contentShape(Circle())
+            .overlay {
+                ActionHitArea(isEnabled: !disabled, action: action)
+                    .clipShape(Circle())
+            }
+    }
+
+    private var firstUnrescuedOrphan: OrphanedRecording? {
+        orphanStore.orphans.first { $0.rescuedSlug == nil }
+    }
+
+    private var otherIssues: [RecorderReadinessIssue] {
+        snapshot.issues.filter {
+            firstUnrescuedOrphan == nil || $0.id != "orphaned-recording"
+        }
+    }
+
+    private func orphanSubtitle(_ orphan: OrphanedRecording) -> String {
+        let mins = Int(orphan.durationSeconds / 60)
+        let secs = Int(orphan.durationSeconds.truncatingRemainder(dividingBy: 60))
+        let mb = Double(orphan.totalBytes()) / 1024 / 1024
+        return String(format: "%d:%02d · %.1f MB", mins, secs, mb)
     }
 }

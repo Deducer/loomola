@@ -10,7 +10,6 @@ struct IdleHomeView: View {
     let topContentPadding: CGFloat
     let onOpenLiveAudioNote: () -> Void
     let onOpenAudioNote: (RecentRecording) -> Void
-    let onOpenRecovery: () -> Void
 
     private var activeFolderName: String? {
         guard let folderFilterId else { return nil }
@@ -90,8 +89,7 @@ struct IdleHomeView: View {
         VStack(alignment: .leading) {
             HeroCaptureSection(
                 viewModel: viewModel,
-                captureMode: $captureMode,
-                onOpenRecovery: onOpenRecovery
+                captureMode: $captureMode
             )
         }
         .padding(.horizontal, DSSpacing.xl)

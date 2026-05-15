@@ -202,15 +202,11 @@ struct MainRecorderView: View {
         .padding(.trailing, DSSpacing.lg)
         .padding(.top, 8)
         .frame(height: 44)
-        // Normal windows start the SwiftUI content below the
-        // transparent macOS titlebar; fullscreen windows do not.
-        // Keep the row lifted in normal mode, but keep it inside the
-        // visible content bounds in fullscreen.
         .offset(y: homeChromeYOffset)
     }
 
     private var homeChromeYOffset: CGFloat {
-        windowIsFullScreen ? -8 : -48
+        windowIsExpanded ? 0 : -32
     }
 
     private var homeContentTopPadding: CGFloat {
@@ -327,9 +323,6 @@ struct MainRecorderView: View {
                 onOpenLiveAudioNote: { noteTarget = .recording },
                 onOpenAudioNote: { recording in
                     noteTarget = .reviewing(recording: recording)
-                },
-                onOpenRecovery: {
-                    showSettings = true
                 }
             )
         }
