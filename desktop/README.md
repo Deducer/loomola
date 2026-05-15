@@ -154,20 +154,40 @@ For serious ScreenCaptureKit work, prefer `./scripts/run-dev.sh` over `swift run
 so `Info.plist`, entitlements, signing, and privacy prompts behave more like a
 real app bundle. A proper Xcode archive is still needed for distribution.
 
-### Keychain prompts on dev builds
+### Saved desktop auth
 
-The session store is Keychain-only. On a freshly-built unsigned binary, macOS
-will prompt for Keychain access on the very first save and load — Keychain
-ACLs key on the binary's code signature, and an unsigned binary has a fresh
-identity each rebuild. The helper script `scripts/run-dev.sh` ad-hoc signs
-the bundle (`codesign -s - --force --deep …`) before launch, which gives the
-bundle a stable signing identity across rebuilds, so you should only see the
-prompt once per development install.
+The default desktop session store is a current-user-only file at
+`~/Library/Application Support/LoomDesktop/auth-session.json`, written with
+`0600` permissions. It stores Supabase access and refresh tokens so local
+reinstalls do not trigger repeated macOS Keychain prompts. If the access token
+expires, the app and desktop smoke harness refresh it with the saved refresh
+token. If the refresh token is missing or revoked, sign in once from the app.
 
-If you do see Keychain prompts on every launch, confirm `run-dev.sh` is
-ad-hoc signing the bundle. The previous "auto-fall-back to a plaintext file
-in `~/Library/Application Support/LoomDesktop/auth-session.json`" path is
-removed — there is no longer a way to bypass Keychain by accident.
+The legacy Keychain backend still exists as an opt-in path, but the file store
+is the normal local-development answer. Do not commit this auth file.
+
+### Desktop smoke
+
+From the repo root:
+
+```bash
+npm run desktop-smoke
+```
+
+The read-only smoke verifies the installed `/Applications/Loomola.app` build
+stamp, launches the app, finds a real onscreen recorder window via
+CoreGraphics, refreshes saved desktop auth if needed, checks production API
+responses are JSON rather than login HTML, and verifies the known long
+documentary note still has its manual title and normalized generated notes.
+
+To also verify the desktop Bearer-token title update path, run:
+
+```bash
+npm run desktop-smoke:write
+```
+
+Write mode sends a `PATCH` with the same title already on the fixture note. It
+should not change visible content, but it does touch that row's `updated_at`.
 
 ## Chrome Meeting Bridge
 
