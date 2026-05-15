@@ -1,6 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 import OSLog
+import SwiftUI
 
 private let bootLog = Logger(subsystem: "cloud.dissonance.loom.desktop", category: "boot")
 
@@ -15,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         positionController: BubblePositionController.shared,
         cameraCoordinator: CameraCaptureCoordinator.shared
     )
+    private var recorderWindow: NSWindow?
     private var bubbleHotkey: GlobalHotkey?
     private var recordHotkey: GlobalHotkey?
     private var wasVideoRecording = false
@@ -48,8 +50,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.wasVideoRecording = isVideoRecording
             }
         }
-        Task { @MainActor in
-            AppActivation.bringRecorderToFront()
+        DispatchQueue.main.async { [weak self] in
+            self?.showRecorder()
         }
     }
 
@@ -129,7 +131,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func showRecorder() {
-        AppActivation.bringRecorderToFront()
+        NSApp.setActivationPolicy(.regular)
+        NSApp.unhide(nil)
+        NSApp.activate(ignoringOtherApps: true)
+
+        let window = makeRecorderWindow()
+        if window.isMiniaturized {
+            window.deminiaturize(nil)
+        }
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
     }
 
     @objc private func toggleBubbleOverlay() {
@@ -165,8 +176,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return .terminateLater
         }
 
-        AppActivation.bringRecorderToFront()
+        showRecorder()
         return .terminateCancel
+    }
+
+    private func makeRecorderWindow() -> NSWindow {
+        if let recorderWindow {
+            return recorderWindow
+        }
+
+        let rootView = MainRecorderView()
+            .frame(minWidth: 920, minHeight: 620)
+        let hostingController = NSHostingController(rootView: rootView)
+        let window = NSWindow(
+            contentRect: NSRect(x: 192, y: 280, width: 1080, height: 740),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Loomola"
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.collectionBehavior = [.managed, .moveToActiveSpace]
+        window.isReleasedWhenClosed = false
+        window.minSize = NSSize(width: 920, height: 620)
+        window.tabbingMode = .disallowed
+        window.setFrameAutosaveName("LoomolaRecorderWindow")
+        window.contentViewController = hostingController
+        window.center()
+        recorderWindow = window
+        return window
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showRecorder()
+        return true
     }
 }
 
