@@ -66,7 +66,7 @@ struct MainRecorderView: View {
         .overlay(alignment: .top) {
             if noteTarget == nil {
                 homeTitleBar
-                    .ignoresSafeArea(.container, edges: .top)
+                    .loomolaTitlebarPinned(!windowIsFullScreen)
             }
         }
         .background(
@@ -290,6 +290,7 @@ struct MainRecorderView: View {
             NoteWorkspaceView(
                 viewModel: viewModel,
                 target: target,
+                pinChromeToTitlebar: !windowIsFullScreen,
                 onClose: { noteTarget = nil }
             )
         } else if viewModel.state == .signedOut {

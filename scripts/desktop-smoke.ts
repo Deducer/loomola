@@ -255,8 +255,8 @@ async function assertDesktopChromeLayoutGuard(): Promise<void> {
     if (source.includes("chromeYOffset") || source.includes("homeChromeYOffset")) {
       throw new Error(`${file} reintroduced geometry-dependent titlebar Y offsets`);
     }
-    if (!source.includes(".ignoresSafeArea(.container, edges: .top)")) {
-      throw new Error(`${file} does not pin custom chrome into the macOS titlebar band`);
+    if (!source.includes(".loomolaTitlebarPinned(")) {
+      throw new Error(`${file} does not use the state-aware titlebar pinning helper`);
     }
   }
 }

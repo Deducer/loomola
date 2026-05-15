@@ -56,3 +56,17 @@ enum WindowChromeLayout {
     static let homeContentTopPaddingExpanded: CGFloat = 64
     static let noteContentTopPadding: CGFloat = 88
 }
+
+extension View {
+    /// Keep custom Loomola chrome aligned with the macOS traffic
+    /// lights while the titlebar is visible, but fall back to the
+    /// top safe area in fullscreen where macOS hides that strip.
+    @ViewBuilder
+    func loomolaTitlebarPinned(_ isPinned: Bool) -> some View {
+        if isPinned {
+            self.ignoresSafeArea(.container, edges: .top)
+        } else {
+            self
+        }
+    }
+}

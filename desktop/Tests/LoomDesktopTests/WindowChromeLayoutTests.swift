@@ -30,7 +30,7 @@ final class WindowChromeLayoutTests: XCTestCase {
         }
     }
 
-    func testTopChromeExplicitlyIgnoresTheTitlebarSafeArea() throws {
+    func testTopChromeUsesStateAwareTitlebarPinning() throws {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let guardedFiles = [
             root.appending(path: "Sources/LoomDesktopApp/UI/MainRecorderView.swift"),
@@ -40,9 +40,28 @@ final class WindowChromeLayoutTests: XCTestCase {
         for file in guardedFiles {
             let source = try String(contentsOf: file)
             XCTAssertTrue(
-                source.contains(".ignoresSafeArea(.container, edges: .top)"),
-                "\(file.lastPathComponent) must pin custom chrome into the macOS titlebar band."
+                source.contains(".loomolaTitlebarPinned("),
+                "\(file.lastPathComponent) must use the state-aware titlebar pinning helper."
             )
         }
+    }
+
+    func testNoteChromeStaysVisibleInFullscreen() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let mainSource = try String(
+            contentsOf: root.appending(path: "Sources/LoomDesktopApp/UI/MainRecorderView.swift")
+        )
+        let noteSource = try String(
+            contentsOf: root.appending(path: "Sources/LoomDesktopApp/UI/Notes/NoteWorkspaceView.swift")
+        )
+
+        XCTAssertTrue(
+            mainSource.contains("pinChromeToTitlebar: !windowIsFullScreen"),
+            "Note workspace chrome must respect the safe area in fullscreen so the back button stays visible."
+        )
+        XCTAssertTrue(
+            noteSource.contains("let pinChromeToTitlebar: Bool"),
+            "Note workspace needs an explicit titlebar-pinning input from the host window."
+        )
     }
 }

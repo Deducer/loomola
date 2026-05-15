@@ -78,6 +78,7 @@ private struct TranscriptDisplayBubble: Identifiable, Equatable {
 struct NoteWorkspaceView: View {
     @ObservedObject var viewModel: RecorderViewModel
     let target: NoteWorkspaceTarget
+    let pinChromeToTitlebar: Bool
     let onClose: () -> Void
 
     /// Local body editor state for review mode (we fetch from
@@ -318,7 +319,7 @@ struct NoteWorkspaceView: View {
         }
         .overlay(alignment: .topLeading) {
             noteChromeBar
-                .ignoresSafeArea(.container, edges: .top)
+                .loomolaTitlebarPinned(pinChromeToTitlebar)
         }
         .onContinuousHover { phase in
             switch phase {
