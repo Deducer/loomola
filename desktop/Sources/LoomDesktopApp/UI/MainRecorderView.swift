@@ -327,6 +327,9 @@ struct MainRecorderView: View {
                 onOpenLiveAudioNote: { noteTarget = .recording },
                 onOpenAudioNote: { recording in
                     noteTarget = .reviewing(recording: recording)
+                },
+                onOpenRecovery: {
+                    showSettings = true
                 }
             )
         }

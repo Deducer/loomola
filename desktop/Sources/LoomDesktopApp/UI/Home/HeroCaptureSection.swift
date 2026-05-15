@@ -7,6 +7,7 @@ import SwiftUI
 struct HeroCaptureSection: View {
     @ObservedObject var viewModel: RecorderViewModel
     @Binding var captureMode: CaptureMode
+    let onOpenRecovery: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: DSSpacing.md) {
@@ -202,7 +203,8 @@ struct HeroCaptureSection: View {
     private var readinessStatus: some View {
         RecorderReadinessInlineStatus(
             snapshot: viewModel.recorderReadiness,
-            refresh: { viewModel.refreshRecorderReadiness() }
+            refresh: { viewModel.refreshRecorderReadiness() },
+            openRecovery: onOpenRecovery
         )
     }
 }
@@ -248,50 +250,63 @@ enum CaptureMode: String, CaseIterable, Hashable {
 private struct RecorderReadinessInlineStatus: View {
     let snapshot: RecorderReadinessSnapshot
     let refresh: () -> Void
+    let openRecovery: () -> Void
+
+    @State private var hovering = false
 
     var body: some View {
-        HStack(alignment: .center, spacing: DSSpacing.md) {
+        HStack(alignment: .center, spacing: DSSpacing.sm) {
             statusGlyph
-                .frame(width: 18, height: 18)
+                .frame(width: 16, height: 16)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(snapshot.summary)
-                    .font(DSFont.Body.md())
-                    .foregroundStyle(DSColor.Text.primary)
+            Text(compactTitle)
+                .font(DSFont.Body.md())
+                .foregroundStyle(DSColor.Text.primary)
+                .lineLimit(1)
+
+            if hovering, let detailText {
+                Text(detailText)
+                    .font(DSFont.Body.sm())
+                    .foregroundStyle(DSColor.Text.secondary)
                     .lineLimit(1)
-                if let detailText {
-                    Text(detailText)
-                        .font(DSFont.Body.sm())
-                        .foregroundStyle(DSColor.Text.secondary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                    .transition(.opacity.combined(with: .move(edge: .leading)))
             }
 
-            Spacer(minLength: DSSpacing.md)
-
-            Image(systemName: "arrow.clockwise")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(DSColor.Text.secondary)
-                .frame(width: 28, height: 28)
-                .background(Circle().fill(DSColor.Bg.subtle))
-                .contentShape(Circle())
-                .overlay {
-                    ActionHitArea(action: refresh)
-                        .clipShape(Circle())
+            if hovering {
+                Spacer(minLength: DSSpacing.sm)
+                if showsRecoveryAction {
+                    iconAction("tray.full.fill", action: openRecovery)
                 }
-                .help("Run setup check")
+                iconAction("arrow.clockwise", action: refresh)
+            }
         }
         .padding(.horizontal, DSSpacing.md)
         .padding(.vertical, DSSpacing.sm)
+        .frame(maxWidth: hovering ? .infinity : nil, alignment: .leading)
         .background(
-            DSColor.Bg.surfaceRaised,
-            in: RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
+            Capsule(style: .continuous)
+                .fill(hovering ? DSColor.Bg.surfaceRaised : DSColor.Bg.subtle)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
-                .strokeBorder(statusColor.opacity(0.42), lineWidth: 1)
+            Capsule(style: .continuous)
+                .strokeBorder(statusColor.opacity(borderOpacity), lineWidth: 1)
         )
+        .contentShape(Capsule(style: .continuous))
+        .onHover { hovering = $0 }
+        .animation(LoomolaMotion.quick, value: hovering)
+    }
+
+    private func iconAction(_ systemName: String, action: @escaping () -> Void) -> some View {
+        Image(systemName: systemName)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(DSColor.Text.secondary)
+            .frame(width: 26, height: 26)
+            .background(Circle().fill(DSColor.Bg.subtle))
+            .contentShape(Circle())
+            .overlay {
+                ActionHitArea(action: action)
+                    .clipShape(Circle())
+            }
     }
 
     @ViewBuilder
@@ -302,14 +317,25 @@ private struct RecorderReadinessInlineStatus: View {
                 .controlSize(.small)
                 .tint(DSColor.Accent.primary)
         case .ready:
-            Image(systemName: "checkmark.circle.fill")
+            Image(systemName: "checkmark")
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(DSColor.State.success)
         case .degraded:
-            Image(systemName: "exclamationmark.circle.fill")
+            Image(systemName: "exclamationmark")
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(DSColor.State.warning)
         case .blocked:
-            Image(systemName: "xmark.circle.fill")
+            Image(systemName: "xmark")
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(DSColor.State.recording)
+        }
+    }
+
+    private var compactTitle: String {
+        switch snapshot.state {
+        case .checking: return "Checking"
+        case .ready, .degraded: return "Ready"
+        case .blocked: return "Check setup"
         }
     }
 
@@ -324,5 +350,13 @@ private struct RecorderReadinessInlineStatus: View {
         case .degraded: return DSColor.State.warning
         case .blocked: return DSColor.State.recording
         }
+    }
+
+    private var borderOpacity: Double {
+        hovering || snapshot.state != .ready ? 0.42 : 0.14
+    }
+
+    private var showsRecoveryAction: Bool {
+        snapshot.issues.contains { $0.id == "orphaned-recording" }
     }
 }
