@@ -71,9 +71,9 @@ final class OrphanedRecordingStoreTests: XCTestCase {
             lastError: nil
         )
 
-        // Build a *new* store pointing at the same Application Support
-        // root — it should rediscover the orphan.
-        let store2 = OrphanedRecordingStore.shared
+        // Build a *new* store pointing at the same test root — it
+        // should rediscover the orphan.
+        let store2 = OrphanedRecordingStore(storeRoot: testStoreRoot)
         store2.refresh()
         let found = store2.orphans.first { $0.id == captured.id }
         XCTAssertNotNil(found, "orphan should round-trip through metadata.json")
@@ -138,16 +138,15 @@ final class OrphanedRecordingStoreTests: XCTestCase {
 
     // MARK: - Helpers
 
-    /// Returns the singleton store after wiping out any pre-existing
-    /// orphans from a previous test run. Tests share Application
-    /// Support since the store is a singleton — the wipe keeps tests
-    /// independent.
+    private var testStoreRoot: URL {
+        FileManager.default.temporaryDirectory
+            .appending(path: "loomola-orphan-store-tests", directoryHint: .isDirectory)
+    }
+
+    /// Returns an isolated store after wiping only the test directory.
     private func makeStore() -> OrphanedRecordingStore {
-        let store = OrphanedRecordingStore.shared
-        for orphan in store.orphans {
-            try? store.discard(orphan)
-        }
-        return store
+        try? FileManager.default.removeItem(at: testStoreRoot)
+        return OrphanedRecordingStore(storeRoot: testStoreRoot)
     }
 
     private func makeTempDir() -> URL {

@@ -272,7 +272,7 @@ final class RecorderViewModel: ObservableObject {
             let service = DesktopAuthService(configuration: config)
             authService = service
             backendClient = BackendClient(baseURL: config.apiBaseURL) { [weak self] in
-                guard let token = await self?.currentAccessToken() else {
+                guard let token = try await self?.currentAccessToken() else {
                     throw RecorderViewModelError.missingAccessToken
                 }
                 return token
@@ -297,7 +297,7 @@ final class RecorderViewModel: ObservableObject {
             }
             obsidianExportWriter = backendClient.map { ObsidianExportWriter(backend: $0) }
             obsidianRealtimeSubscriber = ObsidianRealtimeSubscriber(configuration: config) { [weak self] in
-                guard let token = await self?.currentAccessToken() else {
+                guard let token = try await self?.currentAccessToken() else {
                     throw RecorderViewModelError.missingAccessToken
                 }
                 return token
@@ -2080,8 +2080,20 @@ final class RecorderViewModel: ObservableObject {
         }
     }
 
-    private func currentAccessToken() -> String? {
-        accessToken
+    private func currentAccessToken() async throws -> String? {
+        guard let accessToken else { return nil }
+        if !DesktopAuthService.decodeAccessTokenClaims(accessToken).isExpired() {
+            return accessToken
+        }
+        guard let snapshot = try await authService?.loadStoredSessionSnapshot() else {
+            return nil
+        }
+        self.accessToken = snapshot.accessToken
+        if self.email.isEmpty {
+            self.email = snapshot.email ?? ""
+        }
+        recorderLog.notice("currentAccessToken — refreshed expired Supabase access token")
+        return snapshot.accessToken
     }
 
     private func canListCaptureSourcesWithoutPrompt() -> Bool {

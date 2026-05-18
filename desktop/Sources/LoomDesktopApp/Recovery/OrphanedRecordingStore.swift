@@ -135,24 +135,28 @@ final class OrphanedRecordingStore: ObservableObject {
     private let storeRoot: URL
     private let fileManager: FileManager
 
-    init(fileManager: FileManager = .default) {
+    init(fileManager: FileManager = .default, storeRoot: URL? = nil) {
         self.fileManager = fileManager
-        // Resolve ~/Library/Application Support/LoomDesktop/
-        // orphaned-recordings — same Application Support directory the
-        // file-based auth session store uses (Stage 7 default), so all
-        // app-state lives in one place.
-        let appSupport = (try? fileManager.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        )) ?? URL(fileURLWithPath: NSHomeDirectory()).appending(path: "Library/Application Support")
-        self.storeRoot = appSupport
-            .appending(path: "LoomDesktop")
-            .appending(path: "orphaned-recordings")
+        if let storeRoot {
+            self.storeRoot = storeRoot
+        } else {
+            // Resolve ~/Library/Application Support/LoomDesktop/
+            // orphaned-recordings — same Application Support directory the
+            // file-based auth session store uses (Stage 7 default), so all
+            // app-state lives in one place.
+            let appSupport = (try? fileManager.url(
+                for: .applicationSupportDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: true
+            )) ?? URL(fileURLWithPath: NSHomeDirectory()).appending(path: "Library/Application Support")
+            self.storeRoot = appSupport
+                .appending(path: "LoomDesktop")
+                .appending(path: "orphaned-recordings")
+        }
 
         try? fileManager.createDirectory(
-            at: storeRoot,
+            at: self.storeRoot,
             withIntermediateDirectories: true,
             attributes: [.posixPermissions: 0o700]
         )
