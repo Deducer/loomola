@@ -197,7 +197,7 @@ let trafficY = trafficYTotal / Double(trafficCount)
 let xStart = min(width - 1, trafficMaxX + 60)
 let xEnd = min(width, 900)
 let yStart = max(0, Int(trafficY) - 30)
-let yEnd = min(height, Int(trafficY) + 180)
+let yEnd = min(height, Int(trafficY) + 62)
 
 var chromeYTotal = 0.0
 var chromeCount = 0

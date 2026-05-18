@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { mediaObjects } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { flipToReadyIfComplete } from "@/db/queries/ai-outputs";
+import { thumbnailKeyForComposite } from "@/lib/recordings/artifact-keys";
 
 export const THUMBNAIL_JOB = "generate_thumbnail";
 
@@ -24,7 +25,7 @@ export async function runThumbnailJob(data: ThumbnailJobData): Promise<void> {
   const videoUrl = await presignGet(data.compositeKey);
 
   const jpg = await ffmpegExtractFrame(videoUrl, 1.0);
-  const thumbKey = `${data.compositeKey.replace(/\/composite\.webm$/, "")}/thumbnail.jpg`;
+  const thumbKey = thumbnailKeyForComposite(data.compositeKey);
 
   await uploadBytes(thumbKey, jpg, "image/jpeg");
 

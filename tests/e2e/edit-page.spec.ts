@@ -40,6 +40,16 @@ test.describe("/recordings/[id]/edit", () => {
     await expect(
       page.getByRole("button", { name: /Rename/i })
     ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Clips" })
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Add clip" }).click();
+    await expect(
+      page.getByRole("dialog", { name: "Add a clip" })
+    ).toBeVisible();
+    await expect(
+      page.getByPlaceholder("Paste a Loomola URL or search your videos")
+    ).toBeVisible();
   });
 
   test("non-owner gets 404", async ({ page }) => {

@@ -1,5 +1,3 @@
-"use client";
-
 import { Fragment, type ReactNode } from "react";
 
 export function EditShell({
@@ -7,6 +5,7 @@ export function EditShell({
   header,
   settings,
   trim,
+  clips,
   downloads,
   analytics,
   danger,
@@ -16,6 +15,7 @@ export function EditShell({
   header: ReactNode;
   settings: ReactNode;
   trim: ReactNode;
+  clips: ReactNode;
   downloads: ReactNode;
   analytics: ReactNode;
   danger: ReactNode;
@@ -28,6 +28,7 @@ export function EditShell({
   const slots: Array<{ key: string; node: ReactNode }> = [
     { key: "settings", node: settings },
     { key: "trim", node: trim },
+    { key: "clips", node: clips },
     { key: "downloads", node: downloads },
     { key: "analytics", node: analytics },
     { key: "danger", node: danger },

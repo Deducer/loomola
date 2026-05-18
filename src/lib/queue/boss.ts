@@ -60,6 +60,11 @@ import {
   runSuggestSpeakersJob,
   type SuggestSpeakersJobData,
 } from "./jobs/suggest-speakers";
+import {
+  APPEND_CLIP_JOB,
+  runAppendClipJob,
+  type AppendClipJobData,
+} from "./jobs/append-clip";
 import { enableGranola } from "@/lib/feature-flags";
 
 let cached: PgBoss | null = null;
@@ -92,6 +97,7 @@ async function init(): Promise<PgBoss> {
   await boss.createQueue(TRANSCODE_PLAYBACK_JOB);
   await boss.createQueue(SUGGEST_FOLDER_JOB);
   await boss.createQueue(SUGGEST_SPEAKERS_JOB);
+  await boss.createQueue(APPEND_CLIP_JOB);
   if (granolaEnabled) {
     await boss.createQueue(MIX_AUDIO_JOB);
     await boss.createQueue(AUDIO_WAVEFORM_JOB);
@@ -163,6 +169,49 @@ async function init(): Promise<PgBoss> {
   await boss.work<TranscodePlaybackJobData>(TRANSCODE_PLAYBACK_JOB, async (jobs) => {
     for (const job of jobs) await runTranscodePlaybackJob(job.data);
   });
+  await boss.work<AppendClipJobData>(APPEND_CLIP_JOB, async (jobs) => {
+    for (const job of jobs) {
+      const result = await runAppendClipJob(job.data);
+      try {
+        await Promise.all([
+          boss.send(
+            TRANSCRIBE_JOB,
+            { mediaObjectId: result.mediaObjectId, audioKey: result.compositeKey },
+            TRANSCRIBE_JOB_OPTIONS
+          ),
+          boss.send(
+            TRANSCODE_PLAYBACK_JOB,
+            {
+              mediaObjectId: result.mediaObjectId,
+              compositeKey: result.compositeKey,
+            },
+            PLAYBACK_JOB_OPTIONS
+          ),
+          boss.send(
+            THUMBNAIL_JOB,
+            {
+              mediaObjectId: result.mediaObjectId,
+              compositeKey: result.compositeKey,
+            },
+            COMPOSITE_JOB_OPTIONS
+          ),
+          boss.send(
+            PREVIEW_SPRITE_JOB,
+            {
+              mediaObjectId: result.mediaObjectId,
+              compositeKey: result.compositeKey,
+            },
+            COMPOSITE_JOB_OPTIONS
+          ),
+        ]);
+      } catch (err) {
+        console.error(
+          `[append-clip] failed to enqueue follow-up jobs for ${result.mediaObjectId}:`,
+          err
+        );
+      }
+    }
+  });
   await boss.work<SuggestFolderJobData>(SUGGEST_FOLDER_JOB, async (jobs) => {
     for (const job of jobs) {
       try {
@@ -218,7 +267,7 @@ async function init(): Promise<PgBoss> {
   }
 
   console.log(
-    `[pg-boss] started and workers registered (${granolaEnabled ? 11 : 7} queues)`
+    `[pg-boss] started and workers registered (${granolaEnabled ? 12 : 8} queues)`
   );
   return boss;
 }
@@ -254,12 +303,26 @@ export async function enqueuePlaybackTranscode(
   data: TranscodePlaybackJobData
 ): Promise<void> {
   const boss = await getBoss();
-  await boss.send(TRANSCODE_PLAYBACK_JOB, data, {
-    retryLimit: 2,
-    retryDelay: 60,
-    retryBackoff: true,
-    expireInSeconds: 7200,
-  });
+  await boss.send(TRANSCODE_PLAYBACK_JOB, data, PLAYBACK_JOB_OPTIONS);
+}
+
+const PLAYBACK_JOB_OPTIONS = {
+  retryLimit: 2,
+  retryDelay: 60,
+  retryBackoff: true,
+  expireInSeconds: 7200,
+};
+
+const APPEND_CLIP_JOB_OPTIONS = {
+  retryLimit: 1,
+  retryDelay: 60,
+  retryBackoff: true,
+  expireInSeconds: 7200,
+};
+
+export async function enqueueAppendClip(data: AppendClipJobData): Promise<void> {
+  const boss = await getBoss();
+  await boss.send(APPEND_CLIP_JOB, data, APPEND_CLIP_JOB_OPTIONS);
 }
 
 const COMPOSITE_JOB_OPTIONS = {

@@ -1,10 +1,14 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { NextResponse } from "next/server";
 import { applySecurityHeaders } from "@/lib/security/headers";
 
 function freshResponse(): NextResponse {
   return NextResponse.next();
 }
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe("applySecurityHeaders — defaults", () => {
   const res = applySecurityHeaders(freshResponse());
@@ -41,6 +45,7 @@ describe("applySecurityHeaders — defaults", () => {
     const csp = res.headers.get("Content-Security-Policy") ?? "";
     expect(csp).toContain("frame-ancestors 'self'");
     expect(csp).toContain("default-src 'self'");
+    expect(csp).toContain("script-src 'self' 'unsafe-inline' 'unsafe-eval'");
     expect(csp).toContain("object-src 'none'");
     expect(csp).toContain("base-uri 'self'");
     expect(csp).toContain("form-action 'self'");
@@ -52,6 +57,14 @@ describe("applySecurityHeaders — defaults", () => {
     expect(csp).toContain("https://fonts.gstatic.com");
     expect(csp).toMatch(/connect-src[^;]*\*\.supabase\.co/);
     expect(csp).toMatch(/(media|connect)-src[^;]*r2\.cloudflarestorage\.com/);
+  });
+
+  it("omits unsafe-eval from production CSP", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const prod = applySecurityHeaders(freshResponse());
+    const csp = prod.headers.get("Content-Security-Policy") ?? "";
+    expect(csp).toContain("script-src 'self' 'unsafe-inline'");
+    expect(csp).not.toContain("'unsafe-eval'");
   });
 });
 

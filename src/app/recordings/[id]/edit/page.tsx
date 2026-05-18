@@ -12,11 +12,13 @@ import { bucketize } from "@/lib/viewer/dropoff";
 import { EditShell } from "@/components/edit/edit-shell";
 import { EditHeader } from "@/components/edit/edit-header";
 import { SettingsSection } from "@/components/edit/settings-section";
+import { AddClipSection } from "@/components/edit/add-clip-section";
 import { TrimEditor } from "@/components/viewer/trim-editor";
 import { DownloadsList } from "@/components/viewer/downloads-list";
 import { DropoffChart } from "@/components/edit/dropoff-chart";
 import { DangerZone } from "@/components/edit/danger-zone";
 import { ViewerShell } from "@/components/viewer/viewer-shell";
+import { extensionForKey } from "@/lib/recordings/artifact-keys";
 import type { Metadata } from "next";
 import type { Word } from "@/lib/viewer/paragraphs";
 
@@ -75,6 +77,11 @@ export default async function EditRecordingPage({
   const durationSec =
     rec.durationSeconds != null ? parseFloat(String(rec.durationSeconds)) : null;
   const playerAccent = rec.brand?.accentColor ?? "#8b5cf6";
+  const addClipDisabledReason = !isReady
+    ? "Wait for this recording to finish processing first."
+    : trimActive
+      ? "Clear the trim before adding a clip."
+      : null;
 
   const [
     downloads,
@@ -89,9 +96,10 @@ export default async function EditRecordingPage({
         .map(async (download) => ({
           kind: download.kind,
           href: await presignGet(download.key!, {
-            filename: `${rec.slug}-${download.fileKind}.${
+            filename: `${rec.slug}-${download.fileKind}.${extensionForKey(
+              download.key!,
               download.fileKind === "playback" ? "mp4" : "webm"
-            }`,
+            )}`,
           }),
         }))
     ),
@@ -222,6 +230,12 @@ export default async function EditRecordingPage({
                   initialEnd={trimEndSec}
                 />
               </section>
+            }
+            clips={
+              <AddClipSection
+                recordingId={rec.id}
+                disabledReason={addClipDisabledReason}
+              />
             }
             downloads={
               downloads.length > 0 ? (

@@ -7,6 +7,7 @@ import { uploadFile } from "@/lib/r2/upload-bytes";
 import { db } from "@/db";
 import { mediaObjects } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { playbackKeyForComposite } from "@/lib/recordings/artifact-keys";
 
 export const TRANSCODE_PLAYBACK_JOB = "transcode_playback";
 
@@ -23,7 +24,7 @@ export async function runTranscodePlaybackJob(
   const inputUrl = await presignGet(data.compositeKey);
   const dir = await mkdtemp(join(tmpdir(), "loom-playback-"));
   const outputPath = join(dir, "playback.mp4");
-  const playbackKey = `${recordingPrefix(data.compositeKey)}/playback.mp4`;
+  const playbackKey = playbackKeyForComposite(data.compositeKey);
 
   try {
     await ffmpegTranscodePlayback(inputUrl, outputPath);
@@ -38,11 +39,6 @@ export async function runTranscodePlaybackJob(
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
-}
-
-function recordingPrefix(key: string): string {
-  const slash = key.lastIndexOf("/");
-  return slash >= 0 ? key.slice(0, slash) : key;
 }
 
 function ffmpegTranscodePlayback(inputUrl: string, outputPath: string): Promise<void> {

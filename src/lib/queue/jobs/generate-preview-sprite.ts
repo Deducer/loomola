@@ -4,6 +4,7 @@ import { uploadBytes } from "@/lib/r2/upload-bytes";
 import { db } from "@/db";
 import { mediaObjects } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { previewSpriteKeyForComposite } from "@/lib/recordings/artifact-keys";
 
 export const PREVIEW_SPRITE_JOB = "generate_preview_sprite";
 
@@ -90,7 +91,7 @@ export async function runPreviewSpriteJob(data: PreviewSpriteJobData): Promise<v
   const videoUrl = await presignGet(data.compositeKey);
   const jpg = await ffmpegBuildSprite(videoUrl, layout);
 
-  const spriteKey = `${data.compositeKey.replace(/\/composite\.webm$/, "")}/preview-sprite.jpg`;
+  const spriteKey = previewSpriteKeyForComposite(data.compositeKey);
   await uploadBytes(spriteKey, jpg, "image/jpeg");
 
   await db

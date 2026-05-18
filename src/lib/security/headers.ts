@@ -18,13 +18,21 @@ const PERMISSIONS = [
 ].join(", ");
 
 function buildCSP(opts: SecurityHeaderOptions): string {
+  const scriptSrc = [
+    "script-src",
+    "'self'",
+    "'unsafe-inline'",
+    ...(process.env.NODE_ENV === "production" ? [] : ["'unsafe-eval'"]),
+  ].join(" ");
   const directives = [
     "default-src 'self'",
     // 'unsafe-inline' on script-src is required by the share-page theme
     // bootstrap (inline <script> that flips html.dark before paint to avoid
     // theme flash) and various small Next.js-emitted inline bootstraps.
+    // Next's development runtime also needs 'unsafe-eval'; keep that out of
+    // production CSP.
     // Tightening to a nonce-based CSP is tracked as a follow-up.
-    "script-src 'self' 'unsafe-inline'",
+    scriptSrc,
     // 'unsafe-inline' on style-src is required by Tailwind v4 runtime + Plyr
     // inline styles + brand custom-color injection.
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
