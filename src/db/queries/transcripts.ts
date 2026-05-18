@@ -119,3 +119,19 @@ export async function getTranscriptByRecording(
     .limit(1);
   return row ?? null;
 }
+
+export async function updateTranscriptText(params: {
+  id: string;
+  fullText: string;
+  wordTimestamps: WordTimestamp[];
+}): Promise<Transcript | null> {
+  const [row] = await db
+    .update(transcripts)
+    .set({
+      fullText: params.fullText,
+      wordTimestamps: params.wordTimestamps,
+    })
+    .where(eq(transcripts.id, params.id))
+    .returning();
+  return row ?? null;
+}

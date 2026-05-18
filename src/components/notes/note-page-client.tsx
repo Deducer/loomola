@@ -78,6 +78,7 @@ type NoteViewMode = "original" | "enhanced";
 type ObsidianSaveState = "idle" | "saving" | "queued" | "synced" | "error";
 type AttachmentSaveState = "idle" | "uploading" | "error";
 type TemplateSaveState = "idle" | "saving" | "error";
+type DictionaryApplyState = "idle" | "applying" | "applied" | "unchanged" | "error";
 
 type NoteTemplate = {
   id: string;
@@ -153,6 +154,8 @@ export function NotePageClient({
   const [obsidianPath, setObsidianPath] = useState<string | null>(
     initialObsidianPath
   );
+  const [dictionaryApplyState, setDictionaryApplyState] =
+    useState<DictionaryApplyState>("idle");
   const [attachments, setAttachments] = useState(initialAttachments);
   const [attachmentState, setAttachmentState] =
     useState<AttachmentSaveState>("idle");
@@ -396,6 +399,38 @@ export function NotePageClient({
     }
   }
 
+  async function applyDictionaryToTranscript() {
+    if (!transcriptText.trim()) return;
+    setDictionaryApplyState("applying");
+    setEnhanceError(null);
+    try {
+      const response = await fetch(`/api/notes/${mediaId}/dictionary/reapply`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        changed?: boolean;
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(data.error ?? "dictionary_reapply_failed");
+      }
+      if (!data.changed) {
+        setDictionaryApplyState("unchanged");
+        return;
+      }
+      setDictionaryApplyState("applied");
+      setGenerationStatus("pending");
+      setEnhancedSummary(null);
+      setViewMode("original");
+      setActionsOpen(false);
+      window.setTimeout(() => window.location.reload(), 250);
+    } catch {
+      setDictionaryApplyState("error");
+    }
+  }
+
   async function uploadAttachmentFiles(files: File[]) {
     const imageFiles = files.filter((file) => file.type.startsWith("image/"));
     if (imageFiles.length === 0) return;
@@ -552,9 +587,12 @@ export function NotePageClient({
               {actionsOpen && (
                 <NoteActionsMenu
                   mediaId={mediaId}
+                  hasTranscript={!!transcriptText.trim()}
+                  dictionaryApplyState={dictionaryApplyState}
                   obsidianSaveState={obsidianSaveState}
                   obsidianPath={obsidianPath}
                   onRequestObsidianSave={requestObsidianSave}
+                  onApplyDictionary={applyDictionaryToTranscript}
                 />
               )}
             </div>
@@ -867,14 +905,20 @@ function NoteAttachments({
 
 function NoteActionsMenu({
   mediaId,
+  hasTranscript,
+  dictionaryApplyState,
   obsidianSaveState,
   obsidianPath,
   onRequestObsidianSave,
+  onApplyDictionary,
 }: {
   mediaId: string;
+  hasTranscript: boolean;
+  dictionaryApplyState: DictionaryApplyState;
   obsidianSaveState: ObsidianSaveState;
   obsidianPath: string | null;
   onRequestObsidianSave: () => void;
+  onApplyDictionary: () => void;
 }) {
   return (
     <div className="absolute right-0 top-10 z-50 w-72 overflow-hidden rounded-lg border border-border bg-bg-elevated p-1.5 text-sm shadow-2xl shadow-black/35">
@@ -894,6 +938,31 @@ function NoteActionsMenu({
         label="Download note .json"
       />
       <div className="my-1 border-t border-border" />
+      <button
+        type="button"
+        onClick={onApplyDictionary}
+        disabled={!hasTranscript || dictionaryApplyState === "applying"}
+        className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-text-muted transition-colors hover:bg-bg-subtle hover:text-text disabled:opacity-60"
+      >
+        <RefreshCcw className="h-4 w-4 text-emerald-400" />
+        <span className="min-w-0 flex-1">
+          <span className="block">
+            {dictionaryApplyState === "applying"
+              ? "Applying dictionary"
+              : "Apply dictionary & regenerate"}
+          </span>
+          {dictionaryApplyState === "unchanged" && (
+            <span className="mt-0.5 block text-[11px] text-text-subtle">
+              No matching corrections found.
+            </span>
+          )}
+          {dictionaryApplyState === "error" && (
+            <span className="mt-0.5 block text-[11px] text-red-400">
+              Could not apply dictionary.
+            </span>
+          )}
+        </span>
+      </button>
       <button
         type="button"
         onClick={onRequestObsidianSave}

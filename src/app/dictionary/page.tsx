@@ -26,7 +26,7 @@ export default async function DictionaryPage() {
             Dictionary
           </h1>
           <p className="mt-1 text-sm text-text-muted">
-            Shared vocabulary for transcript accuracy.
+            Teach Loomola the names, companies, and phrases your meetings actually use.
           </p>
         </div>
         <DictionaryManager initialTerms={terms} />

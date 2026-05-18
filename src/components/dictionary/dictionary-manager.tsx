@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Plus, Trash2, Upload } from "lucide-react";
+import { ArrowRight, CheckCircle2, Plus, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -26,6 +26,24 @@ export function DictionaryManager({
   const canonicalById = useMemo(
     () => new Map(canonicalTerms.map((item) => [item.id, item])),
     [canonicalTerms]
+  );
+  const variantsByCanonicalId = useMemo(() => {
+    const grouped = new Map<string, DictionaryTerm[]>();
+    for (const item of terms) {
+      if (!item.variantOf) continue;
+      const list = grouped.get(item.variantOf) ?? [];
+      list.push(item);
+      grouped.set(item.variantOf, list);
+    }
+    for (const list of grouped.values()) list.sort(sortTerms);
+    return grouped;
+  }, [terms]);
+  const orphanVariants = useMemo(
+    () =>
+      terms.filter(
+        (item) => item.variantOf !== null && !canonicalById.has(item.variantOf)
+      ),
+    [canonicalById, terms]
   );
 
   async function createTerm(nextTerm: string, nextVariantOf: string | null) {
@@ -119,35 +137,67 @@ export function DictionaryManager({
   return (
     <div className="space-y-6">
       <section className="rounded-lg border border-border bg-bg-subtle p-4">
-        <div className="grid gap-3 md:grid-cols-[1fr_220px_auto]">
-          <Input
-            value={term}
-            onChange={(event) => setTerm(event.target.value)}
-            placeholder="Term"
-          />
-          <Select
-            value={variantOf}
-            onChange={(event) => setVariantOf(event.target.value)}
-          >
-            <option value="">Canonical term</option>
-            {canonicalTerms.map((item) => (
-              <option key={item.id} value={item.id}>
-                Variant of {item.term}
-              </option>
-            ))}
-          </Select>
-          <Button onClick={addTerm} disabled={busy || !term.trim()}>
-            <Plus className="h-4 w-4" />
-            Add
-          </Button>
+        <div className="mb-4 grid gap-3 text-sm text-text-muted md:grid-cols-2">
+          <div className="rounded-md border border-border bg-bg px-3 py-2">
+            <p className="font-medium text-text">Correct spelling</p>
+            <p className="mt-1 text-xs leading-5">
+              The word or phrase Loomola should prefer and send as a transcription hint.
+            </p>
+          </div>
+          <div className="rounded-md border border-border bg-bg px-3 py-2">
+            <p className="font-medium text-text">Misheard as</p>
+            <p className="mt-1 text-xs leading-5">
+              A transcript mistake that should be rewritten to the correct spelling.
+            </p>
+          </div>
+        </div>
+        <div className="grid gap-3 md:grid-cols-[1fr_260px_auto]">
+          <label className="space-y-1.5">
+            <span className="text-xs font-medium text-text-subtle">
+              {variantOf ? "Misheard spelling" : "Correct spelling"}
+            </span>
+            <Input
+              value={term}
+              onChange={(event) => setTerm(event.target.value)}
+              placeholder={variantOf ? "Sanada" : "Sunyata"}
+            />
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-xs font-medium text-text-subtle">
+              Use as
+            </span>
+            <Select
+              value={variantOf}
+              onChange={(event) => setVariantOf(event.target.value)}
+            >
+              <option value="">Correct spelling / keyword hint</option>
+              {canonicalTerms.map((item) => (
+                <option key={item.id} value={item.id}>
+                  Rewrite to {item.term}
+                </option>
+              ))}
+            </Select>
+          </label>
+          <div className="flex items-end">
+            <Button onClick={addTerm} disabled={busy || !term.trim()}>
+              <Plus className="h-4 w-4" />
+              Add
+            </Button>
+          </div>
         </div>
       </section>
 
       <section className="rounded-lg border border-border bg-bg-subtle p-4">
+        <div className="mb-3">
+          <h2 className="text-sm font-semibold text-text">Bulk add</h2>
+          <p className="mt-1 text-xs leading-5 text-text-muted">
+            One correct spelling per line, or a misheard spelling followed by the correction.
+          </p>
+        </div>
         <Textarea
           value={bulkText}
           onChange={(event) => setBulkText(event.target.value)}
-          placeholder={"One term per line\nAmaan, Aman"}
+          placeholder={"Sunyata\nSanada, Sunyata\nValue Labs, Vayu Labs"}
           className="min-h-32"
         />
         <div className="mt-3 flex justify-end">
@@ -160,38 +210,133 @@ export function DictionaryManager({
 
       <div className="divide-y divide-border rounded-lg border border-border bg-bg-subtle">
         {terms.length === 0 ? (
-          <p className="p-6 text-sm text-text-muted">No dictionary terms yet.</p>
+          <div className="p-6 text-sm text-text-muted">
+            Add names, companies, projects, and unusual phrases before the next meeting.
+          </div>
         ) : (
-          terms.map((item) => {
-            const canonical = item.variantOf
-              ? canonicalById.get(item.variantOf)?.term ?? "Missing canonical"
-              : null;
-            return (
-              <div
+          <>
+            {canonicalTerms.map((item) => (
+              <DictionaryGroup
                 key={item.id}
-                className="flex items-center justify-between gap-4 px-4 py-3"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-text">{item.term}</p>
-                  <p className="mt-1 text-xs text-text-subtle">
-                    {canonical ? `Variant of ${canonical}` : "Canonical"}
-                  </p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => deleteTerm(item.id)}
-                  disabled={busy}
-                  aria-label="Delete dictionary term"
-                >
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                </Button>
-              </div>
-            );
-          })
+                canonical={item}
+                variants={variantsByCanonicalId.get(item.id) ?? []}
+                busy={busy}
+                onDelete={deleteTerm}
+              />
+            ))}
+            {orphanVariants.map((item) => (
+              <DictionaryRow
+                key={item.id}
+                term={item.term}
+                label="Missing correction"
+                busy={busy}
+                onDelete={() => deleteTerm(item.id)}
+              />
+            ))}
+          </>
         )}
       </div>
     </div>
+  );
+}
+
+function DictionaryGroup({
+  canonical,
+  variants,
+  busy,
+  onDelete,
+}: {
+  canonical: DictionaryTerm;
+  variants: DictionaryTerm[];
+  busy: boolean;
+  onDelete: (id: string) => void;
+}) {
+  return (
+    <div className="px-4 py-3">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+            <p className="truncate text-sm font-medium text-text">{canonical.term}</p>
+          </div>
+          <p className="mt-1 text-xs text-text-subtle">
+            Correct spelling and transcription keyword
+          </p>
+        </div>
+        <DeleteTermButton
+          disabled={busy}
+          onClick={() => onDelete(canonical.id)}
+          label={`Delete ${canonical.term}`}
+        />
+      </div>
+      {variants.length > 0 && (
+        <div className="mt-3 space-y-2 pl-6">
+          {variants.map((variant) => (
+            <div
+              key={variant.id}
+              className="flex items-center justify-between gap-3 rounded-md border border-border bg-bg px-3 py-2"
+            >
+              <div className="flex min-w-0 items-center gap-2">
+                <p className="truncate text-sm text-text-muted">{variant.term}</p>
+                <ArrowRight className="h-3.5 w-3.5 shrink-0 text-text-subtle" />
+                <p className="truncate text-sm font-medium text-text">
+                  {canonical.term}
+                </p>
+              </div>
+              <DeleteTermButton
+                disabled={busy}
+                onClick={() => onDelete(variant.id)}
+                label={`Delete ${variant.term}`}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DictionaryRow({
+  term,
+  label,
+  busy,
+  onDelete,
+}: {
+  term: string;
+  label: string;
+  busy: boolean;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 px-4 py-3">
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium text-text">{term}</p>
+        <p className="mt-1 text-xs text-red-400">{label}</p>
+      </div>
+      <DeleteTermButton disabled={busy} onClick={onDelete} label={`Delete ${term}`} />
+    </div>
+  );
+}
+
+function DeleteTermButton({
+  disabled,
+  onClick,
+  label,
+}: {
+  disabled: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+    >
+      <Trash2 className="h-4 w-4 text-destructive" />
+    </Button>
   );
 }
 
