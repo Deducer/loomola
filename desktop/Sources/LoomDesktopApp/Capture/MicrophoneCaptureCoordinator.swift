@@ -2,6 +2,12 @@ import AVFoundation
 import CoreAudio
 import CoreMedia
 import Foundation
+import OSLog
+
+private let microphoneCaptureLog = Logger(
+    subsystem: "cloud.dissonance.loom.desktop",
+    category: "microphone-capture"
+)
 
 /// Captures microphone audio. Audio-note recording uses AVAudioEngine's
 /// PCM buffer path so the exact samples that drive the live meter are also
@@ -24,6 +30,15 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
     private var formatDescription: CMAudioFormatDescription?
     private var nextSampleTime: AVAudioFramePosition = 0
     private let sampleQueue = DispatchQueue(label: "cloud.dissonance.loom.desktop.mic-samples")
+    private let recoveryQueue = DispatchQueue(label: "cloud.dissonance.loom.desktop.mic-recovery")
+    private var selectedDeviceID: String?
+    private var selectedOutputURL: URL?
+    private var selectedVoiceProcessingEnabled = false
+    private var configurationObserver: NSObjectProtocol?
+    private var watchdogTimer: DispatchSourceTimer?
+    private var lastBufferUptime: TimeInterval = 0
+    private var restarting = false
+    private var stopping = false
     /// When true, the engine tap continues firing but every buffer is
     /// discarded — no file write, no level meter, no compositor
     /// callback. Pause = no audio data captured during this interval;
@@ -49,6 +64,23 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
         deviceID: String?,
         outputURL: URL?,
         voiceProcessingEnabled: Bool = false
+    ) throws {
+        selectedDeviceID = deviceID
+        selectedOutputURL = outputURL
+        selectedVoiceProcessingEnabled = voiceProcessingEnabled
+        stopping = false
+        try startEngine(
+            deviceID: deviceID,
+            outputURL: outputURL,
+            voiceProcessingEnabled: voiceProcessingEnabled
+        )
+        startWatchdog()
+    }
+
+    private func startEngine(
+        deviceID: String?,
+        outputURL: URL?,
+        voiceProcessingEnabled: Bool
     ) throws {
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
@@ -79,7 +111,7 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
 
         // Optional file writer. nil URL = skip the AudioAssetWriter
         // construction entirely (composite recording flow).
-        if let outputURL {
+        if let outputURL, writer == nil {
             let writer = try AudioAssetWriter(
                 outputURL: outputURL,
                 sampleRate: format.sampleRate,
@@ -102,6 +134,8 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
 
         try engine.start()
         self.engine = engine
+        self.lastBufferUptime = ProcessInfo.processInfo.systemUptime
+        installConfigurationObserver(for: engine)
     }
 
     func startWithTimeout(
@@ -149,12 +183,20 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
             return nil
         }
 
+        stopping = true
+        watchdogTimer?.cancel()
+        watchdogTimer = nil
+        if let configurationObserver {
+            NotificationCenter.default.removeObserver(configurationObserver)
+            self.configurationObserver = nil
+        }
         guard let engine else { throw MicrophoneCaptureCoordinatorError.notRecording }
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         self.engine = nil
         self.formatDescription = nil
         self.nextSampleTime = 0
+        self.restarting = false
 
         // If the writer was set up (audio-note flow), finalize and
         // return the resulting URL. If not (composite flow), there
@@ -228,6 +270,7 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
         // stays warm (re-acquiring a USB / Bluetooth mic on resume can
         // take 1-3 s and surfaces as a click in the recording).
         if paused { return }
+        lastBufferUptime = ProcessInfo.processInfo.systemUptime
 
         if let level = peakLevel(of: buffer) {
             onLevel?(level)
@@ -252,6 +295,78 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
                 onSampleBuffer?(sampleBuffer)
             }
         }
+    }
+
+    private func installConfigurationObserver(for engine: AVAudioEngine) {
+        if let configurationObserver {
+            NotificationCenter.default.removeObserver(configurationObserver)
+            self.configurationObserver = nil
+        }
+        configurationObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: engine,
+            queue: nil
+        ) { [weak self] _ in
+            self?.scheduleEngineRestart(reason: "configuration changed")
+        }
+    }
+
+    private func startWatchdog() {
+        watchdogTimer?.cancel()
+        let timer = DispatchSource.makeTimerSource(queue: recoveryQueue)
+        timer.schedule(deadline: .now() + 4, repeating: 2)
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            guard !self.stopping, !self.paused, self.engine != nil else { return }
+            let quietFor = ProcessInfo.processInfo.systemUptime - self.lastBufferUptime
+            if quietFor > 6 {
+                self.scheduleEngineRestart(reason: "no mic buffers for \(String(format: "%.1f", quietFor))s")
+            }
+        }
+        timer.resume()
+        watchdogTimer = timer
+    }
+
+    private func scheduleEngineRestart(reason: String) {
+        recoveryQueue.async { [weak self] in
+            guard let self else { return }
+            guard !self.stopping, !self.restarting else { return }
+            self.restarting = true
+            self.recoveryQueue.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                self?.restartEngine(reason: reason)
+            }
+        }
+    }
+
+    private func restartEngine(reason: String) {
+        guard !stopping else {
+            restarting = false
+            return
+        }
+        microphoneCaptureLog.error("restarting microphone engine: \(reason, privacy: .public)")
+        if let configurationObserver {
+            NotificationCenter.default.removeObserver(configurationObserver)
+            self.configurationObserver = nil
+        }
+        if let engine {
+            engine.inputNode.removeTap(onBus: 0)
+            engine.stop()
+        }
+        engine = nil
+        formatDescription = nil
+        nextSampleTime = 0
+
+        do {
+            try startEngine(
+                deviceID: selectedDeviceID,
+                outputURL: selectedOutputURL,
+                voiceProcessingEnabled: selectedVoiceProcessingEnabled
+            )
+            microphoneCaptureLog.notice("microphone engine restarted")
+        } catch {
+            microphoneCaptureLog.error("microphone engine restart failed: \(error.localizedDescription, privacy: .public)")
+        }
+        restarting = false
     }
 
     private func resolvedSampleTime(

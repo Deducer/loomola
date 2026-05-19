@@ -1218,22 +1218,22 @@ function EnhancedMarkdown({ markdown }: { markdown: string }) {
             />
           ),
           h2: ({ node, ...props }) => (
-            <h2 className="mb-3 mt-10 text-xl font-semibold leading-snug text-text first:mt-0" {...props} />
+            <h2 className="mb-4 mt-10 text-xl font-semibold leading-snug text-text first:mt-0" {...props} />
           ),
           h3: ({ node, ...props }) => (
-            <h3 className="mb-2 mt-8 text-base font-semibold leading-snug text-text first:mt-0" {...props} />
+            <h3 className="mb-3 mt-8 text-base font-semibold leading-snug text-text first:mt-0" {...props} />
           ),
           p: ({ node, ...props }) => (
             <p className="my-4 text-text-muted" {...props} />
           ),
           ul: ({ node, ...props }) => (
-            <ul className="my-4 list-disc space-y-2 pl-5 text-text-muted marker:text-text-subtle" {...props} />
+            <ul className="mb-7 mt-3 list-disc space-y-2.5 pl-7 text-text-muted marker:text-text-subtle" {...props} />
           ),
           ol: ({ node, ...props }) => (
-            <ol className="my-4 list-decimal space-y-2 pl-5 text-text-muted marker:text-text-subtle" {...props} />
+            <ol className="mb-7 mt-3 list-decimal space-y-2.5 pl-7 text-text-muted marker:text-text-subtle" {...props} />
           ),
           li: ({ node, ...props }) => (
-            <li className="pl-1" {...props} />
+            <li className="pl-2 leading-7" {...props} />
           ),
           strong: ({ node, ...props }) => (
             <strong className="font-semibold text-text" {...props} />

@@ -278,6 +278,7 @@ private final class LiveTranscriptionStream: @unchecked Sendable {
     private let queue: DispatchQueue
     private var webSocket: URLSessionWebSocketTask?
     private var opening = false
+    private var closing = false
     private var failedMessage: String?
     private var sampleRate: Int?
     private var pendingAudio: [Data] = []
@@ -340,6 +341,7 @@ private final class LiveTranscriptionStream: @unchecked Sendable {
         queue.async { [weak self] in
             guard let self else { return }
             self.sendText(#"{"type":"CloseStream"}"#)
+            self.closing = true
             self.keepAliveTimer?.cancel()
             self.keepAliveTimer = nil
             self.webSocket?.cancel(with: .normalClosure, reason: nil)
@@ -415,6 +417,7 @@ private final class LiveTranscriptionStream: @unchecked Sendable {
         let task = URLSession.shared.webSocketTask(with: request)
         webSocket = task
         opening = false
+        closing = false
         task.resume()
         startKeepAlive()
         receiveNext(on: task)
@@ -441,7 +444,7 @@ private final class LiveTranscriptionStream: @unchecked Sendable {
             webSocket.send(.data(chunk)) { [weak self] error in
                 guard let error else { return }
                 self?.queue.async {
-                    self?.onState(.failed(error.localizedDescription))
+                    self?.handleTransportFailure(error, requeue: chunk)
                 }
             }
         }
@@ -452,7 +455,7 @@ private final class LiveTranscriptionStream: @unchecked Sendable {
         webSocket.send(.string(text)) { [weak self] error in
             guard let error else { return }
             self?.queue.async {
-                self?.onState(.failed(error.localizedDescription))
+                self?.handleTransportFailure(error)
             }
         }
     }
@@ -468,11 +471,28 @@ private final class LiveTranscriptionStream: @unchecked Sendable {
                     self.receiveNext(on: task)
                 case .failure(let error):
                     if self.webSocket === task {
-                        self.onState(.failed(error.localizedDescription))
+                        self.handleTransportFailure(error)
                     }
                 }
             }
         }
+    }
+
+    private func handleTransportFailure(_ error: Error, requeue chunk: Data? = nil) {
+        guard !closing else { return }
+        if let chunk {
+            pendingAudio.insert(chunk, at: 0)
+            if pendingAudio.count > 120 {
+                pendingAudio.removeFirst(pendingAudio.count - 120)
+            }
+        }
+        keepAliveTimer?.cancel()
+        keepAliveTimer = nil
+        webSocket?.cancel(with: .goingAway, reason: nil)
+        webSocket = nil
+        opening = false
+        onState(.failed(error.localizedDescription))
+        openIfNeeded()
     }
 
     private func handle(_ message: URLSessionWebSocketTask.Message) {
