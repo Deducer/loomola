@@ -11,13 +11,13 @@ import Foundation
 ///   1. Construct (no I/O).
 ///   2. `start(deviceID:)` — pick the device and begin capture. Idempotent.
 ///   3. `previewLayer` — attach to UI to render the live preview.
-///   4. `latestPixelBuffer()` — sampled by the compositor each frame.
+///   4. `pixelBuffer(closestTo:)` — sampled by the compositor each frame.
 ///   5. `stop()` — tear down the session.
 ///
-/// The sample-buffer output runs on a private serial queue. The latest
-/// frame is published via an `OSAllocatedUnfairLock`-guarded slot so
-/// the compositor can read at any cadence without contending with the
-/// camera's delivery thread.
+/// The sample-buffer output runs on a private serial queue. Recent frames
+/// are published behind a lock so the compositor can pick the camera frame
+/// closest to the screen frame's PTS instead of drawing an ahead-of-time
+/// live frame into a delayed ScreenCaptureKit callback.
 final class CameraCaptureCoordinator: NSObject, @unchecked Sendable {
     /// Side-channel level meter for the (future) per-camera UI. Unused
     /// today; included so the API matches the audio coordinators.
@@ -37,7 +37,7 @@ final class CameraCaptureCoordinator: NSObject, @unchecked Sendable {
     // Swift's strict concurrency model, so an OSAllocatedUnfairLock with
     // a Sendable closure trips. NSLock has no such constraint.
     private let latestLock = NSLock()
-    private var latestPixelBufferStorage: CVPixelBuffer?
+    private var frameHistory = CameraFrameHistory<CVPixelBuffer>(capacity: 90)
     private var currentInput: AVCaptureDeviceInput?
     private var isStarted = false
 
@@ -85,6 +85,9 @@ final class CameraCaptureCoordinator: NSObject, @unchecked Sendable {
             }
             session.addOutput(videoOutput)
         }
+        if session.canSetSessionPreset(.vga640x480) {
+            session.sessionPreset = .vga640x480
+        }
 
         if !session.isRunning {
             // commitConfiguration above is implicit on defer; start
@@ -105,7 +108,7 @@ final class CameraCaptureCoordinator: NSObject, @unchecked Sendable {
             session.stopRunning()
         }
         latestLock.lock()
-        latestPixelBufferStorage = nil
+        frameHistory.removeAll()
         latestLock.unlock()
         isStarted = false
     }
@@ -145,12 +148,20 @@ final class CameraCaptureCoordinator: NSObject, @unchecked Sendable {
     }
 
     /// Returns the most recently delivered camera frame's pixel buffer,
-    /// or nil when no frame has arrived yet. Called by the future
-    /// compositor at draw time. Cheap.
+    /// or nil when no frame has arrived yet. Used by the live preview.
     func latestPixelBuffer() -> CVPixelBuffer? {
         latestLock.lock()
         defer { latestLock.unlock() }
-        return latestPixelBufferStorage
+        return frameHistory.latest()
+    }
+
+    /// Returns the camera frame closest to the requested media timestamp.
+    /// Used by the MP4 compositor to keep the drawn bubble in the same
+    /// timeline as screen and mic samples.
+    func pixelBuffer(closestTo presentationTime: CMTime) -> CVPixelBuffer? {
+        latestLock.lock()
+        defer { latestLock.unlock() }
+        return frameHistory.closest(to: presentationTime)
     }
 
     // MARK: - Device resolution (pure, testable)
@@ -181,10 +192,73 @@ extension CameraCaptureCoordinator: AVCaptureVideoDataOutputSampleBufferDelegate
         guard sampleBuffer.isValid,
               let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer)
         else { return }
+        let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        if !pts.isValid || pts.isIndefinite { return }
         latestLock.lock()
-        latestPixelBufferStorage = pixelBuffer
+        frameHistory.append(pixelBuffer, presentationTime: pts)
         latestLock.unlock()
         onFrameDelivered?()
+    }
+}
+
+struct CameraFrameHistory<Frame> {
+    private struct Entry {
+        let frame: Frame
+        let presentationTime: CMTime
+    }
+
+    private let capacity: Int
+    private var entries: [Entry] = []
+
+    init(capacity: Int) {
+        self.capacity = max(1, capacity)
+    }
+
+    var count: Int {
+        entries.count
+    }
+
+    mutating func append(_ frame: Frame, presentationTime: CMTime) {
+        guard presentationTime.isValid, !presentationTime.isIndefinite else { return }
+        entries.append(Entry(frame: frame, presentationTime: presentationTime))
+        if entries.count > capacity {
+            entries.removeFirst(entries.count - capacity)
+        }
+    }
+
+    mutating func removeAll() {
+        entries.removeAll()
+    }
+
+    func latest() -> Frame? {
+        entries.last?.frame
+    }
+
+    func closest(to presentationTime: CMTime) -> Frame? {
+        guard presentationTime.isValid, !presentationTime.isIndefinite else {
+            return latest()
+        }
+
+        let maxTolerance = 3.0
+        guard let best = entries.min(by: {
+            distance($0.presentationTime, presentationTime)
+                < distance($1.presentationTime, presentationTime)
+        }) else {
+            return nil
+        }
+
+        if distance(best.presentationTime, presentationTime) <= maxTolerance {
+            return best.frame
+        }
+        return latest()
+    }
+
+    private func distance(_ lhs: CMTime, _ rhs: CMTime) -> Double {
+        let seconds = CMTimeGetSeconds(CMTimeSubtract(lhs, rhs))
+        if seconds.isFinite {
+            return abs(seconds)
+        }
+        return .infinity
     }
 }
 

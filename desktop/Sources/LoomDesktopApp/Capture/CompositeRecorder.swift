@@ -13,10 +13,9 @@ import Foundation
 ///   • a single AAC audio track from the mic (with AEC applied upstream).
 ///
 /// Drives off the screen sample-buffer callback for timing — every screen
-/// frame triggers one composite + append, using the screen frame's PTS as
-/// the master clock. Camera frames are sampled at append time (no PTS
-/// correlation), introducing up to ~33 ms of jitter that's invisible at
-/// 30 fps.
+/// frame triggers one composite + append. ScreenCaptureKit and AVAudioEngine
+/// expose unrelated timestamp domains, so samples are remapped onto a single
+/// recorder-local timeline before they reach AVAssetWriter.
 ///
 /// System audio mixing is not in this slice — system audio is uploaded as
 /// the existing raw track and can be mixed server-side via ffmpeg if the
@@ -37,8 +36,7 @@ final class CompositeRecorder: @unchecked Sendable {
     private let ciContext: CIContext
 
     private let stateLock = NSLock()
-    nonisolated(unsafe) private var sessionStarted = false
-    nonisolated(unsafe) private var startedAtPTS: CMTime = .invalid
+    nonisolated(unsafe) private var timeline = CompositeMediaTimeline()
     nonisolated(unsafe) private var outputSize: CGSize = .zero
     nonisolated(unsafe) private var hasFinished = false
 
@@ -61,6 +59,8 @@ final class CompositeRecorder: @unchecked Sendable {
     func prepare(outputURL: URL, frameSize: CGSize) throws {
         self.outputURL = outputURL
         self.outputSize = frameSize
+        self.timeline = CompositeMediaTimeline()
+        self.hasFinished = false
 
         let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mp4)
 
@@ -152,17 +152,16 @@ final class CompositeRecorder: @unchecked Sendable {
         if !pts.isValid || pts.isIndefinite { return }
 
         stateLock.lock()
-        let starting = !sessionStarted
-        if starting {
-            sessionStarted = true
-            startedAtPTS = pts
-        }
+        let timing = timeline.noteVideoFrame(sourcePTS: pts)
         stateLock.unlock()
-        if starting {
-            writer.startSession(atSourceTime: pts)
+        if timing.shouldStartSession {
+            writer.startSession(atSourceTime: .zero)
         }
 
-        let compositeImage = composite(screenPixelBuffer: screenPixelBuffer)
+        let compositeImage = composite(
+            screenPixelBuffer: screenPixelBuffer,
+            sourcePTS: pts
+        )
 
         guard let pool = pixelBufferAdaptor.pixelBufferPool else { return }
         var destination: CVPixelBuffer?
@@ -180,7 +179,7 @@ final class CompositeRecorder: @unchecked Sendable {
             colorSpace: CGColorSpace(name: CGColorSpace.sRGB)
         )
 
-        if !pixelBufferAdaptor.append(destination, withPresentationTime: pts) {
+        if !pixelBufferAdaptor.append(destination, withPresentationTime: timing.relativePTS) {
             // Most append failures are transient (input not ready) — we
             // just drop the frame. Hard failures surface in finish().
         }
@@ -193,11 +192,19 @@ final class CompositeRecorder: @unchecked Sendable {
         guard let audioInput,
               audioInput.isReadyForMoreMediaData
         else { return }
+        let sourcePTS = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        if !sourcePTS.isValid || sourcePTS.isIndefinite { return }
+
         stateLock.lock()
-        let started = sessionStarted
+        let relativePTS = timeline.noteAudioSample(sourcePTS: sourcePTS)
         stateLock.unlock()
-        if !started { return }
-        _ = audioInput.append(sampleBuffer)
+        guard let relativePTS else { return }
+
+        guard let retimedBuffer = Self.copyAudioSampleBuffer(
+            sampleBuffer,
+            presentationTime: relativePTS
+        ) else { return }
+        _ = audioInput.append(retimedBuffer)
     }
 
     /// Finalizes the writer and returns the output URL. Idempotent.
@@ -248,10 +255,13 @@ final class CompositeRecorder: @unchecked Sendable {
 
     // MARK: - Composition
 
-    private func composite(screenPixelBuffer: CVPixelBuffer) -> CIImage {
+    private func composite(
+        screenPixelBuffer: CVPixelBuffer,
+        sourcePTS: CMTime
+    ) -> CIImage {
         let screenImage = CIImage(cvPixelBuffer: screenPixelBuffer)
 
-        guard let cameraPixelBuffer = cameraCoordinator.latestPixelBuffer(),
+        guard let cameraPixelBuffer = cameraCoordinator.pixelBuffer(closestTo: sourcePTS),
               let bubblePlacement = bubbleController.current(),
               let displayBounds = displayBoundsProvider(),
               let bubblePixelRect = bubblePlacement.pixelRect(in: displayBounds)
@@ -365,6 +375,74 @@ final class CompositeRecorder: @unchecked Sendable {
         // are clear, which is what we want before compositing over
         // the screen.
         return blendFilter.outputImage ?? image
+    }
+
+    private static func copyAudioSampleBuffer(
+        _ sampleBuffer: CMSampleBuffer,
+        presentationTime: CMTime
+    ) -> CMSampleBuffer? {
+        var timing = CMSampleTimingInfo()
+        let timingStatus = CMSampleBufferGetSampleTimingInfo(
+            sampleBuffer,
+            at: 0,
+            timingInfoOut: &timing
+        )
+        guard timingStatus == noErr else { return nil }
+
+        timing.presentationTimeStamp = presentationTime
+        timing.decodeTimeStamp = .invalid
+
+        var retimedBuffer: CMSampleBuffer?
+        let copyStatus = CMSampleBufferCreateCopyWithNewTiming(
+            allocator: kCFAllocatorDefault,
+            sampleBuffer: sampleBuffer,
+            sampleTimingEntryCount: 1,
+            sampleTimingArray: &timing,
+            sampleBufferOut: &retimedBuffer
+        )
+        guard copyStatus == noErr else { return nil }
+        return retimedBuffer
+    }
+}
+
+struct CompositeMediaTimeline {
+    private var hasVideoAnchor = false
+    private var firstVideoSourcePTS: CMTime = .invalid
+    private var latestVideoRelativePTS: CMTime = .zero
+    private var audioSourceAnchorPTS: CMTime = .invalid
+    private var audioRelativeAnchorPTS: CMTime = .zero
+    private var lastAudioSourcePTS: CMTime = .invalid
+
+    mutating func noteVideoFrame(sourcePTS: CMTime) -> (
+        relativePTS: CMTime,
+        shouldStartSession: Bool
+    ) {
+        if !hasVideoAnchor {
+            hasVideoAnchor = true
+            firstVideoSourcePTS = sourcePTS
+            latestVideoRelativePTS = .zero
+            return (.zero, true)
+        }
+
+        let relativePTS = CMTimeSubtract(sourcePTS, firstVideoSourcePTS)
+        latestVideoRelativePTS = max(relativePTS, latestVideoRelativePTS)
+        return (relativePTS, false)
+    }
+
+    mutating func noteAudioSample(sourcePTS: CMTime) -> CMTime? {
+        guard hasVideoAnchor else { return nil }
+
+        let sourceMovedBackward = lastAudioSourcePTS.isValid
+            && CMTimeCompare(sourcePTS, lastAudioSourcePTS) < 0
+        if !audioSourceAnchorPTS.isValid || sourceMovedBackward {
+            audioSourceAnchorPTS = sourcePTS
+            audioRelativeAnchorPTS = latestVideoRelativePTS
+        }
+
+        lastAudioSourcePTS = sourcePTS
+
+        let audioElapsed = CMTimeSubtract(sourcePTS, audioSourceAnchorPTS)
+        return CMTimeAdd(audioRelativeAnchorPTS, audioElapsed)
     }
 }
 
