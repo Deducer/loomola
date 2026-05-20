@@ -227,9 +227,35 @@ struct MarkdownTextEditor: NSViewRepresentable {
                 paragraphStyle.lineSpacing = 1.5
                 storage.addAttribute(.paragraphStyle, value: paragraphStyle, range: paragraphRange)
                 hideMarker(match.range, in: storage)
-                markers.append(RenderedBulletMarker(range: match.range, indent: visualIndent))
+                let anchorLocation = firstVisibleListContentLocation(
+                    in: plain,
+                    markerRange: match.range,
+                    paragraphRange: paragraphRange
+                )
+                markers.append(RenderedBulletMarker(anchorLocation: anchorLocation, indent: visualIndent))
             }
             return markers
+        }
+
+        private func firstVisibleListContentLocation(
+            in plain: NSString,
+            markerRange: NSRange,
+            paragraphRange: NSRange
+        ) -> Int {
+            let start = min(NSMaxRange(markerRange), plain.length)
+            let end = min(NSMaxRange(paragraphRange), plain.length)
+            var location = start
+
+            while location < end {
+                let value = plain.character(at: location)
+                if let scalar = UnicodeScalar(UInt32(value)),
+                   !CharacterSet.whitespacesAndNewlines.contains(scalar) {
+                    return location
+                }
+                location += 1
+            }
+
+            return markerRange.location
         }
 
         private func applyInlineRuns(
@@ -291,7 +317,7 @@ struct MarkdownTextEditor: NSViewRepresentable {
 }
 
 fileprivate struct RenderedBulletMarker {
-    let range: NSRange
+    let anchorLocation: Int
     let indent: CGFloat
 }
 
@@ -331,8 +357,8 @@ final class MarkdownTextView: NSTextView {
         MarkdownStyle.bulletColor.setFill()
 
         for marker in renderedBulletMarkers {
-            guard marker.range.location < textLength else { continue }
-            let characterRange = NSRange(location: marker.range.location, length: 1)
+            guard marker.anchorLocation < textLength else { continue }
+            let characterRange = NSRange(location: marker.anchorLocation, length: 1)
             let glyphRange = layoutManager.glyphRange(
                 forCharacterRange: characterRange,
                 actualCharacterRange: nil
