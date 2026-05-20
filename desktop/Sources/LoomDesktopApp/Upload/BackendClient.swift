@@ -214,6 +214,36 @@ actor BackendClient {
         return envelope.attachment
     }
 
+    static func attachmentUploadFailureMessage(_ error: Error, filename: String) -> String {
+        guard let backendError = error as? BackendClientError else {
+            return "Couldn't attach \(filename)"
+        }
+        switch backendError {
+        case .badStatus(400, _, _):
+            if backendError.apiErrorCode == "unsupported_image" {
+                return "Couldn't attach \(filename): use PNG, JPEG, WebP, or GIF."
+            }
+            if backendError.apiErrorCode == "file_required" {
+                return "Couldn't read \(filename)."
+            }
+            return "Couldn't attach \(filename): unsupported image."
+        case .badStatus(401, _, _), .badStatus(403, _, _):
+            return "Couldn't attach \(filename): sign in again."
+        case .badStatus(404, _, _):
+            return "Couldn't attach \(filename): note not found."
+        case .badStatus(413, _, _):
+            return "Couldn't attach \(filename): image is over 12 MB."
+        case .badStatus(let statusCode, _, _):
+            return "Couldn't attach \(filename): server returned \(statusCode)."
+        case .serviceUnavailable:
+            return "Couldn't attach \(filename): Loomola is temporarily unavailable."
+        case .decodingFailed:
+            return "Couldn't attach \(filename): server response was unreadable."
+        case .invalidTextResponse, .nonHTTPResponse:
+            return "Couldn't attach \(filename): network response was invalid."
+        }
+    }
+
     /// Soft-delete a note attachment. Used by the workspace's
     /// right-click → Remove flow.
     func deleteNoteAttachment(mediaId: String, attachmentId: String) async throws {

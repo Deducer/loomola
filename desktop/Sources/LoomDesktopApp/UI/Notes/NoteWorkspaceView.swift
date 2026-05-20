@@ -1626,7 +1626,11 @@ struct NoteWorkspaceView: View {
             attachments.append(attachment)
             showToast(message: "File attached to note")
         } catch {
-            showToast(message: "Couldn't attach \(fileURL.lastPathComponent)", tone: .error)
+            let message = BackendClient.attachmentUploadFailureMessage(
+                error,
+                filename: fileURL.lastPathComponent
+            )
+            showToast(message: message, tone: .error)
         }
     }
 

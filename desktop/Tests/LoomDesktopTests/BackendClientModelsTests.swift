@@ -102,4 +102,36 @@ final class BackendClientModelsTests: XCTestCase {
         XCTAssertEqual(response.paragraphs.first?.startSec, 0.12)
         XCTAssertEqual(response.paragraphs.first?.text, "Hello world")
     }
+
+    func testAttachmentUploadFailureMessageExplainsLikelyAction() throws {
+        let unsupportedBody = #"{"error":"unsupported_image"}"#.data(using: .utf8)!
+        let unsupported = BackendClientError.badStatus(
+            statusCode: 400,
+            path: "/api/recordings/note-1/attachments",
+            body: unsupportedBody
+        )
+        let expiredAuth = BackendClientError.badStatus(
+            statusCode: 401,
+            path: "/api/recordings/note-1/attachments",
+            body: Data()
+        )
+        let tooLarge = BackendClientError.badStatus(
+            statusCode: 413,
+            path: "/api/recordings/note-1/attachments",
+            body: Data()
+        )
+
+        XCTAssertEqual(
+            BackendClient.attachmentUploadFailureMessage(unsupported, filename: "shot.tiff"),
+            "Couldn't attach shot.tiff: use PNG, JPEG, WebP, or GIF."
+        )
+        XCTAssertEqual(
+            BackendClient.attachmentUploadFailureMessage(expiredAuth, filename: "shot.png"),
+            "Couldn't attach shot.png: sign in again."
+        )
+        XCTAssertEqual(
+            BackendClient.attachmentUploadFailureMessage(tooLarge, filename: "shot.png"),
+            "Couldn't attach shot.png: image is over 12 MB."
+        )
+    }
 }
