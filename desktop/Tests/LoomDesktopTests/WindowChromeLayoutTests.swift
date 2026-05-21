@@ -10,6 +10,20 @@ final class WindowChromeLayoutTests: XCTestCase {
         XCTAssertGreaterThan(WindowChromeLayout.noteContentTopPadding, WindowChromeLayout.barHeight)
     }
 
+    func testRecorderWindowDefaultAndMinimumFitHomeLayout() {
+        XCTAssertGreaterThanOrEqual(RecorderWindowGeometry.minimumContentSize.width, 1100)
+        XCTAssertGreaterThanOrEqual(RecorderWindowGeometry.minimumContentSize.height, 700)
+        XCTAssertGreaterThanOrEqual(
+            RecorderWindowGeometry.defaultContentSize.width,
+            RecorderWindowGeometry.minimumContentSize.width
+        )
+        XCTAssertGreaterThanOrEqual(
+            RecorderWindowGeometry.defaultContentSize.height,
+            RecorderWindowGeometry.minimumContentSize.height
+        )
+        XCTAssertFalse(RecorderWindowGeometry.autosaveName.isEmpty)
+    }
+
     func testTopChromeDoesNotUseGeometryDependentOffsets() throws {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let guardedFiles = [

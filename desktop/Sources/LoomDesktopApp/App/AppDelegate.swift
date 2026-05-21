@@ -5,6 +5,28 @@ import SwiftUI
 
 private let bootLog = Logger(subsystem: "cloud.dissonance.loom.desktop", category: "boot")
 
+enum RecorderWindowGeometry {
+    static let autosaveName = "LoomolaRecorderWindow"
+    static let defaultContentSize = NSSize(width: 1240, height: 820)
+    static let minimumContentSize = NSSize(width: 1100, height: 700)
+
+    @MainActor
+    static func enforceMinimumContentSize(for window: NSWindow) {
+        let currentSize = window.contentLayoutRect.size
+        let targetSize = NSSize(
+            width: max(currentSize.width, minimumContentSize.width),
+            height: max(currentSize.height, minimumContentSize.height)
+        )
+
+        guard targetSize != currentSize else {
+            return
+        }
+
+        window.setContentSize(targetSize)
+        window.center()
+    }
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
@@ -186,10 +208,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let rootView = MainRecorderView()
-            .frame(minWidth: 920, minHeight: 620)
+            .frame(
+                minWidth: RecorderWindowGeometry.minimumContentSize.width,
+                minHeight: RecorderWindowGeometry.minimumContentSize.height
+            )
         let hostingController = NSHostingController(rootView: rootView)
         let window = NSWindow(
-            contentRect: NSRect(x: 192, y: 280, width: 1080, height: 740),
+            contentRect: NSRect(
+                x: 192,
+                y: 280,
+                width: RecorderWindowGeometry.defaultContentSize.width,
+                height: RecorderWindowGeometry.defaultContentSize.height
+            ),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -199,10 +229,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.titleVisibility = .hidden
         window.collectionBehavior = [.managed, .moveToActiveSpace]
         window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 920, height: 620)
+        window.minSize = RecorderWindowGeometry.minimumContentSize
         window.tabbingMode = .disallowed
-        window.setFrameAutosaveName("LoomolaRecorderWindow")
+        window.setFrameAutosaveName(RecorderWindowGeometry.autosaveName)
         window.contentViewController = hostingController
+        RecorderWindowGeometry.enforceMinimumContentSize(for: window)
         window.center()
         recorderWindow = window
         return window
