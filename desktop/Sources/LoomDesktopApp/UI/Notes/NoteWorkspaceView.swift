@@ -1788,7 +1788,6 @@ struct NoteWorkspaceView: View {
                         let enhancement = try? await backend.getEnhancementStatus(mediaId: recording.id)
                         await MainActor.run {
                             let savedBody = note.body ?? ""
-                            let savedTrimmed = savedBody.trimmingCharacters(in: .whitespacesAndNewlines)
                             let generatedRaw =
                                 enhancement?.generationStatus == "complete"
                                 ? enhancement?.summary?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1796,14 +1795,7 @@ struct NoteWorkspaceView: View {
                             let generatedBody = generatedRaw
                                 .map(MarkdownDisplayNormalizer.normalizeGeneratedNotes)?
                                 .trimmingCharacters(in: .whitespacesAndNewlines)
-                            let displayBody: String
-                            if savedTrimmed.isEmpty {
-                                displayBody = generatedBody ?? savedBody
-                            } else if generatedRaw == savedTrimmed {
-                                displayBody = MarkdownDisplayNormalizer.normalizeGeneratedNotes(savedBody)
-                            } else {
-                                displayBody = savedBody
-                            }
+                            let displayBody = generatedBody ?? savedBody
                             reviewBody = displayBody
                             reviewLastSaved = displayBody
                             if let templateId = note.templateId {
@@ -1816,6 +1808,12 @@ struct NoteWorkspaceView: View {
                                     if let transcript {
                                         rememberGeneratedTranscript(fingerprint: transcriptFingerprint(from: transcript))
                                     }
+                                } else if enhancement.generationStatus == "pending" ||
+                                            enhancement.generationStatus == "streaming" {
+                                    beginPollingEnhancement(
+                                        mediaId: recording.id,
+                                        isActiveRecording: false
+                                    )
                                 }
                             }
                             loadingBody = false
@@ -1912,6 +1910,87 @@ struct NoteWorkspaceView: View {
         showToast(message: "Couldn't start AI run", tone: .error)
     }
 
+    private func beginPollingEnhancement(
+        mediaId: String,
+        isActiveRecording: Bool
+    ) {
+        guard enhanceStatus != .running else { return }
+        pollEnhanceTask?.cancel()
+        enhanceFailureMessage = nil
+        enhanceFailureIsRetryable = true
+        transcriptRetryAvailable = false
+        transcriptRetrying = false
+        enhanceStatus = .running
+        pollEnhanceTask = Task { @MainActor in
+            await pollEnhancementUntilComplete(
+                mediaId: mediaId,
+                isActiveRecording: isActiveRecording
+            )
+        }
+    }
+
+    private func pollEnhancementUntilComplete(
+        mediaId: String,
+        isActiveRecording: Bool
+    ) async {
+        guard let backend = viewModel.backendClient else {
+            enhanceStatus = .idle
+            return
+        }
+
+        var attempt = 0
+        var showedSlowRunToast = false
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: enhancementPollDelayNanoseconds(attempt: attempt))
+            if Task.isCancelled { return }
+            attempt += 1
+
+            if !showedSlowRunToast && attempt == 40 {
+                showedSlowRunToast = true
+                showToast(message: "Still generating — I'll keep watching", tone: .warning)
+            }
+
+            guard let status = try? await backend.getEnhancementStatus(mediaId: mediaId) else {
+                continue
+            }
+
+            switch status.generationStatus {
+            case "complete":
+                let hasSummary =
+                    !(status.summary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+                guard hasSummary else { continue }
+                await applyGeneratedNotesResult(status, isActiveRecording: isActiveRecording)
+                if let templateId = status.templateId {
+                    selectedTemplateId = templateId
+                }
+                rememberGeneratedTranscript()
+                enhanceStatus = .complete
+                showToast(message: "Notes updated")
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                if !Task.isCancelled { enhanceStatus = .idle }
+                return
+            case "failed":
+                enhanceStatus = .failed
+                enhanceFailureMessage = "AI run failed"
+                enhanceFailureIsRetryable = true
+                showToast(message: "AI run failed", tone: .error)
+                return
+            default:
+                continue
+            }
+        }
+    }
+
+    private func enhancementPollDelayNanoseconds(attempt: Int) -> UInt64 {
+        if attempt < 80 {
+            return 1_500_000_000
+        }
+        if attempt < 176 {
+            return 5_000_000_000
+        }
+        return 15_000_000_000
+    }
+
     private func retryTranscript() {
         guard case .reviewing(let recording) = target else { return }
         guard let backend = viewModel.backendClient else { return }
@@ -2004,42 +2083,10 @@ struct NoteWorkspaceView: View {
                 return
             }
 
-            // Poll up to 60s with a short interval so the reveal
-            // starts quickly after the server finishes.
-            let deadline = Date().addingTimeInterval(60)
-            while Date() < deadline {
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
-                if Task.isCancelled { return }
-                guard let status = try? await backend.getEnhancementStatus(mediaId: mediaId) else {
-                    continue
-                }
-                switch status.generationStatus {
-                case "complete":
-                    await applyGeneratedNotesResult(status, isActiveRecording: isActiveRecording)
-                    if let templateId = status.templateId {
-                        selectedTemplateId = templateId
-                    }
-                    rememberGeneratedTranscript()
-                    enhanceStatus = .complete
-                    showToast(message: "Notes updated")
-                    // Auto-revert pill after a beat so it's
-                    // re-runnable.
-                    try? await Task.sleep(nanoseconds: 2_500_000_000)
-                    if !Task.isCancelled { enhanceStatus = .idle }
-                    return
-                case "failed":
-                    enhanceStatus = .failed
-                    enhanceFailureMessage = "AI run failed"
-                    enhanceFailureIsRetryable = true
-                    showToast(message: "AI run failed", tone: .error)
-                    return
-                default:
-                    continue
-                }
-            }
-            // Timeout — tell user to refresh later.
-            enhanceStatus = .idle
-            showToast(message: "Still running — check back shortly", tone: .warning)
+            await pollEnhancementUntilComplete(
+                mediaId: mediaId,
+                isActiveRecording: isActiveRecording
+            )
         }
     }
 
