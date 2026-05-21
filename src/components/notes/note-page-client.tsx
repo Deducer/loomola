@@ -54,7 +54,8 @@ type NotePageClientProps = {
   status: "uploading" | "transcribing" | "processing" | "ready" | "failed";
   durationSeconds: string | null;
   attendees: unknown;
-  folderLabel: string | null;
+  initialFolderId: string | null;
+  folders: NoteFolder[];
   initialBody: string;
   audioUrl: string | null;
   waveformUrl: string | null;
@@ -79,6 +80,12 @@ type ObsidianSaveState = "idle" | "saving" | "queued" | "synced" | "error";
 type AttachmentSaveState = "idle" | "uploading" | "error";
 type TemplateSaveState = "idle" | "saving" | "error";
 type DictionaryApplyState = "idle" | "applying" | "applied" | "unchanged" | "error";
+
+type NoteFolder = {
+  id: string;
+  name: string;
+  parentId: string | null;
+};
 
 type NoteTemplate = {
   id: string;
@@ -105,7 +112,8 @@ export function NotePageClient({
   status,
   durationSeconds,
   attendees,
-  folderLabel,
+  initialFolderId,
+  folders,
   initialBody,
   initialTemplateId,
   initialGeneratedTemplateId,
@@ -133,6 +141,9 @@ export function NotePageClient({
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [templateState, setTemplateState] =
     useState<TemplateSaveState>("idle");
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false);
+  const [folderId, setFolderId] = useState<string | null>(initialFolderId);
+  const [folderState, setFolderState] = useState<SaveState>("idle");
   const [lastSavedBody, setLastSavedBody] = useState(initialBody);
   const [lastSavedTitle, setLastSavedTitle] = useState(initialTitle ?? "");
   const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -187,6 +198,10 @@ export function NotePageClient({
     if (!Array.isArray(attendees) || attendees.length === 0) return "Me";
     return `${attendees.length + 1} people`;
   }, [attendees]);
+  const currentFolder = useMemo(
+    () => folders.find((folder) => folder.id === folderId) ?? null,
+    [folderId, folders]
+  );
   const selectedTemplate = useMemo(
     () => templates.find((template) => template.id === templateId) ?? templates[0],
     [templateId, templates]
@@ -379,6 +394,29 @@ export function NotePageClient({
     } catch {
       setTemplateId(previous);
       setTemplateState("error");
+    }
+  }
+
+  async function updateFolder(nextFolderId: string | null) {
+    if (nextFolderId === folderId) {
+      setFolderPickerOpen(false);
+      return;
+    }
+    const previousFolderId = folderId;
+    setFolderId(nextFolderId);
+    setFolderPickerOpen(false);
+    setFolderState("saving");
+    try {
+      const response = await fetch(`/api/recordings/${mediaId}/folder`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ folderId: nextFolderId }),
+      });
+      if (!response.ok) throw new Error("folder_failed");
+      setFolderState("saved");
+    } catch {
+      setFolderId(previousFolderId);
+      setFolderState("error");
     }
   }
 
@@ -629,10 +667,25 @@ export function NotePageClient({
               <Users className="h-3.5 w-3.5" />
               {attendeeLabel}
             </span>
-            <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border bg-bg-subtle/80 px-3">
-              <Folder className="h-3.5 w-3.5" />
-              {folderLabel ?? "Add to folder"}
-            </span>
+            <div className="relative">
+              <button
+                type="button"
+                aria-label="Change note folder"
+                onClick={() => setFolderPickerOpen((open) => !open)}
+                className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border bg-bg-subtle/80 px-3 transition-colors hover:border-border-strong hover:bg-bg-elevated hover:text-text"
+              >
+                <Folder className="h-3.5 w-3.5" />
+                {currentFolder?.name ?? "Add to folder"}
+              </button>
+              {folderPickerOpen && (
+                <FolderPickerPopover
+                  folders={folders}
+                  selectedFolderId={folderId}
+                  onSelect={updateFolder}
+                  onClose={() => setFolderPickerOpen(false)}
+                />
+              )}
+            </div>
             <button
               type="button"
               onClick={() => setTemplatePickerOpen(true)}
@@ -653,6 +706,7 @@ export function NotePageClient({
             {templateState === "error" && (
               <span className="text-xs text-red-400">Template not saved</span>
             )}
+            <SaveIndicator state={folderState} />
           </div>
           <NoteAttachments
             attachments={attachments}
@@ -829,6 +883,68 @@ function SaveIndicator({ state }: { state: SaveState }) {
       <Check className="h-3 w-3" />
       Saved
     </span>
+  );
+}
+
+function FolderPickerPopover({
+  folders,
+  selectedFolderId,
+  onSelect,
+  onClose,
+}: {
+  folders: NoteFolder[];
+  selectedFolderId: string | null;
+  onSelect: (folderId: string | null) => void;
+  onClose: () => void;
+}) {
+  return (
+    <>
+      <button
+        type="button"
+        className="fixed inset-0 z-[55] cursor-default"
+        aria-label="Close folder picker"
+        onClick={onClose}
+      />
+      <div className="absolute left-0 top-9 z-[60] w-64 overflow-hidden rounded-xl border border-border-strong bg-bg-elevated p-1.5 text-sm text-text shadow-2xl shadow-black/30">
+        <button
+          type="button"
+          onClick={() => onSelect(null)}
+          className={cn(
+            "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-text-muted transition-colors hover:bg-bg-subtle hover:text-text",
+            selectedFolderId === null && "bg-bg-subtle text-text"
+          )}
+        >
+          <Folder className="h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 flex-1 truncate">Unfiled</span>
+          {selectedFolderId === null && (
+            <Check className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+          )}
+        </button>
+        {folders.length > 0 ? (
+          <div className="max-h-72 overflow-y-auto">
+            {folders.map((folder) => (
+              <button
+                key={folder.id}
+                type="button"
+                onClick={() => onSelect(folder.id)}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-text-muted transition-colors hover:bg-bg-subtle hover:text-text",
+                  selectedFolderId === folder.id && "bg-bg-subtle text-text"
+                )}
+              >
+                <Folder className="h-3.5 w-3.5 shrink-0" />
+                <span className="min-w-0 flex-1 truncate">{folder.name}</span>
+                {selectedFolderId === folder.id && (
+                  <Check className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                )}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="px-2.5 py-2 text-xs text-text-subtle">No folders yet</p>
+        )}
+      </div>
+    </>
   );
 }
 

@@ -8,6 +8,7 @@ import {
 } from "@/db/queries/notes";
 import { listPeople } from "@/db/queries/people";
 import { listSpeakerAssignments } from "@/db/queries/speaker-assignments";
+import { listFoldersForOwner } from "@/db/queries/folders";
 import { NotePageClient } from "@/components/notes/note-page-client";
 import { resolveObsidianPath } from "@/lib/notes/obsidian-path";
 import type { Word } from "@/lib/viewer/paragraphs";
@@ -29,7 +30,14 @@ export default async function NotesPage({
   const data = await getAudioNotePageData(id, user.id);
   if (!data) notFound();
 
-  const [audioUrl, waveformUrl, people, speakerAssignments, attachments] = await Promise.all([
+  const [
+    audioUrl,
+    waveformUrl,
+    people,
+    speakerAssignments,
+    attachments,
+    folders,
+  ] = await Promise.all([
     data.media.r2MixedKey ? presignGet(data.media.r2MixedKey) : Promise.resolve(null),
     data.media.compositeThumbnailKey
       ? presignGet(data.media.compositeThumbnailKey)
@@ -37,6 +45,7 @@ export default async function NotesPage({
     listPeople(user.id),
     listSpeakerAssignments(data.media.id, user.id),
     listNoteAttachments(data.media.id, user.id),
+    listFoldersForOwner(user.id),
   ]);
   const initialObsidianStatus =
     data.media.obsidianSaveRequestedAt && !data.media.obsidianSyncedAt
@@ -53,7 +62,12 @@ export default async function NotesPage({
       status={data.media.status}
       durationSeconds={data.media.durationSeconds}
       attendees={data.media.attendees}
-      folderLabel={null}
+      initialFolderId={data.media.folderId}
+      folders={folders.map((folder) => ({
+        id: folder.id,
+        name: folder.name,
+        parentId: folder.parentId,
+      }))}
       initialBody={data.note?.body ?? ""}
       initialTemplateId={
         getNoteTemplate(
