@@ -3,6 +3,7 @@ import SwiftUI
 
 struct MainRecorderView: View {
     @StateObject private var viewModel = RecorderViewModel()
+    @StateObject private var onboardingProgress = OnboardingProgressStore()
     @State private var meetingPromptWindow = MeetingPromptWindowController()
     @State private var videoRecordingWindow = VideoRecordingWindowController()
     /// Granola-shape always-visible audio-recording reminder. Small
@@ -90,6 +91,7 @@ struct MainRecorderView: View {
         .sheet(isPresented: $showSettings) {
             SettingsSheet(onDismiss: { showSettings = false })
                 .environmentObject(viewModel)
+                .environmentObject(onboardingProgress)
         }
         .onAppear {
             AppActivation.bringRecorderToFront()
@@ -295,6 +297,32 @@ struct MainRecorderView: View {
             )
         } else if viewModel.state == .signedOut {
             SignedOutHomeView(viewModel: viewModel)
+        } else if viewModel.activeRecordingKind == .video {
+            // Video keeps its dedicated full-window recording surface.
+            RecordingHomeView(viewModel: viewModel)
+        } else if isFinalizingOrUploading(viewModel.state) {
+            FinalizingHomeView(viewModel: viewModel)
+        } else if onboardingProgress.shouldShow {
+            OnboardingView(
+                viewModel: viewModel,
+                progress: onboardingProgress,
+                topContentPadding: homeContentTopPadding,
+                onPermissionsChanged: {
+                    permissionStatus = PermissionChecker.currentStatus()
+                    viewModel.refreshRecorderReadiness()
+                },
+                onFinish: {
+                    onboardingProgress.complete()
+                    dismissedPreflight = true
+                    permissionStatus = PermissionChecker.currentStatus()
+                    viewModel.refreshRecorderReadiness()
+                },
+                onSkip: {
+                    onboardingProgress.skip()
+                    dismissedPreflight = true
+                    viewModel.refreshRecorderReadiness()
+                }
+            )
         } else if !dismissedPreflight && permissionStatus.requiredMissing {
             PermissionsHomeView(
                 onComplete: {
@@ -307,11 +335,6 @@ struct MainRecorderView: View {
                     viewModel.refreshRecorderReadiness()
                 }
             )
-        } else if viewModel.activeRecordingKind == .video {
-            // Video keeps its dedicated full-window recording surface.
-            RecordingHomeView(viewModel: viewModel)
-        } else if isFinalizingOrUploading(viewModel.state) {
-            FinalizingHomeView(viewModel: viewModel)
         } else {
             IdleHomeView(
                 viewModel: viewModel,

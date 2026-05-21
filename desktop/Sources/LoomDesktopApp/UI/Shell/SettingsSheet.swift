@@ -10,6 +10,7 @@ struct SettingsSheet: View {
     let onDismiss: () -> Void
 
     @EnvironmentObject private var viewModel: RecorderViewModel
+    @EnvironmentObject private var onboarding: OnboardingProgressStore
     @ObservedObject private var orphanStore = OrphanedRecordingStore.shared
     @State private var permissionStatus: PermissionStatus = PermissionChecker.currentStatus()
     @State private var diagnosticsExpanded = false
@@ -29,6 +30,7 @@ struct SettingsSheet: View {
                 VStack(alignment: .leading, spacing: DSSpacing.xxl) {
                     sourcesSection
                     preferencesSection
+                    onboardingSection
                     if permissionStatus.requiredMissing || permissionStatus.camera == .denied
                         || permissionStatus.microphone == .denied
                         || permissionStatus.screenRecording == .denied
@@ -56,6 +58,30 @@ struct SettingsSheet: View {
         .task {
             await loadPreferences()
             await checkServerVersion()
+        }
+    }
+
+    // MARK: - Onboarding
+
+    private var onboardingSection: some View {
+        Section(title: "Onboarding", subtitle: "Revisit the first-run tour.") {
+            HStack(alignment: .center, spacing: DSSpacing.lg) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Guided setup")
+                        .font(DSFont.Body.lg())
+                        .foregroundStyle(DSColor.Text.primary)
+                    Text("Walk through permissions, defaults, screen videos, and meeting notes again.")
+                        .font(DSFont.Body.sm())
+                        .foregroundStyle(DSColor.Text.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                Pill(onboarding.statusText, kind: .muted)
+                SecondaryButton("Replay", icon: "arrow.counterclockwise") {
+                    onboarding.replay()
+                    onDismiss()
+                }
+            }
         }
     }
 
