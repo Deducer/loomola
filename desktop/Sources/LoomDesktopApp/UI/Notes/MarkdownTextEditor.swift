@@ -124,6 +124,7 @@ struct MarkdownTextEditor: NSViewRepresentable {
                 [
                     .font: baseFont,
                     .foregroundColor: MarkdownStyle.bodyColor,
+                    .paragraphStyle: MarkdownStyle.bodyParagraphStyle(),
                 ],
                 range: full
             )
@@ -190,6 +191,14 @@ struct MarkdownTextEditor: NSViewRepresentable {
                 let font = MarkdownStyle.heading(level: level)
                 storage.addAttribute(.font, value: font, range: match.range)
                 storage.addAttribute(.foregroundColor, value: MarkdownStyle.headingColor, range: match.range)
+                storage.addAttribute(
+                    .paragraphStyle,
+                    value: MarkdownStyle.headingParagraphStyle(
+                        level: level,
+                        isFirstBlock: match.range.location == 0
+                    ),
+                    range: plain.paragraphRange(for: match.range)
+                )
                 // Hide the `#…# ` prefix (level + 1 chars including
                 // the trailing space).
                 let prefix = NSRange(
@@ -217,14 +226,15 @@ struct MarkdownTextEditor: NSViewRepresentable {
                 let indentLevel = leadingWhitespace.reduce(0) { total, char in
                     total + (char == "\t" ? 2 : 1)
                 }
-                let visualIndent = CGFloat(indentLevel) * 10
+                let nestingLevel = min(3, max(0, (indentLevel + 1) / 2))
+                let visualIndent = CGFloat(nestingLevel) * MarkdownStyle.nestedListIndent
                 let paragraphRange = plain.paragraphRange(for: match.range)
 
                 let paragraphStyle = NSMutableParagraphStyle()
-                paragraphStyle.firstLineHeadIndent = visualIndent + 22
-                paragraphStyle.headIndent = visualIndent + 22
-                paragraphStyle.paragraphSpacing = 4
-                paragraphStyle.lineSpacing = 1.5
+                paragraphStyle.firstLineHeadIndent = visualIndent + MarkdownStyle.listTextIndent
+                paragraphStyle.headIndent = visualIndent + MarkdownStyle.listTextIndent
+                paragraphStyle.paragraphSpacing = nestingLevel == 0 ? 9 : 7
+                paragraphStyle.lineSpacing = 4
                 storage.addAttribute(.paragraphStyle, value: paragraphStyle, range: paragraphRange)
                 hideMarker(match.range, in: storage)
                 let anchorLocation = firstVisibleListContentLocation(
@@ -232,7 +242,13 @@ struct MarkdownTextEditor: NSViewRepresentable {
                     markerRange: match.range,
                     paragraphRange: paragraphRange
                 )
-                markers.append(RenderedBulletMarker(anchorLocation: anchorLocation, indent: visualIndent))
+                markers.append(
+                    RenderedBulletMarker(
+                        anchorLocation: anchorLocation,
+                        indent: visualIndent,
+                        kind: nestingLevel == 0 ? .filled : .hollow
+                    )
+                )
             }
             return markers
         }
@@ -316,9 +332,15 @@ struct MarkdownTextEditor: NSViewRepresentable {
     }
 }
 
+fileprivate enum RenderedBulletKind: Equatable {
+    case filled
+    case hollow
+}
+
 fileprivate struct RenderedBulletMarker {
     let anchorLocation: Int
     let indent: CGFloat
+    let kind: RenderedBulletKind
 }
 
 /// NSTextView subclass that draws a placeholder string when empty
@@ -354,8 +376,6 @@ final class MarkdownTextView: NSTextView {
         let textLength = (string as NSString).length
         guard textLength > 0 else { return }
         let containerOrigin = textContainerOrigin
-        MarkdownStyle.bulletColor.setFill()
-
         for marker in renderedBulletMarkers {
             guard marker.anchorLocation < textLength else { continue }
             let characterRange = NSRange(location: marker.anchorLocation, length: 1)
@@ -368,28 +388,40 @@ final class MarkdownTextView: NSTextView {
                 forGlyphAt: glyphRange.location,
                 effectiveRange: nil
             )
-            let bulletSize: CGFloat = 5.5
+            let bulletSize: CGFloat = marker.kind == .filled ? 5.8 : 5.2
             let bulletRect = NSRect(
-                x: containerOrigin.x + marker.indent + 4,
+                x: containerOrigin.x + marker.indent + MarkdownStyle.listBulletX,
                 y: containerOrigin.y + lineRect.midY - bulletSize / 2,
                 width: bulletSize,
                 height: bulletSize
             )
-            NSBezierPath(ovalIn: bulletRect).fill()
+            let path = NSBezierPath(ovalIn: bulletRect)
+            switch marker.kind {
+            case .filled:
+                MarkdownStyle.bulletColor.setFill()
+                path.fill()
+            case .hollow:
+                MarkdownStyle.bulletColor.setStroke()
+                path.lineWidth = 1.1
+                path.stroke()
+            }
         }
     }
 }
 
 private enum MarkdownStyle {
-    static let body = NSFont.systemFont(ofSize: 14)
-    static let bold = NSFont.boldSystemFont(ofSize: 14)
+    static let body = NSFont.systemFont(ofSize: 15)
+    static let bold = NSFont.boldSystemFont(ofSize: 15)
+    static let nestedListIndent: CGFloat = 32
+    static let listTextIndent: CGFloat = 42
+    static let listBulletX: CGFloat = 10
     static let bodyColor = dynamicColor(
         light: NSColor(red: 0.180, green: 0.184, blue: 0.208, alpha: 1),
-        dark: NSColor(red: 0.760, green: 0.760, blue: 0.725, alpha: 1)
+        dark: NSColor(red: 0.660, green: 0.660, blue: 0.625, alpha: 1)
     )
     static let headingColor = dynamicColor(
         light: NSColor(red: 0.082, green: 0.086, blue: 0.102, alpha: 1),
-        dark: NSColor(red: 0.850, green: 0.850, blue: 0.805, alpha: 1)
+        dark: NSColor(red: 0.760, green: 0.760, blue: 0.720, alpha: 1)
     )
     static let placeholderColor = dynamicColor(
         light: NSColor(red: 0.541, green: 0.549, blue: 0.584, alpha: 1),
@@ -403,14 +435,29 @@ private enum MarkdownStyle {
         let manager = NSFontManager.shared
         return manager.convert(body, toHaveTrait: .italicFontMask)
     }
-    static let mono = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+    static let mono = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
     static func heading(level: Int) -> NSFont {
         switch level {
-        case 1: return NSFont.boldSystemFont(ofSize: 22)
-        case 2: return NSFont.boldSystemFont(ofSize: 18)
-        case 3: return NSFont.boldSystemFont(ofSize: 16)
-        default: return NSFont.boldSystemFont(ofSize: 14)
+        case 1: return NSFont.boldSystemFont(ofSize: 24)
+        case 2: return NSFont.boldSystemFont(ofSize: 20)
+        case 3: return NSFont.boldSystemFont(ofSize: 17)
+        default: return NSFont.boldSystemFont(ofSize: 15)
         }
+    }
+
+    static func bodyParagraphStyle() -> NSParagraphStyle {
+        let style = NSMutableParagraphStyle()
+        style.lineSpacing = 4
+        style.paragraphSpacing = 10
+        return style
+    }
+
+    static func headingParagraphStyle(level: Int, isFirstBlock: Bool) -> NSParagraphStyle {
+        let style = NSMutableParagraphStyle()
+        style.lineSpacing = 2
+        style.paragraphSpacingBefore = isFirstBlock ? 0 : (level == 1 ? 22 : 24)
+        style.paragraphSpacing = level == 1 ? 18 : 14
+        return style
     }
 
     private static func dynamicColor(light: NSColor, dark: NSColor) -> NSColor {

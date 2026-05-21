@@ -1323,33 +1323,39 @@ function TemplatePickerDialog({
 
 function EnhancedMarkdown({ markdown }: { markdown: string }) {
   return (
-    <article className="min-h-[46vh] text-[1rem] leading-8 text-text">
+    <article className="min-h-[46vh] text-[1.04rem] leading-[1.72] text-text-muted">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
           h1: ({ node, ...props }) => (
             <h1
-              className="mb-5 mt-10 text-3xl font-semibold leading-tight text-text first:mt-0"
+              className="mb-6 mt-12 text-3xl font-semibold leading-tight text-text first:mt-0"
               {...props}
             />
           ),
           h2: ({ node, ...props }) => (
-            <h2 className="mb-4 mt-10 text-xl font-semibold leading-snug text-text first:mt-0" {...props} />
+            <h2 className="mb-5 mt-12 text-[1.45rem] font-semibold leading-snug text-text first:mt-0" {...props} />
           ),
           h3: ({ node, ...props }) => (
-            <h3 className="mb-3 mt-8 text-base font-semibold leading-snug text-text first:mt-0" {...props} />
+            <h3 className="mb-4 mt-10 text-[1.18rem] font-semibold leading-snug text-text first:mt-0" {...props} />
           ),
           p: ({ node, ...props }) => (
-            <p className="my-4 text-text-muted" {...props} />
+            <p className="my-5 leading-[1.72] text-text-muted" {...props} />
           ),
           ul: ({ node, ...props }) => (
-            <ul className="mb-7 mt-3 list-disc space-y-2.5 pl-7 text-text-muted marker:text-text-subtle" {...props} />
+            <ul
+              className="mb-8 mt-4 list-disc space-y-3 pl-8 text-text-muted marker:text-text-subtle [&_ul]:mb-1 [&_ul]:mt-2.5 [&_ul]:list-[circle] [&_ul]:space-y-2 [&_ul]:pl-8 [&_ul]:marker:text-text-muted"
+              {...props}
+            />
           ),
           ol: ({ node, ...props }) => (
-            <ol className="mb-7 mt-3 list-decimal space-y-2.5 pl-7 text-text-muted marker:text-text-subtle" {...props} />
+            <ol
+              className="mb-8 mt-4 list-decimal space-y-3 pl-8 text-text-muted marker:text-text-subtle [&_ol]:mb-1 [&_ol]:mt-2.5 [&_ol]:space-y-2 [&_ol]:pl-8"
+              {...props}
+            />
           ),
           li: ({ node, ...props }) => (
-            <li className="pl-2 leading-7" {...props} />
+            <li className="pl-2 leading-[1.68] [&>p]:my-0" {...props} />
           ),
           strong: ({ node, ...props }) => (
             <strong className="font-semibold text-text" {...props} />
