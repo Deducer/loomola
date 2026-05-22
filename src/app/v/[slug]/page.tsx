@@ -15,9 +15,50 @@ import { cookieName, verifyUnlockToken } from "@/lib/viewer/unlock-cookie";
 import type { Word } from "@/lib/viewer/paragraphs";
 import type { Metadata } from "next";
 
-export const metadata: Metadata = {
-  robots: { index: false, follow: false },
+type SharePageParams = {
+  params: Promise<{ slug: string }>;
 };
+
+export async function generateMetadata({
+  params,
+}: SharePageParams): Promise<Metadata> {
+  const { slug } = await params;
+  const rec = await getRecordingBySlug(slug);
+
+  const origin = appOrigin();
+  const url = `${origin}/v/${slug}`;
+  const imageUrl = `${origin}/api/v/${slug}/thumbnail.jpg`;
+  const title = metadataTitle(rec);
+  const description = metadataDescription(rec);
+
+  return {
+    title,
+    description,
+    robots: { index: false, follow: false },
+    alternates: { canonical: url },
+    openGraph: {
+      title,
+      description,
+      url,
+      siteName: "Loomola",
+      type: "video.other",
+      images: [
+        {
+          url: imageUrl,
+          width: 1280,
+          height: 720,
+          alt: title,
+        },
+      ],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: [imageUrl],
+    },
+  };
+}
 
 type BrandLike = {
   name?: string | null;
@@ -34,9 +75,7 @@ type BrandLike = {
 
 export default async function SharePage({
   params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
+}: SharePageParams) {
   const { slug } = await params;
   const rec = await getRecordingBySlug(slug);
   if (!rec) notFound();
@@ -217,6 +256,31 @@ function formatRelativeTime(date: Date): string {
   if (diffMo < 12) return `${diffMo} month${diffMo === 1 ? "" : "s"} ago`;
   const diffYr = Math.floor(diffDay / 365);
   return `${diffYr} year${diffYr === 1 ? "" : "s"} ago`;
+}
+
+function appOrigin(): string {
+  return (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(
+    /\/$/,
+    ""
+  );
+}
+
+function metadataTitle(rec: Awaited<ReturnType<typeof getRecordingBySlug>>): string {
+  if (!rec) return "Loomola recording";
+  if (rec.passwordHash) return "Protected Loomola recording";
+  return rec.title || rec.aiTitle || "Untitled recording";
+}
+
+function metadataDescription(
+  rec: Awaited<ReturnType<typeof getRecordingBySlug>>
+): string {
+  if (!rec) return "This Loomola link could not be found.";
+  if (rec.passwordHash) return "Open this Loomola link to enter the password.";
+
+  const fallback = "Watch this Loomola recording.";
+  const text = (rec.aiSummary ?? fallback).replace(/\s+/g, " ").trim();
+  if (text.length <= 180) return text;
+  return `${text.slice(0, 177).trimEnd()}...`;
 }
 
 function googleFontHref(fontFamily: string): string {
