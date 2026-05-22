@@ -10,7 +10,7 @@ Self-hosted screen recording + AI meeting notes. Open-source alternative to Loom
 
 Two products in one self-hosted codebase, gated by a single env flag (`ENABLE_GRANOLA`):
 
-- **Screen recording (Loom-shape).** Screen + camera + mic + system audio, captured in the browser via the [companion Chrome extension](extension/). Branded share pages with comments, view tracking, AI-generated titles, summaries, chapters, action items, and hover-scrub thumbnails.
+- **Screen recording (Loom-shape).** Screen + camera + mic + system audio, captured in the browser via the [companion Chrome extension](extension/). Branded share pages with Slack/Discord link previews, comments, view tracking, AI-generated titles, summaries, chapters, action items, and hover-scrub thumbnails.
 - **AI meeting notes (Granola-shape).** Real-time audio transcription from a native macOS desktop app. Live notepad while the meeting runs. Manual AI notes generation when the user is ready. Attendee tracking, folder organization, speaker attribution.
 
 Both surfaces use the same Postgres / R2 / Deepgram / Claude pipeline. Same `media_objects` table with a `type` column, so adding a third product (something like MacWhisper, say) reuses everything.
@@ -85,7 +85,7 @@ A pre-recorded setup walkthrough covering Cloudflare R2, Deepgram, Doppler, Cool
 
 ## What's shipped (rough roadmap)
 
-- **Stage 1 (M1–M11)**: full Loom-shape product. Recording flow, R2 multipart uploads, Deepgram pipeline, AI title/summary/chapters/action-items, share pages, comments, view tracking, trim and downloads, polish.
+- **Stage 1 (M1–M11)**: full Loom-shape product. Recording flow, R2 multipart uploads, Deepgram pipeline, AI title/summary/chapters/action-items, share pages with social previews, comments, view tracking, trim and downloads, polish.
 - **Stage 2 (G-M1–G-M17)**: full Granola-shape product. Audio capture, real-time transcripts, AI summaries, attendees, folder organization, multi-folder Phase 1, speaker recognition v1.
 - **Stage 3**: security hardening. CSP, HSTS, signed Deepgram callbacks with single-use nonces, rate limits, time-bounded unlock cookies.
 - **Stages 4–7**: macOS desktop app. Premium composite recorder, Granola-grade visual shell, live notes side panel, pause/resume, orphan recovery.

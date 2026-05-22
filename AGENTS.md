@@ -76,7 +76,7 @@ Stage 1 (M1–M11) + Stages 1.5–1.10 + 1.99 + Stage 2 (Granola-alt G-M1–M17)
 
 - `/` — dashboard with folder sidebar, search, sort/filter, drag-and-drop card-to-folder, hover card menu (Edit / Move / Delete). Cards click into the **edit** page (creator-first), not the share page.
 - `/record` — recording flow: pre-record form → preparing (permissions) → 3-2-1 countdown → recording → uploading → finished. Bubble can be dragged anywhere on screen during recording (Chrome `documentPictureInPicture` window with the live camera).
-- `/v/:slug` — visitor share page. Watch-first: title → player (Loom-style chapter segments + hover-scrub thumbnails) → AI summary → action items → chapters list → tabs (Transcript · Comments). Brand-themed when a brand profile is assigned (logo + accent + tagline + custom Google Font + CTA pill + footer text).
+- `/v/:slug` — visitor share page. Watch-first: title → player (Loom-style chapter segments + hover-scrub thumbnails) → AI summary → action items → chapters list → tabs (Transcript · Comments). Brand-themed when a brand profile is assigned (logo + accent + tagline + custom Google Font + CTA pill + footer text). Public links emit Open Graph/Twitter metadata and a stable `/api/v/:slug/thumbnail.jpg` route for Slack/Discord unfurls; password-protected, not-ready, missing, or thumbnail-less recordings fall back to a generic Loomola image.
 - `/recordings/[id]/edit` — creator console. Sticky preview on the left, settings + trim + downloads + analytics + danger-zone on the right (capped at 360px so the video gets the lion's share of the page).
 - `/brands` — brand profile CRUD with full Layer 2 theming fields.
 - `desktop/` — native macOS companion app, **production-grade** through Stage 8. Composite recorder (AVAssetWriter + CIContext), audio note flow on AVAudioFile (post-Stage-7 rewrite for macOS 26.4.1 AVFCore bug), Granola-grade one-window note workspace (markdown editor with hidden syntax, drag-drop image attachments, Generate-notes pill, RecordingStatusPill on home view). Toolbar items live in the unified system NSToolbar via SwiftUI's `.toolbar { ToolbarItem(...) }` API. Auth tokens in file storage by default. Logger-based observability (`subsystem: cloud.dissonance.loom.desktop`). Builds via `desktop/scripts/install-local-app.sh`. See `CLAUDE.md` for stage-by-stage detail.
@@ -166,6 +166,7 @@ Granola-grade shell. Spec: [`docs/superpowers/specs/2026-05-04-desktop-app-m3-vi
 - G-M15 — Notes-list attachment thumbnails (1/2/2x2 grid), back-button → `?tab=notes`. New `listImageAttachmentsForMediaIds` query (single round trip).
 - G-M16 — Desktop AEC for mic via `AVAudioEngine.inputNode.setVoiceProcessingEnabled(true)`. No more participant-voice doubling when recording over speakers.
 - G-M17 — AI notes scaling for hour+ to multi-hour meetings. Schema cap raised, `maxOutputTokens: 32000`.
+- Share-link previews — `/v/:slug` generates Open Graph/Twitter metadata and `GET /api/v/:slug/thumbnail.jpg` serves social-preview thumbnails for public, ready recordings. Locked/not-ready/missing links return the generic Loomola image. Slack/Discord cache exact URLs, so use a query string when retesting an already-pasted link.
 
 ## Granola-alt (in progress)
 

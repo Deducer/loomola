@@ -4,6 +4,17 @@ Loomola uses date-based release notes while the product is still moving quickly.
 Each entry calls out user-visible changes first, then reliability or developer
 notes when they matter.
 
+## 2026-05-21
+
+### Added
+
+- Loomola recording share links now include Slack/Discord-friendly Open Graph and Twitter card metadata with per-recording title, summary, and thumbnail.
+- Added a stable public thumbnail route for link unfurls. Public, ready recordings serve the generated video thumbnail; locked, missing, not-ready, or thumbnail-less links show a generic Loomola image instead.
+
+### Notes
+
+- Slack and Discord cache previews by exact URL. Add a query string when retesting a link that was pasted before this release.
+
 ## 2026-05-13
 
 ### Added

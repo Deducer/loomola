@@ -313,6 +313,14 @@ A 72-min audio recording was almost lost on 2026-05-06: a Coolify brownout retur
 | M4 | ✅ shipped | `npm run mcp-smoke`, setup docs, AGENTS.md infrastructure row, and spec open-question answers. |
 | Phase 2 | 💡 deferred | `loomola_people`, `loomola_folder`, and speaker-restricted semantic search. Speaker search needs a chunk/speaker attribution design before it should ship. |
 
+## Stage 10.1 — Share-link previews (✅ shipped 2026-05-21)
+
+| What it ships |
+|---|
+| `/v/:slug` now generates per-recording Open Graph/Twitter metadata (`og:title`, `og:description`, `og:image`, `twitter:card`) so Slack, Discord, and similar chat apps can render Loom-style link preview cards. |
+| New public `GET /api/v/:slug/thumbnail.jpg` route proxies the stored composite thumbnail for public, ready video recordings. Password-protected, not-ready, deleted/missing, or thumbnail-less recordings return the generic Loomola image so private frames do not leak through unfurls. |
+| Operational note: Slack and Discord cache unfurls by exact URL. When testing a link that was pasted before this shipped, append a harmless query string such as `?unfurl=1` to force a fresh crawl. New share links should preview normally. |
+
 ## Open follow-ups (next milestones to spec)
 
 | Topic | Why | Rough effort |
