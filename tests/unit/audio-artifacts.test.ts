@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   mixedAudioKeyForTrack,
   recordingPrefixFromTrackKey,
+  sourceTranscriptAudioKeyForTrack,
   waveformKeyForTrack,
 } from "@/lib/recording/audio-artifacts";
 
@@ -22,5 +23,11 @@ describe("audio artifact keys", () => {
       "abc123/mixed.m4a"
     );
     expect(waveformKeyForTrack("abc123/mixed.m4a")).toBe("abc123/waveform.png");
+  });
+
+  it("builds a stable source-aware transcript audio key", () => {
+    expect(sourceTranscriptAudioKeyForTrack("abc123/raw/mic.m4a")).toBe(
+      "abc123/transcript-channels.m4a"
+    );
   });
 });

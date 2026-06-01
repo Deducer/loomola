@@ -240,11 +240,15 @@ async function init(): Promise<PgBoss> {
   if (granolaEnabled) {
     await boss.work<MixAudioJobData>(MIX_AUDIO_JOB, async (jobs) => {
       for (const job of jobs) {
-        const mixedKey = await runMixAudioJob(job.data);
+        const { mixedKey, transcriptKey } = await runMixAudioJob(job.data);
         await Promise.all([
           boss.send(
             TRANSCRIBE_JOB,
-            { mediaObjectId: job.data.mediaObjectId, audioKey: mixedKey },
+            {
+              mediaObjectId: job.data.mediaObjectId,
+              audioKey: transcriptKey,
+              multichannel: true,
+            },
             TRANSCRIBE_JOB_OPTIONS
           ),
           boss.send(

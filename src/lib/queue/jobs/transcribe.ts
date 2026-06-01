@@ -14,6 +14,7 @@ export type TranscribeJobData = {
   mediaObjectId: string;
   audioKey?: string;
   compositeKey?: string;
+  multichannel?: boolean;
 };
 
 /**
@@ -52,7 +53,8 @@ export async function runTranscribeJob(data: TranscribeJobData): Promise<void> {
     callback: callbackUrl,
     model: "nova-2",
     smart_format: true,
-    diarize: true,
+    diarize: data.multichannel ? false : true,
+    ...(data.multichannel ? { multichannel: true } : {}),
     ...(language ? { language } : {}),
     ...(keywords.length > 0 ? { keywords } : {}),
   });

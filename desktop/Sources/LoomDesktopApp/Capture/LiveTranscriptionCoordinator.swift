@@ -68,6 +68,7 @@ final class LiveTranscriptionCoordinator: ObservableObject {
     @Published private(set) var interimBySource: [LiveTranscriptAudioSource: String] = [:]
 
     private var streams: [LiveTranscriptAudioSource: LiveTranscriptionStream] = [:]
+    private var rawSegments: [LiveTranscriptSegment] = []
     private var enabled = true
 
     var hasTranscriptText: Bool {
@@ -217,6 +218,7 @@ final class LiveTranscriptionCoordinator: ObservableObject {
 
     func reset() {
         stop()
+        rawSegments = []
         segments = []
         interimBySource = [:]
         status = .idle
@@ -227,13 +229,8 @@ final class LiveTranscriptionCoordinator: ObservableObject {
         case .final(let segment):
             guard !segment.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
             interimBySource[segment.source] = nil
-            segments.append(segment)
-            segments.sort {
-                if $0.startSec == $1.startSec {
-                    return $0.source.speakerIndex < $1.source.speakerIndex
-                }
-                return $0.startSec < $1.startSec
-            }
+            rawSegments.append(contentsOf: TranscriptEchoSuppressor.split(segment))
+            segments = TranscriptEchoSuppressor.filtered(rawSegments)
             status = .streaming
         case .interim(let source, let text):
             interimBySource[source] = text.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
@@ -255,6 +252,133 @@ final class LiveTranscriptionCoordinator: ObservableObject {
         case .closed:
             break
         }
+    }
+}
+
+struct TranscriptEchoSuppressor {
+    static func split(_ segment: LiveTranscriptSegment) -> [LiveTranscriptSegment] {
+        guard !segment.words.isEmpty else { return [segment] }
+
+        var result: [LiveTranscriptSegment] = []
+        var buffer: [LiveTranscriptWord] = []
+        var previousEnd = segment.words.first?.start ?? segment.startSec
+
+        for word in segment.words {
+            let gap = word.start - previousEnd
+            if !buffer.isEmpty, gap > 0.9 {
+                result.append(makeSegment(source: segment.source, words: buffer))
+                buffer = []
+            }
+
+            buffer.append(word)
+            previousEnd = word.end
+
+            if shouldEndSentence(at: word.word) {
+                result.append(makeSegment(source: segment.source, words: buffer))
+                buffer = []
+            }
+        }
+
+        if !buffer.isEmpty {
+            result.append(makeSegment(source: segment.source, words: buffer))
+        }
+
+        return result.isEmpty ? [segment] : result
+    }
+
+    static func filtered(_ segments: [LiveTranscriptSegment]) -> [LiveTranscriptSegment] {
+        let ordered = segments.sorted(by: sortSegments)
+        let systemSegments = ordered.filter { $0.source == .systemAudio }
+        return ordered.filter { segment in
+            guard segment.source == .microphone else { return true }
+            return !systemSegments.contains { isEcho(mic: segment, system: $0) }
+        }
+    }
+
+    private static func makeSegment(
+        source: LiveTranscriptAudioSource,
+        words: [LiveTranscriptWord]
+    ) -> LiveTranscriptSegment {
+        LiveTranscriptSegment(
+            source: source,
+            startSec: words.first?.start ?? 0,
+            endSec: words.last?.end ?? 0,
+            text: words.map(\.word).joined(separator: " "),
+            words: words
+        )
+    }
+
+    private static func sortSegments(
+        lhs: LiveTranscriptSegment,
+        rhs: LiveTranscriptSegment
+    ) -> Bool {
+        if lhs.startSec == rhs.startSec {
+            return lhs.source.speakerIndex < rhs.source.speakerIndex
+        }
+        return lhs.startSec < rhs.startSec
+    }
+
+    private static func isEcho(
+        mic: LiveTranscriptSegment,
+        system: LiveTranscriptSegment
+    ) -> Bool {
+        guard isNearby(mic: mic, system: system) else { return false }
+        let micTokens = normalizedTokens(mic.text)
+        let systemTokens = normalizedTokens(system.text)
+        guard !micTokens.isEmpty, !systemTokens.isEmpty else { return false }
+
+        let shorterCount = min(micTokens.count, systemTokens.count)
+        if shorterCount <= 2 {
+            return micTokens == systemTokens
+        }
+
+        let score = similarity(micTokens, systemTokens)
+        let threshold = shorterCount <= 4 ? 0.8 : 0.72
+        return score >= threshold
+    }
+
+    private static func isNearby(
+        mic: LiveTranscriptSegment,
+        system: LiveTranscriptSegment
+    ) -> Bool {
+        let paddedOverlap = mic.startSec <= system.endSec + 2.5 &&
+            system.startSec <= mic.endSec + 2.5
+        let startsClose = abs(mic.startSec - system.startSec) <= 4.0
+        return paddedOverlap || startsClose
+    }
+
+    private static func similarity(_ lhs: [String], _ rhs: [String]) -> Double {
+        let left = Set(lhs)
+        let right = Set(rhs)
+        let intersection = left.intersection(right).count
+        let union = left.union(right).count
+        guard union > 0 else { return 0 }
+        let jaccard = Double(intersection) / Double(union)
+        let containment = Double(intersection) / Double(min(left.count, right.count))
+        return max(jaccard, containment * 0.95)
+    }
+
+    private static func normalizedTokens(_ text: String) -> [String] {
+        let folded = text.folding(
+            options: [.caseInsensitive, .diacriticInsensitive],
+            locale: Locale(identifier: "en_US_POSIX")
+        )
+        var normalized = ""
+        for scalar in folded.unicodeScalars {
+            if CharacterSet.alphanumerics.contains(scalar) {
+                normalized.unicodeScalars.append(scalar)
+            } else {
+                normalized.append(" ")
+            }
+        }
+        return normalized.split(separator: " ").map(String.init)
+    }
+
+    private static func shouldEndSentence(at word: String) -> Bool {
+        guard let last = word.trimmingCharacters(in: .whitespacesAndNewlines).last else {
+            return false
+        }
+        return last == "." || last == "!" || last == "?"
     }
 }
 

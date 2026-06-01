@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { mediaObjects, transcripts } from "@/db/schema";
 import { getAudioNotePageData } from "@/db/queries/notes";
-import { enqueueTranscription } from "@/lib/queue/boss";
+import { enqueueMixAudio, enqueueTranscription } from "@/lib/queue/boss";
 import { enableGranola } from "@/lib/feature-flags";
 import { requireAuth } from "@/lib/require-auth";
 
@@ -28,9 +28,9 @@ export async function POST(
     );
   }
 
-  const audioKey =
-    data.media.r2MixedKey ?? data.media.r2MicKey ?? data.media.r2SystemaudioKey;
-  if (!audioKey) {
+  const hasSplitTracks = Boolean(data.media.r2MicKey && data.media.r2SystemaudioKey);
+  const audioKey = data.media.r2MixedKey ?? data.media.r2MicKey ?? data.media.r2SystemaudioKey;
+  if (!audioKey && !hasSplitTracks) {
     return NextResponse.json(
       { error: "audio_source_missing" },
       { status: 409 }
@@ -53,10 +53,18 @@ export async function POST(
       );
   });
 
-  await enqueueTranscription({
-    mediaObjectId: data.media.id,
-    audioKey,
-  });
+  if (data.media.r2MicKey && data.media.r2SystemaudioKey) {
+    await enqueueMixAudio({
+      mediaObjectId: data.media.id,
+      micKey: data.media.r2MicKey,
+      systemAudioKey: data.media.r2SystemaudioKey,
+    });
+  } else if (audioKey) {
+    await enqueueTranscription({
+      mediaObjectId: data.media.id,
+      audioKey,
+    });
+  }
 
   return NextResponse.json(
     {

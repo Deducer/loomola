@@ -13,6 +13,13 @@ import {
   buildVariantReplacementMap,
   collapseDictionaryVariants,
 } from "@/lib/dictionary/transcript-rewrite";
+import {
+  buildSegmentsFromWords,
+  mergeSourceTranscriptSegments,
+  sourceForDeepgramChannel,
+  speakerForTranscriptSource,
+  type SourceTranscriptWord,
+} from "@/lib/transcript/source-merge";
 
 type DeepgramWord = {
   word: string;
@@ -64,20 +71,10 @@ export async function POST(
   }
 
   const body = (await request.json()) as DeepgramCallbackBody;
-  const channel = body.results?.channels?.[0];
-  const alt = channel?.alternatives?.[0];
-  const words = alt?.words ?? [];
-  const rawFullText = alt?.transcript ?? "";
-  const language = channel?.detected_language ?? "en";
+  const channels = body.results?.channels ?? [];
+  const parsedTranscript = parseDeepgramTranscript(channels);
+  const language = parsedTranscript.language;
   const requestId = body.metadata?.request_id ?? null;
-
-  const wordTimestamps: WordTimestamp[] = words.map((w) => ({
-    word: w.punctuated_word ?? w.word,
-    start: w.start,
-    end: w.end,
-    confidence: w.confidence,
-    speaker: w.speaker,
-  }));
 
   const [media] = await db
     .select({ type: mediaObjects.type, ownerId: mediaObjects.ownerId })
@@ -95,8 +92,8 @@ export async function POST(
     await listDictionaryTerms(media.ownerId)
   );
   const rewritten = collapseDictionaryVariants(
-    rawFullText,
-    wordTimestamps,
+    parsedTranscript.fullText,
+    parsedTranscript.wordTimestamps,
     replacements
   );
 
@@ -128,7 +125,7 @@ export async function POST(
       .where(eq(mediaObjects.id, recordingId));
 
     console.log(
-      `[webhook/deepgram] audio transcript saved for ${recordingId} (${wordTimestamps.length} words)`
+      `[webhook/deepgram] audio transcript saved for ${recordingId} (${rewritten.words.length} words)`
     );
 
     return NextResponse.json({ ok: true });
@@ -158,8 +155,60 @@ export async function POST(
   }
 
   console.log(
-    `[webhook/deepgram] transcript saved, processing jobs enqueued for ${recordingId} (${wordTimestamps.length} words)`
+    `[webhook/deepgram] transcript saved, processing jobs enqueued for ${recordingId} (${rewritten.words.length} words)`
   );
 
   return NextResponse.json({ ok: true });
+}
+
+function parseDeepgramTranscript(channels: DeepgramChannel[]): {
+  fullText: string;
+  language: string;
+  wordTimestamps: WordTimestamp[];
+} {
+  if (channels.length > 1) {
+    const segments = channels.flatMap((channel, index) => {
+      const source = sourceForDeepgramChannel(index);
+      const alt = channel.alternatives?.[0];
+      const words = (alt?.words ?? []).flatMap((word): SourceTranscriptWord[] => {
+        const text = word.punctuated_word ?? word.word;
+        if (!text?.trim()) return [];
+        return [
+          {
+            word: text,
+            start: word.start,
+            end: word.end,
+            confidence: word.confidence,
+            speaker: speakerForTranscriptSource(source),
+          },
+        ];
+      });
+      return buildSegmentsFromWords({
+        source,
+        transcript: alt?.transcript,
+        words,
+      });
+    });
+    const merged = mergeSourceTranscriptSegments(segments);
+    return {
+      fullText: merged.fullText,
+      language: channels.find((channel) => channel.detected_language)?.detected_language ?? "en",
+      wordTimestamps: merged.words,
+    };
+  }
+
+  const channel = channels[0];
+  const alt = channel?.alternatives?.[0];
+  const words = alt?.words ?? [];
+  return {
+    fullText: alt?.transcript ?? "",
+    language: channel?.detected_language ?? "en",
+    wordTimestamps: words.map((word) => ({
+      word: word.punctuated_word ?? word.word,
+      start: word.start,
+      end: word.end,
+      confidence: word.confidence,
+      speaker: word.speaker,
+    })),
+  };
 }
