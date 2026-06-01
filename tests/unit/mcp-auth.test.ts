@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isLoopbackRequest,
   isTailnetSourceRequest,
+  isTrustedNetworkRequest,
   verifyMcpRequest,
 } from "@/app/api/mcp/auth";
 
