@@ -1,9 +1,8 @@
 import SwiftUI
 
-/// Granola-shape sidebar. Slides in from the left as an overlay
-/// when the user clicks the sidebar toggle in the title bar (or
-/// presses ⌘S). 280pt wide; anchored to the canvas; clicking the
-/// dimmed content area to the right closes it.
+/// Granola-shape sidebar. Slides in from the left when the user clicks
+/// the sidebar toggle in the title bar (or presses ⌘S). The home shell
+/// reserves this rail while open, so content is never hidden underneath it.
 ///
 /// v1 sections (this pass):
 ///   • Search field at top (cosmetic — wires to query state passed
@@ -43,7 +42,7 @@ struct SidebarPanel: View {
 
             navList
         }
-        .frame(width: 280)
+        .frame(width: WindowChromeLayout.sidebarWidth)
         .frame(maxHeight: .infinity)
         .background(DSColor.Bg.canvas)
         .overlay(alignment: .trailing) {

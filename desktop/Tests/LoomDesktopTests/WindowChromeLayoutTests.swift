@@ -8,6 +8,22 @@ final class WindowChromeLayoutTests: XCTestCase {
         XCTAssertGreaterThan(WindowChromeLayout.homeContentTopPaddingNormal, WindowChromeLayout.barHeight)
         XCTAssertGreaterThan(WindowChromeLayout.homeContentTopPaddingExpanded, WindowChromeLayout.barHeight)
         XCTAssertGreaterThan(WindowChromeLayout.noteContentTopPadding, WindowChromeLayout.barHeight)
+        XCTAssertGreaterThan(WindowChromeLayout.sidebarWidth, 240)
+    }
+
+    func testHomeTitleChromeReservesSidebarRailWhenOpen() {
+        XCTAssertEqual(
+            WindowChromeLayout.homeTitleLeadingPadding(sidebarOpen: false),
+            WindowChromeLayout.homeLeadingPadding
+        )
+        XCTAssertEqual(
+            WindowChromeLayout.homeTitleLeadingPadding(sidebarOpen: true),
+            WindowChromeLayout.homeLeadingPaddingWithSidebar
+        )
+        XCTAssertLessThan(
+            WindowChromeLayout.homeLeadingPaddingWithSidebar,
+            WindowChromeLayout.homeLeadingPadding
+        )
     }
 
     func testRecorderWindowDefaultAndMinimumFitHomeLayout() {

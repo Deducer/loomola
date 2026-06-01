@@ -35,22 +35,8 @@ struct MainRecorderView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ZStack(alignment: .leading) {
-                contentForCurrentState
-
-                // Dim layer over the content when sidebar is open;
-                // tapping it closes the sidebar.
-                if sidebarOpen {
-                    Color.black.opacity(0.25)
-                        .ignoresSafeArea()
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            withAnimation(LoomolaMotion.quick) { sidebarOpen = false }
-                        }
-                        .transition(.opacity)
-                }
-
-                if sidebarOpen {
+            HStack(spacing: 0) {
+                if homeSidebarVisible {
                     SidebarPanel(
                         folders: viewModel.recentRecordings.folders,
                         query: $sidebarQuery,
@@ -61,7 +47,10 @@ struct MainRecorderView: View {
                     )
                     .transition(.move(edge: .leading))
                 }
+
+                contentForCurrentState
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(DSColor.Bg.canvas)
         .overlay(alignment: .top) {
@@ -78,14 +67,16 @@ struct MainRecorderView: View {
                 updateWindowCloseState(window)
             }
         )
-        .background(
-            // ⌘S to toggle the sidebar — Granola convention.
-            Button("") {
-                withAnimation(LoomolaMotion.quick) { sidebarOpen.toggle() }
+        .background {
+            if noteTarget == nil {
+                // ⌘S to toggle the sidebar — Granola convention.
+                Button("") {
+                    withAnimation(LoomolaMotion.quick) { sidebarOpen.toggle() }
+                }
+                .keyboardShortcut("s", modifiers: .command)
+                .opacity(0)
             }
-            .keyboardShortcut("s", modifiers: .command)
-            .opacity(0)
-        )
+        }
         .animation(LoomolaMotion.medium, value: viewModel.activeRecordingKind)
         .animation(LoomolaMotion.medium, value: noteTarget)
         .sheet(isPresented: $showSettings) {
@@ -201,7 +192,7 @@ struct MainRecorderView: View {
 
             titleBarActions
         }
-        .padding(.leading, WindowChromeLayout.homeLeadingPadding)
+        .padding(.leading, WindowChromeLayout.homeTitleLeadingPadding(sidebarOpen: homeSidebarVisible))
         .padding(.trailing, WindowChromeLayout.trailingPadding)
         .padding(.top, WindowChromeLayout.topPadding)
         .frame(height: WindowChromeLayout.barHeight + WindowChromeLayout.topPadding, alignment: .top)
@@ -212,6 +203,10 @@ struct MainRecorderView: View {
         windowIsExpanded
             ? WindowChromeLayout.homeContentTopPaddingExpanded
             : WindowChromeLayout.homeContentTopPaddingNormal
+    }
+
+    private var homeSidebarVisible: Bool {
+        sidebarOpen && noteTarget == nil
     }
 
     private var titleBarSidebarButton: some View {
