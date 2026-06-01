@@ -144,4 +144,73 @@ describe("MCP auth", () => {
       expect(isTailnetSourceRequest(request({}))).toBe(false);
     });
   });
+
+  describe("trusted-proxy-hop gate (Coolify/Docker NAT shape)", () => {
+    it("trusts a private/RFC1918 last hop (real prod shape after Docker NAT)", () => {
+      // Docker MASQUERADEs every inbound client to the bridge gateway
+      // before Traefik sees it, so the container receives a private IP.
+      expect(isTrustedNetworkRequest(request({ "x-forwarded-for": "10.0.1.1" }))).toBe(true);
+      expect(isTrustedNetworkRequest(request({ "x-forwarded-for": "172.18.0.5" }))).toBe(true);
+    });
+
+    it("still trusts genuine tailnet IPs (v4 and v6) for the upgrade path", () => {
+      expect(isTrustedNetworkRequest(request({ "x-forwarded-for": "100.94.207.47" }))).toBe(true);
+      expect(
+        isTrustedNetworkRequest(request({ "x-forwarded-for": "fd7a:115c:a1e0::a537:cf2f" }))
+      ).toBe(true);
+    });
+
+    it("falls back to X-Real-IP", () => {
+      expect(isTrustedNetworkRequest(request({ "x-real-ip": "10.0.1.1" }))).toBe(true);
+    });
+
+    it("fails closed on a public last hop", () => {
+      expect(isTrustedNetworkRequest(request({ "x-forwarded-for": "203.0.113.7" }))).toBe(false);
+    });
+
+    it("ignores an attacker-controllable leftmost entry, reads the last hop", () => {
+      expect(
+        isTrustedNetworkRequest(request({ "x-forwarded-for": "10.0.1.1, 203.0.113.7" }))
+      ).toBe(false);
+    });
+
+    it("accepts the real prod request end-to-end (private hop + valid token)", () => {
+      expect(
+        verifyMcpRequest(
+          request({
+            authorization: "Bearer secret",
+            host: "loom.dissonance.cloud",
+            "x-forwarded-for": "10.0.1.1",
+          }),
+          { MCP_TOKEN: "secret" }
+        )
+      ).toEqual({ ok: true });
+    });
+
+    it("returns 401 for the prod shape with a bad token", () => {
+      expect(
+        verifyMcpRequest(
+          request({
+            authorization: "Bearer nope",
+            host: "loom.dissonance.cloud",
+            "x-forwarded-for": "10.0.1.1",
+          }),
+          { MCP_TOKEN: "secret" }
+        )
+      ).toEqual({ ok: false, status: 401 });
+    });
+
+    it("still 403s a public last hop even with a valid token", () => {
+      expect(
+        verifyMcpRequest(
+          request({
+            authorization: "Bearer secret",
+            host: "loom.dissonance.cloud",
+            "x-forwarded-for": "203.0.113.7",
+          }),
+          { MCP_TOKEN: "secret" }
+        )
+      ).toEqual({ ok: false, status: 403 });
+    });
+  });
 });
