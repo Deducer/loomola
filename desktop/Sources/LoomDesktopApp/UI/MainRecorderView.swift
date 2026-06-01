@@ -41,6 +41,7 @@ struct MainRecorderView: View {
                         folders: viewModel.recentRecordings.folders,
                         query: $sidebarQuery,
                         selectedFolderId: $folderFilterId,
+                        topPadding: sidebarTopPadding,
                         onClose: {
                             withAnimation(LoomolaMotion.quick) { sidebarOpen = false }
                         }
@@ -192,7 +193,7 @@ struct MainRecorderView: View {
 
             titleBarActions
         }
-        .padding(.leading, WindowChromeLayout.homeTitleLeadingPadding(sidebarOpen: homeSidebarVisible))
+        .padding(.leading, WindowChromeLayout.homeLeadingPadding)
         .padding(.trailing, WindowChromeLayout.trailingPadding)
         .padding(.top, WindowChromeLayout.topPadding)
         .frame(height: WindowChromeLayout.barHeight + WindowChromeLayout.topPadding, alignment: .top)
@@ -207,6 +208,12 @@ struct MainRecorderView: View {
 
     private var homeSidebarVisible: Bool {
         sidebarOpen && noteTarget == nil
+    }
+
+    private var sidebarTopPadding: CGFloat {
+        windowIsFullScreen
+            ? WindowChromeLayout.barHeight + WindowChromeLayout.topPadding + DSSpacing.md
+            : DSSpacing.md
     }
 
     private var titleBarSidebarButton: some View {

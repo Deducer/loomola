@@ -22,6 +22,7 @@ struct SidebarPanel: View {
     let folders: [FolderDTO]
     @Binding var query: String
     @Binding var selectedFolderId: String?
+    let topPadding: CGFloat
     let onClose: () -> Void
 
     @FocusState private var searchFocused: Bool
@@ -37,7 +38,7 @@ struct SidebarPanel: View {
         VStack(alignment: .leading, spacing: 0) {
             searchField
                 .padding(.horizontal, DSSpacing.md)
-                .padding(.top, DSSpacing.md)
+                .padding(.top, topPadding)
                 .padding(.bottom, DSSpacing.sm)
 
             navList
