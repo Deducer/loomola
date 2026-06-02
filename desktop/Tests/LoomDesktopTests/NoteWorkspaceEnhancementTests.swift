@@ -35,6 +35,19 @@ final class NoteWorkspaceEnhancementTests: XCTestCase {
         )
     }
 
+    func testTranscriptLoadClearsStaleWaitingState() throws {
+        let source = try noteWorkspaceSource()
+
+        XCTAssertTrue(
+            source.contains("clearTranscriptWaitingStateIfReady(response)"),
+            "A transcript arriving after the desktop entered Waiting for transcript should restore Generate notes."
+        )
+        XCTAssertTrue(
+            source.contains("enhanceStatus = .idle"),
+            "The stale waiting state should clear back to the idle Generate notes state."
+        )
+    }
+
     private func noteWorkspaceSource() throws -> String {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let file = root.appending(path: "Sources/LoomDesktopApp/UI/Notes/NoteWorkspaceView.swift")

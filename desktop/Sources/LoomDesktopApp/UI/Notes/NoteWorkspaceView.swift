@@ -1719,6 +1719,7 @@ struct NoteWorkspaceView: View {
             do {
                 let response = try await backend.getNoteTranscript(mediaId: recording.id)
                 transcript = response
+                clearTranscriptWaitingStateIfReady(response)
                 if notesGeneratedForCurrentTranscript {
                     rememberGeneratedTranscript(fingerprint: transcriptFingerprint(from: response))
                 }
@@ -1829,6 +1830,23 @@ struct NoteWorkspaceView: View {
     }
 
     // MARK: - AI enhance
+
+    private func clearTranscriptWaitingStateIfReady(_ response: NoteTranscriptResponse) {
+        guard !response.fullText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return
+        }
+        guard enhanceStatus == .failed, enhanceFailureIsRetryable == false else {
+            transcriptRetryAvailable = false
+            transcriptRetrying = false
+            return
+        }
+
+        enhanceStatus = .idle
+        enhanceFailureMessage = nil
+        enhanceFailureIsRetryable = true
+        transcriptRetryAvailable = false
+        transcriptRetrying = false
+    }
 
     private func applyEnhancementReadiness(_ status: EnhanceStatusResponse) {
         guard status.transcriptReady == false else {
