@@ -59,6 +59,15 @@ private struct TranscriptDisplayBubble: Identifiable, Equatable {
     let endSec: Double
 }
 
+private struct TranscriptSearchMatch: Identifiable, Equatable {
+    let bubbleId: String
+    let occurrenceIndex: Int
+
+    var id: String {
+        "\(bubbleId)-\(occurrenceIndex)"
+    }
+}
+
 /// Granola-shape note workspace, embedded directly in the main
 /// window when `MainRecorderView.noteTarget != nil`.
 ///
@@ -146,6 +155,7 @@ struct NoteWorkspaceView: View {
     @State private var lastGeneratedTranscriptFingerprint: String? = nil
     @State private var transcriptSearchVisible = false
     @State private var transcriptSearchQuery = ""
+    @State private var activeTranscriptSearchIndex = 0
     @FocusState private var transcriptSearchFocused: Bool
 
     private var isRecording: Bool {
@@ -1057,7 +1067,7 @@ struct NoteWorkspaceView: View {
                 .padding(.bottom, DSSpacing.xs)
 
                 if transcriptSearchVisible {
-                    transcriptSearchBar
+                    transcriptSearchBar(proxy: proxy)
                         .padding(.horizontal, DSSpacing.lg)
                         .padding(.bottom, DSSpacing.sm)
                         .transition(.opacity.combined(with: .move(edge: .top)))
@@ -1082,6 +1092,17 @@ struct NoteWorkspaceView: View {
                 }
                 .frame(maxHeight: 300)
             }
+            .onChange(of: normalizedTranscriptSearchQuery) { _, _ in
+                activeTranscriptSearchIndex = 0
+                scrollToActiveTranscriptSearchMatch(proxy: proxy)
+            }
+            .onChange(of: transcriptSearchMatches.count) { _, count in
+                normalizeActiveTranscriptSearchIndex(matchCount: count)
+                scrollToActiveTranscriptSearchMatch(proxy: proxy)
+            }
+            .onChange(of: activeTranscriptSearchIndex) { _, _ in
+                scrollToActiveTranscriptSearchMatch(proxy: proxy)
+            }
         }
         .background(RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous).fill(DSColor.Bg.surfaceRaised))
         .overlay {
@@ -1092,8 +1113,12 @@ struct NoteWorkspaceView: View {
         .animation(LoomolaMotion.quick, value: transcriptSearchVisible)
     }
 
-    private var transcriptSearchBar: some View {
-        HStack(spacing: DSSpacing.sm) {
+    private func transcriptSearchBar(proxy: ScrollViewProxy) -> some View {
+        let matchCount = transcriptSearchMatches.count
+        let hasQuery = !normalizedTranscriptSearchQuery.isEmpty
+        let hasMatches = matchCount > 0
+
+        return HStack(spacing: DSSpacing.sm) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(DSColor.Text.tertiary)
@@ -1102,12 +1127,38 @@ struct NoteWorkspaceView: View {
                 .font(DSFont.Body.sm())
                 .foregroundStyle(DSColor.Text.primary)
                 .focused($transcriptSearchFocused)
-            if !normalizedTranscriptSearchQuery.isEmpty {
-                Text("\(transcriptSearchMatchCount)")
+                .onSubmit {
+                    moveTranscriptSearchSelection(delta: 1, proxy: proxy)
+                }
+            if hasQuery {
+                Text(hasMatches ? "\(activeTranscriptSearchOrdinal)/\(matchCount)" : "0/0")
                     .font(DSFont.Body.sm())
                     .foregroundStyle(DSColor.Text.tertiary)
                 Button {
+                    moveTranscriptSearchSelection(delta: -1, proxy: proxy)
+                } label: {
+                    Image(systemName: "chevron.up")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(hasMatches ? DSColor.Text.secondary : DSColor.Text.tertiary.opacity(0.55))
+                        .frame(width: 18, height: 18)
+                }
+                .buttonStyle(.plain)
+                .disabled(!hasMatches)
+                .help("Previous match")
+                Button {
+                    moveTranscriptSearchSelection(delta: 1, proxy: proxy)
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(hasMatches ? DSColor.Text.secondary : DSColor.Text.tertiary.opacity(0.55))
+                        .frame(width: 18, height: 18)
+                }
+                .buttonStyle(.plain)
+                .disabled(!hasMatches)
+                .help("Next match")
+                Button {
                     transcriptSearchQuery = ""
+                    activeTranscriptSearchIndex = 0
                     transcriptSearchFocused = true
                 } label: {
                     Image(systemName: "xmark.circle.fill")
@@ -1145,29 +1196,12 @@ struct NoteWorkspaceView: View {
                 .font(DSFont.Body.md())
                 .foregroundStyle(DSColor.Text.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-        } else if let transcript, !transcript.paragraphs.isEmpty {
+        } else if !savedTranscriptBubbles.isEmpty {
             LazyVStack(alignment: .leading, spacing: DSSpacing.md) {
-                ForEach(transcript.paragraphs) { paragraph in
-                    let source = transcriptSource(forSpeaker: paragraph.speaker)
-                    transcriptBubble(
-                        TranscriptDisplayBubble(
-                            id: paragraph.id,
-                            source: source,
-                            speaker: source?.displayName ?? paragraph.speaker,
-                            text: paragraph.text,
-                            isInterim: false,
-                            startSec: paragraph.startSec,
-                            endSec: paragraph.endSec
-                        )
-                    )
+                ForEach(savedTranscriptBubbles) { bubble in
+                    transcriptBubble(bubble)
                 }
             }
-        } else if let transcript, !transcript.fullText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            Text(transcript.fullText)
-                .font(DSFont.Body.md())
-                .foregroundStyle(DSColor.Text.primary)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
         } else if transcript != nil {
             Text("No speech was saved in this transcript. Use Retry transcript if the recording should contain speech.")
                 .font(DSFont.Body.md())
@@ -1285,12 +1319,46 @@ struct NoteWorkspaceView: View {
         return bubbles
     }
 
+    private var savedTranscriptBubbles: [TranscriptDisplayBubble] {
+        guard let transcript else { return [] }
+        if !transcript.paragraphs.isEmpty {
+            return transcript.paragraphs.map { paragraph in
+                let source = transcriptSource(forSpeaker: paragraph.speaker)
+                return TranscriptDisplayBubble(
+                    id: paragraph.id,
+                    source: source,
+                    speaker: source?.displayName ?? paragraph.speaker,
+                    text: paragraph.text,
+                    isInterim: false,
+                    startSec: paragraph.startSec,
+                    endSec: paragraph.endSec
+                )
+            }
+        }
+
+        let fullText = transcript.fullText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !fullText.isEmpty else { return [] }
+        return [
+            TranscriptDisplayBubble(
+                id: "full-transcript",
+                source: nil,
+                speaker: nil,
+                text: fullText,
+                isInterim: false,
+                startSec: 0,
+                endSec: 0
+            )
+        ]
+    }
+
     private func transcriptBubble(_ bubble: TranscriptDisplayBubble) -> some View {
         let isMine = bubble.source == .microphone
         let alignment: Alignment = isMine ? .trailing : .leading
         let horizontalAlignment: HorizontalAlignment = isMine ? .trailing : .leading
         let speaker = bubble.speaker?.trimmingCharacters(in: .whitespacesAndNewlines)
         let isSearchMatch = transcriptBubbleMatchesSearch(bubble)
+        let activeSearchMatch = activeTranscriptSearchMatch
+        let isActiveSearchMatch = activeSearchMatch?.bubbleId == bubble.id
 
         return HStack(alignment: .bottom, spacing: 0) {
             if isMine { Spacer(minLength: 54) }
@@ -1301,10 +1369,9 @@ struct NoteWorkspaceView: View {
                         .foregroundStyle(DSColor.Text.tertiary.opacity(0.9))
                         .padding(.horizontal, 4)
                 }
-                Text(bubble.text)
+                Text(attributedTranscriptText(for: bubble, activeMatch: activeSearchMatch))
                     .font(.system(size: 13, weight: .regular))
                     .lineSpacing(2.5)
-                    .foregroundStyle(bubble.isInterim ? DSColor.Text.secondary.opacity(0.85) : DSColor.Text.primary.opacity(0.82))
                     .textSelection(.enabled)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
@@ -1315,10 +1382,12 @@ struct NoteWorkspaceView: View {
                     .overlay {
                         RoundedRectangle(cornerRadius: 11, style: .continuous)
                             .strokeBorder(
-                                isSearchMatch
-                                    ? DSColor.Accent.primary.opacity(0.7)
+                                isActiveSearchMatch
+                                    ? Color.orange.opacity(0.86)
+                                    : isSearchMatch
+                                    ? DSColor.Accent.primary.opacity(0.55)
                                     : transcriptBubbleStroke(source: bubble.source),
-                                lineWidth: isSearchMatch ? 1.4 : 1
+                                lineWidth: isActiveSearchMatch ? 1.6 : (isSearchMatch ? 1.3 : 1)
                             )
                             .opacity(isSearchMatch || bubble.source == .systemAudio ? 0.75 : 0)
                     }
@@ -1327,6 +1396,7 @@ struct NoteWorkspaceView: View {
             if !isMine { Spacer(minLength: 54) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .id(transcriptBubbleScrollId(for: bubble.id))
     }
 
     private func transcriptBubbleFill(source: LiveTranscriptAudioSource?, isInterim: Bool) -> Color {
@@ -1344,6 +1414,41 @@ struct NoteWorkspaceView: View {
 
     private func transcriptBubbleStroke(source: LiveTranscriptAudioSource?) -> Color {
         source == .systemAudio ? DSColor.Border.subtle : .clear
+    }
+
+    private func attributedTranscriptText(
+        for bubble: TranscriptDisplayBubble,
+        activeMatch: TranscriptSearchMatch?
+    ) -> AttributedString {
+        var attributed = AttributedString(bubble.text)
+        attributed.foregroundColor = bubble.isInterim
+            ? DSColor.Text.secondary.opacity(0.85)
+            : DSColor.Text.primary.opacity(0.82)
+
+        let query = normalizedTranscriptSearchQuery
+        guard !query.isEmpty else { return attributed }
+
+        let ranges = bubble.text.localizedCaseInsensitiveRanges(of: query)
+        for (occurrenceIndex, range) in ranges.enumerated() {
+            guard let lower = AttributedString.Index(range.lowerBound, within: attributed),
+                  let upper = AttributedString.Index(range.upperBound, within: attributed) else {
+                continue
+            }
+            let isActive = activeMatch?.bubbleId == bubble.id &&
+                activeMatch?.occurrenceIndex == occurrenceIndex
+            attributed[lower..<upper].backgroundColor = isActive
+                ? Color.orange.opacity(0.95)
+                : DSColor.Accent.primary.opacity(0.26)
+            attributed[lower..<upper].foregroundColor = isActive
+                ? Color.black.opacity(0.92)
+                : DSColor.Text.primary
+        }
+
+        return attributed
+    }
+
+    private func transcriptBubbleScrollId(for bubbleId: String) -> String {
+        "transcript-bubble-\(bubbleId)"
     }
 
     private var liveTranscriptWordCount: Int {
@@ -1364,32 +1469,77 @@ struct NoteWorkspaceView: View {
         transcriptSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private var transcriptSearchMatchCount: Int {
+    private var transcriptSearchMatches: [TranscriptSearchMatch] {
         let query = normalizedTranscriptSearchQuery
-        guard !query.isEmpty else { return 0 }
-        return transcriptSearchableTexts.reduce(0) { count, text in
-            count + text.localizedCaseInsensitiveOccurrenceCount(of: query)
+        guard !query.isEmpty else { return [] }
+
+        var matches: [TranscriptSearchMatch] = []
+        for bubble in transcriptSearchBubbles {
+            let occurrenceCount = bubble.text.localizedCaseInsensitiveRanges(of: query).count
+            guard occurrenceCount > 0 else { continue }
+            for occurrenceIndex in 0..<occurrenceCount {
+                matches.append(
+                    TranscriptSearchMatch(
+                        bubbleId: bubble.id,
+                        occurrenceIndex: occurrenceIndex
+                    )
+                )
+            }
         }
+        return matches
     }
 
-    private var transcriptSearchableTexts: [String] {
+    private var transcriptSearchBubbles: [TranscriptDisplayBubble] {
         if isRecording {
-            return liveTranscriptBubbles.map(\.text)
+            return liveTranscriptBubbles
         }
-        if let transcript, !transcript.paragraphs.isEmpty {
-            return transcript.paragraphs.map(\.text)
-        }
-        if let transcript {
-            let text = transcript.fullText.trimmingCharacters(in: .whitespacesAndNewlines)
-            return text.isEmpty ? [] : [text]
-        }
-        return []
+        return savedTranscriptBubbles
+    }
+
+    private var activeTranscriptSearchMatch: TranscriptSearchMatch? {
+        let matches = transcriptSearchMatches
+        guard !matches.isEmpty else { return nil }
+        return matches[min(activeTranscriptSearchIndex, matches.count - 1)]
+    }
+
+    private var activeTranscriptSearchOrdinal: Int {
+        let count = transcriptSearchMatches.count
+        guard count > 0 else { return 0 }
+        return min(activeTranscriptSearchIndex, count - 1) + 1
     }
 
     private func transcriptBubbleMatchesSearch(_ bubble: TranscriptDisplayBubble) -> Bool {
         let query = normalizedTranscriptSearchQuery
         guard !query.isEmpty else { return false }
         return bubble.text.localizedCaseInsensitiveContains(query)
+    }
+
+    private func normalizeActiveTranscriptSearchIndex(matchCount: Int? = nil) {
+        let count = matchCount ?? transcriptSearchMatches.count
+        if count == 0 {
+            activeTranscriptSearchIndex = 0
+        } else if activeTranscriptSearchIndex >= count {
+            activeTranscriptSearchIndex = count - 1
+        } else if activeTranscriptSearchIndex < 0 {
+            activeTranscriptSearchIndex = 0
+        }
+    }
+
+    private func moveTranscriptSearchSelection(delta: Int, proxy: ScrollViewProxy) {
+        let count = transcriptSearchMatches.count
+        guard count > 0 else { return }
+        activeTranscriptSearchIndex = (activeTranscriptSearchIndex + delta + count) % count
+        scrollToActiveTranscriptSearchMatch(proxy: proxy)
+        transcriptSearchFocused = true
+    }
+
+    private func scrollToActiveTranscriptSearchMatch(proxy: ScrollViewProxy) {
+        guard let match = activeTranscriptSearchMatch else { return }
+        DispatchQueue.main.async {
+            withAnimation(LoomolaMotion.medium) {
+                proxy.scrollTo(transcriptBubbleScrollId(for: match.bubbleId), anchor: .center)
+            }
+        }
     }
 
     private func openTranscriptSearch() {
@@ -1400,6 +1550,7 @@ struct NoteWorkspaceView: View {
             }
         }
         transcriptSearchVisible = true
+        normalizeActiveTranscriptSearchIndex()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             transcriptSearchFocused = true
         }
@@ -1409,6 +1560,7 @@ struct NoteWorkspaceView: View {
         if transcriptSearchVisible {
             transcriptSearchVisible = false
             transcriptSearchQuery = ""
+            activeTranscriptSearchIndex = 0
             transcriptSearchFocused = false
         } else {
             openTranscriptSearch()
@@ -2734,18 +2886,18 @@ private struct WorkspaceMenuItem: View {
 }
 
 private extension String {
-    func localizedCaseInsensitiveOccurrenceCount(of needle: String) -> Int {
-        guard !needle.isEmpty else { return 0 }
-        var count = 0
+    func localizedCaseInsensitiveRanges(of needle: String) -> [Range<String.Index>] {
+        guard !needle.isEmpty else { return [] }
+        var ranges: [Range<String.Index>] = []
         var searchRange = startIndex..<endIndex
         while let range = range(
             of: needle,
             options: [.caseInsensitive, .diacriticInsensitive],
             range: searchRange
         ) {
-            count += 1
+            ranges.append(range)
             searchRange = range.upperBound..<endIndex
         }
-        return count
+        return ranges
     }
 }
