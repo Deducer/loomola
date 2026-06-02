@@ -233,8 +233,8 @@ struct MarkdownTextEditor: NSViewRepresentable {
                 let paragraphStyle = NSMutableParagraphStyle()
                 paragraphStyle.firstLineHeadIndent = visualIndent + MarkdownStyle.listTextIndent
                 paragraphStyle.headIndent = visualIndent + MarkdownStyle.listTextIndent
-                paragraphStyle.paragraphSpacing = nestingLevel == 0 ? 9 : 7
-                paragraphStyle.lineSpacing = 4
+                paragraphStyle.paragraphSpacing = nestingLevel == 0 ? 7 : 6
+                paragraphStyle.lineSpacing = MarkdownStyle.bodyLineSpacing
                 storage.addAttribute(.paragraphStyle, value: paragraphStyle, range: paragraphRange)
                 hideMarker(match.range, in: storage)
                 let anchorLocation = firstVisibleListContentLocation(
@@ -388,7 +388,7 @@ final class MarkdownTextView: NSTextView {
                 forGlyphAt: glyphRange.location,
                 effectiveRange: nil
             )
-            let bulletSize: CGFloat = marker.kind == .filled ? 5.8 : 5.2
+            let bulletSize: CGFloat = marker.kind == .filled ? 4.8 : 4.4
             let bulletRect = NSRect(
                 x: containerOrigin.x + marker.indent + MarkdownStyle.listBulletX,
                 y: containerOrigin.y + lineRect.midY - bulletSize / 2,
@@ -410,18 +410,19 @@ final class MarkdownTextView: NSTextView {
 }
 
 private enum MarkdownStyle {
-    static let body = NSFont.systemFont(ofSize: 15)
-    static let bold = NSFont.boldSystemFont(ofSize: 15)
-    static let nestedListIndent: CGFloat = 32
-    static let listTextIndent: CGFloat = 42
-    static let listBulletX: CGFloat = 10
+    static let body = NSFont.systemFont(ofSize: 16, weight: .regular)
+    static let bold = NSFont.systemFont(ofSize: 16, weight: .semibold)
+    static let bodyLineSpacing: CGFloat = 5.5
+    static let nestedListIndent: CGFloat = 24
+    static let listTextIndent: CGFloat = 28
+    static let listBulletX: CGFloat = 6
     static let bodyColor = dynamicColor(
         light: NSColor(red: 0.180, green: 0.184, blue: 0.208, alpha: 1),
-        dark: NSColor(red: 0.660, green: 0.660, blue: 0.625, alpha: 1)
+        dark: NSColor(red: 0.620, green: 0.612, blue: 0.578, alpha: 1)
     )
     static let headingColor = dynamicColor(
         light: NSColor(red: 0.082, green: 0.086, blue: 0.102, alpha: 1),
-        dark: NSColor(red: 0.760, green: 0.760, blue: 0.720, alpha: 1)
+        dark: NSColor(red: 0.710, green: 0.698, blue: 0.655, alpha: 1)
     )
     static let placeholderColor = dynamicColor(
         light: NSColor(red: 0.541, green: 0.549, blue: 0.584, alpha: 1),
@@ -429,34 +430,34 @@ private enum MarkdownStyle {
     )
     static let bulletColor = dynamicColor(
         light: NSColor(red: 0.430, green: 0.438, blue: 0.486, alpha: 1),
-        dark: NSColor(red: 0.545, green: 0.552, blue: 0.596, alpha: 1)
+        dark: NSColor(red: 0.500, green: 0.492, blue: 0.465, alpha: 1)
     )
     static var italic: NSFont {
         let manager = NSFontManager.shared
         return manager.convert(body, toHaveTrait: .italicFontMask)
     }
-    static let mono = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
+    static let mono = NSFont.monospacedSystemFont(ofSize: 15, weight: .regular)
     static func heading(level: Int) -> NSFont {
         switch level {
-        case 1: return NSFont.boldSystemFont(ofSize: 24)
-        case 2: return NSFont.boldSystemFont(ofSize: 20)
-        case 3: return NSFont.boldSystemFont(ofSize: 17)
-        default: return NSFont.boldSystemFont(ofSize: 15)
+        case 1: return NSFont.systemFont(ofSize: 18, weight: .semibold)
+        case 2: return NSFont.systemFont(ofSize: 17, weight: .semibold)
+        case 3: return NSFont.systemFont(ofSize: 16, weight: .semibold)
+        default: return NSFont.systemFont(ofSize: 16, weight: .semibold)
         }
     }
 
     static func bodyParagraphStyle() -> NSParagraphStyle {
         let style = NSMutableParagraphStyle()
-        style.lineSpacing = 4
-        style.paragraphSpacing = 10
+        style.lineSpacing = bodyLineSpacing
+        style.paragraphSpacing = 8
         return style
     }
 
     static func headingParagraphStyle(level: Int, isFirstBlock: Bool) -> NSParagraphStyle {
         let style = NSMutableParagraphStyle()
-        style.lineSpacing = 2
-        style.paragraphSpacingBefore = isFirstBlock ? 0 : (level == 1 ? 22 : 24)
-        style.paragraphSpacing = level == 1 ? 18 : 14
+        style.lineSpacing = 3
+        style.paragraphSpacingBefore = isFirstBlock ? 0 : (level == 1 ? 28 : 26)
+        style.paragraphSpacing = level == 1 ? 10 : 8
         return style
     }
 

@@ -228,12 +228,12 @@ struct NoteWorkspaceView: View {
                     pillRow
                     bodyEditor
                 }
-                // Cap the readable column at ~640pt and center
+                // Cap the readable column at ~600pt and center
                 // horizontally so the editor doesn't sprawl across
                 // a 1080+pt wide main window. Granola pattern —
                 // narrow windows still fill, wide windows give a
                 // comfortable reading width with margin.
-                .frame(maxWidth: 640, alignment: .leading)
+                .frame(maxWidth: 600, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.horizontal, DSSpacing.xl)
                 .padding(.top, WindowChromeLayout.noteContentTopPadding)
@@ -258,7 +258,7 @@ struct NoteWorkspaceView: View {
             // distract from the user's typing flow. Granola pattern.
             if !attachments.isEmpty || uploadingCount > 0 {
                 attachmentsStrip
-                    .frame(maxWidth: 640, alignment: .leading)
+                    .frame(maxWidth: 600, alignment: .leading)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.horizontal, DSSpacing.xl)
                     .padding(.top, DSSpacing.sm)
@@ -451,9 +451,10 @@ struct NoteWorkspaceView: View {
     private var titleEditor: some View {
         TextField(titlePlaceholder, text: titleBinding, axis: .vertical)
             .textFieldStyle(.plain)
-            .font(DSFont.Display.xl())
+            .font(.system(size: 30, weight: .medium, design: .serif))
             .foregroundStyle(DSColor.Text.primary)
             .tint(DSColor.Accent.primary)
+            .lineSpacing(1.5)
             .lineLimit(1...4)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -795,7 +796,7 @@ struct NoteWorkspaceView: View {
             Spacer()
             if enhanceStatus == .running {
                 writingNotesBar
-                    .frame(maxWidth: 640)
+                    .frame(maxWidth: 600)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             } else {
                 HStack(spacing: DSSpacing.sm) {

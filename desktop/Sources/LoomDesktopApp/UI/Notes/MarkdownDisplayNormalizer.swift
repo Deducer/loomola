@@ -7,7 +7,21 @@ enum MarkdownDisplayNormalizer {
             with: #"**$1**"#,
             options: .regularExpression
         )
-        return convertTablesToBulletLists(in: collapsedBold)
+        let convertedTables = convertTablesToBulletLists(in: collapsedBold)
+        return compactGeneratedSpacing(in: convertedTables)
+    }
+
+    private static func compactGeneratedSpacing(in markdown: String) -> String {
+        let headingGapsCollapsed = markdown.replacingOccurrences(
+            of: #"(?m)^(#{1,3}\s+[^\n]+)\n[ \t]*\n(?=\S)"#,
+            with: "$1\n",
+            options: .regularExpression
+        )
+        return headingGapsCollapsed.replacingOccurrences(
+            of: #"\n{3,}"#,
+            with: "\n\n",
+            options: .regularExpression
+        )
     }
 
     private static func convertTablesToBulletLists(in markdown: String) -> String {

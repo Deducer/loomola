@@ -47,4 +47,27 @@ final class MarkdownDisplayNormalizerTests: XCTestCase {
         XCTAssertTrue(normalized.hasPrefix("**Key finding:"))
         XCTAssertTrue(normalized.hasSuffix("helps.**"))
     }
+
+    func testCompactsGeneratedHeadingGapsWithoutRemovingParagraphBreaks() {
+        let markdown = """
+        # Summary
+
+        The venue is not confirmed.
+
+        The team needs the address.
+
+
+
+        ## Next steps
+
+        - Text Vivek
+        """
+
+        let normalized = MarkdownDisplayNormalizer.normalizeGeneratedNotes(markdown)
+
+        XCTAssertTrue(normalized.contains("# Summary\nThe venue is not confirmed."))
+        XCTAssertTrue(normalized.contains("The venue is not confirmed.\n\nThe team needs the address."))
+        XCTAssertTrue(normalized.contains("## Next steps\n- Text Vivek"))
+        XCTAssertFalse(normalized.contains("\n\n\n"))
+    }
 }
