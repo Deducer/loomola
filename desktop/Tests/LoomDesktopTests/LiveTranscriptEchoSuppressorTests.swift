@@ -2,6 +2,24 @@ import XCTest
 @testable import LoomDesktopApp
 
 final class LiveTranscriptEchoSuppressorTests: XCTestCase {
+    func testDeepgramBadServerResponseIsActionableAndNotRetried() {
+        let url = URL(string: "wss://api.deepgram.com/v1/listen?model=nova-3")!
+        let error = NSError(
+            domain: NSURLErrorDomain,
+            code: NSURLErrorBadServerResponse,
+            userInfo: [
+                NSURLErrorFailingURLErrorKey: url,
+                NSLocalizedDescriptionKey: "There was a bad response from the server.",
+            ]
+        )
+
+        XCTAssertEqual(
+            LiveTranscriptionTransportFailure.message(for: error),
+            "Deepgram rejected live transcription. Check Deepgram credits or model access."
+        )
+        XCTAssertFalse(LiveTranscriptionTransportFailure.isRetryable(error))
+    }
+
     func testSuppressesRemoteSpeechEchoedIntoMicrophone() {
         let segments = [
             segment(source: .systemAudio, start: 0, text: "Oh, there you go. Really?"),

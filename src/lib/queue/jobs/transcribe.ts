@@ -7,6 +7,7 @@ import { eq } from "drizzle-orm";
 import { getCanonicalTerms } from "@/db/queries/dictionary-terms";
 import { getUserPreferences } from "@/db/queries/user-preferences";
 import { deepgramLanguageOption } from "@/lib/preferences/user-preferences";
+import { isDeepgramPaymentRequiredError } from "@/lib/deepgram/errors";
 
 export const TRANSCRIBE_JOB = "transcribe";
 
@@ -48,16 +49,30 @@ export async function runTranscribeJob(data: TranscribeJobData): Promise<void> {
   const keywords = await getDeepgramKeywords(mediaObjectId);
 
   const dg = getDeepgramClient();
-  await dg.listen.v1.media.transcribeUrl({
-    url: audioUrl,
-    callback: callbackUrl,
-    model: "nova-2",
-    smart_format: true,
-    diarize: data.multichannel ? false : true,
-    ...(data.multichannel ? { multichannel: true } : {}),
-    ...(language ? { language } : {}),
-    ...(keywords.length > 0 ? { keywords } : {}),
-  });
+  try {
+    await dg.listen.v1.media.transcribeUrl({
+      url: audioUrl,
+      callback: callbackUrl,
+      model: "nova-2",
+      smart_format: true,
+      diarize: data.multichannel ? false : true,
+      ...(data.multichannel ? { multichannel: true } : {}),
+      ...(language ? { language } : {}),
+      ...(keywords.length > 0 ? { keywords } : {}),
+    });
+  } catch (err) {
+    if (isDeepgramPaymentRequiredError(err)) {
+      await db
+        .update(mediaObjects)
+        .set({ status: "failed" })
+        .where(eq(mediaObjects.id, mediaObjectId));
+      console.error(
+        `[transcribe] Deepgram payment required for media ${mediaObjectId}; marked failed`
+      );
+      return;
+    }
+    throw err;
+  }
 
   console.log(
     `[transcribe] submitted Deepgram request for media ${mediaObjectId}`

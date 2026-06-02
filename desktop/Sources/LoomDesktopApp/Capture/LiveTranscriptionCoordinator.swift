@@ -394,6 +394,42 @@ private enum LiveTranscriptionStreamState: Sendable {
     case closed
 }
 
+enum LiveTranscriptionTransportFailure {
+    static let deepgramRejectedMessage =
+        "Deepgram rejected live transcription. Check Deepgram credits or model access."
+
+    static func message(for error: Error) -> String {
+        guard isDeepgramBadServerResponse(error) else {
+            return error.localizedDescription
+        }
+        return deepgramRejectedMessage
+    }
+
+    static func isRetryable(_ error: Error) -> Bool {
+        !isDeepgramBadServerResponse(error)
+    }
+
+    private static func isDeepgramBadServerResponse(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        guard nsError.domain == NSURLErrorDomain,
+              nsError.code == NSURLErrorBadServerResponse
+        else { return false }
+
+        if let url = nsError.userInfo[NSURLErrorFailingURLErrorKey] as? URL {
+            return isDeepgramListenURL(url)
+        }
+        if let urlString = nsError.userInfo[NSURLErrorFailingURLStringErrorKey] as? String,
+           let url = URL(string: urlString) {
+            return isDeepgramListenURL(url)
+        }
+        return false
+    }
+
+    private static func isDeepgramListenURL(_ url: URL) -> Bool {
+        url.host == "api.deepgram.com" && url.path == "/v1/listen"
+    }
+}
+
 private final class LiveTranscriptionStream: @unchecked Sendable {
     let source: LiveTranscriptAudioSource
     private let backend: BackendClient
@@ -615,7 +651,13 @@ private final class LiveTranscriptionStream: @unchecked Sendable {
         webSocket?.cancel(with: .goingAway, reason: nil)
         webSocket = nil
         opening = false
-        onState(.failed(error.localizedDescription))
+        let message = LiveTranscriptionTransportFailure.message(for: error)
+        onState(.failed(message))
+        guard LiveTranscriptionTransportFailure.isRetryable(error) else {
+            failedMessage = message
+            pendingAudio = []
+            return
+        }
         openIfNeeded()
     }
 
