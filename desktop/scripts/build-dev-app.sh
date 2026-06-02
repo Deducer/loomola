@@ -33,6 +33,12 @@ if [[ -d "$EXTENSION_SOURCE" ]]; then
   ditto "$EXTENSION_SOURCE" "$RESOURCES_DIR/extension"
 fi
 
+for RESOURCE_BUNDLE in "$BIN_DIR"/*.bundle; do
+  if [[ -d "$RESOURCE_BUNDLE" ]]; then
+    ditto "$RESOURCE_BUNDLE" "$RESOURCES_DIR/$(basename "$RESOURCE_BUNDLE")"
+  fi
+done
+
 xml_escape() {
   printf '%s' "$1" \
     | sed \

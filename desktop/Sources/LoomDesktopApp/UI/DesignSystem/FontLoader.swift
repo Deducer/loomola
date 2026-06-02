@@ -20,10 +20,7 @@ enum FontLoader {
     }
 
     private static func register(filename: String, ext: String, label: String) {
-        guard let url = Bundle.module.url(
-            forResource: "Fonts/\(filename)",
-            withExtension: ext
-        ) ?? Bundle.module.url(forResource: filename, withExtension: ext) else {
+        guard let url = fontURL(filename: filename, ext: ext) else {
             print("[fonts] \(label) — resource not found in bundle; falling back to system font")
             return
         }
@@ -40,6 +37,41 @@ enum FontLoader {
                 return
             }
             print("[fonts] \(label) registration failed: \(err)")
+        }
+    }
+
+    private static func fontURL(filename: String, ext: String) -> URL? {
+        if let url = Bundle.main.url(forResource: filename, withExtension: ext, subdirectory: "Fonts")
+            ?? Bundle.main.url(forResource: "Fonts/\(filename)", withExtension: ext) {
+            return url
+        }
+
+        for bundle in resourceBundles() {
+            if let url = bundle.url(forResource: filename, withExtension: ext, subdirectory: "Fonts")
+                ?? bundle.url(forResource: "Fonts/\(filename)", withExtension: ext) {
+                return url
+            }
+        }
+
+        return nil
+    }
+
+    private static func resourceBundles() -> [Bundle] {
+        let bundleNames = [
+            "LoomDesktop_LoomDesktopApp",
+            "LoomDesktopApp_LoomDesktopApp"
+        ]
+        let searchRoots = [
+            Bundle.main.resourceURL,
+            Bundle.main.bundleURL,
+            URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
+        ].compactMap { $0 }
+
+        return bundleNames.flatMap { bundleName in
+            searchRoots.compactMap { root in
+                let url = root.appendingPathComponent("\(bundleName).bundle")
+                return Bundle(url: url)
+            }
         }
     }
 }
