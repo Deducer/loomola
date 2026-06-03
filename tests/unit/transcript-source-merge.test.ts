@@ -41,6 +41,57 @@ describe("source-aware transcript merge", () => {
     ]);
   });
 
+  it("suppresses garbled remote speech that leaks into the microphone channel", () => {
+    const segments: SourceTranscriptSegment[] = [
+      segment(
+        "systemAudio",
+        30,
+        "Everyone is have basically, like, I like, everyone's like, it takes weeks."
+      ),
+      segment(
+        "microphone",
+        31.1,
+        "And, like, everyone has had basically, like, I like, everyone's gonna take weeks."
+      ),
+    ];
+
+    expect(suppressEchoSegments(segments).map((item) => item.text)).toEqual([
+      "Everyone is have basically, like, I like, everyone's like, it takes weeks.",
+    ]);
+  });
+
+  it("trims an echoed remote prefix while preserving local mic speech", () => {
+    const segments: SourceTranscriptSegment[] = [
+      segment(
+        "systemAudio",
+        45,
+        "Say you when you say impactful, you mean, like, they can fuck you up?"
+      ),
+      segment(
+        "microphone",
+        45.2,
+        "Say you when you say impactful, you mean, like, Well, I don't know. I know they can really mess some stuff up."
+      ),
+    ];
+
+    expect(suppressEchoSegments(segments).map((item) => item.text)).toEqual([
+      "Say you when you say impactful, you mean, like, they can fuck you up?",
+      "Well, I don't know. I know they can really mess some stuff up.",
+    ]);
+  });
+
+  it("keeps a near-duplicate local response after the remote speaker finishes", () => {
+    const segments: SourceTranscriptSegment[] = [
+      segment("systemAudio", 60, "I think it would be seven days free trial."),
+      segment("microphone", 63, "I think we do seven days free trial."),
+    ];
+
+    expect(suppressEchoSegments(segments).map((item) => item.text)).toEqual([
+      "I think it would be seven days free trial.",
+      "I think we do seven days free trial.",
+    ]);
+  });
+
   it("splits sentence-like word groups so local speech survives partial echo", () => {
     const micWords = wordsFromText(
       "Good. It's time for summer. Yeah. Exactly.",

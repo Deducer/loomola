@@ -52,6 +52,66 @@ final class LiveTranscriptEchoSuppressorTests: XCTestCase {
         )
     }
 
+    func testSuppressesGarbledRemoteSpeechLeakingIntoMicrophone() {
+        let segments = [
+            segment(
+                source: .systemAudio,
+                start: 30,
+                text: "Everyone is have basically, like, I like, everyone's like, it takes weeks."
+            ),
+            segment(
+                source: .microphone,
+                start: 31.1,
+                text: "And, like, everyone has had basically, like, I like, everyone's gonna take weeks."
+            ),
+        ]
+
+        XCTAssertEqual(
+            TranscriptEchoSuppressor.filtered(segments).map(\.text),
+            [
+                "Everyone is have basically, like, I like, everyone's like, it takes weeks.",
+            ]
+        )
+    }
+
+    func testTrimsEchoedRemotePrefixWhileKeepingLocalSpeech() {
+        let segments = [
+            segment(
+                source: .systemAudio,
+                start: 45,
+                text: "Say you when you say impactful, you mean, like, they can fuck you up?"
+            ),
+            segment(
+                source: .microphone,
+                start: 45.2,
+                text: "Say you when you say impactful, you mean, like, Well, I don't know. I know they can really mess some stuff up."
+            ),
+        ]
+
+        XCTAssertEqual(
+            TranscriptEchoSuppressor.filtered(segments).map(\.text),
+            [
+                "Say you when you say impactful, you mean, like, they can fuck you up?",
+                "Well, I don't know. I know they can really mess some stuff up.",
+            ]
+        )
+    }
+
+    func testKeepsNearDuplicateLocalResponseAfterRemoteSpeakerFinishes() {
+        let segments = [
+            segment(source: .systemAudio, start: 60, text: "I think it would be seven days free trial."),
+            segment(source: .microphone, start: 63, text: "I think we do seven days free trial."),
+        ]
+
+        XCTAssertEqual(
+            TranscriptEchoSuppressor.filtered(segments).map(\.text),
+            [
+                "I think it would be seven days free trial.",
+                "I think we do seven days free trial.",
+            ]
+        )
+    }
+
     func testSplitsSentenceLikeGroupsBeforeSuppressingEcho() {
         let mic = segment(
             source: .microphone,

@@ -289,10 +289,24 @@ struct TranscriptEchoSuppressor {
     static func filtered(_ segments: [LiveTranscriptSegment]) -> [LiveTranscriptSegment] {
         let ordered = segments.sorted(by: sortSegments)
         let systemSegments = ordered.filter { $0.source == .systemAudio }
-        return ordered.filter { segment in
-            guard segment.source == .microphone else { return true }
-            return !systemSegments.contains { isEcho(mic: segment, system: $0) }
+        var kept: [LiveTranscriptSegment] = []
+
+        for segment in ordered {
+            guard segment.source == .microphone else {
+                kept.append(segment)
+                continue
+            }
+
+            var current: LiveTranscriptSegment? = segment
+            for system in systemSegments {
+                guard let candidate = current else { break }
+                current = suppressEcho(from: candidate, system: system)
+            }
+            if let current {
+                kept.append(current)
+            }
         }
+        return kept.sorted(by: sortSegments)
     }
 
     private static func makeSegment(
@@ -332,9 +346,76 @@ struct TranscriptEchoSuppressor {
             return micTokens == systemTokens
         }
 
-        let score = similarity(micTokens, systemTokens)
+        let metrics = similarityMetrics(micTokens, systemTokens)
         let threshold = shorterCount <= 4 ? 0.8 : 0.72
-        return score >= threshold
+        if metrics.score >= threshold { return true }
+
+        guard hasTightOverlap(mic: mic, system: system) else { return false }
+        if shorterCount <= 6,
+           metrics.containment >= 0.58,
+           metrics.significantOverlap >= 2 {
+            return true
+        }
+        if metrics.containment >= 0.54,
+           metrics.significantOverlap >= 4 {
+            return true
+        }
+        if metrics.longestRun >= 4,
+           metrics.longestSignificantRun >= 2 || metrics.longestRun >= 6 {
+            return true
+        }
+        return false
+    }
+
+    private static func suppressEcho(
+        from mic: LiveTranscriptSegment,
+        system: LiveTranscriptSegment
+    ) -> LiveTranscriptSegment? {
+        guard isNearby(mic: mic, system: system) else { return mic }
+
+        let trimResult = trimBoundaryEcho(mic: mic, system: system)
+        if trimResult.changed {
+            return trimResult.segment
+        }
+        if isEcho(mic: mic, system: system) {
+            return nil
+        }
+        return mic
+    }
+
+    private static func trimBoundaryEcho(
+        mic: LiveTranscriptSegment,
+        system: LiveTranscriptSegment
+    ) -> (segment: LiveTranscriptSegment?, changed: Bool) {
+        guard hasTightOverlap(mic: mic, system: system),
+              !mic.words.isEmpty,
+              !system.words.isEmpty
+        else { return (mic, false) }
+
+        let micTokens = mic.words.map { normalizedWord($0.word) }
+        let systemTokens = system.words.map { normalizedWord($0.word) }
+        let prefixLength = boundaryMatchLength(
+            micTokens: micTokens,
+            systemTokens: systemTokens,
+            boundary: .prefix
+        )
+        let suffixLength = boundaryMatchLength(
+            micTokens: micTokens,
+            systemTokens: systemTokens,
+            boundary: .suffix
+        )
+        let trimStart = shouldTrimBoundaryMatch(Array(micTokens.prefix(prefixLength)))
+            ? prefixLength
+            : 0
+        let trimEnd = shouldTrimBoundaryMatch(Array(micTokens.suffix(suffixLength)))
+            ? suffixLength
+            : 0
+
+        guard trimStart > 0 || trimEnd > 0 else { return (mic, false) }
+        guard trimStart + trimEnd < mic.words.count else { return (nil, true) }
+
+        let keptWords = Array(mic.words[trimStart..<(mic.words.count - trimEnd)])
+        return (makeSegment(source: mic.source, words: keptWords), true)
     }
 
     private static func isNearby(
@@ -347,15 +428,122 @@ struct TranscriptEchoSuppressor {
         return paddedOverlap || startsClose
     }
 
-    private static func similarity(_ lhs: [String], _ rhs: [String]) -> Double {
+    private static func hasTightOverlap(
+        mic: LiveTranscriptSegment,
+        system: LiveTranscriptSegment
+    ) -> Bool {
+        mic.startSec <= system.endSec + 0.35 &&
+            system.startSec <= mic.endSec + 0.35
+    }
+
+    private struct SimilarityMetrics {
+        let score: Double
+        let containment: Double
+        let significantOverlap: Int
+        let longestRun: Int
+        let longestSignificantRun: Int
+    }
+
+    private static func similarityMetrics(_ lhs: [String], _ rhs: [String]) -> SimilarityMetrics {
         let left = Set(lhs)
         let right = Set(rhs)
         let intersection = left.intersection(right).count
         let union = left.union(right).count
-        guard union > 0 else { return 0 }
+        guard union > 0 else {
+            return SimilarityMetrics(
+                score: 0,
+                containment: 0,
+                significantOverlap: 0,
+                longestRun: 0,
+                longestSignificantRun: 0
+            )
+        }
         let jaccard = Double(intersection) / Double(union)
         let containment = Double(intersection) / Double(min(left.count, right.count))
-        return max(jaccard, containment * 0.95)
+        let run = longestCommonRun(lhs, rhs)
+        let significantOverlap = left
+            .filter { right.contains($0) && isSignificantToken($0) }
+            .count
+        return SimilarityMetrics(
+            score: max(jaccard, containment * 0.95),
+            containment: containment,
+            significantOverlap: significantOverlap,
+            longestRun: run.length,
+            longestSignificantRun: run.significantLength
+        )
+    }
+
+    private static func longestCommonRun(
+        _ lhs: [String],
+        _ rhs: [String]
+    ) -> (length: Int, significantLength: Int) {
+        var bestLength = 0
+        var bestSignificantLength = 0
+
+        for leftIndex in lhs.indices {
+            for rightIndex in rhs.indices {
+                var length = 0
+                var significantLength = 0
+                while leftIndex + length < lhs.count,
+                      rightIndex + length < rhs.count,
+                      lhs[leftIndex + length] == rhs[rightIndex + length] {
+                    if isSignificantToken(lhs[leftIndex + length]) {
+                        significantLength += 1
+                    }
+                    length += 1
+                }
+                if length > bestLength {
+                    bestLength = length
+                    bestSignificantLength = significantLength
+                }
+            }
+        }
+
+        return (bestLength, bestSignificantLength)
+    }
+
+    private enum Boundary {
+        case prefix
+        case suffix
+    }
+
+    private static func boundaryMatchLength(
+        micTokens: [String],
+        systemTokens: [String],
+        boundary: Boundary
+    ) -> Int {
+        var best = 0
+
+        switch boundary {
+        case .prefix:
+            for systemStart in systemTokens.indices {
+                var length = 0
+                while length < micTokens.count,
+                      systemStart + length < systemTokens.count,
+                      micTokens[length] == systemTokens[systemStart + length] {
+                    length += 1
+                }
+                best = max(best, length)
+            }
+        case .suffix:
+            for systemEnd in systemTokens.indices {
+                var length = 0
+                while length < micTokens.count,
+                      systemEnd - length >= 0,
+                      micTokens[micTokens.count - 1 - length] == systemTokens[systemEnd - length] {
+                    length += 1
+                }
+                best = max(best, length)
+            }
+        }
+
+        return best
+    }
+
+    private static func shouldTrimBoundaryMatch(_ tokens: [String]) -> Bool {
+        guard tokens.count >= 4 else { return false }
+        let significantCount = tokens.filter(isSignificantToken).count
+        return tokens.count >= 6 || significantCount >= 2
     }
 
     private static func normalizedTokens(_ text: String) -> [String] {
@@ -372,6 +560,51 @@ struct TranscriptEchoSuppressor {
             }
         }
         return normalized.split(separator: " ").map(String.init)
+    }
+
+    private static func normalizedWord(_ text: String) -> String {
+        normalizedTokens(text).joined()
+    }
+
+    private static let insignificantTokens: Set<String> = [
+        "a",
+        "an",
+        "and",
+        "are",
+        "be",
+        "but",
+        "can",
+        "do",
+        "for",
+        "got",
+        "had",
+        "has",
+        "have",
+        "i",
+        "in",
+        "is",
+        "it",
+        "like",
+        "me",
+        "of",
+        "on",
+        "or",
+        "so",
+        "that",
+        "the",
+        "this",
+        "to",
+        "was",
+        "we",
+        "what",
+        "when",
+        "with",
+        "yeah",
+        "you",
+    ]
+
+    private static func isSignificantToken(_ token: String) -> Bool {
+        token.count >= 3 && !insignificantTokens.contains(token)
     }
 
     private static func shouldEndSentence(at word: String) -> Bool {
