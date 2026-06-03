@@ -20,6 +20,7 @@ final class RecorderViewModel: ObservableObject {
     @Published private(set) var statusMessage = "Sign in to capture with Loomola."
     @Published private(set) var configuration: DesktopAuthConfiguration?
     @Published private(set) var activeRecordingKind: DesktopRecordingKind?
+    @Published private(set) var finalizingRecordingKind: DesktopRecordingKind?
     @Published private(set) var activeAudioRecordingStartedAt: Date?
     @Published private(set) var activeAudioRecordingSlug: String?
     /// Backend media_object UUID for the active audio recording.
@@ -421,6 +422,7 @@ final class RecorderViewModel: ObservableObject {
             try? await authService.signOut()
             accessToken = nil
             activeRecordingKind = nil
+            finalizingRecordingKind = nil
             activeAudioRecordingStartedAt = nil
             state = .signedOut
             statusMessage = "Signed out."
@@ -828,6 +830,7 @@ final class RecorderViewModel: ObservableObject {
     /// the Recent strip.
     func acknowledgeUploadComplete() {
         guard case .complete = state else { return }
+        finalizingRecordingKind = nil
         state = .signedInIdle
         statusMessage = "Ready to record."
     }
@@ -951,6 +954,7 @@ final class RecorderViewModel: ObservableObject {
         // SwiftUI repaint (showing "Starting..." status + disabling
         // the Start button) before we hand off to a background task.
         isStartingRecording = true
+        finalizingRecordingKind = nil
         statusMessage = "Starting composite recording..."
 
         let micDeviceID = selectedMicDeviceID
@@ -1027,6 +1031,7 @@ final class RecorderViewModel: ObservableObject {
         compositeRecorder = compositor
         activeVideoRecordingStartedAt = Date()
         activeRecordingURL = outputURL
+        finalizingRecordingKind = nil
         activeRecordingKind = .video
         activeCompositeRecordingToken = startToken
         state = .recording
@@ -1049,6 +1054,7 @@ final class RecorderViewModel: ObservableObject {
             compositeMicCoordinator = nil
             activeVideoRecordingStartedAt = nil
             activeRecordingKind = nil
+            finalizingRecordingKind = nil
             activeCompositeRecordingToken = nil
             activeRecordingURL = nil
             state = .failed(message: error.localizedDescription)
@@ -1063,6 +1069,7 @@ final class RecorderViewModel: ObservableObject {
         compositeStartWatchdogTask?.cancel()
         compositeStartWatchdogTask = nil
         isStartingRecording = false
+        finalizingRecordingKind = nil
         state = .failed(message: error.localizedDescription)
         statusMessage = "Composite recorder setup failed: \(error.localizedDescription)"
     }
@@ -1072,6 +1079,7 @@ final class RecorderViewModel: ObservableObject {
         pendingCompositeStartToken = nil
         activeCompositeRecordingToken = nil
         isStartingRecording = false
+        finalizingRecordingKind = nil
         state = .failed(message: "Video recorder took too long to start.")
         statusMessage = "Video recorder took too long to start. Try again, or check Screen Recording and Microphone permissions."
         try? FileManager.default.removeItem(at: outputURL)
@@ -1165,6 +1173,7 @@ final class RecorderViewModel: ObservableObject {
         // the user sees no feedback after clicking Stop & upload —
         // the timer goes to 00:00 but the surface stays the same,
         // and they re-click thinking the first click missed.
+        finalizingRecordingKind = .video
         activeRecordingKind = nil
         state = .finalizing
         statusMessage = "Finalizing composite recording..."
@@ -1255,6 +1264,7 @@ final class RecorderViewModel: ObservableObject {
             pendingCompositeStartToken = nil
             activeCompositeRecordingToken = nil
             isStartingRecording = false
+            finalizingRecordingKind = nil
             state = .signedInIdle
             statusMessage = "Recording start cancelled."
             return
@@ -1274,6 +1284,7 @@ final class RecorderViewModel: ObservableObject {
         compositeRecorder = nil
         compositeMicCoordinator = nil
         activeVideoRecordingStartedAt = nil
+        finalizingRecordingKind = nil
         activeRecordingKind = nil
         activeRecordingURL = nil
         state = .signedInIdle
@@ -1311,6 +1322,7 @@ final class RecorderViewModel: ObservableObject {
         // Flip isStartingRecording so the button shows "Starting…"
         // and disables — without this the click looked dead.
         isStartingRecording = true
+        finalizingRecordingKind = nil
         state = .preparingPermissions
         statusMessage = "Starting audio note..."
         let trimmedTitle = audioTitle.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1372,6 +1384,7 @@ final class RecorderViewModel: ObservableObject {
                     systemAudioDeviceID: systemAudioDeviceID
                 )
                 recorderLog.notice("startAudioNoteRecording — succeeded (backendId=\(session.backendRecordingId ?? "nil", privacy: .public), slug=\(session.backendSlug ?? "nil", privacy: .public), tracks=\(session.tracks.count, privacy: .public))")
+                finalizingRecordingKind = nil
                 activeRecordingKind = .audio
                 activeAudioRecordingStartedAt = Date()
                 activeAudioRecordingSlug = session.backendSlug
@@ -1391,6 +1404,7 @@ final class RecorderViewModel: ObservableObject {
                 liveTranscription.stop()
                 recorderLog.error("startAudioNoteRecording — FAILED: \(error.localizedDescription, privacy: .public) (\(String(describing: error), privacy: .public))")
                 activeRecordingKind = nil
+                finalizingRecordingKind = nil
                 activeAudioRecordingStartedAt = nil
                 state = .failed(message: error.localizedDescription)
                 statusMessage = "Audio note failed to start: \(error.localizedDescription)"
@@ -1505,6 +1519,7 @@ final class RecorderViewModel: ObservableObject {
                 folderName: nil
             )
         }
+        finalizingRecordingKind = .audio
         activeRecordingKind = nil
         activeAudioRecordingStartedAt = nil
         activeAudioRecordingSlug = nil
@@ -1543,6 +1558,7 @@ final class RecorderViewModel: ObservableObject {
                     }
                 }
                 state = .uploading(progress: 0.2)
+                statusMessage = "Uploading audio note..."
                 let complete = try await audioNoteRecorder.stopAndUpload()
                 activeAudioRecordingId = nil
                 liveNotesBody = ""
@@ -1765,6 +1781,7 @@ final class RecorderViewModel: ObservableObject {
         await audioNoteRecorder.cancel()
         liveTranscription.reset()
         activeRecordingKind = nil
+        finalizingRecordingKind = nil
         activeAudioRecordingStartedAt = nil
         activeAudioRecordingSlug = nil
         activeAudioRecordingId = nil
