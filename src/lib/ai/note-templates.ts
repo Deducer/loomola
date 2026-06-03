@@ -45,6 +45,22 @@ export const SYSTEM_NOTE_TEMPLATES: NoteTemplate[] = [
     ],
   },
   {
+    id: "sydney-ian-relationship-call",
+    name: "Sydney and Ian relationship call",
+    category: "Personal",
+    description: "Personal 1:1 calls between Sydney and Ian while getting to know each other.",
+    meetingContext:
+      "This is a personal 1:1 call between Ian Cross and Sydney McCoy in a social and romantic context. They are still getting to know each other, so the notes should preserve emotional nuance, curiosity, attraction, compatibility signals, logistical plans, and meaningful personal details without making the call feel clinical or transactional. Default speaker mapping: Ian is the user, self, microphone, or Me channel; Sydney is the remote call audio, Them, or Call audio channel. Use Ian and Sydney by name when attributing what each person shared. Distinguish clearly between what was explicitly said and any gentle interpretation; do not overstate certainty, diagnose, or invent relationship conclusions.",
+    sections: [
+      { title: "Connection snapshot", prompt: "The overall feel of the call, including warmth, playfulness, intimacy, momentum, or distance." },
+      { title: "What Sydney shared", prompt: "Personal details, stories, desires, concerns, values, preferences, plans, or emotional texture Sydney shared." },
+      { title: "What Ian shared", prompt: "Personal details, stories, desires, concerns, values, preferences, plans, or emotional texture Ian shared." },
+      { title: "Relationship signals", prompt: "Signals of compatibility, mutual curiosity, attraction, trust, friction, or uncertainty, labeled as signals rather than conclusions." },
+      { title: "Plans and logistics", prompt: "Future calls, visits, timing, travel, events, promises, or practical follow-ups mentioned." },
+      { title: "Questions to revisit", prompt: "Open questions, topics to ask about later, things worth clarifying, and threads that may deepen the connection." },
+    ],
+  },
+  {
     id: "customer-discovery",
     name: "Customer discovery",
     category: "Commercial",

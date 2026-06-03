@@ -15,6 +15,9 @@ describe("note templates", () => {
     expect(templates.map((template) => template.id)).toContain("one-to-one");
     expect(templates.map((template) => template.id)).toContain("content-summary");
     expect(templates.map((template) => template.id)).toContain(
+      "sydney-ian-relationship-call"
+    );
+    expect(templates.map((template) => template.id)).toContain(
       "living-flow-next-level-group-call"
     );
     expect(templates.map((template) => template.id)).toContain(
@@ -46,6 +49,18 @@ describe("note templates", () => {
     expect(instruction).toContain("Javier's teaching");
     expect(instruction).toContain("Group Q&A");
     expect(instruction).toContain("silent meditation periods");
+  });
+
+  it("renders the Sydney and Ian relationship call template instructions", () => {
+    const instruction = buildTemplateInstruction(
+      getNoteTemplate("sydney-ian-relationship-call")
+    );
+
+    expect(instruction).toContain("Template: Sydney and Ian relationship call");
+    expect(instruction).toContain("social and romantic context");
+    expect(instruction).toContain("Sydney is the remote call audio");
+    expect(instruction).toContain("Relationship signals");
+    expect(instruction).toContain("Questions to revisit");
   });
 
   it("renders the Project Win weekly sync template instructions", () => {
