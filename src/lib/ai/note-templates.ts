@@ -179,6 +179,23 @@ export const SYSTEM_NOTE_TEMPLATES: NoteTemplate[] = [
       { title: "Closing meditation and takeaways", prompt: "Closing practice guidance, final reminders, and the most important takeaways to carry forward." },
     ],
   },
+  {
+    id: "project-win-weekly-sync",
+    name: "Project Win weekly sync",
+    category: "Project Win",
+    description: "Ian and Abb's weekly founder sync for Project Win LLC.",
+    meetingContext:
+      "This is the weekly Project Win LLC founder sync between Ian Cross and Abb Kapoor. Default speaker mapping: Ian is the user, self, microphone, or Me channel; Abb is the remote call audio, Them, or Call audio channel. Use Ian and Abb by name when attributing viewpoints, task ownership, decisions, and uncertainty. Turn the call into an operating record for the Project Win OS: capture founder context, key topics, actual decisions, singular-owner action items, new or updated venture ideas, open questions, and parking-lot items. Be generous about ideas, strict about decisions, and never invent owners, due dates, or commitments.",
+    sections: [
+      { title: "Summary", prompt: "A concise operating summary of what happened, what changed, and what matters before the next sync." },
+      { title: "Founder context", prompt: "Personal, professional, capacity, or relationship context that materially affects Project Win execution." },
+      { title: "Key topics", prompt: "Main discussion threads, grouped by project, venture, operating-system topic, or strategic question." },
+      { title: "Decisions made", prompt: "Only actual agreements or explicit commitments, with rationale and who the decision belongs to when clear." },
+      { title: "Action items", prompt: "Specific next actions with a single owner, due dates or dependencies when stated, and unclear fields marked rather than invented." },
+      { title: "Ideas and opportunities", prompt: "New venture ideas, product angles, distribution plays, validation paths, or updates to existing Project Win ideas." },
+      { title: "Open questions and parking lot", prompt: "Unresolved questions, deferred topics, risks, and items to revisit in a future sync." },
+    ],
+  },
 ];
 
 const TEMPLATE_BY_ID = new Map(

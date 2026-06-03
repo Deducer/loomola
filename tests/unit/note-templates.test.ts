@@ -17,6 +17,9 @@ describe("note templates", () => {
     expect(templates.map((template) => template.id)).toContain(
       "living-flow-next-level-group-call"
     );
+    expect(templates.map((template) => template.id)).toContain(
+      "project-win-weekly-sync"
+    );
   });
 
   it("falls back to the default template for unknown ids", () => {
@@ -43,5 +46,17 @@ describe("note templates", () => {
     expect(instruction).toContain("Javier's teaching");
     expect(instruction).toContain("Group Q&A");
     expect(instruction).toContain("silent meditation periods");
+  });
+
+  it("renders the Project Win weekly sync template instructions", () => {
+    const instruction = buildTemplateInstruction(
+      getNoteTemplate("project-win-weekly-sync")
+    );
+
+    expect(instruction).toContain("Template: Project Win weekly sync");
+    expect(instruction).toContain("Ian is the user");
+    expect(instruction).toContain("Abb is the remote call audio");
+    expect(instruction).toContain("singular-owner action items");
+    expect(instruction).toContain("Ideas and opportunities");
   });
 });
