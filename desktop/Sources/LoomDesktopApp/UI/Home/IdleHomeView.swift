@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Main "signed-in, not recording" surface. Big "Capture" headline,
-/// hero CTA card, optional meeting prompt, and a Recent strip.
+/// Main "signed-in, not recording" surface. Centered capture card,
+/// optional meeting prompt, and a Recent strip.
 struct IdleHomeView: View {
     @ObservedObject var viewModel: RecorderViewModel
     @ObservedObject var recentService: RecentRecordingsService
@@ -11,6 +11,8 @@ struct IdleHomeView: View {
     let onOpenLiveAudioNote: () -> Void
     let onOpenAudioNote: (RecentRecording) -> Void
 
+    private let homeContentMaxWidth: CGFloat = 1080
+
     private var activeFolderName: String? {
         guard let folderFilterId else { return nil }
         return recentService.folders.first(where: { $0.id == folderFilterId })?.name
@@ -19,20 +21,11 @@ struct IdleHomeView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DSSpacing.xl) {
-                Text("Capture")
-                    .font(DSFont.Display.xl())
-                    .foregroundStyle(DSColor.Text.primary)
-                    .padding(.top, topContentPadding)
-
                 if let message = homeStatusMessage {
                     homeStatusBanner(message)
                 }
 
-                if viewModel.activeRecordingKind == .audio {
-                    activeAudioRecordingCard
-                } else {
-                    heroCard
-                }
+                primarySurface
 
                 if let context = viewModel.meetingPromptContext {
                     meetingPromptCard(context: context)
@@ -46,11 +39,13 @@ struct IdleHomeView: View {
                     onClearFolderFilter: { folderFilterId = nil },
                     onOpenAudioNote: onOpenAudioNote
                 )
-                .padding(.top, DSSpacing.lg)
+                .padding(.top, DSSpacing.md)
             }
+            .padding(.top, topContentPadding)
             .padding(.horizontal, DSSpacing.xxl)
             .padding(.bottom, DSSpacing.xxl)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: homeContentMaxWidth, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
         }
     }
 
@@ -83,6 +78,15 @@ struct IdleHomeView: View {
             RoundedRectangle(cornerRadius: DSRadius.md)
                 .strokeBorder(DSColor.Border.subtle, lineWidth: 1)
         )
+    }
+
+    @ViewBuilder
+    private var primarySurface: some View {
+        if viewModel.activeRecordingKind == .audio {
+            activeAudioRecordingCard
+        } else {
+            heroCard
+        }
     }
 
     private var heroCard: some View {
