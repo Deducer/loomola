@@ -163,6 +163,22 @@ export const SYSTEM_NOTE_TEMPLATES: NoteTemplate[] = [
       { title: "Follow-up", prompt: "Questions to investigate, ideas to try, or references to find." },
     ],
   },
+  {
+    id: "living-flow-next-level-group-call",
+    name: "Living Flow Next Level group call",
+    category: "Spiritual practice",
+    description: "Weekly meditation group with teaching, group Q&A, and integration.",
+    meetingContext:
+      "This is a Living Flow Next Level weekly meditation and spiritual group call. The call usually includes an opening meditation, a teaching from Javier, group questions and answers, and a closing meditation. Capture the lived teaching, practical guidance, questions, practices, and integration themes. Respect the spiritual language used in the call, but do not invent mystical claims or summarize silent meditation periods unless guidance was spoken.",
+    sections: [
+      { title: "Session arc", prompt: "The overall flow of the call, including meditation, teaching, Q&A, and closing integration when present." },
+      { title: "Opening meditation", prompt: "Guidance, themes, instructions, or experiential cues from the opening meditation; omit silent portions with no spoken content." },
+      { title: "Javier's teaching", prompt: "Core teaching, stories, distinctions, metaphors, practices, and spiritual principles Javier emphasized." },
+      { title: "Group Q&A", prompt: "Questions from participants and Javier's answers, grouped by topic or person when names are clear." },
+      { title: "Practices and invitations", prompt: "Exercises, contemplations, homework, ways of practicing during the week, and concrete integration guidance." },
+      { title: "Closing meditation and takeaways", prompt: "Closing practice guidance, final reminders, and the most important takeaways to carry forward." },
+    ],
+  },
 ];
 
 const TEMPLATE_BY_ID = new Map(

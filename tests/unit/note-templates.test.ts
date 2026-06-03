@@ -14,6 +14,9 @@ describe("note templates", () => {
     expect(templates.length).toBeGreaterThanOrEqual(10);
     expect(templates.map((template) => template.id)).toContain("one-to-one");
     expect(templates.map((template) => template.id)).toContain("content-summary");
+    expect(templates.map((template) => template.id)).toContain(
+      "living-flow-next-level-group-call"
+    );
   });
 
   it("falls back to the default template for unknown ids", () => {
@@ -28,5 +31,17 @@ describe("note templates", () => {
     expect(instruction).toContain("Template: Product demo");
     expect(instruction).toContain("Demo flow");
     expect(instruction).toContain("Questions and objections");
+  });
+
+  it("renders the Living Flow group call template instructions", () => {
+    const instruction = buildTemplateInstruction(
+      getNoteTemplate("living-flow-next-level-group-call")
+    );
+
+    expect(instruction).toContain("Template: Living Flow Next Level group call");
+    expect(instruction).toContain("opening meditation");
+    expect(instruction).toContain("Javier's teaching");
+    expect(instruction).toContain("Group Q&A");
+    expect(instruction).toContain("silent meditation periods");
   });
 });
