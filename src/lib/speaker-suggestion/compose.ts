@@ -31,7 +31,9 @@ export interface SpeakerSuggestion {
  *   - fewer than 2 distinct speakers detected
  *   - attendee count != speaker count - 1 (Path B doesn't guess when
  *     numbers don't line up — voice biometrics in Path C will)
- *   - self-detection inconclusive (top two speakers within 5%)
+ *   - self-detection inconclusive (top two speakers within 5%), unless
+ *     the transcript came from Loomola's source-separated mic/system
+ *     channels and the meeting is a simple 1:1
  *
  * The caller persists each returned suggestion as a row in
  * speaker_assignments with is_suggestion = true.
@@ -41,8 +43,9 @@ export function composeSpeakerSuggestions(args: {
   attendees: ReadonlyArray<ParsedAttendee>;
   people: ReadonlyArray<PersonCandidate>;
   selfPersonId: string | null;
+  sourceSeparated?: boolean;
 }): SpeakerSuggestion[] {
-  const { words, attendees, people, selfPersonId } = args;
+  const { words, attendees, people, selfPersonId, sourceSeparated } = args;
 
   if (!selfPersonId) return [];
   if (attendees.length === 0) return [];
@@ -57,6 +60,29 @@ export function composeSpeakerSuggestions(args: {
 
   // Path B's strict-only rule: attendees + 1 (you) must equal speaker count.
   if (attendees.length !== speakers.length - 1) return [];
+
+  if (
+    sourceSeparated &&
+    attendees.length === 1 &&
+    speakers.length === 2 &&
+    speakers[0] === 0 &&
+    speakers[1] === 1
+  ) {
+    const attendeeSuggestion = suggestionForAttendee({
+      speakerIdx: 1,
+      attendee: attendees[0],
+      people,
+    });
+    return [
+      {
+        speakerIdx: 0,
+        personId: selfPersonId,
+        confidence: "high",
+        reason: "self_via_source_channel",
+      },
+      attendeeSuggestion,
+    ];
+  }
 
   const selfIdx = detectSelfSpeakerIdx(words);
   if (selfIdx === null) return [];
@@ -77,28 +103,37 @@ export function composeSpeakerSuggestions(args: {
   for (let i = 0; i < otherSpeakers.length; i++) {
     const speakerIdx = otherSpeakers[i];
     const attendee = attendees[i];
-    const matched = matchPerson({ candidates: people, attendee });
-    if (matched.confidence === "none") {
-      // Suggest creating a new Person from the attendee's data.
-      result.push({
-        speakerIdx,
-        personId: null,
-        confidence: "medium",
-        reason: "new_person_from_attendee",
-        suggestedNewPerson: {
-          displayName: attendee.displayName,
-          email: attendee.email,
-        },
-      });
-    } else {
-      result.push({
-        speakerIdx,
-        personId: matched.personId,
-        confidence: matched.confidence,
-        reason: matched.reason,
-      });
-    }
+    result.push(suggestionForAttendee({ speakerIdx, attendee, people }));
   }
 
   return result;
+}
+
+function suggestionForAttendee(args: {
+  speakerIdx: number;
+  attendee: ParsedAttendee;
+  people: ReadonlyArray<PersonCandidate>;
+}): SpeakerSuggestion {
+  const matched = matchPerson({
+    candidates: args.people,
+    attendee: args.attendee,
+  });
+  if (matched.confidence === "none") {
+    return {
+      speakerIdx: args.speakerIdx,
+      personId: null,
+      confidence: "medium",
+      reason: "new_person_from_attendee",
+      suggestedNewPerson: {
+        displayName: args.attendee.displayName,
+        email: args.attendee.email,
+      },
+    };
+  }
+  return {
+    speakerIdx: args.speakerIdx,
+    personId: matched.personId,
+    confidence: matched.confidence,
+    reason: matched.reason,
+  };
 }

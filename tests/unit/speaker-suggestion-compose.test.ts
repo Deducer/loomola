@@ -81,6 +81,31 @@ describe("composeSpeakerSuggestions", () => {
     expect(bySpeaker.get(1)?.confidence).toBe("high");
   });
 
+  it("source-separated 1:1 path maps mic to self and system audio to attendee", () => {
+    const r = composeSpeakerSuggestions({
+      // Speaker 0 is the user's mic and speaker 1 is system/call audio.
+      // The remote attendee talks more, so duration-based self detection
+      // would pick the wrong speaker if we ignored the source channels.
+      words: [...w(0, 5), ...w(1, 30)],
+      attendees: [
+        {
+          personId: SARAH.id,
+          displayName: null,
+          email: null,
+        },
+      ],
+      people: [SELF, SARAH],
+      selfPersonId: SELF.id,
+      sourceSeparated: true,
+    });
+    expect(r).toHaveLength(2);
+    const bySpeaker = new Map(r.map((s) => [s.speakerIdx, s]));
+    expect(bySpeaker.get(0)?.personId).toBe(SELF.id);
+    expect(bySpeaker.get(0)?.reason).toBe("self_via_source_channel");
+    expect(bySpeaker.get(1)?.personId).toBe(SARAH.id);
+    expect(bySpeaker.get(1)?.reason).toBe("person_id_exact");
+  });
+
   it("happy 3-person path: 3 speakers, 2 known attendees", () => {
     const r = composeSpeakerSuggestions({
       // Speaker 0: 30s (host). Speakers 1, 2: 10s each.

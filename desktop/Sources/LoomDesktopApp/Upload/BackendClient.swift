@@ -58,6 +58,10 @@ actor BackendClient {
         try await get(path: "/api/folders")
     }
 
+    func listPeople() async throws -> [PersonDTO] {
+        try await get(path: "/api/people")
+    }
+
     func listNoteTemplates() async throws -> NoteTemplatesResponse {
         try await get(path: "/api/note-templates")
     }
@@ -78,11 +82,27 @@ actor BackendClient {
         )
     }
 
+    func assignRecordingAttendees(recordingId: String, personIds: [String]) async throws -> [String] {
+        let response: AssignAttendeesResponse = try await jsonRequest(
+            method: "PATCH",
+            path: "/api/recordings/\(recordingId)/attendees",
+            body: AssignAttendeesRequest(personIds: personIds)
+        )
+        return response.attendees
+    }
+
     func updateRecordingTitle(recordingId: String, title: String) async throws {
         let _: EmptyResponse = try await jsonRequest(
             method: "PATCH",
             path: "/api/recordings/\(recordingId)",
             body: RecordingTitleRequest(title: title)
+        )
+    }
+
+    func createPerson(displayName: String, email: String?) async throws -> PersonDTO {
+        try await post(
+            path: "/api/people",
+            body: CreatePersonRequest(displayName: displayName, email: email)
         )
     }
 
@@ -607,6 +627,7 @@ struct RecentRecordingDTO: Decodable, Equatable, Sendable {
     let thumbnailUrl: String?
     let folderId: String?
     let folderName: String?
+    let attendees: [RecentAttendeeDTO]?
 
     init(
         id: String,
@@ -618,6 +639,7 @@ struct RecentRecordingDTO: Decodable, Equatable, Sendable {
         thumbnailUrl: String?,
         folderId: String?,
         folderName: String?,
+        attendees: [RecentAttendeeDTO]? = nil,
         status: String? = nil,
         transcriptReady: Bool? = nil
     ) {
@@ -632,7 +654,14 @@ struct RecentRecordingDTO: Decodable, Equatable, Sendable {
         self.thumbnailUrl = thumbnailUrl
         self.folderId = folderId
         self.folderName = folderName
+        self.attendees = attendees
     }
+}
+
+struct RecentAttendeeDTO: Decodable, Equatable, Sendable, Identifiable {
+    let id: String
+    let name: String
+    let email: String?
 }
 
 struct ListFoldersResponse: Decodable, Equatable, Sendable {
@@ -649,8 +678,28 @@ struct AssignFolderRequest: Encodable, Sendable {
     let folderId: String?
 }
 
+struct AssignAttendeesRequest: Encodable, Sendable {
+    let personIds: [String]
+}
+
+struct AssignAttendeesResponse: Decodable, Equatable, Sendable {
+    let attendees: [String]
+}
+
 struct RecordingTitleRequest: Encodable, Sendable {
     let title: String
+}
+
+struct PersonDTO: Decodable, Equatable, Sendable, Identifiable {
+    let id: String
+    let displayName: String
+    let email: String?
+    let isSelf: Bool
+}
+
+struct CreatePersonRequest: Encodable, Sendable {
+    let displayName: String
+    let email: String?
 }
 
 struct CreateFolderRequest: Encodable, Sendable {

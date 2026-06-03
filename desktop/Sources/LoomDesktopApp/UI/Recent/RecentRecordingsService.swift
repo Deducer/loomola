@@ -235,6 +235,7 @@ struct RecentRecording: Identifiable, Equatable {
     let thumbnailURL: URL?
     var folderId: String?
     var folderName: String?
+    var attendees: [RecentAttendeeDTO]
 
     init(
         id: String,
@@ -247,7 +248,8 @@ struct RecentRecording: Identifiable, Equatable {
         transcriptReady: Bool?,
         thumbnailURL: URL?,
         folderId: String?,
-        folderName: String?
+        folderName: String?,
+        attendees: [RecentAttendeeDTO] = []
     ) {
         self.id = id
         self.slug = slug
@@ -260,6 +262,7 @@ struct RecentRecording: Identifiable, Equatable {
         self.thumbnailURL = thumbnailURL
         self.folderId = folderId
         self.folderName = folderName
+        self.attendees = attendees
     }
 
     init?(dto: RecentRecordingDTO) {
@@ -285,6 +288,7 @@ struct RecentRecording: Identifiable, Equatable {
         self.thumbnailURL = dto.thumbnailUrl.flatMap { URL(string: $0) }
         self.folderId = dto.folderId
         self.folderName = dto.folderName
+        self.attendees = dto.attendees ?? []
     }
 
     /// Builds a copy with overridden folder assignment. Used by the

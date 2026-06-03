@@ -83,6 +83,7 @@ export async function runSuggestSpeakersJob(
     attendees,
     people,
     selfPersonId: selfPerson.id,
+    sourceSeparated: note.sourceSeparated,
   });
 
   if (suggestions.length === 0) {

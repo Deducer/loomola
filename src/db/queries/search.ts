@@ -6,8 +6,9 @@ import {
   brandProfiles,
   views,
   comments,
+  people,
 } from "@/db/schema";
-import { and, eq, isNull, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import type { RecordingWithBrand } from "./recordings";
 import { presignGet } from "@/lib/r2/presigned-get";
 
@@ -18,6 +19,60 @@ export type SearchSort =
   | "duration_asc"
   | "views_desc"
   | "title_asc";
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function parseAttendeeIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (item): item is string => typeof item === "string" && UUID_RE.test(item)
+  );
+}
+
+async function attendeeNamesForRows(
+  ownerId: string,
+  rows: Array<{ id: string; attendees: unknown }>
+): Promise<Map<string, string[]>> {
+  const personIds = Array.from(
+    new Set(rows.flatMap((row) => parseAttendeeIds(row.attendees)))
+  );
+  const result = new Map<string, string[]>();
+  if (personIds.length === 0) return result;
+
+  const peopleRows = await db
+    .select({
+      id: people.id,
+      displayName: people.displayName,
+    })
+    .from(people)
+    .where(and(eq(people.ownerId, ownerId), inArray(people.id, personIds)));
+  const peopleById = new Map(
+    peopleRows.map((person) => [person.id, person.displayName])
+  );
+
+  for (const row of rows) {
+    const names = parseAttendeeIds(row.attendees)
+      .map((id) => peopleById.get(id))
+      .filter((name): name is string => Boolean(name));
+    result.set(row.id, names);
+  }
+
+  return result;
+}
+
+function attendeeSearchCondition(query: string): SQL {
+  const like = `%${query}%`;
+  return sql`EXISTS (
+    SELECT 1 FROM ${people}
+    WHERE ${people.ownerId} = ${mediaObjects.ownerId}
+      AND ${mediaObjects.attendees} @> jsonb_build_array(${people.id}::text)
+      AND (
+        ${people.displayName} ILIKE ${like}
+        OR ${people.email} ILIKE ${like}
+      )
+  )`;
+}
 
 export async function searchRecordings(params: {
   ownerId: string;
@@ -63,12 +118,15 @@ export async function searchRecordings(params: {
     : sql<number>`0::float4`;
 
   if (hasQuery) {
+    const textSearchCondition = sql`(
+      coalesce(${mediaObjects.searchTsv}, ''::tsvector) ||
+      coalesce(${aiOutputs.searchTsv}, ''::tsvector) ||
+      coalesce(${transcripts.searchTsv}, ''::tsvector)
+    ) @@ websearch_to_tsquery('english', ${q})`;
     conditions.push(
-      sql`(
-        coalesce(${mediaObjects.searchTsv}, ''::tsvector) ||
-        coalesce(${aiOutputs.searchTsv}, ''::tsvector) ||
-        coalesce(${transcripts.searchTsv}, ''::tsvector)
-      ) @@ websearch_to_tsquery('english', ${q})`
+      params.type === "audio"
+        ? sql`(${textSearchCondition} OR ${attendeeSearchCondition(q!)})`
+        : textSearchCondition
     );
   }
 
@@ -127,6 +185,14 @@ export async function searchRecordings(params: {
     .limit(limit)
     .offset(offset);
 
+  const attendeeNames =
+    params.type === "audio"
+      ? await attendeeNamesForRows(
+          params.ownerId,
+          rows.map((r) => ({ id: r.rec.id, attendees: r.rec.attendees }))
+        )
+      : new Map<string, string[]>();
+
   return Promise.all(
     rows.map(async (r) => {
       const dt = r.brandDefaultTheme;
@@ -153,8 +219,13 @@ export async function searchRecordings(params: {
                 | null,
           }
         : null;
+      const resolvedAttendeeNames = attendeeNames.get(r.rec.id);
       return {
         ...r.rec,
+        attendees:
+          resolvedAttendeeNames && resolvedAttendeeNames.length > 0
+            ? resolvedAttendeeNames
+            : r.rec.attendees,
         brand,
         aiTitle: r.aiTitle,
         aiSummary: r.aiSummary,

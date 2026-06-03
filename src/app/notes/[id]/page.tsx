@@ -101,6 +101,8 @@ export default async function NotesPage({
       people={people.map((person) => ({
         id: person.id,
         displayName: person.displayName,
+        email: person.email,
+        isSelf: person.isSelf,
       }))}
       speakerAssignments={speakerAssignments.map((assignment) => ({
         speakerIdx: assignment.speakerIdx,

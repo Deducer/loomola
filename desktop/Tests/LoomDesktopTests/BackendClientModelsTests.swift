@@ -77,6 +77,57 @@ final class BackendClientModelsTests: XCTestCase {
         XCTAssertEqual(tracks.map { $0["mimeType"] as? String }, ["audio/mp4", "audio/mp4"])
     }
 
+    func testRecentRecordingDecodesAttendees() throws {
+        let json = """
+        {
+          "id": "note-1",
+          "slug": "abc123",
+          "title": "Weekly sync",
+          "kind": "audio",
+          "createdAt": "2026-05-28T17:00:00.000Z",
+          "durationSeconds": 300,
+          "status": "ready",
+          "transcriptReady": true,
+          "thumbnailUrl": null,
+          "folderId": null,
+          "folderName": null,
+          "attendees": [
+            { "id": "person-1", "name": "Javier", "email": "javier@example.com" }
+          ]
+        }
+        """.data(using: .utf8)!
+
+        let dto = try JSONDecoder().decode(RecentRecordingDTO.self, from: json)
+        let recording = try XCTUnwrap(RecentRecording(dto: dto))
+
+        XCTAssertEqual(recording.attendees.first?.id, "person-1")
+        XCTAssertEqual(recording.attendees.first?.name, "Javier")
+    }
+
+    func testAssignAttendeesRequestUsesPersonIds() throws {
+        let request = AssignAttendeesRequest(personIds: ["person-1", "person-2"])
+        let data = try JSONEncoder().encode(request)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        XCTAssertEqual(object["personIds"] as? [String], ["person-1", "person-2"])
+    }
+
+    func testPersonDTODecodesPeopleEndpointShape() throws {
+        let json = """
+        {
+          "id": "person-1",
+          "displayName": "Ian Cross",
+          "email": "ian@example.com",
+          "isSelf": true
+        }
+        """.data(using: .utf8)!
+
+        let person = try JSONDecoder().decode(PersonDTO.self, from: json)
+
+        XCTAssertEqual(person.displayName, "Ian Cross")
+        XCTAssertTrue(person.isSelf)
+    }
+
     func testNoteTranscriptResponseDecodesParagraphsAndWordCount() throws {
         let json = """
         {

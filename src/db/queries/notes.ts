@@ -5,6 +5,8 @@ import {
   mediaObjects,
   noteAttachments,
   notes,
+  people,
+  speakerAssignments,
   transcripts,
 } from "@/db/schema";
 import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
@@ -32,6 +34,18 @@ export type ObsidianPendingNote = {
   id: string;
   slug: string;
 };
+
+export class AttendeeUpdateError extends Error {
+  constructor(
+    message:
+      | "media_object_not_found"
+      | "person_not_found"
+      | "self_person_not_attendee"
+  ) {
+    super(message);
+    this.name = "AttendeeUpdateError";
+  }
+}
 
 export async function createQuickAudioNote(ownerId: string): Promise<{
   id: string;
@@ -102,6 +116,63 @@ export async function upsertNoteTemplate(
     .returning();
 
   return row;
+}
+
+export async function updateAudioNoteAttendees(params: {
+  mediaObjectId: string;
+  ownerId: string;
+  personIds: string[];
+}): Promise<string[]> {
+  const personIds = Array.from(new Set(params.personIds));
+
+  if (personIds.length > 0) {
+    const rows = await db
+      .select({ id: people.id, isSelf: people.isSelf })
+      .from(people)
+      .where(
+        and(
+          eq(people.ownerId, params.ownerId),
+          inArray(people.id, personIds)
+        )
+      );
+    if (rows.length !== personIds.length) {
+      throw new AttendeeUpdateError("person_not_found");
+    }
+    if (rows.some((row) => row.isSelf)) {
+      throw new AttendeeUpdateError("self_person_not_attendee");
+    }
+  }
+
+  const [row] = await db
+    .update(mediaObjects)
+    .set({
+      attendees: personIds,
+      updatedAt: sql`now()`,
+    })
+    .where(
+      and(
+        eq(mediaObjects.id, params.mediaObjectId),
+        eq(mediaObjects.ownerId, params.ownerId),
+        eq(mediaObjects.type, "audio"),
+        isNull(mediaObjects.deletedAt)
+      )
+    )
+    .returning({ attendees: mediaObjects.attendees });
+
+  if (!row) throw new AttendeeUpdateError("media_object_not_found");
+
+  await db
+    .delete(speakerAssignments)
+    .where(
+      and(
+        eq(speakerAssignments.mediaObjectId, params.mediaObjectId),
+        eq(speakerAssignments.isSuggestion, true)
+      )
+    );
+
+  return Array.isArray(row.attendees)
+    ? row.attendees.filter((item): item is string => typeof item === "string")
+    : [];
 }
 
 export async function getNotesByMediaObject(

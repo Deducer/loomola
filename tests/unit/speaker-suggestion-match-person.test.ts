@@ -20,6 +20,20 @@ const PEOPLE = [
 ];
 
 describe("matchPerson", () => {
+  it("returns high confidence on exact person id match", () => {
+    const r = matchPerson({
+      candidates: PEOPLE,
+      attendee: {
+        personId: PEOPLE[1].id,
+        displayName: null,
+        email: null,
+      },
+    });
+    expect(r.confidence).toBe("high");
+    expect(r.personId).toBe(PEOPLE[1].id);
+    expect(r.reason).toBe("person_id_exact");
+  });
+
   it("returns high confidence on exact lowercased email match", () => {
     const r = matchPerson({
       candidates: PEOPLE,

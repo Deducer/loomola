@@ -401,11 +401,17 @@ function formatDuration(secondsValue: string | number | null): string | null {
 
 function attendeeLabel(value: unknown): string {
   if (!Array.isArray(value) || value.length === 0) return "Me";
-  const names = value.filter((item): item is string => typeof item === "string");
+  const names = value.filter(
+    (item): item is string =>
+      typeof item === "string" && !ATTENDEE_UUID_RE.test(item)
+  );
   if (names.length === 0) return "Me";
   if (names.length <= 2) return names.join(", ");
   return `${names.slice(0, 2).join(", ")} +${names.length - 2}`;
 }
+
+const ATTENDEE_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
  * Row-leading icon for the notes list. When the note has 1+ attached

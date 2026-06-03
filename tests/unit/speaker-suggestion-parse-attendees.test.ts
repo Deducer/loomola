@@ -21,6 +21,22 @@ describe("parseAttendees", () => {
     ]);
   });
 
+  it("parses UUID strings as person ids", () => {
+    expect(
+      parseAttendees([
+        "3541b953-2b90-4e3f-8594-5b4e54a005c4",
+        "Sarah Chen",
+      ])
+    ).toEqual([
+      {
+        personId: "3541b953-2b90-4e3f-8594-5b4e54a005c4",
+        displayName: null,
+        email: null,
+      },
+      { displayName: "Sarah Chen", email: null },
+    ]);
+  });
+
   it("parses array of objects with name/email", () => {
     expect(
       parseAttendees([
@@ -37,6 +53,23 @@ describe("parseAttendees", () => {
     expect(
       parseAttendees([{ displayName: "Sarah Chen", email: "sarah@x.com" }])
     ).toEqual([{ displayName: "Sarah Chen", email: "sarah@x.com" }]);
+  });
+
+  it("supports personId as an alternate key", () => {
+    expect(
+      parseAttendees([
+        {
+          personId: "3541b953-2b90-4e3f-8594-5b4e54a005c4",
+          displayName: "Sarah Chen",
+        },
+      ])
+    ).toEqual([
+      {
+        personId: "3541b953-2b90-4e3f-8594-5b4e54a005c4",
+        displayName: "Sarah Chen",
+        email: null,
+      },
+    ]);
   });
 
   it("normalizes emails to lowercase + trims whitespace", () => {
@@ -84,5 +117,17 @@ describe("parseAttendees", () => {
     expect(result).toHaveLength(2);
     expect(result[0].email).toBe("sarah@x.com");
     expect(result[1].email).toBe("alex@x.com");
+  });
+
+  it("dedupes by person id when present", () => {
+    const result = parseAttendees([
+      "3541b953-2b90-4e3f-8594-5b4e54a005c4",
+      {
+        personId: "3541b953-2b90-4e3f-8594-5b4e54a005c4",
+        displayName: "Sarah Chen",
+      },
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.personId).toBe("3541b953-2b90-4e3f-8594-5b4e54a005c4");
   });
 });

@@ -381,6 +381,13 @@ const SUGGEST_SPEAKERS_JOB_OPTIONS = {
   expireInSeconds: 300,
 };
 
+export async function enqueueSpeakerSuggestion(
+  data: SuggestSpeakersJobData
+): Promise<void> {
+  const boss = await getBoss();
+  await boss.send(SUGGEST_SPEAKERS_JOB, data, SUGGEST_SPEAKERS_JOB_OPTIONS);
+}
+
 export async function enqueueMixAudio(data: MixAudioJobData): Promise<void> {
   if (!enableGranola()) throw new Error("Granola is disabled");
   const boss = await getBoss();

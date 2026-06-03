@@ -29,6 +29,7 @@ import {
   MoreHorizontal,
   Pause,
   Play,
+  Plus,
   RefreshCcw,
   Sparkles,
   Trash2,
@@ -38,6 +39,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { TranscriptPanel } from "@/components/viewer/transcript-panel";
 import type {
@@ -69,7 +71,7 @@ type NotePageClientProps = {
   initialGenerationStatus: GenerationStatus;
   initialObsidianSaveState: ObsidianSaveState;
   initialObsidianPath: string;
-  people: TranscriptPerson[];
+  people: NotePerson[];
   speakerAssignments: TranscriptSpeakerAssignment[];
 };
 
@@ -80,6 +82,11 @@ type ObsidianSaveState = "idle" | "saving" | "queued" | "synced" | "error";
 type AttachmentSaveState = "idle" | "uploading" | "error";
 type TemplateSaveState = "idle" | "saving" | "error";
 type DictionaryApplyState = "idle" | "applying" | "applied" | "unchanged" | "error";
+
+type NotePerson = TranscriptPerson & {
+  email: string | null;
+  isSelf: boolean;
+};
 
 type NoteFolder = {
   id: string;
@@ -149,6 +156,15 @@ export function NotePageClient({
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [titleState, setTitleState] = useState<SaveState>("idle");
   const [transcriptOpen, setTranscriptOpen] = useState(false);
+  const [peopleState, setPeopleState] = useState(people);
+  const [attendeeIds, setAttendeeIds] = useState(() =>
+    attendeeIdsFromRaw(attendees)
+  );
+  const [legacyAttendeeNames, setLegacyAttendeeNames] = useState(() =>
+    attendeeNamesFromRaw(attendees)
+  );
+  const [attendeePickerOpen, setAttendeePickerOpen] = useState(false);
+  const [attendeeState, setAttendeeState] = useState<SaveState>("idle");
   const [speakerAssignmentsState, setSpeakerAssignmentsState] =
     useState(speakerAssignments);
   const [enhancedSummary, setEnhancedSummary] = useState(initialEnhancedSummary);
@@ -194,10 +210,23 @@ export function NotePageClient({
     if (!Number.isFinite(seconds) || seconds <= 0) return 0;
     return Math.min(100, Math.max(0, (currentTime / seconds) * 100));
   }, [currentTime, durationSeconds]);
+  const peopleById = useMemo(
+    () => new Map(peopleState.map((person) => [person.id, person])),
+    [peopleState]
+  );
+  const externalPeople = useMemo(
+    () => peopleState.filter((person) => !person.isSelf),
+    [peopleState]
+  );
+  const attendeeDisplayNames = useMemo(() => {
+    const names = attendeeIds
+      .map((id) => peopleById.get(id)?.displayName)
+      .filter((name): name is string => Boolean(name));
+    return names.length > 0 ? names : legacyAttendeeNames;
+  }, [attendeeIds, legacyAttendeeNames, peopleById]);
   const attendeeLabel = useMemo(() => {
-    if (!Array.isArray(attendees) || attendees.length === 0) return "Me";
-    return `${attendees.length + 1} people`;
-  }, [attendees]);
+    return formatAttendeeLabel(attendeeDisplayNames);
+  }, [attendeeDisplayNames]);
   const currentFolder = useMemo(
     () => folders.find((folder) => folder.id === folderId) ?? null,
     [folderId, folders]
@@ -418,6 +447,52 @@ export function NotePageClient({
       setFolderId(previousFolderId);
       setFolderState("error");
     }
+  }
+
+  async function updateAttendees(nextPersonIds: string[]) {
+    const uniqueIds = Array.from(new Set(nextPersonIds));
+    const previousIds = attendeeIds;
+    const previousLegacyNames = legacyAttendeeNames;
+    setAttendeeIds(uniqueIds);
+    setLegacyAttendeeNames([]);
+    setAttendeePickerOpen(false);
+    setAttendeeState("saving");
+    try {
+      const response = await fetch(`/api/recordings/${mediaId}/attendees`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ personIds: uniqueIds }),
+      });
+      if (!response.ok) throw new Error("attendees_failed");
+      const data = (await response.json()) as { attendees?: string[] };
+      setAttendeeIds(Array.isArray(data.attendees) ? data.attendees : uniqueIds);
+      setAttendeeState("saved");
+    } catch {
+      setAttendeeIds(previousIds);
+      setLegacyAttendeeNames(previousLegacyNames);
+      setAttendeeState("error");
+    }
+  }
+
+  async function createAttendeePerson(input: {
+    displayName: string;
+    email: string | null;
+  }): Promise<NotePerson> {
+    const response = await fetch("/api/people", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    if (!response.ok) throw new Error("person_create_failed");
+    const person = (await response.json()) as NotePerson;
+    const normalized = {
+      id: person.id,
+      displayName: person.displayName,
+      email: person.email ?? null,
+      isSelf: person.isSelf ?? false,
+    };
+    setPeopleState((current) => [normalized, ...current]);
+    return normalized;
   }
 
   async function requestObsidianSave() {
@@ -663,10 +738,27 @@ export function NotePageClient({
               <Calendar className="h-3.5 w-3.5" />
               {meetingDate}
             </span>
-            <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border bg-bg-subtle/80 px-3">
-              <Users className="h-3.5 w-3.5" />
-              {attendeeLabel}
-            </span>
+            <div className="relative">
+              <button
+                type="button"
+                aria-label="Change attendees"
+                onClick={() => setAttendeePickerOpen((open) => !open)}
+                className="inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-border bg-bg-subtle/80 px-3 transition-colors hover:border-border-strong hover:bg-bg-elevated hover:text-text"
+              >
+                <Users className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{attendeeLabel}</span>
+              </button>
+              {attendeePickerOpen && (
+                <AttendeePickerPopover
+                  people={externalPeople}
+                  selectedIds={attendeeIds}
+                  busy={attendeeState === "saving"}
+                  onSave={updateAttendees}
+                  onCreatePerson={createAttendeePerson}
+                  onClose={() => setAttendeePickerOpen(false)}
+                />
+              )}
+            </div>
             <div className="relative">
               <button
                 type="button"
@@ -706,6 +798,7 @@ export function NotePageClient({
             {templateState === "error" && (
               <span className="text-xs text-red-400">Template not saved</span>
             )}
+            <SaveIndicator state={attendeeState} />
             <SaveIndicator state={folderState} />
           </div>
           <NoteAttachments
@@ -770,7 +863,7 @@ export function NotePageClient({
               fullText={transcriptText}
               currentTime={currentTime}
               onSeek={seekTo}
-              people={people}
+              people={peopleState}
               speakerAssignments={speakerAssignmentsState}
               onSpeakerAssignmentsChange={setSpeakerAssignmentsState}
               tone="neutral"
@@ -943,6 +1036,180 @@ function FolderPickerPopover({
         ) : (
           <p className="px-2.5 py-2 text-xs text-text-subtle">No folders yet</p>
         )}
+      </div>
+    </>
+  );
+}
+
+function AttendeePickerPopover({
+  people,
+  selectedIds,
+  busy,
+  onSave,
+  onCreatePerson,
+  onClose,
+}: {
+  people: NotePerson[];
+  selectedIds: string[];
+  busy: boolean;
+  onSave: (personIds: string[]) => void;
+  onCreatePerson: (input: {
+    displayName: string;
+    email: string | null;
+  }) => Promise<NotePerson>;
+  onClose: () => void;
+}) {
+  const [draftIds, setDraftIds] = useState(selectedIds);
+  const [query, setQuery] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const draftSet = useMemo(() => new Set(draftIds), [draftIds]);
+  const filteredPeople = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return people;
+    return people.filter((person) => {
+      return (
+        person.displayName.toLowerCase().includes(q) ||
+        (person.email ?? "").toLowerCase().includes(q)
+      );
+    });
+  }, [people, query]);
+
+  function togglePerson(id: string) {
+    setDraftIds((current) => {
+      if (current.includes(id)) return current.filter((item) => item !== id);
+      return [...current, id];
+    });
+  }
+
+  async function createPerson() {
+    const displayName = newName.trim();
+    const email = newEmail.trim();
+    if (!displayName) return;
+    setCreating(true);
+    setError(null);
+    try {
+      const person = await onCreatePerson({
+        displayName,
+        email: email || null,
+      });
+      setDraftIds((current) =>
+        current.includes(person.id) ? current : [...current, person.id]
+      );
+      setNewName("");
+      setNewEmail("");
+      setQuery("");
+    } catch {
+      setError("Could not add person");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        className="fixed inset-0 z-[55] cursor-default"
+        aria-label="Close attendee picker"
+        onClick={onClose}
+      />
+      <div className="absolute left-0 top-9 z-[60] w-80 overflow-hidden rounded-xl border border-border-strong bg-bg-elevated p-2 text-sm text-text shadow-2xl shadow-black/30">
+        <div className="rounded-lg bg-bg-subtle/70 px-2.5 py-2">
+          <div className="flex items-center gap-2 text-text">
+            <Users className="h-3.5 w-3.5 text-text-subtle" />
+            <span className="min-w-0 flex-1 truncate font-medium">Me</span>
+            <Check className="h-3.5 w-3.5 text-emerald-400" />
+          </div>
+        </div>
+        <Input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search people"
+          className="mt-2 h-9 text-sm"
+        />
+        <div className="mt-2 max-h-48 overflow-y-auto">
+          {filteredPeople.length > 0 ? (
+            filteredPeople.map((person) => {
+              const selected = draftSet.has(person.id);
+              return (
+                <button
+                  key={person.id}
+                  type="button"
+                  onClick={() => togglePerson(person.id)}
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-bg-subtle",
+                    selected ? "text-text" : "text-text-muted"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                      selected
+                        ? "border-emerald-400 bg-emerald-400 text-neutral-950"
+                        : "border-border"
+                    )}
+                  >
+                    {selected && <Check className="h-3 w-3" strokeWidth={3} />}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">{person.displayName}</span>
+                    {person.email && (
+                      <span className="block truncate text-xs text-text-subtle">
+                        {person.email}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              );
+            })
+          ) : (
+            <p className="px-2.5 py-2 text-xs text-text-subtle">No people found</p>
+          )}
+        </div>
+        <div className="mt-2 border-t border-border pt-2">
+          <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+            <Input
+              value={newName}
+              onChange={(event) => setNewName(event.target.value)}
+              placeholder="Name"
+              className="h-9 text-sm"
+            />
+            <Input
+              value={newEmail}
+              onChange={(event) => setNewEmail(event.target.value)}
+              placeholder="Email"
+              type="email"
+              className="h-9 text-sm"
+            />
+            <Button
+              type="button"
+              size="sm"
+              onClick={createPerson}
+              disabled={creating || !newName.trim()}
+              className="h-9"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add
+            </Button>
+          </div>
+          {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
+        </div>
+        <div className="mt-3 flex justify-end gap-2">
+          <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => onSave(draftIds)}
+            disabled={busy || creating}
+          >
+            Save
+          </Button>
+        </div>
       </div>
     </>
   );
@@ -1384,6 +1651,33 @@ function EnhancedMarkdown({ markdown }: { markdown: string }) {
       </ReactMarkdown>
     </article>
   );
+}
+
+const ATTENDEE_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function attendeeIdsFromRaw(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (item): item is string =>
+      typeof item === "string" && ATTENDEE_UUID_RE.test(item)
+  );
+}
+
+function attendeeNamesFromRaw(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (typeof item !== "string") return [];
+    const name = item.trim();
+    if (!name || ATTENDEE_UUID_RE.test(name)) return [];
+    return [name];
+  });
+}
+
+function formatAttendeeLabel(names: string[]): string {
+  if (names.length === 0) return "Me";
+  if (names.length === 1) return `Me, ${names[0]}`;
+  return `Me, ${names[0]} +${names.length - 1}`;
 }
 
 function formatAudioTime(value: number): string {

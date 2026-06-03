@@ -104,10 +104,16 @@ struct NoteWorkspaceView: View {
     @State private var reviewAutosaveTask: Task<Void, Never>? = nil
     @State private var reviewLastSaved: String = ""
     @State private var showFolderPicker = false
+    @State private var showAttendeePicker = false
     @State private var showRowMenu = false
     @State private var loadingBody = false
     @State private var bodyEditorMeasuredHeight: CGFloat = 320
     @FocusState private var bodyFocused: Bool
+
+    @State private var people: [PersonDTO] = []
+    @State private var attendeeIds: [String] = []
+    @State private var attendeeNameFallbacks: [String: String] = [:]
+    @State private var savingAttendees = false
 
     /// Image attachments associated with the note. Populated from
     /// `/api/notes/<id>/attachments` on appear (review mode) and
@@ -215,6 +221,22 @@ struct NoteWorkspaceView: View {
         case .recording: return recordingFolderName
         case .reviewing: return reviewFolderName
         }
+    }
+
+    private var externalPeople: [PersonDTO] {
+        people.filter { !$0.isSelf }
+    }
+
+    private var attendeeNames: [String] {
+        attendeeIds.compactMap { id in
+            people.first(where: { $0.id == id })?.displayName ?? attendeeNameFallbacks[id]
+        }
+    }
+
+    private var attendeeLabel: String {
+        if attendeeNames.isEmpty { return "Me" }
+        if attendeeNames.count == 1 { return "Me, \(attendeeNames[0])" }
+        return "Me, \(attendeeNames[0]) +\(attendeeNames.count - 1)"
     }
 
     private var selectedTemplate: NoteTemplateDTO? {
@@ -512,11 +534,25 @@ struct NoteWorkspaceView: View {
     private var mePill: some View {
         WorkspacePill(
             icon: "person.2",
-            label: "Me",
-            isActive: false,
-            action: { /* deferred — attendees admin UI */ }
+            label: attendeeLabel,
+            isActive: !attendeeIds.isEmpty,
+            action: { showAttendeePicker.toggle() }
         )
-        .help("Attendees admin coming soon")
+        .help("Attendees")
+        .popover(isPresented: $showAttendeePicker, arrowEdge: .top) {
+            AttendeePickerPopover(
+                people: externalPeople,
+                selectedIds: attendeeIds,
+                isSaving: savingAttendees,
+                onSave: { personIds in
+                    showAttendeePicker = false
+                    handleAttendeesSelect(personIds: personIds)
+                },
+                onCreate: { displayName, email in
+                    await createAttendeePerson(displayName: displayName, email: email)
+                }
+            )
+        }
     }
 
     @ViewBuilder
@@ -592,6 +628,56 @@ struct NoteWorkspaceView: View {
                     folderId: newFolderId
                 )
             }
+        }
+    }
+
+    private func handleAttendeesSelect(personIds newPersonIds: [String]) {
+        var seen = Set<String>()
+        let uniqueIds = newPersonIds.filter { seen.insert($0).inserted }
+        let previousIds = attendeeIds
+        attendeeIds = uniqueIds
+        savingAttendees = true
+
+        guard let recordingId = noteId,
+              let backend = viewModel.backendClient
+        else {
+            attendeeIds = previousIds
+            savingAttendees = false
+            showToast(message: "Attendees will be available after recording starts", tone: .warning)
+            return
+        }
+
+        Task {
+            do {
+                let savedIds = try await backend.assignRecordingAttendees(
+                    recordingId: recordingId,
+                    personIds: uniqueIds
+                )
+                await MainActor.run {
+                    attendeeIds = savedIds
+                    savingAttendees = false
+                    showToast(message: attendeeIds.isEmpty ? "Attendees cleared" : "Attendees saved")
+                }
+            } catch {
+                await MainActor.run {
+                    attendeeIds = previousIds
+                    savingAttendees = false
+                    showToast(message: "Couldn't save attendees", tone: .error)
+                }
+            }
+        }
+    }
+
+    private func createAttendeePerson(displayName: String, email: String?) async -> PersonDTO? {
+        guard let backend = viewModel.backendClient else { return nil }
+        do {
+            let person = try await backend.createPerson(displayName: displayName, email: email)
+            await MainActor.run {
+                people = [person] + people.filter { $0.id != person.id }
+            }
+            return person
+        } catch {
+            return nil
         }
     }
 
@@ -1911,6 +1997,9 @@ struct NoteWorkspaceView: View {
         if let noteId {
             Task {
                 if let backend = viewModel.backendClient {
+                    if let list = try? await backend.listPeople() {
+                        await MainActor.run { people = list }
+                    }
                     if let response = try? await backend.listNoteTemplates() {
                         await MainActor.run { noteTemplates = response.templates }
                     }
@@ -1927,11 +2016,16 @@ struct NoteWorkspaceView: View {
         }
         switch target {
         case .recording:
-            break
+            attendeeIds = []
+            attendeeNameFallbacks = [:]
         case .reviewing(let recording):
             reviewTitle = recording.title
             reviewFolderId = recording.folderId
             reviewFolderName = recording.folderName
+            attendeeIds = recording.attendees.map(\.id)
+            attendeeNameFallbacks = Dictionary(
+                uniqueKeysWithValues: recording.attendees.map { ($0.id, $0.name) }
+            )
             reviewBody = ""
             loadingBody = true
             loadTranscript()
@@ -2401,6 +2495,233 @@ private struct WorkspacePill: View {
         .overlay { ActionHitArea(action: action) }
         .onHover { hovering = $0 }
         .animation(LoomolaMotion.quick, value: hovering)
+    }
+}
+
+private struct AttendeePickerPopover: View {
+    let people: [PersonDTO]
+    let selectedIds: [String]
+    let isSaving: Bool
+    let onSave: ([String]) -> Void
+    let onCreate: (String, String?) async -> PersonDTO?
+
+    @State private var query = ""
+    @State private var draftIds: [String]
+    @State private var newName = ""
+    @State private var newEmail = ""
+    @State private var creating = false
+    @State private var createFailed = false
+    @FocusState private var searchFocused: Bool
+
+    init(
+        people: [PersonDTO],
+        selectedIds: [String],
+        isSaving: Bool,
+        onSave: @escaping ([String]) -> Void,
+        onCreate: @escaping (String, String?) async -> PersonDTO?
+    ) {
+        self.people = people
+        self.selectedIds = selectedIds
+        self.isSaving = isSaving
+        self.onSave = onSave
+        self.onCreate = onCreate
+        _draftIds = State(initialValue: selectedIds)
+    }
+
+    private var filteredPeople: [PersonDTO] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sorted = people.sorted { $0.displayName.localizedCompare($1.displayName) == .orderedAscending }
+        if trimmed.isEmpty { return sorted }
+        return sorted.filter {
+            $0.displayName.localizedCaseInsensitiveContains(trimmed) ||
+            ($0.email ?? "").localizedCaseInsensitiveContains(trimmed)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            lockedSelfRow
+            Divider().overlay(DSColor.Border.subtle)
+            searchField
+            Divider().overlay(DSColor.Border.subtle)
+            peopleList
+            Divider().overlay(DSColor.Border.subtle)
+            createPersonSection
+            Divider().overlay(DSColor.Border.subtle)
+            footer
+        }
+        .frame(width: 320)
+        .background(DSColor.Bg.surfaceRaised)
+        .onAppear { searchFocused = true }
+    }
+
+    private var lockedSelfRow: some View {
+        HStack(spacing: DSSpacing.sm) {
+            Image(systemName: "person.fill")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(DSColor.Text.tertiary)
+                .frame(width: 16)
+            Text("Me")
+                .font(DSFont.Body.md())
+                .foregroundStyle(DSColor.Text.primary)
+            Spacer()
+            Image(systemName: "checkmark")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(DSColor.Accent.primary)
+        }
+        .padding(.horizontal, DSSpacing.md)
+        .padding(.vertical, DSSpacing.sm)
+    }
+
+    private var searchField: some View {
+        HStack(spacing: DSSpacing.sm) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(DSColor.Text.tertiary)
+            TextField("Search people", text: $query)
+                .textFieldStyle(.plain)
+                .font(DSFont.Body.md())
+                .foregroundStyle(DSColor.Text.primary)
+                .focused($searchFocused)
+                .tint(DSColor.Accent.primary)
+            if !query.isEmpty {
+                Button {
+                    query = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(DSColor.Text.tertiary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, DSSpacing.md)
+        .padding(.vertical, DSSpacing.sm)
+    }
+
+    private var peopleList: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                if filteredPeople.isEmpty {
+                    Text("No people found")
+                        .font(DSFont.Body.sm())
+                        .foregroundStyle(DSColor.Text.tertiary)
+                        .padding(.horizontal, DSSpacing.md)
+                        .padding(.vertical, DSSpacing.sm)
+                } else {
+                    ForEach(filteredPeople) { person in
+                        attendeeRow(person)
+                    }
+                }
+            }
+            .padding(.vertical, DSSpacing.xs)
+        }
+        .frame(maxHeight: 240)
+    }
+
+    private func attendeeRow(_ person: PersonDTO) -> some View {
+        let selected = draftIds.contains(person.id)
+        return HStack(spacing: DSSpacing.sm) {
+            Image(systemName: selected ? "checkmark.square.fill" : "square")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(selected ? DSColor.Accent.primary : DSColor.Text.tertiary)
+                .frame(width: 16)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(person.displayName)
+                    .font(DSFont.Body.md())
+                    .foregroundStyle(DSColor.Text.primary)
+                    .lineLimit(1)
+                if let email = person.email, !email.isEmpty {
+                    Text(email)
+                        .font(DSFont.Body.sm())
+                        .foregroundStyle(DSColor.Text.tertiary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer()
+        }
+        .padding(.horizontal, DSSpacing.md)
+        .padding(.vertical, DSSpacing.sm)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if selected {
+                draftIds.removeAll { $0 == person.id }
+            } else {
+                draftIds.append(person.id)
+            }
+        }
+    }
+
+    private var createPersonSection: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.sm) {
+            HStack(spacing: DSSpacing.sm) {
+                TextField("Name", text: $newName)
+                    .textFieldStyle(.plain)
+                    .font(DSFont.Body.md())
+                    .foregroundStyle(DSColor.Text.primary)
+                    .tint(DSColor.Accent.primary)
+                TextField("Email", text: $newEmail)
+                    .textFieldStyle(.plain)
+                    .font(DSFont.Body.md())
+                    .foregroundStyle(DSColor.Text.primary)
+                    .tint(DSColor.Accent.primary)
+                Button {
+                    createPerson()
+                } label: {
+                    Image(systemName: creating ? "hourglass" : "plus.circle.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(DSColor.Accent.primary)
+                .disabled(creating || newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            if createFailed {
+                Text("Could not add person")
+                    .font(DSFont.Body.sm())
+                    .foregroundStyle(DSColor.State.danger)
+            }
+        }
+        .padding(.horizontal, DSSpacing.md)
+        .padding(.vertical, DSSpacing.sm)
+    }
+
+    private var footer: some View {
+        HStack {
+            Spacer()
+            Button("Save") {
+                onSave(draftIds)
+            }
+            .buttonStyle(.plain)
+            .font(DSFont.Body.md())
+            .foregroundStyle(isSaving ? DSColor.Text.tertiary : DSColor.Accent.primary)
+            .disabled(isSaving || creating)
+        }
+        .padding(.horizontal, DSSpacing.md)
+        .padding(.vertical, DSSpacing.sm)
+    }
+
+    private func createPerson() {
+        let displayName = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let email = newEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !displayName.isEmpty else { return }
+        creating = true
+        createFailed = false
+        Task {
+            let person = await onCreate(displayName, email.isEmpty ? nil : email)
+            await MainActor.run {
+                creating = false
+                guard let person else {
+                    createFailed = true
+                    return
+                }
+                if !draftIds.contains(person.id) {
+                    draftIds.append(person.id)
+                }
+                newName = ""
+                newEmail = ""
+                query = ""
+            }
+        }
     }
 }
 

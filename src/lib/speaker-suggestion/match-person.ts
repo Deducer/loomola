@@ -18,7 +18,7 @@ export interface MatchResult {
  * Match an incoming meeting attendee to one of the user's existing
  * `people` rows.
  *
- *   high  — case-insensitive email exact match
+ *   high  — explicit person id, or case-insensitive email exact match
  *   medium — full multi-token name match (every name token is shared,
  *            in any order; case- and punctuation-insensitive)
  *   none  — no reliable match
@@ -35,6 +35,18 @@ export function matchPerson(args: {
   const { candidates, attendee } = args;
   if (candidates.length === 0) {
     return { personId: null, confidence: "none", reason: "no_candidates" };
+  }
+
+  if (attendee.personId) {
+    for (const c of candidates) {
+      if (c.id === attendee.personId) {
+        return {
+          personId: c.id,
+          confidence: "high",
+          reason: "person_id_exact",
+        };
+      }
+    }
   }
 
   // High: email match.

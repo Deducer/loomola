@@ -46,6 +46,7 @@ export async function GET(request: Request) {
     thumbnailUrl: r.thumbnailUrl,
     folderId: r.folderId,
     folderName: r.folderName,
+    attendees: r.attendees,
   }));
 
   return NextResponse.json({ items });

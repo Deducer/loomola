@@ -14,6 +14,7 @@ export interface NoteForSpeakerSuggestion {
   ownerId: string;
   type: "video" | "audio";
   attendees: unknown;
+  sourceSeparated: boolean;
   words: WordTimestamp[];
 }
 
@@ -28,6 +29,8 @@ export async function getNoteForSpeakerSuggestion(
       ownerId: mediaObjects.ownerId,
       type: mediaObjects.type,
       attendees: mediaObjects.attendees,
+      r2MixedKey: mediaObjects.r2MixedKey,
+      provider: transcripts.provider,
       words: transcripts.wordTimestamps,
     })
     .from(mediaObjects)
@@ -45,6 +48,8 @@ export async function getNoteForSpeakerSuggestion(
     ownerId: row.ownerId,
     type: row.type,
     attendees: row.attendees,
+    sourceSeparated:
+      row.provider === "deepgram-live" || Boolean(row.r2MixedKey),
     words,
   };
 }
