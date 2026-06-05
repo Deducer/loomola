@@ -7,6 +7,12 @@ import Supabase
 
 private let recorderLog = Logger(subsystem: "cloud.dissonance.loom.desktop", category: "recorder")
 
+private enum AudioInactivityAutoStop {
+    static let meaningfulLevelThreshold = 0.02
+    static let silenceInterval: TimeInterval = 15 * 60
+    static let pollIntervalNanoseconds: UInt64 = 5_000_000_000
+}
+
 @MainActor
 final class RecorderViewModel: ObservableObject {
     @Published private(set) var state: RecorderState = .signedOut
@@ -112,6 +118,7 @@ final class RecorderViewModel: ObservableObject {
     private var obsidianSyncTask: Task<Void, Never>?
     private var obsidianRealtimeTask: Task<Void, Never>?
     private var meetingWatchTask: Task<Void, Never>?
+    private var audioInactivityMonitorTask: Task<Void, Never>?
     private var obsidianSyncInFlight = false
     private var dismissedMeetingContext: MeetingContext?
     private var autoSuggestedAudioTitle: String?
@@ -120,6 +127,8 @@ final class RecorderViewModel: ObservableObject {
     @Published private(set) var lastStoppedAudioRecordingForReview: RecentRecording?
     private var lastSyncedAudioTitle: String = ""
     private var lastAudioLevelUpdate = Date.distantPast
+    private var lastMeaningfulAudioAt: Date?
+    private var audioInactivityHasSeenMeaningfulAudio = false
     private var recorderReadinessMode: RecorderReadinessMode = .video
     private var readinessRefreshTask: Task<Void, Never>?
     private var lastBackendReadinessStatus: BackendReadinessStatus = .unknown
@@ -401,6 +410,7 @@ final class RecorderViewModel: ObservableObject {
             meetingWatchTask?.cancel()
             readinessRefreshTask?.cancel()
             audioTitleAutosaveTask?.cancel()
+            cancelAudioInactivityMonitor()
             await obsidianRealtimeSubscriber?.stop()
             obsidianSyncTask = nil
             obsidianRealtimeTask = nil
@@ -1384,9 +1394,10 @@ final class RecorderViewModel: ObservableObject {
                     systemAudioDeviceID: systemAudioDeviceID
                 )
                 recorderLog.notice("startAudioNoteRecording — succeeded (backendId=\(session.backendRecordingId ?? "nil", privacy: .public), slug=\(session.backendSlug ?? "nil", privacy: .public), tracks=\(session.tracks.count, privacy: .public))")
+                let recordingStartedAt = Date()
                 finalizingRecordingKind = nil
                 activeRecordingKind = .audio
-                activeAudioRecordingStartedAt = Date()
+                activeAudioRecordingStartedAt = recordingStartedAt
                 activeAudioRecordingSlug = session.backendSlug
                 activeAudioRecordingId = session.backendRecordingId
                 lastSyncedAudioTitle = title ?? ""
@@ -1399,9 +1410,11 @@ final class RecorderViewModel: ObservableObject {
                 audioLevel = 0
                 state = .recording
                 statusMessage = "Recording audio note with \(session.tracks.count) track(s)."
+                startAudioInactivityMonitor()
                 isStartingRecording = false
             } catch {
                 liveTranscription.stop()
+                cancelAudioInactivityMonitor()
                 recorderLog.error("startAudioNoteRecording — FAILED: \(error.localizedDescription, privacy: .public) (\(String(describing: error), privacy: .public))")
                 activeRecordingKind = nil
                 finalizingRecordingKind = nil
@@ -1483,12 +1496,16 @@ final class RecorderViewModel: ObservableObject {
         audioNoteRecorder.resume()
         liveTranscription.resume()
         audioNotePausedAccumulatedSeconds += Date().timeIntervalSince(pausedAt)
+        if audioInactivityHasSeenMeaningfulAudio {
+            lastMeaningfulAudioAt = Date()
+        }
         audioNotePausedAt = nil
         isAudioNotePaused = false
     }
 
     func stopAudioNoteRecordingAndUpload() {
         guard let audioNoteRecorder else { return }
+        cancelAudioInactivityMonitor()
         // Match the video Stop & upload pattern: clear
         // activeRecordingKind immediately so the router swaps to
         // FinalizingHomeView right away. Without this the audio
@@ -1780,6 +1797,7 @@ final class RecorderViewModel: ObservableObject {
         statusMessage = "Discarding audio note..."
         await audioNoteRecorder.cancel()
         liveTranscription.reset()
+        cancelAudioInactivityMonitor()
         activeRecordingKind = nil
         finalizingRecordingKind = nil
         activeAudioRecordingStartedAt = nil
@@ -1989,7 +2007,57 @@ final class RecorderViewModel: ObservableObject {
         let now = Date()
         guard now.timeIntervalSince(lastAudioLevelUpdate) >= 0.08 else { return }
         lastAudioLevelUpdate = now
-        audioLevel = min(1, max(0, level))
+        let clampedLevel = min(1, max(0, level))
+        audioLevel = clampedLevel
+        recordAudioActivityIfNeeded(level: clampedLevel, at: now)
+    }
+
+    private func recordAudioActivityIfNeeded(level: Double, at now: Date) {
+        guard activeRecordingKind == .audio,
+              !isAudioNotePaused,
+              level >= AudioInactivityAutoStop.meaningfulLevelThreshold
+        else { return }
+        lastMeaningfulAudioAt = now
+        audioInactivityHasSeenMeaningfulAudio = true
+    }
+
+    private func startAudioInactivityMonitor() {
+        cancelAudioInactivityMonitor()
+        lastMeaningfulAudioAt = nil
+        audioInactivityHasSeenMeaningfulAudio = false
+        audioInactivityMonitorTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: AudioInactivityAutoStop.pollIntervalNanoseconds)
+                } catch {
+                    return
+                }
+                self?.handleAudioInactivityTick()
+            }
+        }
+    }
+
+    private func cancelAudioInactivityMonitor() {
+        audioInactivityMonitorTask?.cancel()
+        audioInactivityMonitorTask = nil
+        lastMeaningfulAudioAt = nil
+        audioInactivityHasSeenMeaningfulAudio = false
+    }
+
+    private func handleAudioInactivityTick(now: Date = Date()) {
+        guard activeRecordingKind == .audio,
+              state == .recording,
+              !isAudioNotePaused,
+              audioInactivityHasSeenMeaningfulAudio,
+              let lastMeaningfulAudioAt
+        else { return }
+
+        let quietSeconds = now.timeIntervalSince(lastMeaningfulAudioAt)
+        guard quietSeconds >= AudioInactivityAutoStop.silenceInterval else { return }
+
+        recorderLog.notice("audio inactivity auto-stop — no meaningful audio for \(quietSeconds, privacy: .public)s")
+        statusMessage = "No audio detected for 15 minutes. Finalizing audio note..."
+        stopAudioNoteRecordingAndUpload()
     }
 
     private func syncPendingObsidianNotesFromRealtime() {
