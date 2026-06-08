@@ -13,8 +13,16 @@ final class AudioInactivityAutoStopTests: XCTestCase {
             "The inactivity timer should be driven by real capture levels."
         )
         XCTAssertTrue(
+            source.contains("recordAudioBuffer(source: source)"),
+            "The inactivity timer should also observe raw capture-buffer activity."
+        )
+        XCTAssertTrue(
             source.contains("audioInactivityHasSeenMeaningfulAudio"),
             "Startup silence should not stop a note before Loomola has heard meaningful audio."
+        )
+        XCTAssertTrue(
+            source.contains("Audio capture stalled for 15 minutes. Finalizing audio note..."),
+            "Capture-buffer stalls should finalize the note before the UI timer drifts for hours."
         )
         XCTAssertTrue(
             source.contains("statusMessage = \"No audio detected for 15 minutes. Finalizing audio note...\""),

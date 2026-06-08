@@ -129,6 +129,8 @@ final class RecorderViewModel: ObservableObject {
     private var lastAudioLevelUpdate = Date.distantPast
     private var lastMeaningfulAudioAt: Date?
     private var audioInactivityHasSeenMeaningfulAudio = false
+    private var lastAudioBufferAt: Date?
+    private var audioBufferActivityHasStarted = false
     private var recorderReadinessMode: RecorderReadinessMode = .video
     private var readinessRefreshTask: Task<Void, Never>?
     private var lastBackendReadinessStatus: BackendReadinessStatus = .unknown
@@ -295,9 +297,12 @@ final class RecorderViewModel: ObservableObject {
                     }
                 }
                 recorder.onLiveAudioBuffer = { [weak self] source, buffer in
-                    guard let copy = buffer.loomolaCopyForAsyncUse() else { return }
+                    let copy = buffer.loomolaCopyForAsyncUse()
                     Task { @MainActor in
-                        self?.liveTranscription.append(buffer: copy, source: source)
+                        self?.recordAudioBuffer(source: source)
+                        if let copy {
+                            self?.liveTranscription.append(buffer: copy, source: source)
+                        }
                     }
                 }
                 return recorder
@@ -1499,6 +1504,8 @@ final class RecorderViewModel: ObservableObject {
         if audioInactivityHasSeenMeaningfulAudio {
             lastMeaningfulAudioAt = Date()
         }
+        lastAudioBufferAt = Date()
+        audioBufferActivityHasStarted = true
         audioNotePausedAt = nil
         isAudioNotePaused = false
     }
@@ -2012,6 +2019,14 @@ final class RecorderViewModel: ObservableObject {
         recordAudioActivityIfNeeded(level: clampedLevel, at: now)
     }
 
+    private func recordAudioBuffer(source _: LiveTranscriptAudioSource) {
+        guard activeRecordingKind == .audio,
+              !isAudioNotePaused
+        else { return }
+        lastAudioBufferAt = Date()
+        audioBufferActivityHasStarted = true
+    }
+
     private func recordAudioActivityIfNeeded(level: Double, at now: Date) {
         guard activeRecordingKind == .audio,
               !isAudioNotePaused,
@@ -2025,6 +2040,8 @@ final class RecorderViewModel: ObservableObject {
         cancelAudioInactivityMonitor()
         lastMeaningfulAudioAt = nil
         audioInactivityHasSeenMeaningfulAudio = false
+        lastAudioBufferAt = Date()
+        audioBufferActivityHasStarted = true
         audioInactivityMonitorTask = Task { [weak self] in
             while !Task.isCancelled {
                 do {
@@ -2042,13 +2059,29 @@ final class RecorderViewModel: ObservableObject {
         audioInactivityMonitorTask = nil
         lastMeaningfulAudioAt = nil
         audioInactivityHasSeenMeaningfulAudio = false
+        lastAudioBufferAt = nil
+        audioBufferActivityHasStarted = false
     }
 
     private func handleAudioInactivityTick(now: Date = Date()) {
         guard activeRecordingKind == .audio,
               state == .recording,
-              !isAudioNotePaused,
-              audioInactivityHasSeenMeaningfulAudio,
+              !isAudioNotePaused
+        else { return }
+
+        if audioBufferActivityHasStarted,
+           let lastAudioBufferAt
+        {
+            let stalledSeconds = now.timeIntervalSince(lastAudioBufferAt)
+            if stalledSeconds >= AudioInactivityAutoStop.silenceInterval {
+                recorderLog.notice("audio capture stall auto-stop — no capture buffers for \(stalledSeconds, privacy: .public)s")
+                statusMessage = "Audio capture stalled for 15 minutes. Finalizing audio note..."
+                stopAudioNoteRecordingAndUpload()
+                return
+            }
+        }
+
+        guard audioInactivityHasSeenMeaningfulAudio,
               let lastMeaningfulAudioAt
         else { return }
 
@@ -2170,7 +2203,15 @@ final class RecorderViewModel: ObservableObject {
         if !DesktopAuthService.decodeAccessTokenClaims(accessToken).isExpired() {
             return accessToken
         }
-        guard let snapshot = try await authService?.loadStoredSessionSnapshot() else {
+        let snapshot: StoredDesktopSession?
+        do {
+            snapshot = try await authService?.loadStoredSessionSnapshot()
+        } catch {
+            handleAuthRefreshFailure(error)
+            throw error
+        }
+        guard let snapshot else {
+            handleAuthRefreshFailure(RecorderViewModelError.missingAccessToken)
             return nil
         }
         self.accessToken = snapshot.accessToken
@@ -2179,6 +2220,32 @@ final class RecorderViewModel: ObservableObject {
         }
         recorderLog.notice("currentAccessToken — refreshed expired Supabase access token")
         return snapshot.accessToken
+    }
+
+    private func handleAuthRefreshFailure(_ error: Error) {
+        accessToken = nil
+        lastBackendReadinessStatus = .unreachable("Sign in again before recording or retrying Recovery.")
+        recorderLog.error("auth refresh failed: \(error.localizedDescription, privacy: .public)")
+
+        let isUploadingState: Bool
+        if case .uploading = state {
+            isUploadingState = true
+        } else {
+            isUploadingState = false
+        }
+        let isCapturingOrUploading = activeRecordingKind != nil ||
+            finalizingRecordingKind != nil ||
+            orphanRetryInProgress != nil ||
+            state == .finalizing ||
+            isUploadingState
+
+        if isCapturingOrUploading {
+            statusMessage = "Session expired. Recording is still local; sign in again, then retry from Recovery."
+        } else {
+            state = .signedOut
+            statusMessage = "Session expired. Sign in again, then retry any saved Recovery upload."
+        }
+        scheduleReadinessRefresh(checkBackend: false)
     }
 
     private func canListCaptureSourcesWithoutPrompt() -> Bool {

@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import OSLog
 
@@ -107,11 +108,15 @@ final class OrphanRetryCoordinator {
 
         // 4. Complete the multipart upload. The server enqueues
         //    mix-audio, transcribe, audio-waveform from here.
+        let durationSeconds = await Self.recoveredDurationSeconds(
+            for: uploadTracks,
+            orphan: orphan
+        )
         let completeResponse = try await backend.complete(
             recordingId: started.recordingId,
             request: CompleteRecordingRequest(
                 tracks: completedTracks,
-                durationSeconds: orphan.durationSeconds
+                durationSeconds: durationSeconds
             )
         )
         log.notice("retry complete: slug=\(completeResponse.slug, privacy: .public)")
@@ -143,6 +148,24 @@ final class OrphanRetryCoordinator {
             }
             return true
         }
+    }
+
+    private static func recoveredDurationSeconds(
+        for tracks: [TrackKind],
+        orphan: OrphanedRecording
+    ) async -> Double {
+        var durations: [Double] = []
+        for track in tracks {
+            let url = (track == .mic) ? orphan.micFileURL() : orphan.systemAudioFileURL()
+            guard let url else { continue }
+            let asset = AVURLAsset(url: url)
+            guard let duration = try? await asset.load(.duration) else { continue }
+            let seconds = CMTimeGetSeconds(duration)
+            if seconds.isFinite, seconds > 0 {
+                durations.append(seconds)
+            }
+        }
+        return durations.max() ?? orphan.durationSeconds
     }
 }
 

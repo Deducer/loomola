@@ -11,11 +11,23 @@ actor DesktopAuthService {
     private let configuration: DesktopAuthConfiguration
     private let client: SupabaseClient
     private let store: AuthSessionStore
+    private let refreshSession: @Sendable (String) async throws -> RefreshTokenResponse
+    private var refreshTask: Task<RefreshTokenResponse, Error>?
 
-    init(configuration: DesktopAuthConfiguration, store: AuthSessionStore = AuthSessionStore()) {
+    init(
+        configuration: DesktopAuthConfiguration,
+        store: AuthSessionStore = AuthSessionStore(),
+        refreshSession: (@Sendable (String) async throws -> RefreshTokenResponse)? = nil
+    ) {
         self.configuration = configuration
         self.store = store
         self.client = store.makeClient(configuration: configuration)
+        self.refreshSession = refreshSession ?? { refreshToken in
+            try await Self.refreshStoredSession(
+                refreshToken: refreshToken,
+                configuration: configuration
+            )
+        }
     }
 
     func restoreSession() async throws -> Session? {
@@ -86,6 +98,23 @@ actor DesktopAuthService {
     }
 
     private func refreshStoredSession(refreshToken: String) async throws -> RefreshTokenResponse {
+        if let refreshTask {
+            return try await refreshTask.value
+        }
+        let task = Task {
+            try await refreshSession(refreshToken)
+        }
+        refreshTask = task
+        defer {
+            refreshTask = nil
+        }
+        return try await task.value
+    }
+
+    private static func refreshStoredSession(
+        refreshToken: String,
+        configuration: DesktopAuthConfiguration
+    ) async throws -> RefreshTokenResponse {
         var components = URLComponents(
             url: configuration.supabaseURL.appending(path: "auth/v1/token"),
             resolvingAgainstBaseURL: false
@@ -108,7 +137,11 @@ actor DesktopAuthService {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse,
               (200..<300).contains(http.statusCode) else {
-            throw DesktopAuthRefreshError.refreshFailed
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+            throw DesktopAuthRefreshError.refreshFailed(
+                statusCode: statusCode,
+                bodyPreview: String(data: data.prefix(240), encoding: .utf8)
+            )
         }
         return try JSONDecoder().decode(RefreshTokenResponse.self, from: data)
     }
@@ -133,7 +166,7 @@ private struct RefreshTokenRequest: Encodable {
     }
 }
 
-private struct RefreshTokenResponse: Decodable {
+struct RefreshTokenResponse: Decodable, Sendable, Equatable {
     let accessToken: String
     let refreshToken: String
 
@@ -143,7 +176,16 @@ private struct RefreshTokenResponse: Decodable {
     }
 }
 
-private enum DesktopAuthRefreshError: Error {
+enum DesktopAuthRefreshError: LocalizedError, Equatable {
     case invalidRefreshURL
-    case refreshFailed
+    case refreshFailed(statusCode: Int, bodyPreview: String?)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidRefreshURL:
+            return "Saved sign-in could not be refreshed."
+        case .refreshFailed:
+            return "Saved sign-in expired. Sign in again to upload."
+        }
+    }
 }
