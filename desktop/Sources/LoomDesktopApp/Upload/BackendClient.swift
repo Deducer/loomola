@@ -762,8 +762,8 @@ struct LiveTranscriptionTokenResponse: Decodable, Sendable {
     let expiresIn: Double
 }
 
-struct LiveTranscriptSnapshot: Encodable, Sendable {
-    struct Word: Encodable, Sendable {
+struct LiveTranscriptSnapshot: Codable, Sendable {
+    struct Word: Codable, Sendable {
         let word: String
         let start: Double
         let end: Double

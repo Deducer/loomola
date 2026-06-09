@@ -80,6 +80,54 @@ final class OrphanedRecordingStoreTests: XCTestCase {
         XCTAssertEqual(found?.tracks, [.mic])
     }
 
+    func testCapturePersistsLiveTranscriptSnapshot() throws {
+        let sourceDir = makeTempDir()
+        defer { try? FileManager.default.removeItem(at: sourceDir) }
+        try Data([0x10]).write(to: sourceDir.appending(path: "mic.m4a"))
+
+        let store = makeStore()
+        let snapshot = AudioRecordingSessionSnapshot(
+            directory: sourceDir,
+            tracks: [.mic],
+            title: "Transcript note",
+            startedAt: Date(timeIntervalSince1970: 1746540253),
+            backendRecordingId: "rec-uuid",
+            backendSlug: "abc123XYZ0",
+            meetingContext: nil
+        )
+        let transcript = LiveTranscriptSnapshot(
+            fullText: "Mic: Hello from the rescued transcript",
+            language: "en",
+            providerRequestId: "request-1",
+            words: [
+                LiveTranscriptSnapshot.Word(
+                    word: "Hello",
+                    start: 1,
+                    end: 1.4,
+                    confidence: 0.97,
+                    speaker: 0
+                )
+            ]
+        )
+
+        let orphan = try store.capture(
+            from: snapshot,
+            durationSeconds: 30,
+            lastError: "Upload failed",
+            liveTranscriptSnapshot: transcript
+        )
+
+        XCTAssertNotNil(orphan.liveTranscriptSnapshotFileURL())
+        XCTAssertNotNil(orphan.liveTranscriptTextFileURL())
+        let restored = try XCTUnwrap(orphan.loadLiveTranscriptSnapshot())
+        XCTAssertEqual(restored.fullText, transcript.fullText)
+        XCTAssertEqual(restored.words.first?.word, "Hello")
+        XCTAssertEqual(
+            try String(contentsOf: try XCTUnwrap(orphan.liveTranscriptTextFileURL())),
+            transcript.fullText
+        )
+    }
+
     func testMarkRescuedClearsLastErrorAndRecordsSlug() throws {
         let sourceDir = makeTempDir()
         defer { try? FileManager.default.removeItem(at: sourceDir) }

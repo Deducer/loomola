@@ -1560,6 +1560,7 @@ final class RecorderViewModel: ObservableObject {
             // files (the recorder retains session through a thrown
             // stopAndUpload — it only clears on success).
             let preSnapshot = audioNoteRecorder.currentSessionSnapshot
+            var finalTranscriptSnapshot: LiveTranscriptSnapshot?
             do {
                 // Final notes flush BEFORE upload completes so the
                 // server-side regen (Phase E) sees the user's full
@@ -1573,11 +1574,12 @@ final class RecorderViewModel: ObservableObject {
                 }
                 if let mediaId = pendingMediaId {
                     _ = await persistAudioTitle(mediaId: mediaId, title: pendingTitle)
-                    let snapshot = await liveTranscription.finishAndSnapshot()
-                    if !snapshot.fullText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    let transcriptSnapshot = await liveTranscription.finishAndSnapshot()
+                    finalTranscriptSnapshot = transcriptSnapshot
+                    if !transcriptSnapshot.fullText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         try? await backendClient?.persistLiveTranscript(
                             mediaId: mediaId,
-                            snapshot: snapshot
+                            snapshot: transcriptSnapshot
                         )
                     }
                 }
@@ -1598,12 +1600,16 @@ final class RecorderViewModel: ObservableObject {
                 let snapshot = audioNoteRecorder.currentSessionSnapshot ?? preSnapshot
                 var captured: OrphanedRecording?
                 if let snapshot {
+                    if finalTranscriptSnapshot == nil {
+                        finalTranscriptSnapshot = await liveTranscription.finishAndSnapshot()
+                    }
                     let duration = max(Date().timeIntervalSince(snapshot.startedAt), 1)
                     do {
                         captured = try OrphanedRecordingStore.shared.capture(
                             from: snapshot,
                             durationSeconds: duration,
-                            lastError: error.localizedDescription
+                            lastError: error.localizedDescription,
+                            liveTranscriptSnapshot: finalTranscriptSnapshot
                         )
                         // Detach the in-memory session — the orphan
                         // store owns the durable copy now.
@@ -2199,8 +2205,8 @@ final class RecorderViewModel: ObservableObject {
     }
 
     private func currentAccessToken() async throws -> String? {
-        guard let accessToken else { return nil }
-        if !DesktopAuthService.decodeAccessTokenClaims(accessToken).isExpired() {
+        if let accessToken,
+           !DesktopAuthService.decodeAccessTokenClaims(accessToken).isExpired() {
             return accessToken
         }
         let snapshot: StoredDesktopSession?
@@ -2218,7 +2224,7 @@ final class RecorderViewModel: ObservableObject {
         if self.email.isEmpty {
             self.email = snapshot.email ?? ""
         }
-        recorderLog.notice("currentAccessToken — refreshed expired Supabase access token")
+        recorderLog.notice("currentAccessToken — loaded stored Supabase access token")
         return snapshot.accessToken
     }
 
@@ -2310,8 +2316,12 @@ enum DesktopRecordingKind: Equatable {
     case audio
 }
 
-enum RecorderViewModelError: Error {
+enum RecorderViewModelError: LocalizedError, Equatable {
     case missingAccessToken
+
+    var errorDescription: String? {
+        "Saved sign-in is unavailable. Sign in again, then retry Recovery."
+    }
 }
 
 private enum AudioNoteStartRetryError: LocalizedError {

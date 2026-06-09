@@ -87,6 +87,23 @@ struct OrphanedRecording: Codable, Identifiable, Equatable, Sendable {
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
+    func liveTranscriptSnapshotFileURL() -> URL? {
+        let url = storageDirectory.appending(path: "live-transcript.json")
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    func liveTranscriptTextFileURL() -> URL? {
+        let url = storageDirectory.appending(path: "live-transcript.txt")
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    func loadLiveTranscriptSnapshot() -> LiveTranscriptSnapshot? {
+        guard let url = liveTranscriptSnapshotFileURL(),
+              let data = try? Data(contentsOf: url)
+        else { return nil }
+        return try? JSONDecoder().decode(LiveTranscriptSnapshot.self, from: data)
+    }
+
     /// Total bytes on disk for this orphan's track files. Used by the
     /// recovery UI to show the user how much is at stake.
     func totalBytes() -> Int64 {
@@ -207,7 +224,8 @@ final class OrphanedRecordingStore: ObservableObject {
     func capture(
         from snapshot: AudioRecordingSessionSnapshot,
         durationSeconds: Double,
-        lastError: String?
+        lastError: String?,
+        liveTranscriptSnapshot: LiveTranscriptSnapshot? = nil
     ) throws -> OrphanedRecording {
         let id = UUID()
         let timestamp = ISO8601DateFormatter().string(from: snapshot.startedAt)
@@ -230,6 +248,20 @@ final class OrphanedRecordingStore: ObservableObject {
             }
             let dst = dir.appending(path: track == .mic ? "mic.m4a" : "system-audio.m4a")
             try fileManager.copyItem(at: src, to: dst)
+        }
+
+        if let liveTranscriptSnapshot,
+           !liveTranscriptSnapshot.fullText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let transcriptData = try JSONEncoder().encode(liveTranscriptSnapshot)
+            try transcriptData.write(
+                to: dir.appending(path: "live-transcript.json"),
+                options: [.atomic]
+            )
+            try liveTranscriptSnapshot.fullText.write(
+                to: dir.appending(path: "live-transcript.txt"),
+                atomically: true,
+                encoding: .utf8
+            )
         }
 
         let orphan = OrphanedRecording(

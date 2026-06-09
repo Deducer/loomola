@@ -130,6 +130,18 @@ final class OrphanRetryCoordinator {
         if let folderId = originalRecent?.folderId {
             try? await backend.assignRecordingToFolder(recordingId: started.recordingId, folderId: folderId)
         }
+        if let liveTranscript = orphan.loadLiveTranscriptSnapshot(),
+           !liveTranscript.fullText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            do {
+                try await backend.persistLiveTranscript(
+                    mediaId: started.recordingId,
+                    snapshot: liveTranscript
+                )
+                log.notice("retry: restored live transcript for \(started.recordingId, privacy: .public)")
+            } catch {
+                log.error("retry: live transcript restore failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
 
         return Outcome(recordingId: started.recordingId, slug: completeResponse.slug)
     }
