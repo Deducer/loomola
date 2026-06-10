@@ -51,6 +51,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
   ref
 ) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const plyrRef = useRef<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -317,6 +318,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
  * `<video>.duration` is `Infinity` (Chrome's MediaRecorder webm bug).
  * Paint the formatted duration into it ourselves once the player is ready.
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function paintDuration(player: any, durationSec: number) {
   try {
     const el = player?.elements?.display?.duration as HTMLElement | undefined;

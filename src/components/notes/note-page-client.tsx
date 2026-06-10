@@ -1594,55 +1594,55 @@ function EnhancedMarkdown({ markdown }: { markdown: string }) {
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          h1: ({ node, ...props }) => (
+          h1: ({ node: _node, ...props }) => (
             <h1
               className="mb-6 mt-12 text-3xl font-semibold leading-tight text-text first:mt-0"
               {...props}
             />
           ),
-          h2: ({ node, ...props }) => (
+          h2: ({ node: _node, ...props }) => (
             <h2 className="mb-5 mt-12 text-[1.45rem] font-semibold leading-snug text-text first:mt-0" {...props} />
           ),
-          h3: ({ node, ...props }) => (
+          h3: ({ node: _node, ...props }) => (
             <h3 className="mb-4 mt-10 text-[1.18rem] font-semibold leading-snug text-text first:mt-0" {...props} />
           ),
-          p: ({ node, ...props }) => (
+          p: ({ node: _node, ...props }) => (
             <p className="my-5 leading-[1.72] text-text-muted" {...props} />
           ),
-          ul: ({ node, ...props }) => (
+          ul: ({ node: _node, ...props }) => (
             <ul
               className="mb-8 mt-4 list-disc space-y-3 pl-8 text-text-muted marker:text-text-subtle [&_ul]:mb-1 [&_ul]:mt-2.5 [&_ul]:list-[circle] [&_ul]:space-y-2 [&_ul]:pl-8 [&_ul]:marker:text-text-muted"
               {...props}
             />
           ),
-          ol: ({ node, ...props }) => (
+          ol: ({ node: _node, ...props }) => (
             <ol
               className="mb-8 mt-4 list-decimal space-y-3 pl-8 text-text-muted marker:text-text-subtle [&_ol]:mb-1 [&_ol]:mt-2.5 [&_ol]:space-y-2 [&_ol]:pl-8"
               {...props}
             />
           ),
-          li: ({ node, ...props }) => (
+          li: ({ node: _node, ...props }) => (
             <li className="pl-2 leading-[1.68] [&>p]:my-0" {...props} />
           ),
-          strong: ({ node, ...props }) => (
+          strong: ({ node: _node, ...props }) => (
             <strong className="font-semibold text-text" {...props} />
           ),
-          em: ({ node, ...props }) => (
+          em: ({ node: _node, ...props }) => (
             <em className="text-text" {...props} />
           ),
-          code: ({ node, ...props }) => (
+          code: ({ node: _node, ...props }) => (
             <code className="rounded bg-bg-elevated px-1 py-0.5 font-mono text-sm text-text" {...props} />
           ),
-          blockquote: ({ node, ...props }) => (
+          blockquote: ({ node: _node, ...props }) => (
             <blockquote className="my-5 border-l border-border-strong pl-4 text-text-muted" {...props} />
           ),
-          hr: ({ node, ...props }) => (
+          hr: ({ node: _node, ...props }) => (
             <hr className="my-8 border-border" {...props} />
           ),
-          a: ({ node, ...props }) => (
+          a: ({ node: _node, ...props }) => (
             <a className="text-text underline decoration-border-strong underline-offset-4 hover:decoration-text-muted" {...props} />
           ),
-          input: ({ node, ...props }) => (
+          input: ({ node: _node, ...props }) => (
             <input className="mr-2 align-middle accent-emerald-500" {...props} />
           ),
         }}

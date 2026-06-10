@@ -12,7 +12,7 @@ import {
 } from "@/db/schema";
 import { listImageAttachmentsForMediaIds } from "@/db/queries/notes";
 import { presignGet } from "@/lib/r2/presigned-get";
-import { and, desc, eq, gte, ilike, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
 
 export type MediaType = "video" | "audio";
 export type MediaTypeFilter = MediaType | "any";

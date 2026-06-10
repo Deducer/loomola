@@ -28,7 +28,7 @@ describe("takeExactBytes", () => {
 
   it("returns empty remaining when the buffer exactly equals the target", () => {
     const blobs = [makeBlob(4), makeBlob(4)];
-    const { taken, remaining, takenSize } = takeExactBytes(blobs, 8);
+    const { taken: _taken, remaining, takenSize } = takeExactBytes(blobs, 8);
     expect(takenSize).toBe(8);
     expect(remaining).toHaveLength(0);
   });

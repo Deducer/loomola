@@ -30,21 +30,21 @@ describe("checkEnv", () => {
   });
 
   it("missing Mailgun is a warning, not a failure", () => {
-    const { MAILGUN_API_KEY, MAILGUN_DOMAIN, MAIL_FROM_ADDRESS, ...rest } = FULL;
+    const { MAILGUN_API_KEY: _1, MAILGUN_DOMAIN: _2, MAIL_FROM_ADDRESS: _3, ...rest } = FULL;
     const r = checkEnv(rest);
     expect(r.ok).toBe(true);
     expect(r.warnings).toContain("MAILGUN_API_KEY");
   });
 
   it("missing DATABASE_URL fails", () => {
-    const { DATABASE_URL, ...rest } = FULL;
+    const { DATABASE_URL: _1, ...rest } = FULL;
     const r = checkEnv(rest);
     expect(r.ok).toBe(false);
     expect(r.missing).toContain("DATABASE_URL");
   });
 
   it("R2_ACCOUNT_ID is not required when S3_ENDPOINT is set", () => {
-    const { R2_ACCOUNT_ID, ...rest } = FULL;
+    const { R2_ACCOUNT_ID: _1, ...rest } = FULL;
     expect(checkEnv(rest).missing).toContain("R2_ACCOUNT_ID");
     expect(checkEnv({ ...rest, S3_ENDPOINT: "http://minio:9000" }).ok).toBe(true);
   });
@@ -57,7 +57,7 @@ describe("checkEnv", () => {
   });
 
   it("openrouter provider swaps the AI warning to OPENROUTER_API_KEY", () => {
-    const { ANTHROPIC_API_KEY, ...rest } = FULL;
+    const { ANTHROPIC_API_KEY: _1, ...rest } = FULL;
     expect(checkEnv(rest).warnings).toContain("ANTHROPIC_API_KEY");
     const r = checkEnv({ ...rest, LLM_PROVIDER: "openrouter" });
     expect(r.warnings).toContain("OPENROUTER_API_KEY");
@@ -67,11 +67,11 @@ describe("checkEnv", () => {
 
 describe("assertCoreEnv", () => {
   it("throws a readable multi-line message listing each missing var", () => {
-    const { DATABASE_URL, SUPABASE_URL, ...rest } = FULL;
+    const { DATABASE_URL: _1, SUPABASE_URL: _2, ...rest } = FULL;
     expect(() => assertCoreEnv(rest)).toThrow(/DATABASE_URL[\s\S]*SUPABASE_URL/);
   });
   it("does not throw when only recommended vars are missing", () => {
-    const { ANTHROPIC_API_KEY, MAILGUN_API_KEY, ...rest } = FULL;
+    const { ANTHROPIC_API_KEY: _1, MAILGUN_API_KEY: _2, ...rest } = FULL;
     expect(() => assertCoreEnv(rest)).not.toThrow();
   });
 });
