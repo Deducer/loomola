@@ -65,12 +65,20 @@ export async function updateSession(request: NextRequest) {
     url.pathname.startsWith("/api/") &&
     /^Bearer\s+.+/i.test(request.headers.get("authorization") ?? "");
 
-  if (!user && !isAuthRoute && !isApiHealth && !isContactApi && !isPublicLanding && !isPublicShare && !isPublicViewerApi && !isWebhook && !isBubbleIframe && !isBearerApi) {
+  // First-run admin creation + invite acceptance: must be reachable signed-out.
+  const isSetup = url.pathname === "/setup" || url.pathname.startsWith("/setup/accept/");
+
+  if (!user && !isAuthRoute && !isApiHealth && !isContactApi && !isPublicLanding && !isPublicShare && !isPublicViewerApi && !isWebhook && !isBubbleIframe && !isBearerApi && !isSetup) {
     url.pathname = "/login";
     return NextResponse.redirect(url);
   }
 
   if (user && url.pathname === "/login") {
+    url.pathname = "/";
+    return NextResponse.redirect(url);
+  }
+
+  if (user && url.pathname.startsWith("/setup")) {
     url.pathname = "/";
     return NextResponse.redirect(url);
   }
