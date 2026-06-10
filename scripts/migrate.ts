@@ -3,6 +3,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { assertCoreEnv } from "../src/lib/env-check";
 
 function loadLocalEnvIfNeeded() {
   if (process.env.DATABASE_URL) return;
@@ -28,6 +29,12 @@ function loadLocalEnvIfNeeded() {
 
 async function main() {
   loadLocalEnvIfNeeded();
+
+  // Fail fast in containers: one readable list beats lazy crashes. Dev stays
+  // permissive so `npm run db:migrate` works during incremental setup.
+  if (process.env.NODE_ENV === "production") {
+    assertCoreEnv();
+  }
 
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {

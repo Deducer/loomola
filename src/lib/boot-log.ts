@@ -18,8 +18,10 @@ export function logBootSummaryOnce(): void {
     const mg = process.env.MAILGUN_DOMAIN ?? "?";
     const env = checkEnv();
     const missingTag = env.ok ? "" : ` missingEnv=[${env.missing.join(",")}]`;
+    const warnTag =
+      env.warnings.length > 0 ? ` degradedEnv=[${env.warnings.join(",")}]` : "";
     console.log(
-      `[boot] app=${app} db=${host} r2=${bucket} mailgun=${mg}${missingTag}`
+      `[boot] app=${app} db=${host} r2=${bucket} mailgun=${mg}${missingTag}${warnTag}`
     );
   } catch (e) {
     console.log(`[boot] summary failed: ${(e as Error).message}`);
