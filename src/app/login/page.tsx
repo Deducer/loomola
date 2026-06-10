@@ -72,6 +72,12 @@ export default async function LoginPage({
         <Button type="submit" className="w-full">
           Sign in
         </Button>
+        <a
+          href="/login/forgot"
+          className="block text-center text-xs text-text-muted hover:text-text"
+        >
+          Forgot password?
+        </a>
       </form>
     </div>
   );
