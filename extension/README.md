@@ -1,7 +1,7 @@
 # Loom Clone — Frameless Bubble (Chrome extension)
 
-Companion extension for [loom.dissonance.cloud](https://loom.dissonance.cloud)
-that delivers a true Loom-style frameless circle camera bubble during recording.
+Companion extension for Loomola that delivers a true Loom-style frameless circle
+camera bubble during recording.
 
 ## Why this exists
 
@@ -17,6 +17,21 @@ installed, you get the polished frameless experience.
 
 ## Install (developer mode)
 
+The checked-in extension is configured for Ian's production origin,
+`https://loom.dissonance.cloud`. For your own self-hosted Loomola, replace that
+origin with your app origin before loading the extension:
+
+```bash
+# Example from repo root
+perl -pi -e 's#https://loom\\.dissonance\\.cloud#https://your-domain.com#g' \
+  extension/manifest.json extension/background.js extension/popup.html
+```
+
+For local-only testing, also add `http://localhost:3000/*` to the app content
+script matches and host permissions in `extension/manifest.json`. The web
+recorder still works without this extension; it just falls back to the browser's
+document Picture-in-Picture bubble.
+
 1. Open `chrome://extensions` in Chrome (or any Chromium browser — Brave,
    Edge, Arc).
 2. Toggle **Developer mode** on (top-right).
@@ -28,7 +43,7 @@ installed, you get the polished frameless experience.
 
 ## Use
 
-1. Start a recording at https://loom.dissonance.cloud/record.
+1. Start a recording at your Loomola `/record` page.
 2. Pick the tab or window you want to record in Chrome's share picker.
 3. Switch to that tab — a frameless circle bubble appears in the bottom-right.
 4. Drag the bubble anywhere on the page. The composite recording follows.
@@ -43,7 +58,7 @@ click `Install Chrome Bridge` in the desktop app after loading the unpacked
 extension. The same installer can still be run from the terminal:
 
 ```sh
-cd /Users/iancross/Development/03Utilities/Loom_Clone
+cd /path/to/loomola
 desktop/scripts/install-native-messaging-host.sh
 ```
 
@@ -63,15 +78,15 @@ for the design rationale and message-flow diagram.
 
 Short version:
 
-- `content-script-app.js` runs on `loom.dissonance.cloud`. Bridges the
+- `content-script-app.js` runs on the Loomola app origin. Bridges the
   recording app's `window.postMessage` events to / from the extension's
   background service worker.
 - `content-script-page.js` runs on every other URL. Injects an
-  `<iframe src="https://loom.dissonance.cloud/bubble">` when recording is in
-  progress, removes it when recording stops. On meeting URLs it also watches
+  extension-origin `bubble.html` iframe when recording is in progress, removes
+  it when recording stops. On meeting URLs it also watches
   visible Meet/Teams/Zoom meeting pages and reports a `meeting-active` signal
   to the background worker.
-- The iframe (loom-clone origin) handles `getUserMedia` + drag interactions.
+- The iframe (extension origin) handles `getUserMedia` + drag interactions.
   Drag events bubble up via cross-origin `postMessage`.
 - `background.js` is a Manifest V3 service worker that routes messages
   between content scripts. State (is-recording) is persisted in

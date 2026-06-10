@@ -46,42 +46,201 @@ If you pay for both Loom AND Granola today, this is the package that replaces bo
 
 **Deploy.** Single `node:22-alpine` container with `ffmpeg` baked in for thumbnails and preview sprites. Doppler manages env at boot. Migrations run automatically. I use [Coolify](https://coolify.io) on a $7/mo Hostinger VPS, but any Docker host works.
 
-## Self-host
+## Self-host Quickstart
 
-Five accounts (all have free tiers sufficient for one user):
+This is the path for a friend cloning the repo and running their own Loomola.
+Do not copy Ian's `.env.local`; create fresh accounts and keys.
 
-1. **Supabase** for Postgres + Auth + Realtime: [supabase.com](https://supabase.com)
-2. **Cloudflare R2** for object storage (zero egress on the free tier): [cloudflare.com/r2](https://www.cloudflare.com/products/r2/)
-3. **Deepgram** for transcription: [deepgram.com](https://deepgram.com), $200 in free credit
-4. **Anthropic** for Claude: [console.anthropic.com](https://console.anthropic.com)
-5. **Mailgun** for comment and first-view notification emails (optional): [mailgun.com](https://mailgun.com)
+Two choices up front:
+
+- **Loom-only or Loom + Granola.** Start with `ENABLE_GRANOLA=false` if you only want screen recordings. Set it to `true` when you also want the macOS audio-meeting-notes product.
+- **Local or deployed.** `http://localhost:3000` is enough to open the app and test auth/UI. Deepgram transcription callbacks, public share links, and social unfurls need a public HTTPS app URL. Use a deploy, ngrok, or Cloudflare Tunnel for the full record-to-transcript pipeline.
+
+### Quickstart A — Docker Compose (recommended)
+
+Bundled MinIO for storage; you bring a free [Supabase](https://supabase.com) project (Postgres + auth) and a [Deepgram](https://deepgram.com) + [Anthropic](https://console.anthropic.com) key for the AI pipeline.
 
 ```bash
-# 1. Clone
-git clone https://github.com/Deducer/loomola
+git clone https://github.com/Deducer/loomola.git
 cd loomola
-
-# 2. Configure secrets (every var listed in .env.example needs a real value)
-cp .env.example .env.local
-# fill it in
-
-# 3. Install + run migrations
-pnpm install
-pnpm db:migrate
-
-# 4. Local dev on http://localhost:3000
-pnpm dev
+cp .env.compose.example .env.compose
+# Fill in: Supabase URL/keys/DATABASE_URL, Deepgram, Anthropic,
+# and a random MINIO_ROOT_PASSWORD (openssl rand -hex 32).
+docker compose up -d --build
 ```
 
-For the macOS desktop app:
+Open http://localhost:3000. Migrations run automatically at boot, and the container fails fast with a readable list if a required variable is missing. To verify every external service is wired correctly:
+
+```bash
+npm install && npm run doctor   # live checks against your config
+```
+
+The manual path below (Quickstart B) gives you `npm run dev` for development.
+
+### Quickstart B — Manual (npm run dev)
+
+#### 1. Install Local Prerequisites
+
+On macOS:
+
+```bash
+xcode-select --install
+brew install node@22 ffmpeg git
+```
+
+Use Chrome or another Chromium browser for screen recording. Safari/Firefox are not supported for the full recorder because the browser capture APIs are Chrome-only.
+
+#### 2. Create Service Accounts
+
+All of these have free tiers that are enough for one person:
+
+1. **Supabase** for Postgres, Auth, and Realtime: [supabase.com](https://supabase.com)
+2. **Cloudflare R2** for object storage: [cloudflare.com/r2](https://www.cloudflare.com/products/r2/)
+3. **Deepgram** for transcription: [deepgram.com](https://deepgram.com)
+4. **Anthropic** for title/summary/chapter generation: [console.anthropic.com](https://console.anthropic.com)
+5. **OpenAI** for embeddings/search when Granola is enabled: [platform.openai.com](https://platform.openai.com)
+6. **Mailgun** for notification/contact emails: [mailgun.com](https://mailgun.com)
+
+Supabase setup:
+
+- Create a project.
+- Copy the Project URL, anon key, service-role key, and database connection string.
+- In Supabase Auth, make sure Email/password auth is enabled.
+- Add your first user manually in **Authentication -> Users -> Add user**. Auto-confirm the user and save the email/password. Loomola is single-user today, so this is the creator account.
+- In URL Configuration, set Site URL to your app origin. Add redirect URLs for `http://localhost:3000/auth/callback` and, if deployed, `https://your-domain.com/auth/callback`.
+
+Cloudflare R2 setup:
+
+- Create a bucket, for example `loomola`.
+- Create R2 S3 API credentials with read/write access to that bucket.
+- Add a CORS policy to the bucket. Include both local and production origins if you use both:
+
+```json
+[
+  {
+    "AllowedOrigins": ["http://localhost:3000", "https://your-domain.com"],
+    "AllowedMethods": ["GET", "PUT", "POST", "HEAD"],
+    "AllowedHeaders": ["*"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+`ExposeHeaders: ["ETag"]` matters. Browser multipart uploads read each R2 part's `ETag`; without it, uploads fail even though the PUT request may look successful.
+
+#### 3. Clone and Configure
+
+```bash
+git clone https://github.com/Deducer/loomola.git
+cd loomola
+npm install
+cp .env.example .env.local
+```
+
+Fill in `.env.local`. Generate the random secrets with:
+
+```bash
+openssl rand -hex 32
+```
+
+Use that for `VIEW_UNLOCK_SECRET`, `VISITOR_HASH_SALT`, `DEEPGRAM_CALLBACK_SIGNING_SECRET`, `INTEGRATION_API_TOKEN`, and `MCP_TOKEN` if you enable MCP.
+
+For local UI-only testing, `NEXT_PUBLIC_APP_URL=http://localhost:3000` is fine. For real transcription, set it to a public HTTPS URL:
+
+```bash
+# Example with ngrok
+ngrok http 3000
+# Then set NEXT_PUBLIC_APP_URL=https://the-ngrok-url.ngrok-free.app
+```
+
+Restart `npm run dev` after changing `NEXT_PUBLIC_APP_URL`; Deepgram receives the callback URL when the transcribe job is created.
+
+#### 4. Migrate and Run
+
+```bash
+npm run db:migrate
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000), sign in with the Supabase user you created, and record a short test.
+
+Expected flow:
+
+1. `/record` creates an upload row.
+2. Browser uploads media parts directly to R2.
+3. Server completes the multipart upload.
+4. Deepgram transcribes the recording and calls back to your app.
+5. pg-boss workers generate the title, summary, chapters, action items, thumbnails, preview sprite, and downloads.
+
+If the recording stays in `transcribing`, the most common cause is `NEXT_PUBLIC_APP_URL` pointing at localhost or another URL Deepgram cannot reach.
+
+### 5. Install the macOS Desktop App
+
+The desktop app is optional for Loom-style browser recording, but it is the best way to use the Granola-style audio meeting notes and the native recorder.
+
+Make sure `.env.local` contains:
+
+```text
+LOOM_API_BASE_URL=http://localhost:3000
+LOOM_SUPABASE_URL=<your Supabase project URL>
+LOOM_SUPABASE_ANON_KEY=<your Supabase anon key>
+```
+
+For a deployed instance, use `LOOM_API_BASE_URL=https://your-domain.com`.
+
+Then:
 
 ```bash
 cd desktop
 ./scripts/install-local-app.sh
-# produces /Applications/Loomola.app, ad-hoc signed
 ```
 
-A pre-recorded setup walkthrough covering Cloudflare R2, Deepgram, Doppler, Coolify deploy, DNS and TLS, and the DB seed is on the way as a paid add-on for people who'd rather watch than read. Live, hands-on setup help is also available paid; DM [@theiancross](https://x.com/theiancross) on X. The repo itself is fully self-hostable from the docs at no cost.
+That builds, locally signs, installs, and launches `/Applications/Loomola.app`.
+Grant Camera, Microphone, Screen Recording, and Accessibility permissions when macOS asks. If you change Screen Recording permission, quit and relaunch the app.
+
+Desktop details live in [`desktop/README.md`](desktop/README.md).
+
+### 6. Chrome Extension for the Polished Bubble
+
+The web recorder works without the extension, but the extension gives you the frameless Loom-style camera bubble.
+
+For Ian's production instance, load the `extension/` folder as an unpacked Chrome extension. For your own domain, first replace `https://loom.dissonance.cloud` with your app origin in:
+
+- `extension/manifest.json`
+- `extension/background.js`
+- `extension/popup.html`
+
+Then load the unpacked extension at `chrome://extensions`. For local-only testing, add `http://localhost:3000/*` to the manifest matches/host permissions too. More detail is in [`extension/README.md`](extension/README.md).
+
+### Production Deploy Notes
+
+The Dockerfile assumes Doppler at runtime. This is intentional: the production container can receive one host-level env var, `DOPPLER_TOKEN`, and Doppler injects everything else before migrations and `server.js` run.
+
+Recommended production path:
+
+1. Create a Doppler project/config for Loomola.
+2. Copy the same values from `.env.local` into Doppler.
+3. In your host/Coolify app, set only `DOPPLER_TOKEN` as the runtime secret.
+4. Set Docker build args for `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `NEXT_PUBLIC_APP_URL` because Next.js inlines public env vars at build time.
+5. Point DNS at the host, enable HTTPS, and set `NEXT_PUBLIC_APP_URL=https://your-domain.com`.
+6. Add the production origin to R2 CORS and Supabase Auth URL settings.
+
+The container no longer requires Doppler: with `DOPPLER_TOKEN` set it injects
+secrets at boot (the maintainer's setup); without it, env vars pass through
+directly (`docker compose` / `docker run --env-file`).
+
+### Common Setup Failures
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Anything at all | Misconfigured service | Run `npm run doctor` — it live-checks DB, storage, Supabase, Deepgram, and LLM keys with one line per service |
+| `DATABASE_URL is not set` | `.env.local` missing or command run from the wrong folder | Run commands from repo root and fill `.env.local` |
+| Upload fails with missing `ETag` | R2 CORS does not expose `ETag` | Add `ExposeHeaders: ["ETag"]` to bucket CORS |
+| Recording stuck in `transcribing` | Deepgram cannot reach `NEXT_PUBLIC_APP_URL` | Use deployed HTTPS, ngrok, or Cloudflare Tunnel |
+| Login fails | Supabase user does not exist or is not confirmed | Add/confirm user in Supabase Auth dashboard |
+| Desktop app talks to Ian's prod | `LOOM_API_BASE_URL` left at default | Set `LOOM_API_BASE_URL` or `LOOM_DESKTOP_API_BASE_URL` before installing |
+| Extension pill says not detected | Extension still targets `loom.dissonance.cloud` | Update extension origin files and reload unpacked extension |
 
 ## What's shipped (rough roadmap)
 
