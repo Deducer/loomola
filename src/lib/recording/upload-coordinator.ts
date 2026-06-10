@@ -2,6 +2,26 @@ import type { TrackKind } from "./types";
 
 const TARGET_PART_SIZE = 8 * 1024 * 1024; // 8MB per part; S3 requires >=5MB except last
 
+/** 1 initial attempt + 3 retries per part. */
+export const MAX_PART_ATTEMPTS = 4;
+
+/**
+ * Exponential backoff with jitter for part-upload retries: base 1s/2s/4s
+ * for retryIndex 0/1/2, scaled by a random 0.5x–1.5x so simultaneous
+ * failures across the five tracks don't retry in lockstep.
+ */
+export function partRetryDelayMs(
+  retryIndex: number,
+  random: () => number = Math.random
+): number {
+  const base = 1000 * 2 ** retryIndex;
+  return Math.floor(base * (0.5 + random()));
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * Slice an ordered list of Blobs into two groups: the first contains exactly
  * `target` bytes (splitting a Blob if needed), the second contains the rest.
@@ -106,18 +126,37 @@ export function createUploadCoordinator(
     partNumber: number,
     body: Blob
   ): Promise<void> {
-    const url = await getPartUrl(kind, partNumber);
-    const res = await fetch(url, { method: "PUT", body });
-    if (!res.ok) {
-      throw new Error(`Part ${partNumber} of ${kind} failed: ${res.status}`);
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < MAX_PART_ATTEMPTS; attempt++) {
+      if (attempt > 0) await sleep(partRetryDelayMs(attempt - 1));
+      try {
+        // Fresh presigned URL EVERY attempt: a failed PUT may mean the
+        // previous URL expired, and the part-url fetch itself is a network
+        // call that deserves the same retry envelope.
+        const url = await getPartUrl(kind, partNumber);
+        const res = await fetch(url, { method: "PUT", body });
+        if (!res.ok) {
+          throw new Error(`Part ${partNumber} of ${kind} failed: ${res.status}`);
+        }
+        const etag = res.headers.get("ETag");
+        if (!etag) {
+          throw new Error(`Part ${partNumber} of ${kind} returned no ETag`);
+        }
+        state.completedParts.push({ PartNumber: partNumber, ETag: etag });
+        state.uploadedBytes += body.size;
+        reportProgress();
+        return;
+      } catch (err) {
+        lastErr = err;
+        console.warn(
+          `[upload] part ${partNumber} (${kind}) attempt ${attempt + 1}/${MAX_PART_ATTEMPTS} failed:`,
+          err
+        );
+      }
     }
-    const etag = res.headers.get("ETag");
-    if (!etag) {
-      throw new Error(`Part ${partNumber} of ${kind} returned no ETag`);
-    }
-    state.completedParts.push({ PartNumber: partNumber, ETag: etag });
-    state.uploadedBytes += body.size;
-    reportProgress();
+    throw lastErr instanceof Error
+      ? lastErr
+      : new Error(`Part ${partNumber} of ${kind} failed after ${MAX_PART_ATTEMPTS} attempts`);
   }
 
   function flushBuffer(kind: TrackKind, state: TrackState, isFinal: boolean) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useReducer, useRef } from "react";
+import { useCallback, useEffect, useReducer, useRef } from "react";
 import type {
   RecorderState,
   RecordingSettings,
@@ -67,6 +67,20 @@ function reducer(state: RecorderState, action: Action): RecorderState {
 
 export function RecordFlow({ brands }: { brands: BrandProfile[] }) {
   const [state, dispatch] = useReducer(reducer, { kind: "idle" } as RecorderState);
+
+  // Closing the tab mid-recording loses the capture; mid-upload it strands
+  // a partial multipart upload. Chrome shows its generic "Leave site?"
+  // dialog — that's all we can do, and it's enough.
+  useEffect(() => {
+    if (state.kind !== "recording" && state.kind !== "uploading") return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [state.kind]);
+
   const handleRef = useRef<RecorderHandle | null>(null);
   const preparedRef = useRef<PreparedRecording | null>(null);
   const coordinatorRef = useRef<UploadCoordinator | null>(null);
