@@ -4,7 +4,7 @@
 
 Self-hosted screen recording + AI meeting notes. Open-source alternative to Loom + Granola, in one product.
 
-> Active dev. Single-user today. The live instance at [loom.dissonance.cloud](https://loom.dissonance.cloud) is what I use daily as my own Loom + Granola replacement.
+> Active dev. Invite-based multi-user. The live instance at [loom.dissonance.cloud](https://loom.dissonance.cloud) is what I use daily as my own Loom + Granola replacement.
 
 ## What it is
 
@@ -26,7 +26,7 @@ Both surfaces use the same Postgres / R2 / Deepgram / Claude pipeline. Same `med
 | Transcription | proprietary | proprietary (real-time, no audio kept) | local Whisper | **Deepgram** (best-in-class hosted, ~$0.0043/min) |
 | AI summaries | basic | yes | basic | Claude Sonnet 4.6 with structured Zod output |
 | Custom branding on share pages | enterprise tier | — | — | ✓ (logo + accent + Google Font + CTA + footer per brand profile) |
-| Status | Atlassian-owned; [raised prices ~100× in Feb 2026](https://x.com/heynavtoor/status/2052307308253003921) | Active, free tier locks notes >30d | 18k★ active OSS | Active OSS, single-user today |
+| Status | Atlassian-owned; [raised prices ~100× in Feb 2026](https://x.com/heynavtoor/status/2052307308253003921) | Active, free tier locks notes >30d | 18k★ active OSS | Active OSS, invite-based multi-user |
 
 ## How this came to exist
 
@@ -69,7 +69,7 @@ cp .env.compose.example .env.compose
 docker compose --env-file .env.compose up -d --build
 ```
 
-Open http://localhost:3000. Migrations run automatically at boot, and the container fails fast with a readable list if a required variable is missing. To verify every external service is wired correctly:
+Open http://localhost:3000. The first visit walks you through creating your admin account. Migrations run automatically at boot, and the container fails fast with a readable list if a required variable is missing. To verify every external service is wired correctly:
 
 ```bash
 npm install && npm run doctor   # live checks against your config
@@ -106,7 +106,8 @@ Supabase setup:
 - Create a project.
 - Copy the Project URL, anon key, service-role key, and database connection string.
 - In Supabase Auth, make sure Email/password auth is enabled.
-- Add your first user manually in **Authentication -> Users -> Add user**. Auto-confirm the user and save the email/password. Loomola is single-user today, so this is the creator account.
+- No manual user creation needed: the first time you open the app it walks you
+  through creating your admin account in-browser.
 - In URL Configuration, set Site URL to your app origin. Add redirect URLs for `http://localhost:3000/auth/callback` and, if deployed, `https://your-domain.com/auth/callback`.
 
 Cloudflare R2 setup:
@@ -213,6 +214,14 @@ For Ian's production instance, load the `extension/` folder as an unpacked Chrom
 
 Then load the unpacked extension at `chrome://extensions`. For local-only testing, add `http://localhost:3000/*` to the manifest matches/host permissions too. More detail is in [`extension/README.md`](extension/README.md).
 
+### Inviting more users
+
+Loomola supports multiple accounts on one instance. As the admin, open
+`/settings/users` on your instance to send invite links (7-day expiry,
+single use). Each user sees only their own recordings, folders, and notes.
+If email isn't configured, copy the invite link from the UI and send it
+yourself. Password resets are self-serve from the sign-in page.
+
 ### Production Deploy Notes
 
 The container supports Doppler as an optional secrets manager: when the host sets a single `DOPPLER_TOKEN` env var, Doppler injects everything else before migrations and `server.js` run. Without it, env vars pass through directly.
@@ -258,7 +267,7 @@ For user-facing release notes, see [`CHANGELOG.md`](CHANGELOG.md).
 
 ## What's NOT here yet
 
-- **Multi-tenant / team accounts.** Single-user today. Sign-up is invite-only on my live instance because I haven't built proper signup yet. The architecture supports it, the UX doesn't.
+- **Team workspaces / sharing between users.** Invite-based multi-user exists (each user manages their own recordings, folders, and notes in isolation). Shared folders, cross-user permissions, and team-level workspaces are not built yet.
 - **iOS / Android / Windows desktop.** macOS only for native capture. The web `/record` flow works on any Chrome.
 - **Loom's advanced editing surface.** Basic trim (start / end) is shipped. Filler-word removal, edit-by-transcript (cut sentences directly out of the transcript), AI silence-removal, speed ramps, cursor-zoom effects, drawing or annotation on the recording — none of these are built yet. None are technically hard; they just haven't been my pain point. If any of them are yours, send a note via the contact form and I'll prioritize whichever the most people ask for.
 - **Voice-biometric speaker recognition.** ("Here's Bhaskar's voice across all my recordings.") Spec'd, deferred. See [`docs/superpowers/specs/2026-05-04-speaker-recognition-design.md`](docs/superpowers/specs/2026-05-04-speaker-recognition-design.md).
@@ -267,7 +276,7 @@ For user-facing release notes, see [`CHANGELOG.md`](CHANGELOG.md).
 
 ## A few honest notes
 
-- **Single-user today.** If you sign up via the live instance you'll bounce off the auth wall. Self-hosting is the path. I'm gauging interest before deciding whether to flip multi-tenant.
+- **Invite-based multi-user.** The live instance at loom.dissonance.cloud is invite-only. Self-hosting gives you full control: the first-run flow creates your admin account, and you invite others from `/settings/users`.
 - **Actively maintained.** I use Loomola every day, so improvements ship often. I'm not making any uptime guarantees, but the project isn't going dormant. If something breaks for you, file an issue.
 - **Not affiliated** with Loom, Atlassian, Granola, or Cap. Just a builder who doesn't want to pay $40 per seat per month.
 - **License is AGPL-3.0**, same as Cap. You can self-host freely. Anyone running a modified version as a hosted service has to publish their changes. The paid walkthrough video is a separate product, not part of the AGPL-licensed code.

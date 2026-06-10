@@ -4,6 +4,20 @@ Loomola uses date-based release notes while the product is still moving quickly.
 Each entry calls out user-visible changes first, then reliability or developer
 notes when they matter.
 
+## 2026-06-10
+
+### Added
+
+- **First-run admin setup.** A fresh install with no users routes to `/setup` where the admin creates their account in-browser. No Supabase dashboard required.
+- **Password reset.** Self-serve reset link flow via `/login/forgot`. Supabase sends the email; the link exchanges through `/auth/callback` and lands on a password-change form. Works without any infra changes.
+- **Invite-based multi-user.** Admins can issue invite links from `/settings/users` (7-day expiry, single-use). Each invited member sees only their own recordings, folders, and notes. If email (Mailgun) is not configured, the invite link is shown in the UI for manual sharing.
+- **Users settings page** (`/settings/users`). Lists all accounts on the instance, pending invites, and accepted/expired invite history. Invite revocation is available for pending invites.
+- **MCP multi-user guard.** When more than one user exists and `MCP_OWNER_ID` / `MCP_OWNER_EMAIL` are not set, the MCP server now errors with a clear message instead of silently falling back to the first user.
+
+### Security
+
+- Auth callback `?next=` parameter is now validated to same-origin paths only, blocking open-redirect tricks (`//evil.com`, `/\evil.com`, absolute URLs).
+
 ## 2026-05-21
 
 ### Added
