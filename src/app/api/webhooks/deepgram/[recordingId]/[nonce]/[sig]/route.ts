@@ -1,18 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyAndConsumeCallbackToken } from "@/lib/deepgram/callback-signature";
-import { db } from "@/db";
-import { mediaObjects } from "@/db/schema";
-import { eq, sql } from "drizzle-orm";
-import { insertTranscript, type WordTimestamp } from "@/db/queries/transcripts";
-import { insertBlankAiOutput } from "@/db/queries/ai-outputs";
-import { enqueueAiJobs } from "@/lib/queue/enqueue-processing";
-import { enqueueTranscriptEmbedding } from "@/lib/queue/boss";
-import { enableGranola } from "@/lib/feature-flags";
-import { listDictionaryTerms } from "@/db/queries/dictionary-terms";
-import {
-  buildVariantReplacementMap,
-  collapseDictionaryVariants,
-} from "@/lib/dictionary/transcript-rewrite";
+import type { WordTimestamp } from "@/db/queries/transcripts";
+import { persistTranscriptAndFanOut } from "@/lib/transcription/persist";
 import {
   buildSegmentsFromWords,
   mergeSourceTranscriptSegments,
@@ -73,91 +62,24 @@ export async function POST(
   const body = (await request.json()) as DeepgramCallbackBody;
   const channels = body.results?.channels ?? [];
   const parsedTranscript = parseDeepgramTranscript(channels);
-  const language = parsedTranscript.language;
   const requestId = body.metadata?.request_id ?? null;
 
-  const [media] = await db
-    .select({ type: mediaObjects.type, ownerId: mediaObjects.ownerId })
-    .from(mediaObjects)
-    .where(eq(mediaObjects.id, recordingId))
-    .limit(1);
-  if (!media) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-  if (media.type === "audio" && !enableGranola()) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-
-  const replacements = buildVariantReplacementMap(
-    await listDictionaryTerms(media.ownerId)
-  );
-  const rewritten = collapseDictionaryVariants(
-    parsedTranscript.fullText,
-    parsedTranscript.wordTimestamps,
-    replacements
-  );
-
-  await insertTranscript({
+  const result = await persistTranscriptAndFanOut({
     mediaObjectId: recordingId,
-    deepgramRequestId: requestId,
     provider: "deepgram",
     providerRequestId: requestId,
-    language,
-    fullText: rewritten.fullText,
-    wordTimestamps: rewritten.words,
+    transcript: parsedTranscript,
   });
 
-  if (enableGranola()) {
-    try {
-      await enqueueTranscriptEmbedding({ mediaObjectId: recordingId });
-    } catch (err) {
-      console.error(
-        `[webhook/deepgram] failed to enqueue transcript embedding for ${recordingId}:`,
-        err
-      );
-    }
-  }
-
-  if (media.type === "audio") {
-    await db
-      .update(mediaObjects)
-      .set({ status: "ready", failureReason: null, updatedAt: sql`now()` })
-      .where(eq(mediaObjects.id, recordingId));
-
-    console.log(
-      `[webhook/deepgram] audio transcript saved for ${recordingId} (${rewritten.words.length} words)`
-    );
-
-    return NextResponse.json({ ok: true });
-  }
-
-  // Pre-create the ai_outputs row so the 3 UPDATE-based jobs have a target.
-  const llmModel =
-    process.env.LLM_MODEL ?? process.env.LLM_MODEL_ID ?? "claude-sonnet-4-6";
-  await insertBlankAiOutput(recordingId, llmModel);
-
-  // Flip to 'processing' and fan out the 3 transcript-dependent AI jobs.
-  // Thumbnail + preview-sprite were already enqueued at upload-complete
-  // time (they don't need the transcript). The last job to finish — AI
-  // or thumbnail — calls flipToReadyIfComplete and moves status to 'ready'.
-  await db
-    .update(mediaObjects)
-    .set({ status: "processing", updatedAt: sql`now()` })
-    .where(eq(mediaObjects.id, recordingId));
-
-  try {
-    await enqueueAiJobs({ mediaObjectId: recordingId });
-  } catch (err) {
-    console.error(
-      `[webhook/deepgram] failed to enqueue AI jobs for ${recordingId}:`,
-      err
-    );
+  if (result.kind === "not_found") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   console.log(
-    `[webhook/deepgram] transcript saved, processing jobs enqueued for ${recordingId} (${rewritten.words.length} words)`
+    result.kind === "audio_ready"
+      ? `[webhook/deepgram] audio transcript saved for ${recordingId} (${result.wordCount} words)`
+      : `[webhook/deepgram] transcript saved, processing jobs enqueued for ${recordingId} (${result.wordCount} words)`
   );
-
   return NextResponse.json({ ok: true });
 }
 
