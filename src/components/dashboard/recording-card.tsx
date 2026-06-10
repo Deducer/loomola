@@ -197,6 +197,14 @@ export function RecordingCard({
           <h3 className="truncate text-sm font-medium text-text">
             {displayTitle}
           </h3>
+          {rec.status === "failed" && (
+            <p
+              className="truncate text-xs text-destructive"
+              title={rec.failureReason ?? undefined}
+            >
+              {rec.failureReason ?? "Processing failed."}
+            </p>
+          )}
           <div className="flex items-center gap-1.5 text-xs text-text-subtle">
             <span>{formatShortDate(new Date(rec.createdAt))}</span>
             {rec.brand && (
@@ -265,7 +273,11 @@ export function RecordingCard({
             )}
           </Button>
         </Tooltip>
-        <RecordingCardMenu recordingId={rec.id} folders={folders} />
+        <RecordingCardMenu
+          recordingId={rec.id}
+          status={rec.status}
+          folders={folders}
+        />
       </div>
     </div>
   );

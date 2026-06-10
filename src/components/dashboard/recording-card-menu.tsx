@@ -3,15 +3,18 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { MoreHorizontal, Trash2, FolderInput, Pencil } from "lucide-react";
+import { MoreHorizontal, Trash2, FolderInput, Pencil, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import type { Folder } from "@/db/queries/folders";
 
 export function RecordingCardMenu({
   recordingId,
+  status,
   folders,
 }: {
   recordingId: string;
+  status: "uploading" | "transcribing" | "processing" | "ready" | "failed";
   folders: Folder[];
 }) {
   const router = useRouter();
@@ -26,6 +29,22 @@ export function RecordingCardMenu({
     });
     setOpen(false);
     setShowMove(false);
+    router.refresh();
+  }
+
+  async function handleRetry() {
+    setOpen(false);
+    const res = await fetch(`/api/recordings/${recordingId}/retry`, {
+      method: "POST",
+    });
+    const body = (await res.json().catch(() => null)) as {
+      message?: string;
+    } | null;
+    if (!res.ok) {
+      toast.error(body?.message ?? `Retry failed (${res.status}).`);
+      return;
+    }
+    toast.success("Retry started.");
     router.refresh();
   }
 
@@ -108,6 +127,16 @@ export function RecordingCardMenu({
                   <FolderInput className="h-3.5 w-3.5" />
                   Move to folder
                 </button>
+                {status === "failed" && (
+                  <button
+                    type="button"
+                    onClick={() => void handleRetry()}
+                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-text-muted hover:bg-bg-subtle hover:text-text"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    Retry processing
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={handleDelete}

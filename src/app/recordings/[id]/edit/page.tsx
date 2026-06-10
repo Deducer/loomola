@@ -114,6 +114,21 @@ export default async function EditRecordingPage({
   const dropoffBuckets =
     isReady && durationSec != null ? bucketize(maxWatched, durationSec, 10) : [];
   const viewCount = rec.viewCount;
+  const allDownloads = [
+    ...downloads,
+    ...(transcript?.fullText.trim()
+      ? [
+          {
+            kind: "Transcript MD",
+            href: `/api/recordings/${rec.id}/transcript.md`,
+          },
+          {
+            kind: "Captions SRT",
+            href: `/api/recordings/${rec.id}/transcript.srt`,
+          },
+        ]
+      : []),
+  ];
   const words: Word[] = Array.isArray(transcript?.wordTimestamps)
     ? (transcript.wordTimestamps as Word[])
     : [];
@@ -167,6 +182,7 @@ export default async function EditRecordingPage({
                 title={displayTitle}
                 status={rec.status}
                 shareUrl={shareUrl}
+                failureReason={rec.failureReason}
               />
             }
             preview={
@@ -238,13 +254,13 @@ export default async function EditRecordingPage({
               />
             }
             downloads={
-              downloads.length > 0 ? (
+              allDownloads.length > 0 ? (
                 <section>
                   <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-text-muted">
                     <Download className="h-3.5 w-3.5" />
                     Downloads
                   </h2>
-                  <DownloadsList links={downloads} />
+                  <DownloadsList links={allDownloads} />
                   {trimActive && (
                     <p className="mt-2 text-[11px] leading-relaxed text-text-subtle">
                       Trim is active — viewers see the trimmed range on the

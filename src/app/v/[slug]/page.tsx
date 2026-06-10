@@ -215,21 +215,41 @@ export default async function SharePage({
         ) : (
           <div className="rounded-xl border border-dashed border-border bg-bg-subtle/40 p-12 text-center">
             <div className="inline-flex items-center gap-2 text-base font-medium text-text">
-              <span
-                aria-hidden="true"
-                className="h-2 w-2 animate-pulse rounded-full bg-accent"
-              />
-              {rec.status === "transcribing"
-                ? "Transcription in progress"
-                : rec.status === "processing"
-                  ? "AI outputs generating"
-                  : rec.status === "uploading"
-                    ? "Uploading"
-                    : "Not ready"}
+              {rec.status === "failed" ? (
+                <span
+                  aria-hidden="true"
+                  className="h-2 w-2 rounded-full bg-destructive"
+                />
+              ) : (
+                <span
+                  aria-hidden="true"
+                  className="h-2 w-2 animate-pulse rounded-full bg-accent"
+                />
+              )}
+              {rec.status === "failed"
+                ? "Processing failed"
+                : rec.status === "transcribing"
+                  ? "Transcription in progress"
+                  : rec.status === "processing"
+                    ? "AI outputs generating"
+                    : rec.status === "uploading"
+                      ? "Uploading"
+                      : "Not ready"}
             </div>
-            <p className="mt-3 text-sm text-text-subtle">
-              Refresh in ~15–30 seconds — this page will catch up automatically.
-            </p>
+            {rec.status === "failed" ? (
+              <p className="mt-3 text-sm text-text-subtle">
+                {/* failure_reason can mention provider/billing details —
+                    owner-only. Visitors get a neutral line. */}
+                {isOwner && rec.failureReason
+                  ? rec.failureReason
+                  : "The owner has been notified and can retry from their dashboard."}
+              </p>
+            ) : (
+              <p className="mt-3 text-sm text-text-subtle">
+                Refresh in ~15–30 seconds — this page will catch up
+                automatically.
+              </p>
+            )}
           </div>
         )}
       </main>
