@@ -1,0 +1,75 @@
+# Self-host Loomola with bundled MinIO object storage.
+#   cp .env.compose.example .env.compose   # fill in Supabase + API keys
+#   docker compose up -d
+# Postgres + auth come from your (free) Supabase project — see README.
+# Using Cloudflare R2 instead of MinIO? Deploy the Dockerfile directly
+# (Coolify/Render/fly) with R2_* vars; this compose file is the
+# batteries-included local/single-box path.
+
+services:
+  app:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+    env_file: .env.compose
+    environment:
+      S3_ENDPOINT: http://minio:9000
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-http://localhost:9000}
+      R2_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-loomola}
+      R2_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env.compose}
+      R2_BUCKET_NAME: ${R2_BUCKET_NAME:-loomola}
+    ports:
+      - "3000:3000"
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-loomola}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env.compose}
+      # Browser uploads go straight to MinIO via presigned URLs; CORS must
+      # allow the app origin AND expose ETag (multipart upload reads it).
+      MINIO_API_CORS_ALLOW_ORIGIN: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-loomola}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env.compose}
+      BUCKET: ${R2_BUCKET_NAME:-loomola}
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 \"$$MINIO_ROOT_USER\" \"$$MINIO_ROOT_PASSWORD\" &&
+      mc mb --ignore-existing local/$$BUCKET &&
+      echo bucket ready: $$BUCKET
+      "
+
+volumes:
+  minio-data:
