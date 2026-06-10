@@ -40,6 +40,8 @@ export function buildCSP(opts: SecurityHeaderOptions): string {
   // upgrade-insecure-requests would rewrite http://localhost:9000 (MinIO) and
   // http LAN deploys to https and break them; only emit it when the instance
   // itself is served over https.
+  // NEXT_PUBLIC_APP_URL is a required env var (see env-check.ts) — an unset
+  // value here means a misconfigured deploy, not a deliberate http instance.
   const httpsApp = (process.env.NEXT_PUBLIC_APP_URL ?? "").startsWith("https://");
   const directives = [
     "default-src 'self'",
@@ -58,7 +60,7 @@ export function buildCSP(opts: SecurityHeaderOptions): string {
     `media-src 'self' ${storage} blob:`,
     ["connect-src 'self'", "https://*.supabase.co", "wss://*.supabase.co", storage].join(" "),
     "worker-src 'self' blob:",
-    app && app !== "null" ? `frame-src 'self' ${app}` : "frame-src 'self'",
+    app ? `frame-src 'self' ${app}` : "frame-src 'self'",
     "base-uri 'self'",
     "form-action 'self'",
     "object-src 'none'",
