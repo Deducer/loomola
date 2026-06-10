@@ -1,0 +1,14 @@
+name: Feature request
+description: Something Loom/Granola does that Loomola should, or a new idea
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve for you?
+    validations:
+      required: true
+  - type: textarea
+    id: shape
+    attributes:
+      label: What might it look like?

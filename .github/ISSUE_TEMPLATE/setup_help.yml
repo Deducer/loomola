@@ -1,0 +1,25 @@
+name: Self-hosting setup help
+description: Stuck getting your own instance running
+labels: [setup]
+body:
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `npm run doctor` (or `docker compose logs app | head -50`)
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: path
+    attributes:
+      label: Setup path
+      placeholder: docker compose / Coolify / manual node
+    validations:
+      required: true
+  - type: textarea
+    id: stuck
+    attributes:
+      label: Where you got stuck
+      description: Which README step, and what you saw instead of the expected result.
+    validations:
+      required: true
