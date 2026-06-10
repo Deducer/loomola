@@ -68,8 +68,16 @@ import {
 import { WATCHDOG_JOB, WATCHDOG_CRON, runWatchdogJob } from "./jobs/watchdog";
 import { enableGranola } from "@/lib/feature-flags";
 
-let cached: PgBoss | null = null;
-let starting: Promise<PgBoss> | null = null;
+// The singleton lives on globalThis, not module scope: instrumentation.ts
+// (the boot-warm hook) is compiled into its own webpack bundle with its own
+// copy of this module's registry. A module-scoped `cached` would mean the
+// boot-warmed boss is invisible to route handlers — health would report
+// started:false forever and the first enqueue would start a SECOND boss.
+// globalThis is shared across bundles within the one Node process.
+const bossGlobal = globalThis as unknown as {
+  __loomBoss?: PgBoss | null;
+  __loomBossStarting?: Promise<PgBoss> | null;
+};
 
 async function init(): Promise<PgBoss> {
   const connectionString = process.env.DATABASE_URL;
@@ -286,14 +294,14 @@ async function init(): Promise<PgBoss> {
 
 /** Returns a started pg-boss singleton. Safe to call concurrently. */
 export async function getBoss(): Promise<PgBoss> {
-  if (cached) return cached;
-  if (!starting) {
-    starting = init().then((b) => {
-      cached = b;
+  if (bossGlobal.__loomBoss) return bossGlobal.__loomBoss;
+  if (!bossGlobal.__loomBossStarting) {
+    bossGlobal.__loomBossStarting = init().then((b) => {
+      bossGlobal.__loomBoss = b;
       return b;
     });
   }
-  return starting;
+  return bossGlobal.__loomBossStarting;
 }
 
 /**
@@ -302,7 +310,7 @@ export async function getBoss(): Promise<PgBoss> {
  * dead-workers state by warming boss itself.
  */
 export function getStartedBoss(): PgBoss | null {
-  return cached;
+  return bossGlobal.__loomBoss ?? null;
 }
 
 /** Enqueues a transcription job for the given recording. */
