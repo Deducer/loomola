@@ -66,7 +66,7 @@ cd loomola
 cp .env.compose.example .env.compose
 # Fill in: Supabase URL/keys/DATABASE_URL, Deepgram, Anthropic,
 # and a random MINIO_ROOT_PASSWORD (openssl rand -hex 32).
-docker compose up -d --build
+docker compose --env-file .env.compose up -d --build
 ```
 
 Open http://localhost:3000. Migrations run automatically at boot, and the container fails fast with a readable list if a required variable is missing. To verify every external service is wired correctly:

@@ -1,6 +1,8 @@
 # Self-host Loomola with bundled MinIO object storage.
 #   cp .env.compose.example .env.compose   # fill in Supabase + API keys
-#   docker compose up -d
+#   docker compose --env-file .env.compose up -d
+# (--env-file matters: compose only interpolates the ${VARS} below from .env
+#  or an explicit --env-file, not from the service-level env_file.)
 # Postgres + auth come from your (free) Supabase project — see README.
 # Using Cloudflare R2 instead of MinIO? Deploy the Dockerfile directly
 # (Coolify/Render/fly) with R2_* vars; this compose file is the
