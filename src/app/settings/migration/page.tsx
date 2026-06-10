@@ -12,7 +12,9 @@ export default async function MigrationSettingsPage() {
   }
   const user = await requireAuth();
   const serverUrl =
-    process.env.NEXT_PUBLIC_SITE_URL || "https://loom.dissonance.cloud";
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    "http://localhost:3000";
 
   return (
     <div className="min-h-screen bg-[var(--bg)]">
