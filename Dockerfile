@@ -59,7 +59,10 @@ COPY --from=build /app/public ./public
 COPY --from=build /app/drizzle ./drizzle
 COPY --from=build /app/scripts/migrate.cjs ./scripts/migrate.cjs
 
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
+
 EXPOSE 3000
 
-ENTRYPOINT ["doppler", "run", "--"]
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["sh", "-c", "node ./scripts/migrate.cjs && node ./server.js"]
