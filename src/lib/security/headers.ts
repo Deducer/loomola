@@ -1,4 +1,5 @@
 import type { NextResponse } from "next/server";
+import { storageCspOrigins } from "@/lib/r2/endpoint";
 
 export interface SecurityHeaderOptions {
   /** Relax frame-related headers so the response can be embedded cross-origin
@@ -17,13 +18,29 @@ const PERMISSIONS = [
   "interest-cohort=()",
 ].join(", ");
 
-function buildCSP(opts: SecurityHeaderOptions): string {
+function appOrigin(): string | null {
+  const url = process.env.NEXT_PUBLIC_APP_URL;
+  if (!url) return null;
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+}
+
+export function buildCSP(opts: SecurityHeaderOptions): string {
   const scriptSrc = [
     "script-src",
     "'self'",
     "'unsafe-inline'",
     ...(process.env.NODE_ENV === "production" ? [] : ["'unsafe-eval'"]),
   ].join(" ");
+  const storage = storageCspOrigins().join(" ");
+  const app = appOrigin();
+  // upgrade-insecure-requests would rewrite http://localhost:9000 (MinIO) and
+  // http LAN deploys to https and break them; only emit it when the instance
+  // itself is served over https.
+  const httpsApp = (process.env.NEXT_PUBLIC_APP_URL ?? "").startsWith("https://");
   const directives = [
     "default-src 'self'",
     // 'unsafe-inline' on script-src is required by the share-page theme
@@ -38,19 +55,14 @@ function buildCSP(opts: SecurityHeaderOptions): string {
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com data:",
     "img-src 'self' https: data: blob:",
-    "media-src 'self' https://*.r2.cloudflarestorage.com blob:",
-    [
-      "connect-src 'self'",
-      "https://*.supabase.co",
-      "wss://*.supabase.co",
-      "https://*.r2.cloudflarestorage.com",
-    ].join(" "),
+    `media-src 'self' ${storage} blob:`,
+    ["connect-src 'self'", "https://*.supabase.co", "wss://*.supabase.co", storage].join(" "),
     "worker-src 'self' blob:",
-    "frame-src 'self' https://loom.dissonance.cloud",
+    app && app !== "null" ? `frame-src 'self' ${app}` : "frame-src 'self'",
     "base-uri 'self'",
     "form-action 'self'",
     "object-src 'none'",
-    "upgrade-insecure-requests",
+    ...(httpsApp ? ["upgrade-insecure-requests"] : []),
   ];
   if (!opts.allowFraming) {
     directives.push("frame-ancestors 'self'");
