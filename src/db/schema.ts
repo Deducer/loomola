@@ -172,6 +172,9 @@ export const userPreferences = pgTable("user_preferences", {
   notifyFirstView: boolean("notify_first_view").notNull().default(true),
   notifyComments: boolean("notify_comments").notNull().default(true),
   notifyMarketing: boolean("notify_marketing").notNull().default(false),
+  // "admin" can invite/revoke users; "member" is everything else. The first
+  // account (first-run /setup) is admin; invited accounts are members.
+  role: text("role").notNull().default("member"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -568,6 +571,23 @@ export const rateLimitEvents = pgTable(
     ).on(t.scope, t.key, t.occurredAt.desc()),
   })
 );
+
+// ---------------------------------------------------------------------------
+// invites — admin-issued, single-use, expiring signup links. The raw token
+// is shown/emailed once; only its SHA-256 lands in the DB.
+// ---------------------------------------------------------------------------
+
+export const invites = pgTable("invites", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  createdBy: uuid("created_by").notNull(),
+  email: text("email").notNull(),
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
 
 // ---------------------------------------------------------------------------
 // webhook_nonces — single-use nonces for outbound→inbound webhook callbacks

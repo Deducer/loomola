@@ -183,6 +183,13 @@
       "when": 1778256000000,
       "tag": "0025_user_preferences",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1781108789820,
+      "tag": "0026_roles_and_invites",
+      "breakpoints": true
     }
   ]
 }

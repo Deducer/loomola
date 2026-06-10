@@ -26,6 +26,7 @@ export async function getUserPreferences(
     return {
       ownerId,
       ...DEFAULT_USER_PREFERENCES,
+      role: "member",
       createdAt: new Date(),
       updatedAt: new Date(),
     };
