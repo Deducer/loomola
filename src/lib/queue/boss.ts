@@ -296,6 +296,15 @@ export async function getBoss(): Promise<PgBoss> {
   return starting;
 }
 
+/**
+ * Returns the boss singleton ONLY if it has already started — never
+ * triggers init. /api/health uses this so a health probe can't mask a
+ * dead-workers state by warming boss itself.
+ */
+export function getStartedBoss(): PgBoss | null {
+  return cached;
+}
+
 /** Enqueues a transcription job for the given recording. */
 const TRANSCRIBE_JOB_OPTIONS = {
   retryLimit: 3,
