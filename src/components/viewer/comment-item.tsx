@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
+import { toast } from "sonner";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 
@@ -52,7 +53,7 @@ export function CommentItem({
     try {
       const res = await fetch(`/api/comments/${id}`, { method: "DELETE" });
       if (!res.ok) {
-        alert(`Delete failed (${res.status}).`);
+        toast.error(`Delete failed (${res.status}).`);
         return;
       }
       router.refresh();
