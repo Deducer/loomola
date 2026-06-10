@@ -39,11 +39,21 @@ actor BackendClient {
     }
 
     func noteMarkdownExport(mediaId: String) async throws -> String {
-        let data = try await getData(path: "/api/notes/\(mediaId)/export.md")
-        guard let markdown = String(data: data, encoding: .utf8) else {
+        let download = try await downloadNoteExport(mediaId: mediaId, kind: .fullMarkdown)
+        guard let markdown = String(data: download.data, encoding: .utf8) else {
             throw BackendClientError.invalidTextResponse(path: "/api/notes/\(mediaId)/export.md")
         }
         return markdown
+    }
+
+    func downloadNoteExport(
+        mediaId: String,
+        kind: NoteExportDownloadKind
+    ) async throws -> NoteExportDownload {
+        try await getDownload(
+            path: "/api/notes/\(mediaId)/\(kind.pathComponent)",
+            fallbackFilename: kind.fallbackFilename
+        )
     }
 
     func recentRecordings(limit: Int = 4, kind: String? = nil) async throws -> RecentRecordingsResponse {
@@ -173,6 +183,20 @@ actor BackendClient {
             method: "PATCH",
             path: "/api/notes/\(mediaId)/template",
             body: NoteTemplateSelectionRequest(templateId: templateId)
+        )
+    }
+
+    func reapplyDictionary(mediaId: String) async throws -> DictionaryReapplyResponse {
+        try await post(
+            path: "/api/notes/\(mediaId)/dictionary/reapply",
+            body: EmptyRequest()
+        )
+    }
+
+    func requestObsidianSave(mediaId: String) async throws -> ObsidianSaveResponse {
+        try await post(
+            path: "/api/notes/\(mediaId)/obsidian-save",
+            body: EmptyRequest()
         )
     }
 
@@ -391,6 +415,13 @@ actor BackendClient {
     }
 
     private func getData(path: String) async throws -> Data {
+        try await getDownload(path: path, fallbackFilename: "download").data
+    }
+
+    private func getDownload(
+        path: String,
+        fallbackFilename: String
+    ) async throws -> NoteExportDownload {
         let token = try await accessTokenProvider()
         let url = makeURL(path: path)
         var request = URLRequest(url: url)
@@ -413,7 +444,14 @@ actor BackendClient {
             log.error("GET \(path, privacy: .public) → \(http.statusCode, privacy: .public) body=\(bodyPreview, privacy: .public)")
             throw BackendClientError.badStatus(statusCode: http.statusCode, path: path, body: data)
         }
-        return data
+        return NoteExportDownload(
+            data: data,
+            filename: DownloadFilename.filename(
+                fromContentDisposition: http.value(forHTTPHeaderField: "Content-Disposition"),
+                fallback: fallbackFilename
+            ),
+            contentType: http.value(forHTTPHeaderField: "Content-Type")
+        )
     }
 
     private func put<RequestBody: Encodable, ResponseBody: Decodable>(
@@ -593,6 +631,111 @@ struct PendingObsidianNote: Decodable, Equatable, Sendable {
     let path: String
     let filename: String
     let exportUrl: String
+}
+
+enum NoteExportDownloadKind: Equatable, Sendable {
+    case fullMarkdown
+    case transcriptMarkdown
+    case json
+
+    var pathComponent: String {
+        switch self {
+        case .fullMarkdown: return "export.md"
+        case .transcriptMarkdown: return "transcript.md"
+        case .json: return "export.json"
+        }
+    }
+
+    var fallbackFilename: String {
+        switch self {
+        case .fullMarkdown: return "meeting.md"
+        case .transcriptMarkdown: return "meeting-transcript.md"
+        case .json: return "meeting-data.json"
+        }
+    }
+
+    var fileExtension: String {
+        switch self {
+        case .fullMarkdown, .transcriptMarkdown: return "md"
+        case .json: return "json"
+        }
+    }
+
+    var successLabel: String {
+        switch self {
+        case .fullMarkdown: return "full meeting"
+        case .transcriptMarkdown: return "transcript"
+        case .json: return "meeting data"
+        }
+    }
+}
+
+struct NoteExportDownload: Equatable, Sendable {
+    let data: Data
+    let filename: String
+    let contentType: String?
+}
+
+enum DownloadFilename {
+    static func filename(fromContentDisposition header: String?, fallback: String) -> String {
+        guard let header else { return sanitized(fallback: fallback) }
+        let parameters = header
+            .split(separator: ";")
+            .dropFirst()
+            .compactMap(parseParameter)
+        let keyed = Dictionary(parameters, uniquingKeysWith: { first, _ in first })
+        if let extended = keyed["filename*"],
+           let decoded = decodeExtendedFilename(extended) {
+            return sanitized(decoded, fallback: fallback)
+        }
+        if let filename = keyed["filename"] {
+            return sanitized(unquote(filename), fallback: fallback)
+        }
+        return sanitized(fallback: fallback)
+    }
+
+    private static func parseParameter(_ raw: Substring) -> (String, String)? {
+        guard let equals = raw.firstIndex(of: "=") else { return nil }
+        let key = raw[..<equals].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let value = raw[raw.index(after: equals)...].trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty, !value.isEmpty else { return nil }
+        return (key, value)
+    }
+
+    private static func decodeExtendedFilename(_ value: String) -> String? {
+        let parts = value.split(separator: "'", maxSplits: 2, omittingEmptySubsequences: false)
+        guard parts.count == 3 else { return nil }
+        let charset = parts[0].lowercased()
+        guard charset == "utf-8" || charset == "us-ascii" else { return nil }
+        return String(parts[2]).removingPercentEncoding
+    }
+
+    private static func unquote(_ value: String) -> String {
+        guard value.count >= 2 else { return value }
+        if value.first == "\"", value.last == "\"" {
+            return String(value.dropFirst().dropLast())
+                .replacingOccurrences(of: "\\\"", with: "\"")
+        }
+        return value
+    }
+
+    private static func sanitized(_ value: String, fallback: String) -> String {
+        let cleaned = value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: "\\", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+        return cleaned.isEmpty ? sanitized(fallback: fallback) : cleaned
+    }
+
+    private static func sanitized(fallback: String) -> String {
+        let value = fallback
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: "\\", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+        return value.isEmpty ? "download" : value
+    }
 }
 
 /// Builds request URLs from a base + a path that may include a
@@ -779,6 +922,19 @@ struct LiveTranscriptSnapshot: Codable, Sendable {
 
 struct NoteTemplateSelectionRequest: Encodable, Sendable {
     let templateId: String
+}
+
+struct DictionaryReapplyResponse: Decodable, Equatable, Sendable {
+    let ok: Bool?
+    let changed: Bool
+    let generationStatus: String?
+}
+
+struct ObsidianSaveResponse: Decodable, Equatable, Sendable {
+    let ok: Bool?
+    let status: String
+    let path: String
+    let exportUrl: String?
 }
 
 struct EnhanceNoteRequest: Encodable, Sendable {

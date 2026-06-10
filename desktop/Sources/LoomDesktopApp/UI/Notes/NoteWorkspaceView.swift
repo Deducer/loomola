@@ -68,6 +68,12 @@ private struct TranscriptSearchMatch: Identifiable, Equatable {
     }
 }
 
+private enum NoteWorkspaceMenuAction: Equatable {
+    case download(NoteExportDownloadKind)
+    case dictionary
+    case obsidian
+}
+
 /// Granola-shape note workspace, embedded directly in the main
 /// window when `MainRecorderView.noteTarget != nil`.
 ///
@@ -106,6 +112,7 @@ struct NoteWorkspaceView: View {
     @State private var showFolderPicker = false
     @State private var showAttendeePicker = false
     @State private var showRowMenu = false
+    @State private var menuActionInFlight: NoteWorkspaceMenuAction? = nil
     @State private var loadingBody = false
     @State private var bodyEditorMeasuredHeight: CGFloat = 320
     @FocusState private var bodyFocused: Bool
@@ -182,6 +189,17 @@ struct NoteWorkspaceView: View {
         case .running, .complete, .failed:
             return true
         }
+    }
+
+    private var reviewHasTranscript: Bool {
+        if let transcript,
+           !transcript.fullText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return true
+        }
+        if case .reviewing(let recording) = target {
+            return recording.transcriptReady == true
+        }
+        return false
     }
 
     /// Title bound to the right state container depending on mode.
@@ -433,6 +451,58 @@ struct NoteWorkspaceView: View {
                         viewModel.openWebNote(slug: recording.slug)
                     }
                 }
+                Divider().overlay(DSColor.Border.subtle)
+                menuItem(
+                    label: "Download full meeting .md",
+                    icon: "doc.badge.arrow.down",
+                    tint: DSColor.Text.primary,
+                    isDisabled: menuActionInFlight != nil
+                ) {
+                    if case .reviewing(let recording) = target {
+                        downloadNoteExport(.fullMarkdown, recording: recording)
+                    }
+                }
+                menuItem(
+                    label: "Download transcript .md",
+                    icon: "doc.text",
+                    tint: DSColor.Text.primary,
+                    isDisabled: menuActionInFlight != nil || !reviewHasTranscript
+                ) {
+                    if case .reviewing(let recording) = target {
+                        downloadNoteExport(.transcriptMarkdown, recording: recording)
+                    }
+                }
+                menuItem(
+                    label: "Download meeting data .json",
+                    icon: "curlybraces.square",
+                    tint: DSColor.Text.primary,
+                    isDisabled: menuActionInFlight != nil
+                ) {
+                    if case .reviewing(let recording) = target {
+                        downloadNoteExport(.json, recording: recording)
+                    }
+                }
+                Divider().overlay(DSColor.Border.subtle)
+                menuItem(
+                    label: "Apply dictionary & regenerate",
+                    icon: "arrow.triangle.2.circlepath",
+                    tint: DSColor.State.success,
+                    isDisabled: menuActionInFlight != nil || !reviewHasTranscript || enhanceStatus == .running
+                ) {
+                    if case .reviewing(let recording) = target {
+                        applyDictionaryAndRegenerate(recording: recording)
+                    }
+                }
+                menuItem(
+                    label: "Save to Obsidian",
+                    icon: "externaldrive.badge.arrow.down",
+                    tint: DSColor.State.success,
+                    isDisabled: menuActionInFlight != nil
+                ) {
+                    if case .reviewing(let recording) = target {
+                        saveNoteToObsidian(recording: recording)
+                    }
+                }
             }
             if isRecording {
                 Divider().overlay(DSColor.Border.subtle)
@@ -458,7 +528,7 @@ struct NoteWorkspaceView: View {
                 }
             }
         }
-        .frame(width: 220)
+        .frame(width: 300)
         .background(DSColor.Bg.surfaceRaised)
     }
 
@@ -466,15 +536,122 @@ struct NoteWorkspaceView: View {
         label: String,
         icon: String,
         tint: Color,
+        isDisabled: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
-        WorkspaceMenuItem(label: label, icon: icon, tint: tint, action: action)
+        WorkspaceMenuItem(
+            label: label,
+            icon: icon,
+            tint: tint,
+            isDisabled: isDisabled,
+            action: action
+        )
     }
 
     private var currentBody: String {
         switch target {
         case .recording: return viewModel.liveNotesBody
         case .reviewing: return reviewBody
+        }
+    }
+
+    private func downloadNoteExport(
+        _ kind: NoteExportDownloadKind,
+        recording: RecentRecording
+    ) {
+        guard let backend = viewModel.backendClient else { return }
+        showRowMenu = false
+        menuActionInFlight = .download(kind)
+        showToast(message: "Preparing \(kind.successLabel) download")
+
+        Task { @MainActor in
+            defer { menuActionInFlight = nil }
+            do {
+                let download = try await backend.downloadNoteExport(
+                    mediaId: recording.id,
+                    kind: kind
+                )
+                guard let destination = chooseExportDestination(
+                    suggestedFilename: download.filename,
+                    fileExtension: kind.fileExtension
+                ) else {
+                    return
+                }
+                try download.data.write(to: destination, options: [.atomic])
+                showToast(message: "Saved \(kind.successLabel) export")
+            } catch {
+                showToast(message: "Couldn't save \(kind.successLabel)", tone: .error)
+            }
+        }
+    }
+
+    private func chooseExportDestination(
+        suggestedFilename: String,
+        fileExtension: String
+    ) -> URL? {
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.nameFieldStringValue = suggestedFilename
+        if let type = UTType(filenameExtension: fileExtension) {
+            panel.allowedContentTypes = [type]
+        }
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+
+    private func applyDictionaryAndRegenerate(recording: RecentRecording) {
+        guard let backend = viewModel.backendClient else { return }
+        showRowMenu = false
+        menuActionInFlight = .dictionary
+        showToast(message: "Applying dictionary")
+
+        Task { @MainActor in
+            do {
+                let response = try await backend.reapplyDictionary(mediaId: recording.id)
+                menuActionInFlight = nil
+                guard response.changed else {
+                    showToast(message: "No dictionary changes found", tone: .warning)
+                    return
+                }
+                transcript = nil
+                transcriptError = nil
+                loadTranscript()
+                showToast(message: "Dictionary applied; regenerating notes")
+                beginPollingEnhancement(mediaId: recording.id, isActiveRecording: false)
+            } catch {
+                menuActionInFlight = nil
+                showToast(message: dictionaryApplyFailureMessage(error), tone: .error)
+            }
+        }
+    }
+
+    private func saveNoteToObsidian(recording: RecentRecording) {
+        showRowMenu = false
+        menuActionInFlight = .obsidian
+        showToast(message: "Saving to Obsidian")
+
+        Task { @MainActor in
+            defer { menuActionInFlight = nil }
+            do {
+                _ = try await viewModel.saveNoteToObsidianNow(mediaId: recording.id)
+                showToast(message: "Saved to Obsidian")
+            } catch {
+                showToast(message: "Couldn't save to Obsidian", tone: .error)
+            }
+        }
+    }
+
+    private func dictionaryApplyFailureMessage(_ error: Error) -> String {
+        guard let backendError = error as? BackendClientError else {
+            return "Couldn't apply dictionary"
+        }
+        switch backendError.apiErrorCode {
+        case .some("transcript_not_ready"):
+            return "Transcript isn't ready yet"
+        case .some("enqueue_failed"):
+            return "Couldn't restart AI run"
+        default:
+            return backendError.isTransient ? "Loomola is temporarily unavailable" : "Couldn't apply dictionary"
         }
     }
 
@@ -3182,27 +3359,34 @@ private struct WorkspaceMenuItem: View {
     let label: String
     let icon: String
     let tint: Color
+    let isDisabled: Bool
     let action: () -> Void
 
     @State private var hovering = false
 
     var body: some View {
+        let effectiveTint = isDisabled ? DSColor.Text.tertiary : tint
+
         HStack(spacing: DSSpacing.sm) {
             Image(systemName: icon)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(tint)
+                .foregroundStyle(effectiveTint)
                 .frame(width: 16)
             Text(label)
                 .font(DSFont.Body.md())
-                .foregroundStyle(tint)
+                .foregroundStyle(effectiveTint)
             Spacer()
         }
         .padding(.horizontal, DSSpacing.md)
         .padding(.vertical, DSSpacing.sm)
-        .background(hovering ? DSColor.Bg.subtle : Color.clear)
+        .background(!isDisabled && hovering ? DSColor.Bg.subtle : Color.clear)
         .contentShape(Rectangle())
-        .overlay { ActionHitArea(action: action) }
-        .onHover { hovering = $0 }
+        .overlay {
+            if !isDisabled {
+                ActionHitArea(action: action)
+            }
+        }
+        .onHover { hovering = !isDisabled && $0 }
     }
 }
 

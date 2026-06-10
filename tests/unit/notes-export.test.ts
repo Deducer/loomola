@@ -32,8 +32,21 @@ describe("Obsidian note export", () => {
       'obsidian_path: "/Users/iancross/Obsidian_Vaults/The Vault/0 - Inbox"'
     );
     expect(markdown).toContain("## Enhanced Notes");
+    expect(markdown).toContain("## Action Items");
     expect(markdown).toContain("### Ian");
     expect(markdown).toContain("[0:03] We should ship the export flow.");
+  });
+
+  it("includes action items in full meeting markdown", () => {
+    const payload = basePayload();
+    payload.enhanced.actionItems = [
+      { text: "Follow up with Abb.", timestamp_sec: 12 },
+    ];
+
+    const markdown = buildNoteMarkdown(payload);
+
+    expect(markdown).toContain("## Action Items");
+    expect(markdown).toContain("- [ ] Follow up with Abb. (0:12)");
   });
 
   it("uses a stable filename", () => {

@@ -185,4 +185,35 @@ final class BackendClientModelsTests: XCTestCase {
             "Couldn't attach shot.png: image is over 12 MB."
         )
     }
+
+    func testDownloadFilenameReadsContentDisposition() {
+        XCTAssertEqual(
+            DownloadFilename.filename(
+                fromContentDisposition: #"attachment; filename="2026-06-09-weekly-sync.md""#,
+                fallback: "meeting.md"
+            ),
+            "2026-06-09-weekly-sync.md"
+        )
+        XCTAssertEqual(
+            DownloadFilename.filename(
+                fromContentDisposition: "attachment; filename*=UTF-8''SF%20workshop%20prep.md",
+                fallback: "meeting.md"
+            ),
+            "SF workshop prep.md"
+        )
+    }
+
+    func testDownloadFilenameSanitizesPathSeparators() {
+        XCTAssertEqual(
+            DownloadFilename.filename(
+                fromContentDisposition: #"attachment; filename="../bad:name.md""#,
+                fallback: "meeting.md"
+            ),
+            "..-bad-name.md"
+        )
+        XCTAssertEqual(
+            DownloadFilename.filename(fromContentDisposition: nil, fallback: ""),
+            "download"
+        )
+    }
 }

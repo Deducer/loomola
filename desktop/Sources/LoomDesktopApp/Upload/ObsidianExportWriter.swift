@@ -14,7 +14,12 @@ actor ObsidianExportWriter {
         var written = 0
         for note in pending.notes {
             let markdown = try await backend.noteMarkdownExport(mediaId: note.mediaId)
-            let destination = try write(markdown: markdown, note: note)
+            let destination = try write(
+                markdown: markdown,
+                mediaId: note.mediaId,
+                path: note.path,
+                filename: note.filename
+            )
             try await backend.markObsidianSynced(
                 mediaId: note.mediaId,
                 filePath: destination.path
@@ -24,17 +29,22 @@ actor ObsidianExportWriter {
         return written
     }
 
-    private func write(markdown: String, note: PendingObsidianNote) throws -> URL {
-        let directory = Self.expandHome(in: note.path, fileManager: fileManager)
+    func write(
+        markdown: String,
+        mediaId: String,
+        path: String,
+        filename: String
+    ) throws -> URL {
+        let directory = Self.expandHome(in: path, fileManager: fileManager)
         try fileManager.createDirectory(
             at: directory,
             withIntermediateDirectories: true
         )
         let destination = Self.existingDestination(
-            for: note.mediaId,
+            for: mediaId,
             in: directory,
             fileManager: fileManager
-        ) ?? directory.appending(path: note.filename)
+        ) ?? directory.appending(path: filename)
         try markdown.write(to: destination, atomically: true, encoding: .utf8)
         return destination
     }

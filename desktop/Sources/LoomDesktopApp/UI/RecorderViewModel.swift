@@ -1880,6 +1880,31 @@ final class RecorderViewModel: ObservableObject {
         syncPendingObsidianNotes(showStatus: true)
     }
 
+    func saveNoteToObsidianNow(mediaId: String) async throws -> URL {
+        guard let backendClient, let obsidianExportWriter else {
+            throw ObsidianDesktopSaveError.unavailable
+        }
+        let queued = try await backendClient.requestObsidianSave(mediaId: mediaId)
+        let download = try await backendClient.downloadNoteExport(
+            mediaId: mediaId,
+            kind: .fullMarkdown
+        )
+        guard let markdown = String(data: download.data, encoding: .utf8) else {
+            throw BackendClientError.invalidTextResponse(path: "/api/notes/\(mediaId)/export.md")
+        }
+        let destination = try await obsidianExportWriter.write(
+            markdown: markdown,
+            mediaId: mediaId,
+            path: queued.path,
+            filename: download.filename
+        )
+        try await backendClient.markObsidianSynced(
+            mediaId: mediaId,
+            filePath: destination.path
+        )
+        return destination
+    }
+
     private func syncPendingObsidianNotes(showStatus: Bool) {
         guard let obsidianExportWriter else { return }
         guard !obsidianSyncInFlight else { return }
@@ -2321,6 +2346,14 @@ enum RecorderViewModelError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         "Saved sign-in is unavailable. Sign in again, then retry Recovery."
+    }
+}
+
+enum ObsidianDesktopSaveError: LocalizedError {
+    case unavailable
+
+    var errorDescription: String? {
+        "Obsidian sync is unavailable. Sign in again and try once more."
     }
 }
 

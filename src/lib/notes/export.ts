@@ -145,6 +145,9 @@ export function buildNoteMarkdown(payload: NoteExportPayload): string {
   lines.push("", "## Enhanced Notes", "");
   lines.push(payload.enhanced.summary?.trim() || "_No enhanced notes yet._");
 
+  lines.push("", "## Action Items", "");
+  lines.push(formatActionItems(payload.enhanced.actionItems));
+
   lines.push("", "## Transcript", "");
   lines.push(buildTranscriptMarkdown(payload) || "_No transcript yet._");
 
@@ -273,4 +276,23 @@ function formatTimestamp(value: number): string {
     return `${hours}:${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`;
   }
   return `${minutes}:${String(remainder).padStart(2, "0")}`;
+}
+
+function formatActionItems(value: unknown): string {
+  if (!Array.isArray(value) || value.length === 0) return "_No action items._";
+  return (
+    value
+      .map((item) => {
+        if (typeof item === "string") return `- [ ] ${item}`;
+        if (!item || typeof item !== "object") return null;
+        const text = "text" in item ? item.text : null;
+        const timestamp = "timestamp_sec" in item ? item.timestamp_sec : null;
+        if (typeof text !== "string" || !text.trim()) return null;
+        return `- [ ] ${text}${
+          typeof timestamp === "number" ? ` (${formatTimestamp(timestamp)})` : ""
+        }`;
+      })
+      .filter(Boolean)
+      .join("\n") || "_No action items._"
+  );
 }
