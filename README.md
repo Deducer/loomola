@@ -215,9 +215,9 @@ Then load the unpacked extension at `chrome://extensions`. For local-only testin
 
 ### Production Deploy Notes
 
-The Dockerfile assumes Doppler at runtime. This is intentional: the production container can receive one host-level env var, `DOPPLER_TOKEN`, and Doppler injects everything else before migrations and `server.js` run.
+The container supports Doppler as an optional secrets manager: when the host sets a single `DOPPLER_TOKEN` env var, Doppler injects everything else before migrations and `server.js` run. Without it, env vars pass through directly.
 
-Recommended production path:
+Recommended production path with Doppler:
 
 1. Create a Doppler project/config for Loomola.
 2. Copy the same values from `.env.local` into Doppler.
