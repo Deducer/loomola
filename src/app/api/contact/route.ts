@@ -11,7 +11,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { sendEmail } from "@/lib/mail/mailgun";
+import { isEmailConfigured, sendEmail } from "@/lib/mail/mailgun";
 import { checkRateLimit } from "@/lib/rate-limit/check";
 import { hashVisitor } from "@/lib/viewer/visitor-id";
 
@@ -91,6 +91,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
+  if (!isEmailConfigured()) {
+    return NextResponse.json(
+      { error: "This instance has no email configured, so the contact form is disabled." },
+      { status: 503 }
+    );
+  }
+
   const topicLabel = TOPIC_LABELS[topic];
   const subject = `[Loomola] ${topicLabel}`;
   const text = [
@@ -110,7 +117,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   } catch (e) {
     console.error("[contact] Mailgun send failed", e);
     return NextResponse.json(
-      { error: "Send failed; please DM @theiancross on X." },
+      { error: "Send failed; please try again later." },
       { status: 502 }
     );
   }
