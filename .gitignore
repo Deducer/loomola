@@ -17,3 +17,5 @@ next-env.d.ts
 tsconfig.tsbuildinfo
 /supabase/
 .superpowers/
+docs/Granola UI Screenshots/
+.claude/settings.local.json
