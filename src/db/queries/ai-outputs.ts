@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { aiOutputs, mediaObjects } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type {
   TitleSummary,
   EnhancedNotes,
@@ -155,7 +155,7 @@ export async function flipToReadyIfComplete(
   if (hasTitleSummary && hasChapters && hasActionItems && hasThumb) {
     await db
       .update(mediaObjects)
-      .set({ status: "ready" })
+      .set({ status: "ready", failureReason: null, updatedAt: sql`now()` })
       .where(eq(mediaObjects.id, mediaObjectId));
   }
 }

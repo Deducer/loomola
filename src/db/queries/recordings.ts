@@ -322,3 +322,35 @@ export async function updateRecordingBrand(params: {
     .returning({ id: mediaObjects.id });
   return result.length > 0;
 }
+
+/**
+ * Terminal failure: flips status to 'failed' with a human-readable reason.
+ * Bumps updated_at so the watchdog's "time since last transition" stays
+ * meaningful. Does not overwrite an existing reason with a vaguer one —
+ * callers pass the most specific reason they have.
+ */
+export async function setRecordingFailed(
+  id: string,
+  reason: string
+): Promise<void> {
+  await db
+    .update(mediaObjects)
+    .set({ status: "failed", failureReason: reason, updatedAt: sql`now()` })
+    .where(eq(mediaObjects.id, id));
+}
+
+/**
+ * Records WHY a job failed without flipping status — pg-boss may still
+ * retry the job successfully (success paths null the reason out). updated_at
+ * is deliberately NOT bumped: the watchdog measures time since the last
+ * STATUS transition, and a failing-retrying job must not reset that clock.
+ */
+export async function recordFailureReason(
+  id: string,
+  reason: string
+): Promise<void> {
+  await db
+    .update(mediaObjects)
+    .set({ failureReason: reason })
+    .where(eq(mediaObjects.id, id));
+}

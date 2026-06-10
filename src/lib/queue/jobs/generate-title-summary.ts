@@ -1,7 +1,9 @@
 import {
   generateObjectWithFallback,
   generateTextWithFallback,
+  describeAiFailure,
 } from "@/lib/ai/with-fallback";
+import { recordFailureReason } from "@/db/queries/recordings";
 import { titleSummarySchema } from "@/lib/ai/schemas";
 import { db } from "@/db";
 import { mediaObjects } from "@/db/schema";
@@ -218,7 +220,7 @@ async function generateAudioNoteTitle(params: {
   return object.title;
 }
 
-export async function runTitleSummaryJob(
+async function runTitleSummaryJobInner(
   data: TitleSummaryJobData
 ): Promise<void> {
   const transcript = await getTranscriptByRecording(data.mediaObjectId);
@@ -339,4 +341,25 @@ export async function runTitleSummaryJob(
   console.log(
     `[title-summary] completed for ${data.mediaObjectId}: "${object.title}"`
   );
+}
+
+export async function runTitleSummaryJob(
+  data: TitleSummaryJobData
+): Promise<void> {
+  try {
+    await runTitleSummaryJobInner(data);
+  } catch (err) {
+    // Record WHY before rethrowing — pg-boss owns retries; if they all
+    // fail, the watchdog flips status to 'failed' and this reason (not a
+    // generic "stuck" message) is what the user sees.
+    try {
+      await recordFailureReason(data.mediaObjectId, describeAiFailure(err));
+    } catch (recordErr) {
+      console.error(
+        `[title-summary] failed to record failure reason for ${data.mediaObjectId}:`,
+        recordErr
+      );
+    }
+    throw err;
+  }
 }

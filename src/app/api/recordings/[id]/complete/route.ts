@@ -4,7 +4,7 @@ import { getRecordingOwned } from "@/db/queries/recordings";
 import { completeMultipartUpload } from "@/lib/r2/multipart";
 import { db } from "@/db";
 import { mediaObjects } from "@/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { TrackKind } from "@/lib/recording/types";
 import {
   enqueuePlaybackTranscode,
@@ -152,6 +152,7 @@ export async function POST(
         durationSeconds: String(body.durationSeconds),
         status: "transcribing",
         uploadMetadata: null,
+        updatedAt: sql`now()`,
       })
       .where(
         and(eq(mediaObjects.id, recording.id), eq(mediaObjects.ownerId, user.id))

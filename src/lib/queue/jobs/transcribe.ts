@@ -8,6 +8,7 @@ import { getCanonicalTerms } from "@/db/queries/dictionary-terms";
 import { getUserPreferences } from "@/db/queries/user-preferences";
 import { deepgramLanguageOption } from "@/lib/preferences/user-preferences";
 import { isDeepgramPaymentRequiredError } from "@/lib/deepgram/errors";
+import { setRecordingFailed } from "@/db/queries/recordings";
 
 export const TRANSCRIBE_JOB = "transcribe";
 
@@ -62,10 +63,10 @@ export async function runTranscribeJob(data: TranscribeJobData): Promise<void> {
     });
   } catch (err) {
     if (isDeepgramPaymentRequiredError(err)) {
-      await db
-        .update(mediaObjects)
-        .set({ status: "failed" })
-        .where(eq(mediaObjects.id, mediaObjectId));
+      await setRecordingFailed(
+        mediaObjectId,
+        "Transcription failed: the Deepgram account has no credits (402 Payment Required)."
+      );
       console.error(
         `[transcribe] Deepgram payment required for media ${mediaObjectId}; marked failed`
       );

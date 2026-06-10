@@ -195,6 +195,10 @@ export const mediaObjects = pgTable("media_objects", {
   title: text("title"),
   description: text("description"),
   status: mediaObjectStatus("status").notNull(),
+  // Human-readable cause when status='failed'. Written at known failure
+  // points (Deepgram 402, LLM fallback exhaustion) and by the stuck-job
+  // watchdog. Cleared by every transition back to a healthy status.
+  failureReason: text("failure_reason"),
   brandProfileId: uuid("brand_profile_id").references(() => brandProfiles.id, {
     onDelete: "set null",
   }),

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { verifyAndConsumeCallbackToken } from "@/lib/deepgram/callback-signature";
 import { db } from "@/db";
 import { mediaObjects } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { insertTranscript, type WordTimestamp } from "@/db/queries/transcripts";
 import { insertBlankAiOutput } from "@/db/queries/ai-outputs";
 import { enqueueAiJobs } from "@/lib/queue/enqueue-processing";
@@ -121,7 +121,7 @@ export async function POST(
   if (media.type === "audio") {
     await db
       .update(mediaObjects)
-      .set({ status: "ready" })
+      .set({ status: "ready", failureReason: null, updatedAt: sql`now()` })
       .where(eq(mediaObjects.id, recordingId));
 
     console.log(
@@ -142,7 +142,7 @@ export async function POST(
   // or thumbnail — calls flipToReadyIfComplete and moves status to 'ready'.
   await db
     .update(mediaObjects)
-    .set({ status: "processing" })
+    .set({ status: "processing", updatedAt: sql`now()` })
     .where(eq(mediaObjects.id, recordingId));
 
   try {

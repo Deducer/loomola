@@ -101,3 +101,29 @@ function isNonRetryableProviderError(err: unknown): boolean {
   if (e.statusCode && [400, 401, 402, 403].includes(e.statusCode)) return true;
   return false;
 }
+
+/**
+ * Maps a provider error to a human-readable failure_reason for the
+ * recording row. Pure — unit-tested. Shown to the OWNER only (dashboard
+ * card / edit page); the public share page never renders it.
+ */
+export function describeAiFailure(err: unknown): string {
+  const e = (err ?? {}) as { statusCode?: unknown; message?: unknown };
+  const status = typeof e.statusCode === "number" ? e.statusCode : undefined;
+  const message =
+    typeof e.message === "string" && e.message.trim() ? e.message.trim() : null;
+
+  if (status === 401 || status === 403) {
+    return "AI generation failed: the AI provider rejected the API key";
+  }
+  if (status === 402 || (message ?? "").toLowerCase().includes("credit balance")) {
+    return "AI generation failed: the AI provider account is out of credits";
+  }
+  if (status === 429) {
+    return "AI generation failed: AI provider rate limit";
+  }
+  if (message) {
+    return `AI generation failed: ${message.slice(0, 200)}`;
+  }
+  return "AI generation failed";
+}
