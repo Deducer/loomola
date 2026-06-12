@@ -303,7 +303,20 @@ A 72-min audio recording was almost lost on 2026-05-06: a Coolify brownout retur
 | **Tests** | New `OrphanedRecordingStoreTests` covers capture / round-trip / mark-rescued / discard. All 96 desktop tests + 247 server unit tests pass. |
 | **Helper scripts kept around for incident response** | `scripts/diag-latest-audio.mjs` (latest audio note's full state — DB row + transcript + AI outputs + pg-boss jobs), `scripts/rescue-orphan-audio-note.mjs` (mix raw mic + system tracks locally with ffmpeg, upload to R2, insert media_objects row, enqueue transcribe), `scripts/wake-prod-boss.mjs` (hits an authed enhance endpoint with bearer token to wake pg-boss when silently dead). |
 
-## Stage 10 — Local MCP server (✅ Phase 1 shipped 2026-05-14)
+## Stage 10 — Open-source readiness (✅ shipped 2026-06-11)
+
+Turn Loomola from "Ian's daily driver that happens to be public" into a product a stranger can self-host in under 30 minutes. Six phases, all shipped 2026-06-09 → 2026-06-11.
+
+| Phase | What shipped |
+|---|---|
+| **Phase 1 — One-command self-host** | `docker-compose.yml` with bundled MinIO for storage; Doppler-optional container entrypoint (`docker-entrypoint.sh`); generic `S3_ENDPOINT` env var so MinIO, AWS S3, and R2 all work; fail-fast boot validation for core env vars; `npm run doctor` for live checks (DB, storage, Deepgram/Whisper, LLM); CSP/frame-src derived from `NEXT_PUBLIC_APP_URL` instead of hardcoded domain; community files (CONTRIBUTING.md, SECURITY.md, issue/PR templates); ESLint flat config + CI lint + build jobs; untracked Granola UI screenshots and local agent settings |
+| **Phase 2 — Accounts** | First-run admin setup at `/setup` (no Supabase dashboard required for first user); self-serve password reset at `/login/forgot`; invite-based multi-user (`invites` table, 7-day single-use links, `/settings/users` admin surface); role column on `user_preferences`; MCP multi-user guard errors loudly when `MCP_OWNER_ID` / `MCP_OWNER_EMAIL` unset and multiple users exist; open-redirect fix on auth callback `?next=` parameter |
+| **Phase 3 — Reliability** | Real `/api/health` (db check, boss started bool, per-queue pending/active/failed/oldest-pending-sec, build commit); stuck-recording watchdog (pg-boss scheduled job every 10 min, per-state thresholds: transcribing > 2h, processing > 1h, uploading > 24h); `failure_reason` column written at known failure points; Retry UX on dashboard cards, edit page, and share page; upload retry (3× exponential backoff + fresh presigned URLs on each retry); browser unload warning during in-flight upload; shared `apiError` / `withApiErrorHandling` helpers; boot-warmed pg-boss attempt 2 (dynamic import inside `NEXT_RUNTIME=nodejs` guard + `serverExternalPackages`) |
+| **Phase 4 — Pluggable transcription** | `TRANSCRIBE_PROVIDER` env var finally read; `openai-whisper` provider runs synchronously inside the pg-boss `transcribe` job — no public callback URL, unlocking LAN/localhost self-hosting; provider-agnostic transcript persist + AI fan-out extracted from the Deepgram webhook; env contract and doctor validate provider choice; transcript markdown and SRT export routes (`/api/recordings/[id]/transcript.md`, `.srt`) |
+| **Phase 5 — Distribution** | Configurable Chrome extension: app origin stored in `chrome.storage.sync`, options page, dynamic content-script registration — no manifest edits needed; manifest version bumped to 0.9.0; notarized desktop release GitHub Actions workflow on `v*` tags; GHCR image publishing workflow; release engineering: `v1.0.0` version sync across `package.json`, per-version CHANGELOG convention, `docs/releasing.md`; build stamp (`NEXT_PUBLIC_BUILD_COMMIT`) in health endpoint and release artifacts |
+| **Phase 6 — Hygiene & docs** | `docs/self-hosting.md` ops runbook (architecture, health monitoring, backups, upgrades, troubleshooting table); README final pass (Releases section, ops detail links to self-hosting.md, Stage 10 in shipped list, extension install updated for options page); ROADMAP.md Stage 10 entry; CLAUDE.md surgical updates; CHANGELOG consolidated into `v1.0.0` |
+
+## Stage 10.5 — Local MCP server (✅ Phase 1 shipped 2026-05-14)
 
 | Milestone | Status | What it ships |
 |---|---|---|
@@ -313,7 +326,7 @@ A 72-min audio recording was almost lost on 2026-05-06: a Coolify brownout retur
 | M4 | ✅ shipped | `npm run mcp-smoke`, setup docs, AGENTS.md infrastructure row, and spec open-question answers. |
 | Phase 2 | 💡 deferred | `loomola_people`, `loomola_folder`, and speaker-restricted semantic search. Speaker search needs a chunk/speaker attribution design before it should ship. |
 
-## Stage 10.1 — Share-link previews (✅ shipped 2026-05-21)
+## Stage 10.6 — Share-link previews (✅ shipped 2026-05-21)
 
 | What it ships |
 |---|
