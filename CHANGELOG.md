@@ -1,8 +1,16 @@
 # Changelog
 
-Loomola uses date-based release notes while the product is still moving quickly.
-Each entry calls out user-visible changes first, then reliability or developer
-notes when they matter.
+Loomola used date-based release notes while the product was pre-1.0; those
+entries are preserved below. From v1.0.0 onward, each release gets a
+version section (`## v1.1.0 — 2026-07-01`) accumulated under `## Unreleased`
+between tags. GitHub Releases are generated per tag by CI and point here
+for the curated notes.
+
+## Unreleased
+
+- Distribution: configurable Chrome-extension origin (options page),
+  notarized desktop release pipeline, GHCR image publishing, and release
+  engineering. (Phase 5 of the open-source readiness effort.)
 
 ## 2026-06-10
 
