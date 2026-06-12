@@ -238,13 +238,7 @@ Desktop details live in [`desktop/README.md`](desktop/README.md).
 
 The web recorder works without the extension, but the extension gives you the frameless Loom-style camera bubble.
 
-For Ian's production instance, load the `extension/` folder as an unpacked Chrome extension. For your own domain, first replace `https://loom.dissonance.cloud` with your app origin in:
-
-- `extension/manifest.json`
-- `extension/background.js`
-- `extension/popup.html`
-
-Then load the unpacked extension at `chrome://extensions`. For local-only testing, add `http://localhost:3000/*` to the manifest matches/host permissions too. More detail is in [`extension/README.md`](extension/README.md).
+Load the `extension/` folder as an unpacked Chrome extension at `chrome://extensions` (Developer mode on → Load unpacked → select `extension/`). No source editing needed — point it at your instance from the built-in options page (right-click the extension icon → Options) and enter your app origin. More detail is in [`extension/README.md`](extension/README.md).
 
 ### Inviting more users
 
@@ -271,6 +265,9 @@ The container no longer requires Doppler: with `DOPPLER_TOKEN` set it injects
 secrets at boot (the maintainer's setup); without it, env vars pass through
 directly (`docker compose` / `docker run --env-file`).
 
+For ongoing ops — health monitoring, backups, upgrades, and a full
+troubleshooting table — see [`docs/self-hosting.md`](docs/self-hosting.md).
+
 ### Common Setup Failures
 
 | Symptom | Likely cause | Fix |
@@ -280,9 +277,18 @@ directly (`docker compose` / `docker run --env-file`).
 | Upload fails with missing `ETag` | R2 CORS does not expose `ETag` | Add `ExposeHeaders: ["ETag"]` to bucket CORS |
 | Recording stuck in `transcribing` | Deepgram cannot reach `NEXT_PUBLIC_APP_URL` | Use deployed HTTPS, ngrok, or Cloudflare Tunnel — **or set `TRANSCRIBE_PROVIDER=openai-whisper` (no callback needed)** |
 | Whisper recording fails with "over OpenAI's 25MB limit" | Recording longer than ~1 hour | Switch to `TRANSCRIBE_PROVIDER=deepgram` and press Retry on the recording |
-| Login fails | Supabase user does not exist or is not confirmed | Add/confirm user in Supabase Auth dashboard |
+| Login fails | Supabase user does not exist or is not confirmed | Open your instance — first visit routes to `/setup` to create the admin account |
 | Desktop app talks to Ian's prod | `LOOM_API_BASE_URL` left at default | Set `LOOM_API_BASE_URL` or `LOOM_DESKTOP_API_BASE_URL` before installing |
-| Extension pill says not detected | Extension still targets `loom.dissonance.cloud` | Update extension origin files and reload unpacked extension |
+| Extension pill says not detected | Extension not pointed at your instance | Right-click extension icon → Options → enter your app origin and save |
+
+## Releases
+
+GitHub Releases are created automatically on every `v*` tag push. Each release includes:
+
+- **macOS `.dmg`** — signed and notarized when the repo secrets are configured; unsigned `.zip` otherwise. Download it from the Release page, or build locally via `desktop/scripts/install-local-app.sh`.
+- **GHCR Docker image** — `ghcr.io/deducer/loomola:<version>`. See the GHCR caveat in the Prebuilt image section above for the `NEXT_PUBLIC_*` constraint.
+
+For the tag and CHANGELOG convention, see [`docs/releasing.md`](docs/releasing.md).
 
 ## What's shipped (rough roadmap)
 
@@ -292,6 +298,7 @@ directly (`docker compose` / `docker run --env-file`).
 - **Stages 4–7**: macOS desktop app. Premium composite recorder, Granola-grade visual shell, live notes side panel, pause/resume, orphan recovery.
 - **Stage 8**: Granola-grade desktop note workspace.
 - **Stage 9**: reliability. Orphan recovery, Coolify brownout detection, boot-warmed pg-boss.
+- **Stage 10 (open-source readiness)**: one-command self-host (`docker compose`), bundled MinIO, `npm run doctor`, first-run admin setup, password reset, invite-based multi-user, failure UX with Retry, real `/api/health`, pluggable transcription (Deepgram + Whisper), configurable Chrome extension with options page, notarized desktop release workflow, GHCR image publishing, v1.0.0.
 - **Migration tools**: Granola to Loomola CLI (`migrate/`) using the official Granola Business API. Imports notes, transcripts, summaries, attendees, folders, speaker attribution. Loom import is the next major build.
 
 See [`ROADMAP.md`](ROADMAP.md) for the full status table.
@@ -302,9 +309,9 @@ For user-facing release notes, see [`CHANGELOG.md`](CHANGELOG.md).
 
 - **Team workspaces / sharing between users.** Invite-based multi-user exists (each user manages their own recordings, folders, and notes in isolation). Shared folders, cross-user permissions, and team-level workspaces are not built yet.
 - **iOS / Android / Windows desktop.** macOS only for native capture. The web `/record` flow works on any Chrome.
-- **Loom's advanced editing surface.** Basic trim (start / end) is shipped. Filler-word removal, edit-by-transcript (cut sentences directly out of the transcript), AI silence-removal, speed ramps, cursor-zoom effects, drawing or annotation on the recording — none of these are built yet. None are technically hard; they just haven't been my pain point. If any of them are yours, send a note via the contact form and I'll prioritize whichever the most people ask for.
+- **Loom's advanced editing surface.** Basic trim (start / end) is shipped. Filler-word removal, edit-by-transcript, AI silence-removal, speed ramps, cursor-zoom, drawing — none built yet.
 - **Voice-biometric speaker recognition.** ("Here's Bhaskar's voice across all my recordings.") Spec'd, deferred. See [`docs/superpowers/specs/2026-05-04-speaker-recognition-design.md`](docs/superpowers/specs/2026-05-04-speaker-recognition-design.md).
-- **Loom migration tool.** Separate piece of work once the Granola migrator settles.
+- **Loom migration tool.** The Granola migrator (`migrate/`) is shipped; Loom import is a separate piece of work.
 - **Custom share-page domains** per brand profile (something like `videos.acme.com` mapping to a Loomola brand). Pairs with Brand Layer 2.
 
 ## A few honest notes
