@@ -1,0 +1,172 @@
+name: Desktop Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build + package only: skip signing/notarization and skip the GitHub Release"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write # create/append the GitHub Release
+
+jobs:
+  build-macos:
+    runs-on: macos-14
+    env:
+      # Public client config baked into Contents/Resources/DesktopConfig.plist.
+      # Repo VARIABLES (not secrets) — these are public client values (anon
+      # key + URLs). Forks set their own to get a DMG for their instance.
+      LOOM_API_BASE_URL: ${{ vars.LOOM_API_BASE_URL }}
+      LOOM_SUPABASE_URL: ${{ vars.LOOM_SUPABASE_URL }}
+      LOOM_SUPABASE_ANON_KEY: ${{ vars.LOOM_SUPABASE_ANON_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select an Xcode with a Swift 6 toolchain
+        # Package.swift declares swift-tools-version 6.0; macos-14's default
+        # Xcode is 15.x (Swift 5.10). Pick the newest installed Xcode 16.
+        # Note: Package.swift uses swift-tools-version 6.0 but compiles the
+        # targets in Swift 5 language mode (swiftLanguageModes: [.v5]) due to
+        # a SwiftUI actor-isolation crash on macOS 26.x — the Swift 6 toolchain
+        # is still required for SPM to parse the manifest.
+        run: |
+          XCODE="$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1)"
+          if [ -z "$XCODE" ]; then
+            echo "::error::No Xcode 16 on this runner image — switch runs-on to macos-15 or later."
+            exit 1
+          fi
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          swift --version
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.0.0-dev.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Stamp bundle version from the tag
+        run: |
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${{ steps.version.outputs.version }}" desktop/App/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${GITHUB_RUN_NUMBER}" desktop/App/Info.plist
+
+      - name: Build release app bundle
+        run: |
+          if [ -z "$LOOM_SUPABASE_URL" ] || [ -z "$LOOM_SUPABASE_ANON_KEY" ]; then
+            echo "::warning::LOOM_SUPABASE_URL / LOOM_SUPABASE_ANON_KEY repo variables are unset — the packaged app will refuse sign-in (no DesktopConfig.plist will be written). See desktop/README.md → Release engineering."
+          fi
+          LOOM_DESKTOP_APP_PATH="$PWD/desktop/.build/Loomola.app" \
+          LOOM_DESKTOP_BUILD_CONFIGURATION=release \
+            desktop/scripts/build-dev-app.sh
+
+      - name: Decide whether we can sign + notarize
+        id: signing
+        env:
+          CERT: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          NOTARY: ${{ secrets.NOTARY_KEY_BASE64 }}
+          # workflow_dispatch inputs are only defined on workflow_dispatch events;
+          # on tag push this evaluates to an empty string, which is != "true".
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: |
+          if [ -n "$CERT" ] && [ -n "$NOTARY" ] && [ "$DRY_RUN" != "true" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Producing an UNSIGNED artifact (signing secrets absent, or dry run). The release path degrades gracefully — see desktop/README.md."
+          fi
+
+      - name: Import Developer ID certificate into a throwaway keychain
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/release.keychain-db"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          echo "$MACOS_CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$MACOS_CERT_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+      - name: Sign with Developer ID (hardened runtime)
+        if: steps.signing.outputs.enabled == 'true'
+        run: |
+          APP="desktop/.build/Loomola.app"
+          IDENTITY="$(security find-identity -v -p codesigning | awk -F'"' '/Developer ID Application/ {print $2; exit}')"
+          if [ -z "$IDENTITY" ]; then
+            echo "::error::No 'Developer ID Application' identity found in the imported p12."
+            exit 1
+          fi
+          # Sign inner Mach-O executables first, then the bundle.
+          # --deep is deprecated; explicit ordering is the correct approach.
+          codesign --force --options runtime --timestamp --sign "$IDENTITY" \
+            "$APP/Contents/Resources/LoomDesktopNativeHost"
+          codesign --force --options runtime --timestamp \
+            --entitlements desktop/App/LoomDesktop.entitlements \
+            --sign "$IDENTITY" "$APP"
+          codesign --verify --strict --verbose=2 "$APP"
+
+      - name: Create, sign, notarize, and staple the DMG
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+          NOTARY_KEY_BASE64: ${{ secrets.NOTARY_KEY_BASE64 }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          DMG="output/desktop/Loomola-$VERSION.dmg"
+          mkdir -p output/desktop
+          STAGING="$(mktemp -d)"
+          ditto "desktop/.build/Loomola.app" "$STAGING/Loomola.app"
+          ln -s /Applications "$STAGING/Applications"
+          hdiutil create -volname "Loomola" -srcfolder "$STAGING" -ov -format UDZO "$DMG"
+          IDENTITY="$(security find-identity -v -p codesigning | awk -F'"' '/Developer ID Application/ {print $2; exit}')"
+          codesign --force --timestamp --sign "$IDENTITY" "$DMG"
+          echo "$NOTARY_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+          xcrun notarytool submit "$DMG" \
+            --key "$RUNNER_TEMP/notary.p8" \
+            --key-id "$NOTARY_KEY_ID" \
+            --issuer "$NOTARY_ISSUER_ID" \
+            --wait
+          rm -f "$RUNNER_TEMP/notary.p8"
+          xcrun stapler staple "$DMG"
+          spctl -a -t open --context context:primary-signature -v "$DMG"
+
+      - name: Package unsigned fallback zip
+        if: steps.signing.outputs.enabled != 'true'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          mkdir -p output/desktop
+          # build-dev-app.sh already ad-hoc signed the bundle on the runner.
+          ditto -c -k --keepParent "desktop/.build/Loomola.app" \
+            "output/desktop/Loomola-$VERSION-unsigned.zip"
+          echo "::notice::Unsigned artifact: users must right-click > Open (Gatekeeper) — or wait for a signed release."
+
+      - name: Upload workflow artifact (dry runs and tags alike)
+        uses: actions/upload-artifact@v4
+        with:
+          name: loomola-desktop-${{ steps.version.outputs.version }}
+          path: output/desktop/*
+          if-no-files-found: error
+
+      - name: Attach to the GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: output/desktop/*
+          generate_release_notes: true
+
+      - name: Clean up keychain
+        if: always() && steps.signing.outputs.enabled == 'true'
+        run: security delete-keychain "$RUNNER_TEMP/release.keychain-db" || true

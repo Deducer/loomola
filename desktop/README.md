@@ -253,21 +253,67 @@ The eventual Xcode app target must include usage descriptions for:
 
 The placeholder `App/Info.plist` contains starter strings. macOS may require the app to be restarted after Screen Recording permission changes.
 
-## Signing and Notarization
+## Signed Release DMG (GitHub Actions)
 
-Direct DMG distribution requires an Apple Developer Program membership, currently about `$99/year`.
+The `Desktop Release` workflow (`.github/workflows/desktop-release.yml`) runs on
+`v*` tags and produces a signed, notarized, stapled DMG attached to the GitHub
+Release. Until the signing secrets are configured, the workflow degrades to a
+clearly-named `Loomola-<version>-unsigned.zip` — still usable (right-click →
+Open to bypass Gatekeeper), just not Gatekeeper-green without the extra step.
 
-Release path:
+**Honest constraint:** the published DMG bakes the Supabase URL, anon key, and
+API base URL from this repo's Actions variables (i.e., it talks to
+`loom.dissonance.cloud`). The desktop app has no in-app server picker — it reads
+`Contents/Resources/DesktopConfig.plist`, which is written at build time by
+`build-dev-app.sh`. Self-hosters have two options:
 
-1. Archive the app in Xcode.
-2. Sign with Developer ID Application.
-3. Create a DMG.
-4. Sign the DMG.
-5. Submit to Apple notarization with `xcrun notarytool`.
-6. Staple the notarization ticket with `xcrun stapler`.
-7. Host the DMG from `https://loom.dissonance.cloud/desktop/`.
+- **Build from source** with your own `.env.local` (the existing
+  `./scripts/install-local-app.sh` path above).
+- **Fork the repo**, set the three repo variables (see below), and run the
+  Desktop Release workflow to mint a DMG for your own instance.
 
-Mac App Store distribution is intentionally out of scope for v1 because review and sandbox restrictions slow down iteration on recorder behavior.
+Mac App Store distribution is intentionally out of scope for v1 because review
+and sandbox restrictions slow down iteration on recorder behavior.
+
+### One-time release credentials (repo admin)
+
+Requires an Apple Developer Program membership (~$99/yr).
+
+1. **Developer ID Application certificate.** Xcode → Settings → Accounts →
+   (your team) → Manage Certificates… → "+" → Developer ID Application.
+   Then in Keychain Access → login → My Certificates, right-click
+   "Developer ID Application: \<name\> (\<TEAMID\>)" → Export… → `developer-id.p12`
+   with a strong export password.
+
+2. **App Store Connect API key** (preferred over Apple-ID/app-specific
+   password for notarytool). appstoreconnect.apple.com → Users and Access →
+   Integrations → App Store Connect API → Team Keys → Generate API Key,
+   role **Developer**. Note the Key ID and Issuer ID; download
+   `AuthKey_<KEYID>.p8` (downloadable exactly once).
+
+3. **Set the secrets and variables:**
+
+   ```bash
+   base64 -i developer-id.p12 | gh secret set MACOS_CERT_P12_BASE64 -R Deducer/loomola
+   gh secret set MACOS_CERT_PASSWORD -R Deducer/loomola        # the p12 export password
+   gh secret set KEYCHAIN_PASSWORD -R Deducer/loomola --body "$(openssl rand -hex 24)"
+   gh secret set NOTARY_KEY_ID -R Deducer/loomola              # e.g. ABC123DEF4
+   gh secret set NOTARY_ISSUER_ID -R Deducer/loomola           # UUID from the Integrations page
+   base64 -i AuthKey_<KEYID>.p8 | gh secret set NOTARY_KEY_BASE64 -R Deducer/loomola
+
+   gh variable set LOOM_API_BASE_URL -R Deducer/loomola --body "https://loom.dissonance.cloud"
+   gh variable set LOOM_SUPABASE_URL -R Deducer/loomola --body "https://<project>.supabase.co"
+   gh variable set LOOM_SUPABASE_ANON_KEY -R Deducer/loomola --body "<anon key>"
+   ```
+
+   Then delete the local `developer-id.p12` and `AuthKey_*.p8` copies.
+
+Until these secrets exist, tag builds still succeed and attach
+`Loomola-<version>-unsigned.zip` to the release.
+
+**Dry-run validation (no secrets needed):** Actions → Desktop Release →
+Run workflow (dry_run: true) — expected: green build on the runner, an uploaded
+`Loomola-0.0.0-dev.N-unsigned.zip` artifact, no GitHub Release created.
 
 ## Auto-updates
 
