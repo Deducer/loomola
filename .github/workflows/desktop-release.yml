@@ -61,6 +61,10 @@ jobs:
           if [ -z "$LOOM_SUPABASE_URL" ] || [ -z "$LOOM_SUPABASE_ANON_KEY" ]; then
             echo "::warning::LOOM_SUPABASE_URL / LOOM_SUPABASE_ANON_KEY repo variables are unset — the packaged app will refuse sign-in (no DesktopConfig.plist will be written). See desktop/README.md → Release engineering."
           fi
+          # LOOM_BUILD_COMMIT: the Info.plist stamp above dirties the tree,
+          # which would make the script self-report "<sha>-dirty" on an
+          # official release; pass the real tagged commit explicitly.
+          LOOM_BUILD_COMMIT="$(git rev-parse --short HEAD)" \
           LOOM_DESKTOP_APP_PATH="$PWD/desktop/.build/Loomola.app" \
           LOOM_DESKTOP_BUILD_CONFIGURATION=release \
             desktop/scripts/build-dev-app.sh

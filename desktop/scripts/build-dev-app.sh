@@ -53,10 +53,15 @@ LOOM_API_BASE_URL="${LOOM_API_BASE_URL:-https://loom.dissonance.cloud}"
 
 # Build stamp so the running app can prove which commit it came
 # from (visible in Settings → Account). Falls back to "unknown" off
-# the git tree.
-BUILD_COMMIT="$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
-if [[ "$BUILD_COMMIT" != "unknown" ]] && ! git -C "$REPO_ROOT" diff --quiet --ignore-submodules HEAD -- . ':(exclude).claude/settings.local.json' 2>/dev/null; then
-  BUILD_COMMIT="$BUILD_COMMIT-dirty"
+# the git tree. LOOM_BUILD_COMMIT override exists for CI release builds,
+# which stamp Info.plist before building and would otherwise read as
+# dirty despite being exactly the tagged commit.
+BUILD_COMMIT="${LOOM_BUILD_COMMIT:-}"
+if [[ -z "$BUILD_COMMIT" ]]; then
+  BUILD_COMMIT="$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  if [[ "$BUILD_COMMIT" != "unknown" ]] && ! git -C "$REPO_ROOT" diff --quiet --ignore-submodules HEAD -- . ':(exclude).claude/settings.local.json' 2>/dev/null; then
+    BUILD_COMMIT="$BUILD_COMMIT-dirty"
+  fi
 fi
 BUILD_DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
