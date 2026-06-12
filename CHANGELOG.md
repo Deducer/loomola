@@ -8,6 +8,7 @@ notes when they matter.
 
 ### Added
 
+- **Pluggable transcription.** `TRANSCRIBE_PROVIDER=openai-whisper` transcribes synchronously via OpenAI Whisper — no public callback URL, so localhost/LAN self-hosting gets full transcription with zero tunnels. Deepgram remains the default and is unchanged. Whisper transcripts have no speaker labels and cap at ~1 hour (OpenAI 25MB limit); longer recordings fail with a clear reason and a Retry path. `npm run doctor` and boot-time env validation now check the provider choice, including invalid values.
 - **First-run admin setup.** A fresh install with no users routes to `/setup` where the admin creates their account in-browser. No Supabase dashboard required.
 - **Password reset.** Self-serve reset link flow via `/login/forgot`. Supabase sends the email; the link exchanges through `/auth/callback` and lands on a password-change form. Works without any infra changes.
 - **Invite-based multi-user.** Admins can issue invite links from `/settings/users` (7-day expiry, single-use). Each invited member sees only their own recordings, folders, and notes. If email (Mailgun) is not configured, the invite link is shown in the UI for manual sharing.

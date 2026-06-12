@@ -54,7 +54,7 @@ Do not copy Ian's `.env.local`; create fresh accounts and keys.
 Two choices up front:
 
 - **Loom-only or Loom + Granola.** Start with `ENABLE_GRANOLA=false` if you only want screen recordings. Set it to `true` when you also want the macOS audio-meeting-notes product.
-- **Local or deployed.** `http://localhost:3000` is enough to open the app and test auth/UI. Deepgram transcription callbacks, public share links, and social unfurls need a public HTTPS app URL. Use a deploy, ngrok, or Cloudflare Tunnel for the full record-to-transcript pipeline.
+- **Local or deployed.** `http://localhost:3000` is enough to open the app and test auth/UI — and, with `TRANSCRIBE_PROVIDER=openai-whisper`, for the full record-to-transcript pipeline. Deepgram transcription callbacks, public share links, and social unfurls still need a public HTTPS app URL. Use a deploy, ngrok, or Cloudflare Tunnel if you want those.
 
 ### Quickstart A — Docker Compose (recommended)
 
@@ -155,7 +155,23 @@ ngrok http 3000
 # Then set NEXT_PUBLIC_APP_URL=https://the-ngrok-url.ngrok-free.app
 ```
 
-Restart `npm run dev` after changing `NEXT_PUBLIC_APP_URL`; Deepgram receives the callback URL when the transcribe job is created.
+Restart `npm run dev` after changing `NEXT_PUBLIC_APP_URL`; Deepgram receives the callback URL when the transcribe job is created. Alternatively, set `TRANSCRIBE_PROVIDER=openai-whisper` to transcribe synchronously without any public callback URL — localhost works as-is.
+
+### Transcription: Deepgram vs OpenAI Whisper
+
+| | `deepgram` (default) | `openai-whisper` |
+|---|---|---|
+| How it runs | Async — Deepgram calls your instance back | Synchronous inside the job — no callback |
+| Works on `http://localhost` / LAN, no tunnel | No — needs a public HTTPS app URL | **Yes** |
+| Speaker labels (diarization) | Yes | No — whole transcript is one speaker |
+| Recording length | No practical limit | ~1 hour (OpenAI 25MB audio cap); longer recordings fail with a clear reason and can be retried after switching providers |
+| Live in-meeting transcript drawer (`ENABLE_GRANOLA`) | Yes | Still requires a Deepgram key |
+| Keys needed | `DEEPGRAM_API_KEY` + `DEEPGRAM_CALLBACK_SIGNING_SECRET` | `OPENAI_API_KEY` |
+
+Set `TRANSCRIBE_PROVIDER=openai-whisper` if you are self-hosting on a LAN or
+just don't want to run a tunnel for local dev transcription. Everything
+downstream (titles, summaries, chapters, action items, search) is identical.
+A local whisper.cpp provider behind the same interface is a planned follow-up.
 
 #### 4. Migrate and Run
 
@@ -246,7 +262,8 @@ directly (`docker compose` / `docker run --env-file`).
 | Anything at all | Misconfigured service | Run `npm run doctor` — it live-checks DB, storage, Supabase, Deepgram, and LLM keys with one line per service |
 | `DATABASE_URL is not set` | `.env.local` missing or command run from the wrong folder | Run commands from repo root and fill `.env.local` |
 | Upload fails with missing `ETag` | R2 CORS does not expose `ETag` | Add `ExposeHeaders: ["ETag"]` to bucket CORS |
-| Recording stuck in `transcribing` | Deepgram cannot reach `NEXT_PUBLIC_APP_URL` | Use deployed HTTPS, ngrok, or Cloudflare Tunnel |
+| Recording stuck in `transcribing` | Deepgram cannot reach `NEXT_PUBLIC_APP_URL` | Use deployed HTTPS, ngrok, or Cloudflare Tunnel — **or set `TRANSCRIBE_PROVIDER=openai-whisper` (no callback needed)** |
+| Whisper recording fails with "over OpenAI's 25MB limit" | Recording longer than ~1 hour | Switch to `TRANSCRIBE_PROVIDER=deepgram` and press Retry on the recording |
 | Login fails | Supabase user does not exist or is not confirmed | Add/confirm user in Supabase Auth dashboard |
 | Desktop app talks to Ian's prod | `LOOM_API_BASE_URL` left at default | Set `LOOM_API_BASE_URL` or `LOOM_DESKTOP_API_BASE_URL` before installing |
 | Extension pill says not detected | Extension still targets `loom.dissonance.cloud` | Update extension origin files and reload unpacked extension |
