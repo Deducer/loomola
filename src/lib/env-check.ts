@@ -1,3 +1,8 @@
+import {
+  isTranscribeProvider,
+  normalizedTranscribeProvider,
+} from "./transcription/provider";
+
 type Env = Record<string, string | undefined>;
 
 interface EnvGroup {
@@ -43,8 +48,17 @@ const GROUPS: EnvGroup[] = [
   {
     level: "recommended",
     vars: ["DEEPGRAM_API_KEY", "DEEPGRAM_CALLBACK_SIGNING_SECRET"],
-    when: (env) => (env.TRANSCRIBE_PROVIDER ?? "deepgram") === "deepgram",
+    when: (env) =>
+      normalizedTranscribeProvider(env.TRANSCRIBE_PROVIDER) === "deepgram",
     hint: "Without Deepgram, recordings upload but never transcribe.",
+  },
+  {
+    level: "required",
+    vars: ["OPENAI_API_KEY"],
+    when: (env) =>
+      normalizedTranscribeProvider(env.TRANSCRIBE_PROVIDER) ===
+      "openai-whisper",
+    hint: "TRANSCRIBE_PROVIDER=openai-whisper posts audio to OpenAI's hosted Whisper.",
   },
   {
     level: "recommended",
@@ -71,18 +85,32 @@ export interface EnvCheckResult {
   missing: string[];
   /** Missing RECOMMENDED vars (feature degrades, app still boots). */
   warnings: string[];
+  /** Vars that are SET but hold an unrecognized value. */
+  invalid: string[];
 }
 
 export function checkEnv(env: Env = process.env): EnvCheckResult {
   const missing: string[] = [];
   const warnings: string[] = [];
+  const invalid: string[] = [];
   for (const group of GROUPS) {
     if (group.when && !group.when(env)) continue;
     const absent = group.vars.filter((name) => !env[name]);
     if (group.level === "required") missing.push(...absent);
     else warnings.push(...absent);
   }
-  return { ok: missing.length === 0, missing, warnings };
+  const provider = normalizedTranscribeProvider(env.TRANSCRIBE_PROVIDER);
+  if (!isTranscribeProvider(provider)) {
+    invalid.push(
+      `TRANSCRIBE_PROVIDER="${provider}" (expected "deepgram" or "openai-whisper")`
+    );
+  }
+  return {
+    ok: missing.length === 0 && invalid.length === 0,
+    missing,
+    warnings,
+    invalid,
+  };
 }
 
 /**
@@ -101,6 +129,7 @@ export function assertCoreEnv(env: Env = process.env): void {
     const absent = group.vars.filter((name) => !env[name]);
     for (const name of absent) lines.push(`  - ${name}  (${group.hint})`);
   }
+  for (const entry of result.invalid) lines.push(`  - ${entry}`);
   lines.push("See .env.example and run `npm run doctor` for live checks.");
   throw new Error(lines.join("\n"));
 }

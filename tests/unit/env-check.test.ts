@@ -75,3 +75,47 @@ describe("assertCoreEnv", () => {
     expect(() => assertCoreEnv(rest)).not.toThrow();
   });
 });
+
+describe("transcription provider contract", () => {
+  it("whisper provider requires OPENAI_API_KEY and drops the Deepgram warning", () => {
+    const {
+      DEEPGRAM_API_KEY: _1,
+      DEEPGRAM_CALLBACK_SIGNING_SECRET: _2,
+      ...rest
+    } = FULL;
+    const r = checkEnv({ ...rest, TRANSCRIBE_PROVIDER: "openai-whisper" });
+    expect(r.ok).toBe(false);
+    expect(r.missing).toContain("OPENAI_API_KEY");
+    expect(r.warnings).not.toContain("DEEPGRAM_API_KEY");
+
+    const withKey = checkEnv({
+      ...rest,
+      TRANSCRIBE_PROVIDER: "openai-whisper",
+      OPENAI_API_KEY: "sk-x",
+    });
+    expect(withKey.ok).toBe(true);
+  });
+
+  it("empty TRANSCRIBE_PROVIDER means deepgram", () => {
+    const r = checkEnv({ ...FULL, TRANSCRIBE_PROVIDER: "" });
+    expect(r.ok).toBe(true);
+    expect(r.invalid).toEqual([]);
+  });
+
+  it("unknown providers are invalid and fail the contract", () => {
+    const r = checkEnv({ ...FULL, TRANSCRIBE_PROVIDER: "whisper" });
+    expect(r.ok).toBe(false);
+    expect(r.invalid.join(" ")).toMatch(/TRANSCRIBE_PROVIDER="whisper"/);
+    expect(r.invalid.join(" ")).toMatch(/deepgram.*openai-whisper/);
+  });
+
+  it("assertCoreEnv throws on an invalid provider", () => {
+    expect(() =>
+      assertCoreEnv({ ...FULL, TRANSCRIBE_PROVIDER: "assemblyai" })
+    ).toThrow(/TRANSCRIBE_PROVIDER/);
+  });
+
+  it("valid configs report empty invalid", () => {
+    expect(checkEnv(FULL).invalid).toEqual([]);
+  });
+});

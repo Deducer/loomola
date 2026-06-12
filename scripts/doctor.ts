@@ -8,9 +8,14 @@ import {
 } from "@aws-sdk/client-s3";
 import postgres from "postgres";
 import { existsSync, readFileSync } from "node:fs";
+import { spawn } from "node:child_process";
 import { checkEnv } from "../src/lib/env-check";
 import { getR2Client, r2BucketName } from "../src/lib/r2/client";
 import { resolveStorageEndpoint } from "../src/lib/r2/endpoint";
+import {
+  isTranscribeProvider,
+  normalizedTranscribeProvider,
+} from "../src/lib/transcription/provider";
 
 // Same loader shape as scripts/migrate.ts — doctor must work before deps
 // like dotenv exist in the runtime image.
@@ -90,7 +95,45 @@ async function checkSupabase() {
   }
 }
 
-async function checkDeepgram() {
+async function checkTranscription() {
+  const provider = normalizedTranscribeProvider(process.env.TRANSCRIBE_PROVIDER);
+  if (!isTranscribeProvider(provider)) {
+    return record(
+      "Transcription",
+      "fail",
+      `unknown TRANSCRIBE_PROVIDER "${provider}" — expected "deepgram" or "openai-whisper"`
+    );
+  }
+  if (provider === "openai-whisper") {
+    const key = process.env.OPENAI_API_KEY;
+    if (!key) {
+      record(
+        "Whisper (OpenAI)",
+        "fail",
+        "OPENAI_API_KEY is required when TRANSCRIBE_PROVIDER=openai-whisper"
+      );
+    } else {
+      const res = await fetch("https://api.openai.com/v1/models/whisper-1", {
+        headers: { Authorization: `Bearer ${key}` },
+      }).catch((e) => e as Error);
+      if (res instanceof Error) record("Whisper (OpenAI)", "fail", res.message);
+      else
+        record(
+          "Whisper (OpenAI)",
+          res.ok ? "ok" : "fail",
+          `models/whisper-1 → ${res.status}`
+        );
+    }
+    const ffmpegOk = await hasFfmpeg();
+    record(
+      "ffmpeg",
+      ffmpegOk ? "ok" : "fail",
+      ffmpegOk
+        ? "available (whisper audio extraction)"
+        : "not found — the whisper path extracts audio with ffmpeg; install it or set FFMPEG_PATH"
+    );
+    return;
+  }
   const key = process.env.DEEPGRAM_API_KEY;
   if (!key) return record("Deepgram", "warn", "no key — transcription disabled");
   try {
@@ -101,6 +144,16 @@ async function checkDeepgram() {
   } catch (e) {
     record("Deepgram", "fail", (e as Error).message);
   }
+}
+
+function hasFfmpeg(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const proc = spawn(process.env.FFMPEG_PATH ?? "ffmpeg", ["-version"], {
+      stdio: "ignore",
+    });
+    proc.on("error", () => resolve(false));
+    proc.on("close", (code) => resolve(code === 0));
+  });
 }
 
 async function checkLlm() {
@@ -139,14 +192,19 @@ function checkAppUrl() {
   const url = process.env.NEXT_PUBLIC_APP_URL ?? "";
   if (!url) return record("App URL", "fail", "NEXT_PUBLIC_APP_URL not set");
   if (url.startsWith("http://localhost") || url.startsWith("http://127.")) {
-    const provider = process.env.TRANSCRIBE_PROVIDER ?? "deepgram";
+    const provider = normalizedTranscribeProvider(process.env.TRANSCRIBE_PROVIDER);
     if (provider === "deepgram") {
       return record(
         "App URL",
         "warn",
-        `${url} — Deepgram callbacks cannot reach localhost; use a public HTTPS URL (deploy/ngrok/tunnel) for transcription`
+        `${url} — Deepgram callbacks cannot reach localhost; use a public HTTPS URL (deploy/ngrok/tunnel) or set TRANSCRIBE_PROVIDER=openai-whisper (no callback needed)`
       );
     }
+    return record(
+      "App URL",
+      "ok",
+      `${url} (openai-whisper transcribes synchronously — no public callback URL needed)`
+    );
   }
   record("App URL", "ok", url);
 }
@@ -166,8 +224,17 @@ async function main() {
   loadLocalEnvIfNeeded();
   console.log("Loomola doctor\n");
   const env = checkEnv();
-  if (env.missing.length > 0)
-    record("Env contract", "fail", `missing required: ${env.missing.join(", ")}`);
+  if (env.missing.length > 0 || env.invalid.length > 0)
+    record(
+      "Env contract",
+      "fail",
+      [
+        env.missing.length > 0 ? `missing required: ${env.missing.join(", ")}` : "",
+        env.invalid.length > 0 ? `invalid: ${env.invalid.join("; ")}` : "",
+      ]
+        .filter(Boolean)
+        .join(" — ")
+    );
   else if (env.warnings.length > 0)
     record("Env contract", "warn", `missing optional: ${env.warnings.join(", ")}`);
   else record("Env contract", "ok", "all configured");
@@ -175,7 +242,7 @@ async function main() {
   await checkDb();
   await checkStorage();
   await checkSupabase();
-  await checkDeepgram();
+  await checkTranscription();
   await checkLlm();
   await checkOpenAi();
   checkMail();

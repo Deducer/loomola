@@ -17,7 +17,8 @@ export function logBootSummaryOnce(): void {
     const bucket = process.env.R2_BUCKET_NAME ?? "?";
     const mg = process.env.MAILGUN_DOMAIN ?? "?";
     const env = checkEnv();
-    const missingTag = env.ok ? "" : ` missingEnv=[${env.missing.join(",")}]`;
+    const broken = [...env.missing, ...env.invalid];
+    const missingTag = env.ok ? "" : ` missingEnv=[${broken.join(",")}]`;
     const warnTag =
       env.warnings.length > 0 ? ` degradedEnv=[${env.warnings.join(",")}]` : "";
     console.log(
