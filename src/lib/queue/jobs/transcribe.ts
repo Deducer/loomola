@@ -1,14 +1,13 @@
-import { getDeepgramClient } from "@/lib/deepgram/client";
 import { presignGet } from "@/lib/r2/presigned-get";
-import { issueDeepgramCallbackToken } from "@/lib/deepgram/callback-signature";
 import { db } from "@/db";
 import { mediaObjects } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getCanonicalTerms } from "@/db/queries/dictionary-terms";
 import { getUserPreferences } from "@/db/queries/user-preferences";
 import { deepgramLanguageOption } from "@/lib/preferences/user-preferences";
-import { isDeepgramPaymentRequiredError } from "@/lib/deepgram/errors";
 import { setRecordingFailed } from "@/db/queries/recordings";
+import { submitTranscription } from "@/lib/transcription/submit";
+import { persistTranscriptAndFanOut } from "@/lib/transcription/persist";
 
 export const TRANSCRIBE_JOB = "transcribe";
 
@@ -20,63 +19,63 @@ export type TranscribeJobData = {
 };
 
 /**
- * Sends a Deepgram async prerecorded request pointing at an R2 media URL.
- * For video, that is the composite file; for audio, it is the mixed audio
- * or single uploaded audio track. Deepgram will POST the transcript to our
- * webhook when ready. The
- * job itself completes as soon as Deepgram ACKs the request; the webhook
- * handler persists the transcript to the DB and flips status to 'ready'.
+ * Provider-dispatched transcription (TRANSCRIBE_PROVIDER):
+ * - deepgram (default): async — submits with a signed callback URL; the
+ *   job completes when Deepgram ACKs and the webhook persists + fans out.
+ * - openai-whisper: sync — extracts audio, POSTs to OpenAI inside this
+ *   job, then runs the SAME persist + fan-out the webhook runs. No
+ *   public callback URL needed (localhost/LAN self-hosting works).
  *
- * The HMAC signature is carried as a path segment (not a query string) so
- * Deepgram's URL-encoding of our callback URL into its own query string
- * can't double-encode or mangle it.
+ * Terminal failures (Deepgram 402, OpenAI auth/quota, >25MB audio) mark
+ * the recording failed with a human-readable failure_reason; the owner
+ * Retry button re-enqueues this same job, so switching providers between
+ * attempts also Just Works.
  */
 export async function runTranscribeJob(data: TranscribeJobData): Promise<void> {
   const { mediaObjectId } = data;
   const sourceKey = data.audioKey ?? data.compositeKey;
   if (!sourceKey) throw new Error("transcribe job requires audioKey");
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL;
-  if (!appUrl) throw new Error("NEXT_PUBLIC_APP_URL is not set");
-
   const audioUrl = await presignGet(sourceKey);
   const ownerId = await getMediaOwnerId(mediaObjectId);
   const preferences = ownerId ? await getUserPreferences(ownerId) : null;
   const language = deepgramLanguageOption(preferences?.transcriptionLanguage);
-  const { nonce, sig } = await issueDeepgramCallbackToken({
-    recordingId: mediaObjectId,
-  });
-  const callbackUrl = `${appUrl}/api/webhooks/deepgram/${mediaObjectId}/${nonce}/${sig}`;
-  const keywords = await getDeepgramKeywords(mediaObjectId);
+  const canonical = ownerId ? await getCanonicalTerms(ownerId) : [];
+  const terms = canonical.slice(0, 100).map((term) => term.term);
 
-  const dg = getDeepgramClient();
-  try {
-    await dg.listen.v1.media.transcribeUrl({
-      url: audioUrl,
-      callback: callbackUrl,
-      model: "nova-2",
-      smart_format: true,
-      diarize: data.multichannel ? false : true,
-      ...(data.multichannel ? { multichannel: true } : {}),
-      ...(language ? { language } : {}),
-      ...(keywords.length > 0 ? { keywords } : {}),
-    });
-  } catch (err) {
-    if (isDeepgramPaymentRequiredError(err)) {
-      await setRecordingFailed(
-        mediaObjectId,
-        "Transcription failed: the Deepgram account has no credits (402 Payment Required)."
-      );
-      console.error(
-        `[transcribe] Deepgram payment required for media ${mediaObjectId}; marked failed`
-      );
-      return;
-    }
-    throw err;
+  const outcome = await submitTranscription({
+    mediaObjectId,
+    audioUrl,
+    multichannel: data.multichannel === true,
+    language,
+    terms,
+  });
+
+  if (outcome.mode === "failed") {
+    await setRecordingFailed(mediaObjectId, outcome.failureReason);
+    console.error(
+      `[transcribe] terminal failure for media ${mediaObjectId}: ${outcome.failureReason}`
+    );
+    return;
   }
 
+  if (outcome.mode === "callback") {
+    console.log(
+      `[transcribe] submitted Deepgram request for media ${mediaObjectId}`
+    );
+    return;
+  }
+
+  const persisted = await persistTranscriptAndFanOut({
+    mediaObjectId,
+    provider: "openai-whisper",
+    providerRequestId: outcome.providerRequestId,
+    transcript: outcome.result,
+  });
   console.log(
-    `[transcribe] submitted Deepgram request for media ${mediaObjectId}`
+    `[transcribe] whisper transcript persisted for media ${mediaObjectId} (${persisted.kind}, ${
+      persisted.kind === "not_found" ? 0 : persisted.wordCount
+    } words)`
   );
 }
 
@@ -87,16 +86,4 @@ async function getMediaOwnerId(mediaObjectId: string): Promise<string | null> {
     .where(eq(mediaObjects.id, mediaObjectId))
     .limit(1);
   return media?.ownerId ?? null;
-}
-
-async function getDeepgramKeywords(mediaObjectId: string): Promise<string[]> {
-  const [media] = await db
-    .select({ ownerId: mediaObjects.ownerId })
-    .from(mediaObjects)
-    .where(eq(mediaObjects.id, mediaObjectId))
-    .limit(1);
-  if (!media) return [];
-
-  const terms = await getCanonicalTerms(media.ownerId);
-  return terms.slice(0, 100).map((term) => term.term);
 }
