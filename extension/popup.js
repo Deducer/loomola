@@ -1,9 +1,28 @@
+import { getAppOrigin, hasStoredAppOrigin } from "./lib/app-origin.js";
+
 (async function () {
   const statusEl = document.getElementById("status");
   const statusText = document.getElementById("status-text");
   const meetingStatusEl = document.getElementById("meeting-status");
   const meetingStatusText = document.getElementById("meeting-status-text");
   const meetingDetail = document.getElementById("meeting-detail");
+
+  const origin = await getAppOrigin();
+  const recordLink = document.getElementById("record-link");
+  recordLink.href = `${origin}/record`;
+  recordLink.textContent = new URL(origin).host;
+
+  // First-run prompt: visible until the user has explicitly chosen an
+  // origin (the default keeps working without choosing one).
+  if (!(await hasStoredAppOrigin())) {
+    document.getElementById("first-run").hidden = false;
+  }
+  for (const id of ["open-options", "change-origin"]) {
+    document.getElementById(id).addEventListener("click", (e) => {
+      e.preventDefault();
+      chrome.runtime.openOptionsPage();
+    });
+  }
 
   function setDot(el, className) {
     const dot = el.querySelector(".dot");

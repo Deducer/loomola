@@ -17,20 +17,8 @@ installed, you get the polished frameless experience.
 
 ## Install (developer mode)
 
-The checked-in extension is configured for Ian's production origin,
-`https://loom.dissonance.cloud`. For your own self-hosted Loomola, replace that
-origin with your app origin before loading the extension:
-
-```bash
-# Example from repo root
-perl -pi -e 's#https://loom\\.dissonance\\.cloud#https://your-domain.com#g' \
-  extension/manifest.json extension/background.js extension/popup.html
-```
-
-For local-only testing, also add `http://localhost:3000/*` to the app content
-script matches and host permissions in `extension/manifest.json`. The web
-recorder still works without this extension; it just falls back to the browser's
-document Picture-in-Picture bubble.
+No source editing required. Load the extension as-is, then point it at your
+instance from the built-in options page.
 
 1. Open `chrome://extensions` in Chrome (or any Chromium browser — Brave,
    Edge, Arc).
@@ -40,6 +28,28 @@ document Picture-in-Picture bubble.
 5. Select the `extension/` directory in this repo.
 6. The extension's icon should appear in the toolbar. Click it to see the
    status (idle / recording).
+
+### Pointing the extension at your own Loomola instance
+
+By default the extension talks to `https://loom.dissonance.cloud`. To use your
+own self-hosted instance:
+
+1. Right-click the extension icon → **Options** (or click "Change app origin…"
+   in the popup).
+2. Enter your instance URL, e.g. `https://loomola.example.com`. For local
+   development, `http://localhost:3000` is accepted (http is allowed for
+   localhost only — all other origins require https).
+3. Click **Save**. Reload any already-open Loomola tabs.
+
+**No re-editing of `manifest.json` is needed.** The extension registers the
+app bridge (`content-script-app.js`) dynamically for your origin via
+`chrome.scripting.registerContentScripts`, which is already authorized by the
+manifest's required `<all_urls>` host permission (needed for the bubble
+injector). Chrome match patterns ignore port numbers, so the bridge matches
+your host on any port — harmless for typical single-port deployments.
+
+When no origin is stored, the default (`loom.dissonance.cloud`) is used
+automatically — Ian's install is unchanged.
 
 ## Use
 

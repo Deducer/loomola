@@ -1,5 +1,8 @@
 /**
- * Content script that runs on loom.dissonance.cloud only.
+ * Content script that runs on the configured Loomola app origin (default
+ * origin via the static manifest entry; custom origins via
+ * chrome.scripting.registerContentScripts — see background.js
+ * syncAppContentScript).
  *
  * Bridges between the recording app's window-level postMessage events and
  * the extension's chrome.runtime messaging:

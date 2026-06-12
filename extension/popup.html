@@ -91,12 +91,17 @@
       </div>
       <p id="meeting-detail" class="muted"></p>
     </div>
+    <p id="first-run" hidden>
+      Self-hosting Loomola? <a href="#" id="open-options">Set your instance URL</a>
+      — otherwise the default works as-is.
+    </p>
     <p>
       Start a recording at
-      <a href="https://loom.dissonance.cloud/record" target="_blank"
-        >loom.dissonance.cloud</a
+      <a id="record-link" href="https://loom.dissonance.cloud/record" target="_blank"
+        >your Loomola</a
       >. The bubble will appear automatically in whichever tab you record.
     </p>
-    <script src="popup.js"></script>
+    <p class="muted"><a href="#" id="change-origin">Change app origin…</a></p>
+    <script type="module" src="popup.js"></script>
   </body>
 </html>

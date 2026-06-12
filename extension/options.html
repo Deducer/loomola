@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Loomola — Options</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 16px;
+        width: 320px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+          sans-serif;
+        font-size: 13px;
+        background: #0b0b0c;
+        color: #e5e5e5;
+      }
+      h1 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+      p { margin: 0 0 12px; color: #a1a1aa; line-height: 1.5; }
+      label { display: block; margin-bottom: 6px; color: #a1a1aa; }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 6px 8px;
+        border-radius: 6px;
+        border: 1px solid #3f3f46;
+        background: #18181b;
+        color: #e5e5e5;
+        font-size: 13px;
+      }
+      .row { display: flex; gap: 8px; margin-top: 10px; }
+      button {
+        padding: 6px 12px;
+        border-radius: 6px;
+        border: none;
+        background: #7c3aed;
+        color: #fff;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      button.secondary { background: #27272a; color: #a1a1aa; }
+      #status { margin-top: 10px; font-size: 12px; min-height: 16px; }
+      #status.ok { color: #86efac; }
+      #status.error { color: #fca5a5; }
+    </style>
+  </head>
+  <body>
+    <h1>Loomola instance</h1>
+    <p>
+      The web app this extension talks to. Leave blank to use the default
+      instance.
+    </p>
+    <label for="origin">App origin</label>
+    <input id="origin" type="text" placeholder="https://loom.dissonance.cloud"
+      spellcheck="false" autocomplete="off" />
+    <div class="row">
+      <button id="save" type="button">Save</button>
+      <button id="reset" type="button" class="secondary">Use default</button>
+    </div>
+    <p id="status"></p>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

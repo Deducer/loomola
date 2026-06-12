@@ -6,6 +6,65 @@
  * "recording session" state in chrome.storage rather than module variables.
  */
 
+import { getAppOrigin, DEFAULT_APP_ORIGIN } from "./lib/app-origin.js";
+import { originToMatchPattern } from "./lib/origin-utils.js";
+
+/** Id for the dynamically-registered app-bridge content script (used only
+ * when a non-default origin is configured; the static manifest entry covers
+ * the default origin). */
+const APP_SCRIPT_ID = "loomola-app-bridge";
+
+async function appUrlPattern() {
+  return originToMatchPattern(await getAppOrigin());
+}
+
+/**
+ * Keeps the dynamic registration of content-script-app.js in sync with the
+ * configured origin. Default origin → no dynamic script (the static
+ * manifest entry already covers it — zero behavior change for the default
+ * install). Custom origin → register/update the bridge for that origin.
+ * Authorized by the manifest's required <all_urls> host permission, so no
+ * chrome.permissions.request flow is needed. persistAcrossSessions keeps
+ * the registration across browser restarts; onStartup/onInstalled re-syncs
+ * are self-healing belt-and-braces.
+ */
+async function syncAppContentScript() {
+  try {
+    const origin = await getAppOrigin();
+    const existing = await chrome.scripting.getRegisteredContentScripts({
+      ids: [APP_SCRIPT_ID],
+    });
+    if (origin === DEFAULT_APP_ORIGIN) {
+      if (existing.length > 0) {
+        await chrome.scripting.unregisterContentScripts({ ids: [APP_SCRIPT_ID] });
+        console.log("[loom-clone-ext:bg] app bridge back on default origin");
+      }
+      return;
+    }
+    const script = {
+      id: APP_SCRIPT_ID,
+      matches: [originToMatchPattern(origin)],
+      js: ["content-script-app.js"],
+      runAt: "document_idle",
+      persistAcrossSessions: true,
+    };
+    if (existing.length > 0) {
+      await chrome.scripting.updateContentScripts([script]);
+    } else {
+      await chrome.scripting.registerContentScripts([script]);
+    }
+    console.log(`[loom-clone-ext:bg] app bridge registered for ${origin}`);
+  } catch (err) {
+    console.error("[loom-clone-ext:bg] syncAppContentScript failed:", err);
+  }
+}
+
+chrome.runtime.onInstalled.addListener(() => void syncAppContentScript());
+chrome.runtime.onStartup.addListener(() => void syncAppContentScript());
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "sync" && changes.appOrigin) void syncAppContentScript();
+});
+
 const STATE_KEY = "loomCloneRecordingState";
 const MEETING_SIGNAL_KEY = "loomCloneMeetingSignal";
 const NATIVE_HOST_NAME = "com.dissonance.loom_desktop";
@@ -53,7 +112,7 @@ async function writeActiveBubbleTabId(tabId) {
 
 /**
  * Whether a tab is one we can or should inject the bubble into.
- * loom.dissonance.cloud is intentionally allowed: in entire-screen
+ * The Loomola app origin is intentionally allowed: in entire-screen
  * recording mode the user often stays on /record, and without the
  * bubble injected there they'd see no bubble at all until they
  * switched tabs. The /record HUD's own camera preview coexists with
@@ -171,9 +230,7 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
  * recording app can update its BubblePositionController.
  */
 async function forwardPositionToApp(position) {
-  const tabs = await chrome.tabs.query({
-    url: "https://loom.dissonance.cloud/*",
-  });
+  const tabs = await chrome.tabs.query({ url: await appUrlPattern() });
   await Promise.all(
     tabs.map(async (tab) => {
       if (!tab.id) return;
@@ -190,9 +247,7 @@ async function forwardPositionToApp(position) {
 }
 
 async function forwardMeetingSignalToApp(meeting) {
-  const tabs = await chrome.tabs.query({
-    url: "https://loom.dissonance.cloud/*",
-  });
+  const tabs = await chrome.tabs.query({ url: await appUrlPattern() });
   await Promise.all(
     tabs.map(async (tab) => {
       if (!tab.id) return;
