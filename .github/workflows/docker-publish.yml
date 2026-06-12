@@ -1,0 +1,86 @@
+name: Publish Docker image
+
+# NOTE on the published image: Next.js inlines NEXT_PUBLIC_* at build time
+# (see Dockerfile build ARGs; src/lib/supabase/client.ts consumes them in the
+# browser bundle). The default image is built with placeholder values, so
+# BROWSER AUTH DOES NOT WORK with it out of the box. It exists as a build-
+# cache source and a base for forks that bake their own values via
+# workflow_dispatch. `docker compose up` (build: .) remains the supported
+# self-host path — see README "Prebuilt image (GHCR)".
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      next_public_supabase_url:
+        description: "Bake a real NEXT_PUBLIC_SUPABASE_URL (forks: your own instance)"
+        type: string
+        default: ""
+      next_public_supabase_anon_key:
+        description: "Bake a real NEXT_PUBLIC_SUPABASE_ANON_KEY"
+        type: string
+        default: ""
+      next_public_app_url:
+        description: "Bake a real NEXT_PUBLIC_APP_URL"
+        type: string
+        default: ""
+
+permissions:
+  contents: write # GitHub Release on tags
+  packages: write # push to GHCR
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          # Lowercased automatically -> ghcr.io/deducer/loomola on this repo;
+          # forks publish under their own namespace with zero edits.
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=ref,event=branch
+            type=sha
+          labels: |
+            org.opencontainers.image.description=Loomola web app. NEXT_PUBLIC_* values are baked at build time with placeholders — browser auth requires building your own image (docker compose up does this). See the repo README, "Prebuilt image (GHCR)".
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            NEXT_PUBLIC_SUPABASE_URL=${{ inputs.next_public_supabase_url || 'https://placeholder.supabase.co' }}
+            NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ inputs.next_public_supabase_anon_key || 'placeholder-anon-key' }}
+            NEXT_PUBLIC_APP_URL=${{ inputs.next_public_app_url || 'http://localhost:3000' }}
+            NEXT_PUBLIC_BUILD_COMMIT=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Create or update the GitHub Release for this tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          body: |
+            See `CHANGELOG.md` for the curated changes in this release.
+
+            Container image: `ghcr.io/deducer/loomola:${{ github.ref_name }}`
+            (placeholder `NEXT_PUBLIC_*` — self-hosters: use `docker compose up`,
+            which builds with your values; see README.)

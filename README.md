@@ -77,6 +77,22 @@ npm install && npm run doctor   # live checks against your config
 
 The manual path below (Quickstart B) gives you `npm run dev` for development.
 
+### Prebuilt image (GHCR)
+
+`ghcr.io/deducer/loomola` is published on every push to `main` and on
+release tags. Caveat that matters: Next.js inlines `NEXT_PUBLIC_*`
+(your Supabase URL and anon key) into the JavaScript bundle **at build
+time**, and the public image is built with placeholders — so sign-in in
+the browser cannot work with it as-is. There is no runtime override.
+
+- **Self-hosting?** Use `docker compose up` — it builds the image with
+  your values from `.env.compose`. This is the supported path.
+- **Want your own prebuilt image?** Fork the repo and run the
+  "Publish Docker image" workflow with your `NEXT_PUBLIC_*` values as
+  inputs; it publishes to your fork's GHCR namespace.
+- The public image is still useful as a build-cache source and for
+  poking at the container layout.
+
 ### Quickstart B — Manual (npm run dev)
 
 #### 1. Install Local Prerequisites

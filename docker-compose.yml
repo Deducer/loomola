@@ -7,6 +7,13 @@
 # Using Cloudflare R2 instead of MinIO? Deploy the Dockerfile directly
 # (Coolify/Render/fly) with R2_* vars; this compose file is the
 # batteries-included local/single-box path.
+#
+# A prebuilt image exists at ghcr.io/deducer/loomola, BUT Next.js bakes
+# NEXT_PUBLIC_* (Supabase URL/anon key) into the bundle at build time, so
+# the generic image cannot serve YOUR browser auth. `build: .` below is
+# the supported path — it bakes your values from .env.compose. The GHCR
+# image is for CI cache and for forks that bake their own values via the
+# "Publish Docker image" workflow_dispatch inputs.
 
 services:
   app:
