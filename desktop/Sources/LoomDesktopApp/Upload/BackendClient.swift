@@ -1048,6 +1048,7 @@ struct EnhanceStatusResponse: Decodable, Sendable {
     let transcriptReady: Bool?
     let transcriptTextLength: Int?
     let transcriptState: String?
+    let failureReason: String?
     let canRetryTranscript: Bool?
 }
 
@@ -1112,5 +1113,19 @@ enum BackendClientError: LocalizedError {
               let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any]
         else { return nil }
         return object["error"] as? String
+    }
+
+    var apiErrorMessage: String? {
+        guard case .badStatus(_, _, let body) = self,
+              let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any]
+        else { return nil }
+        return (object["message"] as? String) ?? (object["failureReason"] as? String)
+    }
+
+    var apiCanRetryTranscript: Bool {
+        guard case .badStatus(_, _, let body) = self,
+              let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any]
+        else { return false }
+        return object["canRetryTranscript"] as? Bool ?? false
     }
 }

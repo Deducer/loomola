@@ -2287,13 +2287,16 @@ struct NoteWorkspaceView: View {
         enhanceStatus = .failed
         enhanceFailureIsRetryable = false
         transcriptRetryAvailable = false
-        if status.mediaStatus == "failed" {
+        if status.canRetryTranscript == true {
+            transcriptRetryAvailable = true
+            enhanceFailureMessage = transcriptRecoveryMessage(
+                failureReason: status.failureReason,
+                transcriptState: status.transcriptState
+            )
+        } else if status.mediaStatus == "failed" {
             enhanceFailureMessage = "Recover upload first"
         } else if status.mediaStatus == "uploading" || status.mediaStatus == "transcribing" {
             enhanceFailureMessage = "Waiting for transcript"
-        } else if status.canRetryTranscript == true {
-            transcriptRetryAvailable = true
-            enhanceFailureMessage = status.transcriptState == "empty" ? "Retry transcript" : "Prepare transcript"
         } else if (status.transcriptTextLength ?? 0) == 0 {
             enhanceFailureMessage = "No speech detected"
         } else {
@@ -2333,6 +2336,19 @@ struct NoteWorkspaceView: View {
                 transcriptRetryAvailable = true
                 showToast(message: "Transcript is empty. Try preparing it again.", tone: .warning)
                 return
+            case .some("transcript_failed"):
+                let reason = backendError.apiErrorMessage
+                enhanceFailureMessage = transcriptRecoveryMessage(
+                    failureReason: reason,
+                    transcriptState: nil
+                )
+                enhanceFailureIsRetryable = false
+                transcriptRetryAvailable = backendError.apiCanRetryTranscript
+                showToast(
+                    message: transcriptRecoveryToastMessage(failureReason: reason),
+                    tone: .error
+                )
+                return
             case .some("unknown_template"):
                 enhanceFailureMessage = "Choose a template"
                 showToast(message: "Template was not recognized", tone: .error)
@@ -2350,6 +2366,34 @@ struct NoteWorkspaceView: View {
 
         enhanceFailureMessage = "Try again"
         showToast(message: "Couldn't start AI run", tone: .error)
+    }
+
+    private func transcriptRecoveryMessage(
+        failureReason: String?,
+        transcriptState: String?
+    ) -> String {
+        let reason = failureReason?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let lower = reason.lowercased()
+        if lower.contains("deepgram") &&
+            (lower.contains("credit") || lower.contains("402") || lower.contains("payment required")) {
+            return "Add Deepgram credits, then retry"
+        }
+        if lower.contains("openai") &&
+            (lower.contains("credit") || lower.contains("quota") || lower.contains("insufficient_quota")) {
+            return "Add OpenAI credits, then retry"
+        }
+        if !reason.isEmpty {
+            return "Transcript failed - retry"
+        }
+        return transcriptState == "empty" ? "Retry transcript" : "Prepare transcript"
+    }
+
+    private func transcriptRecoveryToastMessage(failureReason: String?) -> String {
+        let reason = failureReason?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if reason.isEmpty {
+            return "Transcript failed. Audio is safe - retry after fixing the issue."
+        }
+        return "\(reason) Audio is safe - retry after fixing the issue."
     }
 
     private func beginPollingEnhancement(

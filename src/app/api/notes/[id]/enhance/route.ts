@@ -18,6 +18,26 @@ const enhanceRequestSchema = z.object({
   templateId: z.string().optional(),
 });
 
+function noteTranscriptState(data: NonNullable<Awaited<ReturnType<typeof getAudioNotePageData>>>) {
+  const transcriptTextLength = data.transcript?.fullText.trim().length ?? 0;
+  const transcriptState = !data.transcript
+    ? "missing"
+    : transcriptTextLength > 0
+      ? "ready"
+      : "empty";
+  const audioSourceKey =
+    data.media.r2MixedKey ?? data.media.r2MicKey ?? data.media.r2SystemaudioKey;
+  const canRetryTranscript =
+    transcriptState !== "ready" && Boolean(audioSourceKey);
+
+  return {
+    transcriptTextLength,
+    transcriptState,
+    audioSourceKey,
+    canRetryTranscript,
+  };
+}
+
 function granolaNotFound() {
   return NextResponse.json({ error: "not_found" }, { status: 404 });
 }
@@ -33,14 +53,8 @@ export async function GET(
   if (!data) return granolaNotFound();
 
   const aiOutput = await getAiOutputByMedia(data.media.id);
-  const transcriptTextLength = data.transcript?.fullText.trim().length ?? 0;
-  const transcriptState = !data.transcript
-    ? "missing"
-    : transcriptTextLength > 0
-      ? "ready"
-      : "empty";
-  const audioSourceKey =
-    data.media.r2MixedKey ?? data.media.r2MicKey ?? data.media.r2SystemaudioKey;
+  const { transcriptTextLength, transcriptState, canRetryTranscript } =
+    noteTranscriptState(data);
   return NextResponse.json({
     titleSuggested: aiOutput?.titleSuggested ?? null,
     summary: aiOutput?.summary ?? null,
@@ -52,7 +66,8 @@ export async function GET(
     transcriptReady: Boolean(data.transcript && transcriptTextLength > 0),
     transcriptTextLength,
     transcriptState,
-    canRetryTranscript: transcriptState !== "ready" && Boolean(audioSourceKey),
+    failureReason: data.media.failureReason ?? null,
+    canRetryTranscript,
   });
 }
 
@@ -65,15 +80,27 @@ export async function POST(
   const { id } = await params;
   const data = await getAudioNotePageData(id, user.id);
   if (!data) return granolaNotFound();
+  const { transcriptTextLength, canRetryTranscript } = noteTranscriptState(data);
   if (!data.transcript) {
+    if (data.media.status === "failed") {
+      return NextResponse.json(
+        {
+          error: "transcript_failed",
+          message: data.media.failureReason ?? "Transcription failed.",
+          failureReason: data.media.failureReason ?? null,
+          canRetryTranscript,
+        },
+        { status: 409 }
+      );
+    }
     return NextResponse.json(
-      { error: "transcript_not_ready" },
+      { error: "transcript_not_ready", canRetryTranscript },
       { status: 409 }
     );
   }
-  if (data.transcript.fullText.trim().length === 0) {
+  if (transcriptTextLength === 0) {
     return NextResponse.json(
-      { error: "transcript_empty" },
+      { error: "transcript_empty", canRetryTranscript },
       { status: 409 }
     );
   }
