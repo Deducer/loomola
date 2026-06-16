@@ -23,6 +23,9 @@ export type SubmitTranscriptionOutcome =
     }
   | { mode: "failed"; failureReason: string };
 
+const deepgramNoCreditsReason =
+  "Transcription failed: the Deepgram account has no credits (402 Payment Required).";
+
 /**
  * Provider dispatch — two providers, one switch (deliberately no
  * registry). deepgram returns mode:'callback' (the webhook persists);
@@ -81,10 +84,34 @@ export async function submitTranscription(
     });
   } catch (err) {
     if (isDeepgramPaymentRequiredError(err)) {
+      if (!process.env.OPENAI_API_KEY?.trim()) {
+        return { mode: "failed", failureReason: deepgramNoCreditsReason };
+      }
+
+      console.warn(
+        `[transcribe] Deepgram has no credits for ${input.mediaObjectId}; falling back to OpenAI Whisper`
+      );
+      if (input.multichannel) {
+        console.log(
+          `[transcribe] whisper fallback: downmixing multichannel audio for ${input.mediaObjectId} (single speaker)`
+        );
+      }
+      const run = await runWhisperTranscription({
+        mediaObjectId: input.mediaObjectId,
+        audioUrl: input.audioUrl,
+        language: input.language,
+        terms: input.terms,
+      });
+      if (!run.ok) {
+        return {
+          mode: "failed",
+          failureReason: `${deepgramNoCreditsReason} OpenAI Whisper fallback also failed: ${run.failureReason}`,
+        };
+      }
       return {
-        mode: "failed",
-        failureReason:
-          "Transcription failed: the Deepgram account has no credits (402 Payment Required).",
+        mode: "sync",
+        result: run.result,
+        providerRequestId: run.providerRequestId,
       };
     }
     throw err;
