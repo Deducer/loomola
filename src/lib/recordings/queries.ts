@@ -12,7 +12,17 @@ import {
 } from "@/db/schema";
 import { listImageAttachmentsForMediaIds } from "@/db/queries/notes";
 import { presignGet } from "@/lib/r2/presigned-get";
-import { and, desc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  getTableColumns,
+  gte,
+  inArray,
+  isNull,
+  or,
+  sql,
+} from "drizzle-orm";
 
 export type MediaType = "video" | "audio";
 export type MediaTypeFilter = MediaType | "any";
@@ -165,7 +175,11 @@ export async function recentMediaItems(params: {
       aiTitle: aiOutputs.titleSuggested,
       aiSummary: aiOutputs.summary,
       folderName: folders.name,
-      transcriptText: transcripts.fullText,
+      // Compute readiness in SQL instead of selecting the full transcript text.
+      // Selecting transcripts.fullText here pulled every transcript in the list
+      // out of Postgres (large DB egress) just to derive a boolean, and it was
+      // discarded entirely for video rows. See egress audit 2026-06-05.
+      transcriptReady: sql<boolean>`(${transcripts.fullText} is not null and length(btrim(${transcripts.fullText})) > 0)`,
     })
     .from(mediaObjects)
     .leftJoin(aiOutputs, eq(aiOutputs.mediaObjectId, mediaObjects.id))
@@ -204,8 +218,7 @@ export async function recentMediaItems(params: {
         createdAt: row.createdAt,
         shareUrl: mediaShareUrl(row),
         thumbnailUrl,
-        transcriptReady:
-          row.type === "audio" ? (row.transcriptText?.trim().length ?? 0) > 0 : null,
+        transcriptReady: row.type === "audio" ? row.transcriptReady : null,
         folderId: row.folderId,
         folderName: row.folderName,
         attendees: attendeeMap.get(row.id) ?? [],
@@ -225,17 +238,36 @@ export async function recentRecordings(params: {
 export async function getMediaById(params: {
   ownerId: string;
   idOrSlug: string;
+  // word_timestamps is a large jsonb blob (often bigger than the transcript
+  // itself) only the interactive web player needs. Callers that just want the
+  // text (e.g. the MCP get_media tool) pass false to skip reading it from
+  // Postgres and avoid the egress. Defaults true so the web viewer is unchanged.
+  includeWordTimestamps?: boolean;
 }): Promise<MediaDetails | null> {
+  const includeWordTimestamps = params.includeWordTimestamps ?? true;
   const mediaWhere = UUID_RE.test(params.idOrSlug)
     ? or(eq(mediaObjects.id, params.idOrSlug), eq(mediaObjects.slug, params.idOrSlug))
     : eq(mediaObjects.slug, params.idOrSlug);
+
+  // Select transcript columns explicitly so the lite path can swap the heavy
+  // word_timestamps column for an empty jsonb literal (never read from disk),
+  // while keeping the same result shape as typeof transcripts.$inferSelect.
+  const transcriptColumns = getTableColumns(transcripts);
+  const transcriptSelection = includeWordTimestamps
+    ? transcriptColumns
+    : {
+        ...transcriptColumns,
+        // Empty literal, computed in SQL, so the real column bytes never leave
+        // Postgres. Cast to the column type to preserve the result row shape.
+        wordTimestamps: sql<unknown>`'[]'::jsonb` as unknown as typeof transcriptColumns.wordTimestamps,
+      };
 
   const [row] = await db
     .select({
       media: mediaObjects,
       folder: folders,
       note: notes,
-      transcript: transcripts,
+      transcript: transcriptSelection,
       aiOutput: aiOutputs,
     })
     .from(mediaObjects)

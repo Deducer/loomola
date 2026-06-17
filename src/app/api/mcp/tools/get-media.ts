@@ -62,7 +62,12 @@ export function registerGetMediaTool(server: McpServer): void {
     },
     async (input) => {
       const ownerId = await getMcpOwnerId();
-      const details = await getMediaById({ ownerId, idOrSlug: input.idOrSlug });
+      const details = await getMediaById({
+        ownerId,
+        idOrSlug: input.idOrSlug,
+        // MCP only returns transcript fullText (truncated), never word timings.
+        includeWordTimestamps: false,
+      });
       if (!details) {
         return jsonContent({ found: false, idOrSlug: input.idOrSlug });
       }
