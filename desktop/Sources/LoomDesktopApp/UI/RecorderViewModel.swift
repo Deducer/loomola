@@ -2199,9 +2199,6 @@ final class RecorderViewModel: ObservableObject {
         if showStatus || context != previousContext {
             statusMessage = "Detected \(context.detectedApp): \(context.sourceContextHint)"
         }
-        if context != previousContext && activeRecordingKind == nil {
-            AppActivation.bringRecorderToFront()
-        }
         return true
     }
 

@@ -27,10 +27,6 @@ struct IdleHomeView: View {
 
                 primarySurface
 
-                if let context = viewModel.meetingPromptContext {
-                    meetingPromptCard(context: context)
-                }
-
                 RecentStrip(
                     service: recentService,
                     captureMode: captureMode,
@@ -188,55 +184,6 @@ struct IdleHomeView: View {
                 .font(DSFont.Mono.body())
                 .foregroundStyle(DSColor.Text.tertiary)
                 .monospacedDigit()
-        }
-    }
-
-    private func meetingPromptCard(context: MeetingContext) -> some View {
-        HStack(alignment: .center, spacing: DSSpacing.lg) {
-            Image(systemName: "waveform.circle.fill")
-                .font(.system(size: 28, weight: .semibold))
-                .foregroundStyle(DSColor.State.success)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Meeting ready")
-                    .font(DSFont.Body.lg())
-                    .foregroundStyle(DSColor.Text.primary)
-                Text(context.suggestedTitle)
-                    .font(DSFont.Body.md())
-                    .foregroundStyle(DSColor.Text.secondary)
-                    .lineLimit(1)
-                Text(context.sourceContextHint)
-                    .font(DSFont.Body.sm())
-                    .foregroundStyle(DSColor.Text.tertiary)
-                    .lineLimit(1)
-            }
-            Spacer()
-            HStack(spacing: DSSpacing.sm) {
-                PrimaryButton("Start audio") {
-                    viewModel.startDetectedMeetingAudioNote()
-                }
-                if context.joinURL != nil || context.bundleIdentifier != nil {
-                    SecondaryButton(joinLabel(for: context)) {
-                        viewModel.joinDetectedMeeting()
-                    }
-                }
-                SecondaryButton("Dismiss") {
-                    viewModel.dismissMeetingPrompt()
-                }
-            }
-        }
-        .padding(.horizontal, DSSpacing.xl)
-        .padding(.vertical, DSSpacing.lg)
-        .background(DSColor.Bg.surface, in: RoundedRectangle(cornerRadius: DSRadius.lg))
-        .dsShadow(.subtle)
-    }
-
-    private func joinLabel(for context: MeetingContext) -> String {
-        switch context.detectedApp {
-        case "google-meet", "meet": return "Open Meet"
-        case "zoom": return "Open Zoom"
-        case "teams": return "Open Teams"
-        case "webex": return "Open Webex"
-        default: return "Open meeting"
         }
     }
 
