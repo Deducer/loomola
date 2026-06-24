@@ -1,3 +1,13 @@
+> # 🚦 Setting up your OWN copy of Loomola? Do NOT follow this file — go to the [README](README.md).
+>
+> **This file is the maintainer's operational brief for the live production instance.** It assumes you are contributing to the codebase or operating `loom.dissonance.cloud`. If you are a **self-hoster** standing up your own copy — or an **AI assistant helping one** — then everything below about **Doppler, Coolify, pushing to `main`, the specific Supabase project id, the maintainer's domain/email, and `npm run smoke` / `npm run mcp-smoke`** does **NOT** apply to you. It will actively mislead a fresh setup.
+>
+> **What to do instead:** follow **[README.md → "Self-host Quickstart"](README.md#self-host-quickstart)**. Create your own fresh accounts and keys. Do **not** push to this repo's `main`, do **not** deploy to or reference the maintainer's infrastructure, and do **not** copy the maintainer's `.env.local`. For a brand-new instance, "Quickstart A — Docker Compose" with a free Supabase project is the path.
+>
+> Everything from the heading below is maintainer-only context.
+
+---
+
 # Loom Clone — Project Notes for Claude Code
 
 **Owner:** Ian Cross  **Purpose:** Self-hosted screen recording platform replacing Loom's $20/mo subscription. Designed as a polymorphic media platform so future audio-based products (Granola-alt, MacWhisper-alt) share the backend.

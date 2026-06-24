@@ -51,6 +51,21 @@ If you pay for both Loom AND Granola today, this is the package that replaces bo
 This is the path for a friend cloning the repo and running their own Loomola.
 Do not copy Ian's `.env.local`; create fresh accounts and keys.
 
+### Easiest path: let an AI assistant walk you through it
+
+Not a developer? You don't have to follow the steps below by hand. Open this
+repository in an AI coding assistant (Claude Code, Cursor, Codex, etc.) and say:
+
+> Help me set up my own private copy of Loomola from scratch. Follow the
+> README's "Self-host Quickstart" using the Docker Compose path with a free
+> Supabase project. Walk me through it one step at a time. This is my own fresh
+> instance — don't push anything to the repo, and don't use anyone else's
+> infrastructure (no Doppler, no Coolify, no existing domain).
+
+The assistant will read this README and walk you through creating accounts,
+filling in config, launching, and testing. Everything below is the same path
+written out for humans — read on if you'd rather do it yourself.
+
 Two choices up front:
 
 - **Loom-only or Loom + Granola.** Start with `ENABLE_GRANOLA=false` if you only want screen recordings. Set it to `true` when you also want the macOS audio-meeting-notes product.
@@ -63,7 +78,7 @@ Two choices up front:
 
 ### Quickstart A — Docker Compose (recommended)
 
-Bundled MinIO for storage; you bring a free [Supabase](https://supabase.com) project (Postgres + auth) and a [Deepgram](https://deepgram.com) + [Anthropic](https://console.anthropic.com) key for the AI pipeline.
+Needs **[Docker Desktop](https://www.docker.com/products/docker-desktop/)** (or Docker Engine + Compose) installed and running. Bundled MinIO for storage; you bring a free [Supabase](https://supabase.com) project (Postgres + auth) and an [Anthropic](https://console.anthropic.com) key for AI summaries. For transcription you choose **OpenAI Whisper** (works on localhost immediately) or **Deepgram** (needs a public URL) — see the note after the commands.
 
 **Getting your Supabase values:** create a free project at [supabase.com](https://supabase.com), then from the dashboard copy the **Project URL**, **anon key**, and **service-role key** (Settings → API) and the **database connection string** (Settings → Database). Those four fill the Supabase + `DATABASE_URL` lines in `.env.compose`. You don't need to create a user — Loomola's first-run screen does that. (Prefer no external account at all? See the self-hosted-Supabase option above.)
 
@@ -71,16 +86,20 @@ Bundled MinIO for storage; you bring a free [Supabase](https://supabase.com) pro
 git clone https://github.com/Deducer/loomola.git
 cd loomola
 cp .env.compose.example .env.compose
-# Fill in: Supabase URL/keys/DATABASE_URL, Deepgram, Anthropic,
-# and a random MINIO_ROOT_PASSWORD (openssl rand -hex 32).
+# Fill in: Supabase URL/keys/DATABASE_URL, Anthropic, a transcription
+# provider (see below), and a random MINIO_ROOT_PASSWORD (openssl rand -hex 32).
 docker compose --env-file .env.compose up -d --build
 ```
+
+**Transcription on localhost — important:** the default `TRANSCRIBE_PROVIDER=deepgram` needs a public HTTPS URL (Deepgram calls back to your app), so on `http://localhost:3000` recordings will hang in "transcribing." For a local first run, set `TRANSCRIBE_PROVIDER=openai-whisper` in `.env.compose` and put your key in `OPENAI_API_KEY` — Whisper runs in-process with no callback. Switch to Deepgram once you're on a public URL and want speaker labels / unlimited length.
 
 Open http://localhost:3000. The first visit walks you through creating your admin account. Migrations run automatically at boot, and the container fails fast with a readable list if a required variable is missing. To verify every external service is wired correctly:
 
 ```bash
 npm install && npm run doctor   # live checks against your config
 ```
+
+`npm run doctor` needs Node 22 installed locally (the Docker path otherwise doesn't). It's optional — the container already validates required env at boot and fails fast with a readable list, and `docker compose logs app` shows the same. Use `doctor` when you want a one-line-per-service health check.
 
 The manual path below (Quickstart B) gives you `npm run dev` for development.
 
