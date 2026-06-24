@@ -31,6 +31,7 @@ export type TranscriptSpeakerAssignment = {
 export function TranscriptPanel({
   mediaId,
   words,
+  wordsEndpoint,
   fullText,
   currentTime,
   onSeek,
@@ -41,6 +42,13 @@ export function TranscriptPanel({
 }: {
   mediaId?: string;
   words: Word[];
+  /** When set (and `words` is empty), the word-timing array is fetched from
+   * this URL only once the panel scrolls into view, instead of being shipped
+   * in the server render. Until it loads, `fullText` renders as a plain block.
+   * A viewer who never scrolls to the transcript never pulls the (often very
+   * large) wordTimestamps blob out of Postgres — a Supabase egress saving on
+   * the public share page. Callers that pass `words` directly are unchanged. */
+  wordsEndpoint?: string;
   fullText: string;
   currentTime: number;
   onSeek: (sec: number) => void;
@@ -49,7 +57,12 @@ export function TranscriptPanel({
   onSpeakerAssignmentsChange?: (assignments: TranscriptSpeakerAssignment[]) => void;
   tone?: "accent" | "neutral";
 }) {
-  const paragraphs = useMemo(() => groupWordsIntoParagraphs(words), [words]);
+  const [fetchedWords, setFetchedWords] = useState<Word[] | null>(null);
+  const outerRef = useRef<HTMLDivElement | null>(null);
+  const paragraphs = useMemo(
+    () => groupWordsIntoParagraphs(wordsEndpoint ? fetchedWords ?? [] : words),
+    [wordsEndpoint, fetchedWords, words]
+  );
   const activeIdx = useMemo(
     () => findActiveParagraphIndex(paragraphs, currentTime),
     [paragraphs, currentTime]
@@ -85,13 +98,43 @@ export function TranscriptPanel({
     container.scrollTo({ top: targetTop, behavior: "smooth" });
   }, [activeIdx]);
 
-  if (paragraphs.length === 0) {
-    return (
-      <p className="rounded-xl border border-border bg-bg-subtle/60 p-4 text-sm leading-7 text-text-muted">
-        {fullText || "(empty transcript)"}
-      </p>
+  // Lazy word fetch: only fires when the panel enters the viewport.
+  useEffect(() => {
+    if (!wordsEndpoint || fetchedWords !== null) return;
+    let cancelled = false;
+    const loadWords = async () => {
+      try {
+        const res = await fetch(wordsEndpoint);
+        const data: { words?: unknown } = res.ok ? await res.json() : {};
+        if (!cancelled) {
+          setFetchedWords(Array.isArray(data.words) ? (data.words as Word[]) : []);
+        }
+      } catch {
+        if (!cancelled) setFetchedWords([]);
+      }
+    };
+    const el = outerRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") {
+      void loadWords();
+      return () => {
+        cancelled = true;
+      };
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          io.disconnect();
+          void loadWords();
+        }
+      },
+      { rootMargin: "200px" }
     );
-  }
+    io.observe(el);
+    return () => {
+      cancelled = true;
+      io.disconnect();
+    };
+  }, [wordsEndpoint, fetchedWords]);
 
   async function assignSpeaker(speakerIdx: number, input: {
     personId?: string | null;
@@ -205,7 +248,12 @@ export function TranscriptPanel({
   }
 
   return (
-    <div>
+    <div ref={outerRef}>
+      {paragraphs.length === 0 ? (
+        <p className="rounded-xl border border-border bg-bg-subtle/60 p-4 text-sm leading-7 text-text-muted">
+          {fullText || "(empty transcript)"}
+        </p>
+      ) : (
       <div
         ref={containerRef}
         className="max-h-96 overflow-y-auto rounded-xl border border-border bg-bg-subtle/60 p-2"
@@ -347,6 +395,7 @@ export function TranscriptPanel({
           );
         })}
       </div>
+      )}
     </div>
   );
 }

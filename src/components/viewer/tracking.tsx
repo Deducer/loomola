@@ -31,7 +31,7 @@ export function Tracking({ slug, isPlaying, getCurrentTime }: Props) {
           keepalive: true,
         });
       }
-    }, 5000);
+    }, 30000);
     return () => clearInterval(id);
   }, [isPlaying, slug, getCurrentTime]);
 

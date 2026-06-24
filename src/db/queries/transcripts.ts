@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { transcripts } from "@/db/schema";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, getTableColumns, sql } from "drizzle-orm";
 
 export type Transcript = typeof transcripts.$inferSelect;
 
@@ -109,15 +109,50 @@ export async function insertLiveTranscript(params: {
 }
 
 export async function getTranscriptByRecording(
-  mediaObjectId: string
+  mediaObjectId: string,
+  opts: { includeWordTimestamps?: boolean } = {}
 ): Promise<Transcript | null> {
+  // wordTimestamps is a large jsonb blob (often bigger than fullText). Callers
+  // that only need fullText (e.g. the share page, which lazy-loads words into
+  // the transcript panel client-side) pass false to skip reading it from
+  // Postgres and cut Supabase egress. Defaults true so existing callers are
+  // unchanged. Swaps in an empty jsonb literal so the result shape (and the
+  // Transcript type) stays intact.
+  const includeWordTimestamps = opts.includeWordTimestamps ?? true;
+  const columns = getTableColumns(transcripts);
+  const selection = includeWordTimestamps
+    ? columns
+    : {
+        ...columns,
+        wordTimestamps:
+          sql<unknown>`'[]'::jsonb` as unknown as typeof columns.wordTimestamps,
+      };
   const [row] = await db
-    .select()
+    .select(selection)
     .from(transcripts)
     .where(eq(transcripts.mediaObjectId, mediaObjectId))
     .orderBy(desc(transcripts.createdAt))
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * Returns just the latest transcript's word-timing array for a recording.
+ * Backs the lazy /api/v/[slug]/transcript-words endpoint so the full
+ * wordTimestamps blob is fetched only when a viewer opens the transcript.
+ */
+export async function getTranscriptWordsByRecording(
+  mediaObjectId: string
+): Promise<WordTimestamp[]> {
+  const [row] = await db
+    .select({ wordTimestamps: transcripts.wordTimestamps })
+    .from(transcripts)
+    .where(eq(transcripts.mediaObjectId, mediaObjectId))
+    .orderBy(desc(transcripts.createdAt))
+    .limit(1);
+  return Array.isArray(row?.wordTimestamps)
+    ? (row.wordTimestamps as WordTimestamp[])
+    : [];
 }
 
 export async function updateTranscriptText(params: {

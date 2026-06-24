@@ -153,6 +153,7 @@ export function ViewerShell({
         transcript={
           <TranscriptPanel
             words={words}
+            wordsEndpoint={`/api/v/${slug}/transcript-words`}
             fullText={fullText}
             currentTime={currentTime}
             onSeek={handleSeek}

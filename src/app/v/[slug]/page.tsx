@@ -112,10 +112,13 @@ export default async function SharePage({
     );
   }
 
-  const transcript = await getTranscriptByRecording(rec.id);
-  const words: Word[] = Array.isArray(transcript?.wordTimestamps)
-    ? (transcript.wordTimestamps as Word[])
-    : [];
+  // Skip the heavy wordTimestamps blob here — ViewerShell's TranscriptPanel
+  // fetches it lazily via /api/v/[slug]/transcript-words only once a viewer
+  // scrolls to the transcript. Cuts Supabase egress on share-page loads.
+  const transcript = await getTranscriptByRecording(rec.id, {
+    includeWordTimestamps: false,
+  });
+  const words: Word[] = [];
 
   const rawComments = await listCommentsForRecording(rec.id);
   const commentRows = rawComments.map((c) => ({
