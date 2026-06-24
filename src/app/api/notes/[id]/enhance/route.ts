@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getAudioNotePageData } from "@/db/queries/notes";
 import {
-  getAiOutputByMedia,
+  getAudioNoteEnhancementStatus,
+  type AudioNoteEnhancementStatus,
+} from "@/db/queries/notes";
+import {
   resetAiOutputForEnhancement,
 } from "@/db/queries/ai-outputs";
 import { upsertNoteTemplate } from "@/db/queries/notes";
@@ -18,15 +20,15 @@ const enhanceRequestSchema = z.object({
   templateId: z.string().optional(),
 });
 
-function noteTranscriptState(data: NonNullable<Awaited<ReturnType<typeof getAudioNotePageData>>>) {
-  const transcriptTextLength = data.transcript?.fullText.trim().length ?? 0;
-  const transcriptState = !data.transcript
+function noteTranscriptState(data: AudioNoteEnhancementStatus) {
+  const transcriptTextLength = data.transcriptTextLength ?? 0;
+  const transcriptState = data.transcriptTextLength == null
     ? "missing"
     : transcriptTextLength > 0
       ? "ready"
       : "empty";
   const audioSourceKey =
-    data.media.r2MixedKey ?? data.media.r2MicKey ?? data.media.r2SystemaudioKey;
+    data.r2MixedKey ?? data.r2MicKey ?? data.r2SystemaudioKey;
   const canRetryTranscript =
     transcriptState !== "ready" && Boolean(audioSourceKey);
 
@@ -49,24 +51,23 @@ export async function GET(
   if (!enableGranola()) return granolaNotFound();
   const user = await requireAuth(request);
   const { id } = await params;
-  const data = await getAudioNotePageData(id, user.id);
+  const data = await getAudioNoteEnhancementStatus(id, user.id);
   if (!data) return granolaNotFound();
 
-  const aiOutput = await getAiOutputByMedia(data.media.id);
   const { transcriptTextLength, transcriptState, canRetryTranscript } =
     noteTranscriptState(data);
   return NextResponse.json({
-    titleSuggested: aiOutput?.titleSuggested ?? null,
-    summary: aiOutput?.summary ?? null,
-    chapters: aiOutput?.chapters ?? null,
-    actionItems: aiOutput?.actionItems ?? null,
-    templateId: aiOutput?.templateId ?? data.note?.templateId ?? DEFAULT_NOTE_TEMPLATE_ID,
-    generationStatus: aiOutput?.generationStatusValue ?? "idle",
-    mediaStatus: data.media.status,
-    transcriptReady: Boolean(data.transcript && transcriptTextLength > 0),
+    titleSuggested: data.titleSuggested ?? null,
+    summary: data.summary ?? null,
+    chapters: data.chapters ?? null,
+    actionItems: data.actionItems ?? null,
+    templateId: data.aiTemplateId ?? data.noteTemplateId ?? DEFAULT_NOTE_TEMPLATE_ID,
+    generationStatus: data.generationStatus ?? "idle",
+    mediaStatus: data.mediaStatus,
+    transcriptReady: data.transcriptTextLength != null && transcriptTextLength > 0,
     transcriptTextLength,
     transcriptState,
-    failureReason: data.media.failureReason ?? null,
+    failureReason: data.failureReason ?? null,
     canRetryTranscript,
   });
 }
@@ -78,16 +79,16 @@ export async function POST(
   if (!enableGranola()) return granolaNotFound();
   const user = await requireAuth(request);
   const { id } = await params;
-  const data = await getAudioNotePageData(id, user.id);
+  const data = await getAudioNoteEnhancementStatus(id, user.id);
   if (!data) return granolaNotFound();
   const { transcriptTextLength, canRetryTranscript } = noteTranscriptState(data);
-  if (!data.transcript) {
-    if (data.media.status === "failed") {
+  if (data.transcriptTextLength == null) {
+    if (data.mediaStatus === "failed") {
       return NextResponse.json(
         {
           error: "transcript_failed",
-          message: data.media.failureReason ?? "Transcription failed.",
-          failureReason: data.media.failureReason ?? null,
+          message: data.failureReason ?? "Transcription failed.",
+          failureReason: data.failureReason ?? null,
           canRetryTranscript,
         },
         { status: 409 }
@@ -111,27 +112,27 @@ export async function POST(
     return NextResponse.json({ error: "invalid_request" }, { status: 400 });
   }
   const templateId =
-    parsed.data.templateId ?? data.note?.templateId ?? DEFAULT_NOTE_TEMPLATE_ID;
+    parsed.data.templateId ?? data.noteTemplateId ?? DEFAULT_NOTE_TEMPLATE_ID;
   if (!isSystemNoteTemplateId(templateId)) {
     return NextResponse.json({ error: "unknown_template" }, { status: 400 });
   }
-  if (templateId !== data.note?.templateId) {
-    await upsertNoteTemplate(data.media.id, user.id, templateId);
+  if (templateId !== data.noteTemplateId) {
+    await upsertNoteTemplate(data.mediaId, user.id, templateId);
   }
 
   const llmModel =
     process.env.LLM_MODEL ?? process.env.LLM_MODEL_ID ?? "claude-sonnet-4-6";
   const aiOutput = await resetAiOutputForEnhancement(
-    data.media.id,
+    data.mediaId,
     llmModel,
     templateId
   );
 
   try {
-    await enqueueAiJobs({ mediaObjectId: data.media.id });
+    await enqueueAiJobs({ mediaObjectId: data.mediaId });
   } catch (err) {
     console.error(
-      `[notes/enhance] failed to enqueue enhancement for ${data.media.id}:`,
+      `[notes/enhance] failed to enqueue enhancement for ${data.mediaId}:`,
       err
     );
     return NextResponse.json({ error: "enqueue_failed" }, { status: 500 });

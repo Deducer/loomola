@@ -173,13 +173,31 @@ export function buildTranscriptMarkdown(payload: NoteExportPayload): string {
 }
 
 export function noteExportFilename(payload: NoteExportPayload, ext: "md" | "json") {
-  const date = payload.media.createdAt.slice(0, 10);
-  const title = payload.media.title
+  return noteExportFilenameFromParts(
+    {
+      title: payload.media.title,
+      slug: payload.media.slug,
+      createdAt: payload.media.createdAt,
+    },
+    ext
+  );
+}
+
+export function noteExportFilenameFromParts(
+  media: { title: string; slug: string; createdAt: string | Date },
+  ext: "md" | "json"
+) {
+  const createdAt =
+    media.createdAt instanceof Date
+      ? media.createdAt.toISOString()
+      : media.createdAt;
+  const date = createdAt.slice(0, 10);
+  const title = media.title
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 72);
-  return `${date}-${title || payload.media.slug}.${ext}`;
+  return `${date}-${title || media.slug}.${ext}`;
 }
 
 function buildTranscriptParagraphs(params: {

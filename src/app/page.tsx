@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { FileText, Plus, Search, Video } from "lucide-react";
 import { redirect } from "next/navigation";
-import { requireAuth } from "@/lib/require-auth";
-import { createClient } from "@/lib/supabase/server";
+import { getOptionalAuthUser, requireAuth } from "@/lib/require-auth";
 import { LandingPage } from "@/components/marketing/landing-page";
 import { listBrandProfiles } from "@/db/queries/brand-profiles";
 import { listFoldersForOwner } from "@/db/queries/folders";
@@ -51,10 +50,9 @@ export default async function HomePage({
 }) {
   // Unauthed visitors land on the public marketing page (the X-comment
   // funnel surface). Authed users get the existing dashboard. We only
-  // call createClient + getUser cheap-path; if there's a session we
-  // fall through to requireAuth which honors the same cookie.
-  const supabase = await createClient();
-  const { data: { user: authUser } } = await supabase.auth.getUser();
+  // validate the JWT claims first; if there's a session we fall through
+  // to requireAuth which honors the same cookie.
+  const authUser = await getOptionalAuthUser();
   if (!authUser) {
     return <LandingPage />;
   }

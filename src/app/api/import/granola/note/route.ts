@@ -11,7 +11,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { createClient } from "@/lib/supabase/server";
+import { getOptionalAuthUser } from "@/lib/require-auth";
 import { db } from "@/db";
 import {
   mediaObjects,
@@ -76,20 +76,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   // Accept either a cookie session (browser) or an Authorization: Bearer
-  // <jwt> header (CLI). The server Supabase client reads cookies by
-  // default; for bearer tokens we have to pass the JWT explicitly.
-  const supabase = await createClient();
-  const authHeader = req.headers.get("authorization");
-  const bearer = authHeader?.toLowerCase().startsWith("bearer ")
-    ? authHeader.slice(7).trim()
-    : null;
-  const { data: userData, error: authError } = bearer
-    ? await supabase.auth.getUser(bearer)
-    : await supabase.auth.getUser();
-  if (authError || !userData?.user) {
+  // <jwt> header (CLI). Claims verification avoids a full Auth user fetch
+  // for each imported note.
+  const user = await getOptionalAuthUser(req);
+  if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const ownerId = userData.user.id;
+  const ownerId = user.id;
 
   let json: unknown;
   try {

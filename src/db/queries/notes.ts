@@ -33,6 +33,43 @@ export type AudioNotePageData = {
 export type ObsidianPendingNote = {
   id: string;
   slug: string;
+  title: string | null;
+  aiTitle: string | null;
+  createdAt: Date;
+  meetingNotesVaultPath: string | null;
+};
+
+export type AudioNoteAccess = {
+  id: string;
+  ownerId: string;
+  slug: string;
+  title: string | null;
+  status: typeof mediaObjects.$inferSelect.status;
+  failureReason: string | null;
+  r2MixedKey: string | null;
+  r2MicKey: string | null;
+  r2SystemaudioKey: string | null;
+  obsidianSaveRequestedAt: Date | null;
+  obsidianSyncedAt: Date | null;
+  meetingNotesVaultPath: string | null;
+  templateId: string | null;
+};
+
+export type AudioNoteEnhancementStatus = {
+  mediaId: string;
+  mediaStatus: typeof mediaObjects.$inferSelect.status;
+  failureReason: string | null;
+  r2MixedKey: string | null;
+  r2MicKey: string | null;
+  r2SystemaudioKey: string | null;
+  noteTemplateId: string | null;
+  titleSuggested: string | null;
+  summary: string | null;
+  chapters: unknown;
+  actionItems: unknown;
+  aiTemplateId: string | null;
+  generationStatus: string | null;
+  transcriptTextLength: number | null;
 };
 
 export class AttendeeUpdateError extends Error {
@@ -45,6 +82,21 @@ export class AttendeeUpdateError extends Error {
     super(message);
     this.name = "AttendeeUpdateError";
   }
+}
+
+function audioNoteIdentifierWhere(identifier: string) {
+  return isUuidIdentifier(identifier)
+    ? or(eq(mediaObjects.id, identifier), eq(mediaObjects.slug, identifier))
+    : eq(mediaObjects.slug, identifier);
+}
+
+function audioNoteOwnerWhere(identifier: string, ownerId: string) {
+  return and(
+    audioNoteIdentifierWhere(identifier),
+    eq(mediaObjects.ownerId, ownerId),
+    eq(mediaObjects.type, "audio"),
+    isNull(mediaObjects.deletedAt)
+  );
 }
 
 export async function createQuickAudioNote(ownerId: string): Promise<{
@@ -303,10 +355,6 @@ export async function getAudioNotePageData(
   identifier: string,
   ownerId: string
 ): Promise<AudioNotePageData | null> {
-  const mediaWhere = isUuidIdentifier(identifier)
-    ? or(eq(mediaObjects.id, identifier), eq(mediaObjects.slug, identifier))
-    : eq(mediaObjects.slug, identifier);
-
   const [row] = await db
     .select({
       media: mediaObjects,
@@ -320,14 +368,67 @@ export async function getAudioNotePageData(
     .leftJoin(notes, eq(notes.mediaObjectId, mediaObjects.id))
     .leftJoin(transcripts, eq(transcripts.mediaObjectId, mediaObjects.id))
     .leftJoin(aiOutputs, eq(aiOutputs.mediaObjectId, mediaObjects.id))
-    .where(
-      and(
-        mediaWhere,
-        eq(mediaObjects.ownerId, ownerId),
-        eq(mediaObjects.type, "audio"),
-        isNull(mediaObjects.deletedAt)
-      )
-    )
+    .where(audioNoteOwnerWhere(identifier, ownerId))
+    .limit(1);
+
+  return row ?? null;
+}
+
+export async function getAudioNoteAccess(
+  identifier: string,
+  ownerId: string
+): Promise<AudioNoteAccess | null> {
+  const [row] = await db
+    .select({
+      id: mediaObjects.id,
+      ownerId: mediaObjects.ownerId,
+      slug: mediaObjects.slug,
+      title: mediaObjects.title,
+      status: mediaObjects.status,
+      failureReason: mediaObjects.failureReason,
+      r2MixedKey: mediaObjects.r2MixedKey,
+      r2MicKey: mediaObjects.r2MicKey,
+      r2SystemaudioKey: mediaObjects.r2SystemaudioKey,
+      obsidianSaveRequestedAt: mediaObjects.obsidianSaveRequestedAt,
+      obsidianSyncedAt: mediaObjects.obsidianSyncedAt,
+      meetingNotesVaultPath: brandProfiles.meetingNotesVaultPath,
+      templateId: notes.templateId,
+    })
+    .from(mediaObjects)
+    .leftJoin(brandProfiles, eq(mediaObjects.brandProfileId, brandProfiles.id))
+    .leftJoin(notes, eq(notes.mediaObjectId, mediaObjects.id))
+    .where(audioNoteOwnerWhere(identifier, ownerId))
+    .limit(1);
+
+  return row ?? null;
+}
+
+export async function getAudioNoteEnhancementStatus(
+  identifier: string,
+  ownerId: string
+): Promise<AudioNoteEnhancementStatus | null> {
+  const [row] = await db
+    .select({
+      mediaId: mediaObjects.id,
+      mediaStatus: mediaObjects.status,
+      failureReason: mediaObjects.failureReason,
+      r2MixedKey: mediaObjects.r2MixedKey,
+      r2MicKey: mediaObjects.r2MicKey,
+      r2SystemaudioKey: mediaObjects.r2SystemaudioKey,
+      noteTemplateId: notes.templateId,
+      titleSuggested: aiOutputs.titleSuggested,
+      summary: aiOutputs.summary,
+      chapters: aiOutputs.chapters,
+      actionItems: aiOutputs.actionItems,
+      aiTemplateId: aiOutputs.templateId,
+      generationStatus: aiOutputs.generationStatusValue,
+      transcriptTextLength: sql<number | null>`length(btrim(${transcripts.fullText}))::int`,
+    })
+    .from(mediaObjects)
+    .leftJoin(notes, eq(notes.mediaObjectId, mediaObjects.id))
+    .leftJoin(transcripts, eq(transcripts.mediaObjectId, mediaObjects.id))
+    .leftJoin(aiOutputs, eq(aiOutputs.mediaObjectId, mediaObjects.id))
+    .where(audioNoteOwnerWhere(identifier, ownerId))
     .limit(1);
 
   return row ?? null;
@@ -383,8 +484,17 @@ export async function listObsidianPendingNotes(
   ownerId: string
 ): Promise<ObsidianPendingNote[]> {
   return db
-    .select({ id: mediaObjects.id, slug: mediaObjects.slug })
+    .select({
+      id: mediaObjects.id,
+      slug: mediaObjects.slug,
+      title: mediaObjects.title,
+      aiTitle: aiOutputs.titleSuggested,
+      createdAt: mediaObjects.createdAt,
+      meetingNotesVaultPath: brandProfiles.meetingNotesVaultPath,
+    })
     .from(mediaObjects)
+    .leftJoin(aiOutputs, eq(aiOutputs.mediaObjectId, mediaObjects.id))
+    .leftJoin(brandProfiles, eq(mediaObjects.brandProfileId, brandProfiles.id))
     .where(
       and(
         eq(mediaObjects.ownerId, ownerId),

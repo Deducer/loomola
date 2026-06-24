@@ -79,6 +79,10 @@ const bossGlobal = globalThis as unknown as {
   __loomBossStarting?: Promise<PgBoss> | null;
 };
 
+const WORKER_OPTIONS = {
+  pollingIntervalSeconds: 10,
+};
+
 async function init(): Promise<PgBoss> {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) throw new Error("DATABASE_URL is not set");
@@ -86,6 +90,9 @@ async function init(): Promise<PgBoss> {
   const boss = new PgBoss({
     connectionString,
     max: 8,
+    monitorIntervalSeconds: 300,
+    queueCacheIntervalSeconds: 300,
+    cronWorkerIntervalSeconds: 30,
   });
 
   boss.on("error", (err: unknown) => {
@@ -115,10 +122,10 @@ async function init(): Promise<PgBoss> {
     await boss.createQueue(EMBED_SUMMARY_JOB);
   }
 
-  await boss.work<TranscribeJobData>(TRANSCRIBE_JOB, async (jobs) => {
+  await boss.work<TranscribeJobData>(TRANSCRIBE_JOB, WORKER_OPTIONS, async (jobs) => {
     for (const job of jobs) await runTranscribeJob(job.data);
   });
-  await boss.work<TitleSummaryJobData>(TITLE_SUMMARY_JOB, async (jobs) => {
+  await boss.work<TitleSummaryJobData>(TITLE_SUMMARY_JOB, WORKER_OPTIONS, async (jobs) => {
     for (const job of jobs) {
       await runTitleSummaryJob(job.data);
       if (granolaEnabled) {
@@ -164,22 +171,22 @@ async function init(): Promise<PgBoss> {
       }
     }
   });
-  await boss.work<ChaptersJobData>(CHAPTERS_JOB, async (jobs) => {
+  await boss.work<ChaptersJobData>(CHAPTERS_JOB, WORKER_OPTIONS, async (jobs) => {
     for (const job of jobs) await runChaptersJob(job.data);
   });
-  await boss.work<ActionItemsJobData>(ACTION_ITEMS_JOB, async (jobs) => {
+  await boss.work<ActionItemsJobData>(ACTION_ITEMS_JOB, WORKER_OPTIONS, async (jobs) => {
     for (const job of jobs) await runActionItemsJob(job.data);
   });
-  await boss.work<ThumbnailJobData>(THUMBNAIL_JOB, async (jobs) => {
+  await boss.work<ThumbnailJobData>(THUMBNAIL_JOB, WORKER_OPTIONS, async (jobs) => {
     for (const job of jobs) await runThumbnailJob(job.data);
   });
-  await boss.work<PreviewSpriteJobData>(PREVIEW_SPRITE_JOB, async (jobs) => {
+  await boss.work<PreviewSpriteJobData>(PREVIEW_SPRITE_JOB, WORKER_OPTIONS, async (jobs) => {
     for (const job of jobs) await runPreviewSpriteJob(job.data);
   });
-  await boss.work<TranscodePlaybackJobData>(TRANSCODE_PLAYBACK_JOB, async (jobs) => {
+  await boss.work<TranscodePlaybackJobData>(TRANSCODE_PLAYBACK_JOB, WORKER_OPTIONS, async (jobs) => {
     for (const job of jobs) await runTranscodePlaybackJob(job.data);
   });
-  await boss.work<AppendClipJobData>(APPEND_CLIP_JOB, async (jobs) => {
+  await boss.work<AppendClipJobData>(APPEND_CLIP_JOB, WORKER_OPTIONS, async (jobs) => {
     for (const job of jobs) {
       const result = await runAppendClipJob(job.data);
       try {
@@ -222,7 +229,7 @@ async function init(): Promise<PgBoss> {
       }
     }
   });
-  await boss.work<SuggestFolderJobData>(SUGGEST_FOLDER_JOB, async (jobs) => {
+  await boss.work<SuggestFolderJobData>(SUGGEST_FOLDER_JOB, WORKER_OPTIONS, async (jobs) => {
     for (const job of jobs) {
       try {
         await runSuggestFolderJob(job.data);
@@ -235,7 +242,7 @@ async function init(): Promise<PgBoss> {
       }
     }
   });
-  await boss.work<SuggestSpeakersJobData>(SUGGEST_SPEAKERS_JOB, async (jobs) => {
+  await boss.work<SuggestSpeakersJobData>(SUGGEST_SPEAKERS_JOB, WORKER_OPTIONS, async (jobs) => {
     for (const job of jobs) {
       try {
         await runSuggestSpeakersJob(job.data);
@@ -247,14 +254,14 @@ async function init(): Promise<PgBoss> {
       }
     }
   });
-  await boss.work(WATCHDOG_JOB, async () => {
+  await boss.work(WATCHDOG_JOB, WORKER_OPTIONS, async () => {
     await runWatchdogJob();
   });
   // Cron registration is an idempotent upsert in pg-boss v12 — safe on
   // every boot. UTC: thresholds are relative ages, tz is cosmetic.
   await boss.schedule(WATCHDOG_JOB, WATCHDOG_CRON, null, { tz: "UTC" });
   if (granolaEnabled) {
-    await boss.work<MixAudioJobData>(MIX_AUDIO_JOB, async (jobs) => {
+    await boss.work<MixAudioJobData>(MIX_AUDIO_JOB, WORKER_OPTIONS, async (jobs) => {
       for (const job of jobs) {
         const { mixedKey, transcriptKey } = await runMixAudioJob(job.data);
         await Promise.all([
@@ -275,13 +282,13 @@ async function init(): Promise<PgBoss> {
         ]);
       }
     });
-    await boss.work<AudioWaveformJobData>(AUDIO_WAVEFORM_JOB, async (jobs) => {
+    await boss.work<AudioWaveformJobData>(AUDIO_WAVEFORM_JOB, WORKER_OPTIONS, async (jobs) => {
       for (const job of jobs) await runAudioWaveformJob(job.data);
     });
-    await boss.work<EmbedTranscriptJobData>(EMBED_TRANSCRIPT_JOB, async (jobs) => {
+    await boss.work<EmbedTranscriptJobData>(EMBED_TRANSCRIPT_JOB, WORKER_OPTIONS, async (jobs) => {
       for (const job of jobs) await runEmbedTranscriptJob(job.data);
     });
-    await boss.work<EmbedSummaryJobData>(EMBED_SUMMARY_JOB, async (jobs) => {
+    await boss.work<EmbedSummaryJobData>(EMBED_SUMMARY_JOB, WORKER_OPTIONS, async (jobs) => {
       for (const job of jobs) await runEmbedSummaryJob(job.data);
     });
   }

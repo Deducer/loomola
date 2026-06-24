@@ -30,6 +30,28 @@ export type RecordingWithBrand = Recording & {
   commentCount: number;
 };
 
+export type RecordingListItem = Pick<
+  Recording,
+  | "id"
+  | "type"
+  | "slug"
+  | "title"
+  | "status"
+  | "failureReason"
+  | "durationSeconds"
+  | "r2CompositeKey"
+  | "compositeThumbnailKey"
+  | "folderId"
+  | "attendees"
+  | "suggestedFolderId"
+  | "createdAt"
+> & {
+  brand: Pick<RecordingBrand, "id" | "name" | "accentColor"> | null;
+  aiTitle: string | null;
+  viewCount: number;
+  commentCount: number;
+};
+
 type BrandJoinFields = {
   brandId: string | null;
   brandName: string | null;

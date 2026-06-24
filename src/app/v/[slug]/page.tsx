@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { ArrowLeft, ExternalLink, Pencil } from "lucide-react";
-import { createClient } from "@/lib/supabase/server";
+import { getOptionalAuthUser } from "@/lib/require-auth";
 import { getRecordingBySlug } from "@/db/queries/recordings";
 import { getTranscriptByRecording } from "@/db/queries/transcripts";
 import { listCommentsForRecording } from "@/db/queries/comments";
@@ -80,8 +80,7 @@ export default async function SharePage({
   const rec = await getRecordingBySlug(slug);
   if (!rec) notFound();
 
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getOptionalAuthUser();
   const isOwner = !!user && user.id === rec.ownerId;
 
   const brand = rec.brand ?? null;

@@ -9,8 +9,7 @@ import {
   people,
 } from "@/db/schema";
 import { and, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
-import type { RecordingWithBrand } from "./recordings";
-import { presignGet } from "@/lib/r2/presigned-get";
+import type { RecordingListItem } from "./recordings";
 
 export type SearchSort =
   | "date_desc"
@@ -84,7 +83,7 @@ export async function searchRecordings(params: {
   sort?: SearchSort;
   limit?: number;
   offset?: number;
-}): Promise<RecordingWithBrand[]> {
+}): Promise<RecordingListItem[]> {
   const hasQuery = !!params.query?.trim();
   const q = hasQuery ? params.query!.trim() : null;
   const sort: SearchSort = params.sort ?? "date_desc";
@@ -155,23 +154,23 @@ export async function searchRecordings(params: {
 
   const rows = await db
     .select({
-      rec: mediaObjects,
+      id: mediaObjects.id,
+      type: mediaObjects.type,
+      slug: mediaObjects.slug,
+      title: mediaObjects.title,
+      status: mediaObjects.status,
+      failureReason: mediaObjects.failureReason,
+      durationSeconds: mediaObjects.durationSeconds,
+      r2CompositeKey: mediaObjects.r2CompositeKey,
+      compositeThumbnailKey: mediaObjects.compositeThumbnailKey,
+      folderId: mediaObjects.folderId,
+      attendees: mediaObjects.attendees,
+      suggestedFolderId: mediaObjects.suggestedFolderId,
+      createdAt: mediaObjects.createdAt,
       brandId: brandProfiles.id,
       brandName: brandProfiles.name,
       brandAccent: brandProfiles.accentColor,
-      brandLogoUrl: brandProfiles.logoUrl,
-      brandLogoR2Key: brandProfiles.logoR2Key,
-      brandLogoR2KeyDark: brandProfiles.logoR2KeyDark,
-      brandTagline: brandProfiles.tagline,
-      brandFontFamily: brandProfiles.fontFamily,
-      brandCtaLabel: brandProfiles.ctaLabel,
-      brandCtaUrl: brandProfiles.ctaUrl,
-      brandFooterText: brandProfiles.footerText,
-      brandDefaultTheme: brandProfiles.defaultTheme,
       aiTitle: aiOutputs.titleSuggested,
-      aiSummary: aiOutputs.summary,
-      aiChapters: aiOutputs.chapters,
-      aiActionItems: aiOutputs.actionItems,
       viewCount: viewCountExpr,
       commentCount: commentCountExpr,
       rank: rankExpr.as("rank"),
@@ -189,51 +188,40 @@ export async function searchRecordings(params: {
     params.type === "audio"
       ? await attendeeNamesForRows(
           params.ownerId,
-          rows.map((r) => ({ id: r.rec.id, attendees: r.rec.attendees }))
+          rows.map((r) => ({ id: r.id, attendees: r.attendees }))
         )
       : new Map<string, string[]>();
 
-  return Promise.all(
-    rows.map(async (r) => {
-      const dt = r.brandDefaultTheme;
-      const brand = r.brandId
-        ? {
-            id: r.brandId,
-            name: r.brandName!,
-            accentColor: r.brandAccent!,
-            logoUrl: r.brandLogoR2Key
-              ? await presignGet(r.brandLogoR2Key)
-              : (r.brandLogoUrl ?? null),
-            logoUrlDark: r.brandLogoR2KeyDark
-              ? await presignGet(r.brandLogoR2KeyDark)
-              : null,
-            tagline: r.brandTagline,
-            fontFamily: r.brandFontFamily,
-            ctaLabel: r.brandCtaLabel,
-            ctaUrl: r.brandCtaUrl,
-            footerText: r.brandFooterText,
-            defaultTheme:
-              (dt === "light" || dt === "dark" ? dt : null) as
-                | "light"
-                | "dark"
-                | null,
-          }
-        : null;
-      const resolvedAttendeeNames = attendeeNames.get(r.rec.id);
-      return {
-        ...r.rec,
-        attendees:
-          resolvedAttendeeNames && resolvedAttendeeNames.length > 0
-            ? resolvedAttendeeNames
-            : r.rec.attendees,
-        brand,
-        aiTitle: r.aiTitle,
-        aiSummary: r.aiSummary,
-        aiChapters: r.aiChapters as RecordingWithBrand["aiChapters"],
-        aiActionItems: r.aiActionItems as RecordingWithBrand["aiActionItems"],
-        viewCount: r.viewCount ?? 0,
-        commentCount: r.commentCount ?? 0,
-      };
-    })
-  );
+  return rows.map((r) => {
+    const brand = r.brandId
+      ? {
+          id: r.brandId,
+          name: r.brandName!,
+          accentColor: r.brandAccent!,
+        }
+      : null;
+    const resolvedAttendeeNames = attendeeNames.get(r.id);
+    return {
+      id: r.id,
+      type: r.type,
+      slug: r.slug,
+      title: r.title,
+      status: r.status,
+      failureReason: r.failureReason,
+      durationSeconds: r.durationSeconds,
+      r2CompositeKey: r.r2CompositeKey,
+      compositeThumbnailKey: r.compositeThumbnailKey,
+      folderId: r.folderId,
+      attendees:
+        resolvedAttendeeNames && resolvedAttendeeNames.length > 0
+          ? resolvedAttendeeNames
+          : r.attendees,
+      suggestedFolderId: r.suggestedFolderId,
+      createdAt: r.createdAt,
+      brand,
+      aiTitle: r.aiTitle,
+      viewCount: r.viewCount ?? 0,
+      commentCount: r.commentCount ?? 0,
+    };
+  });
 }

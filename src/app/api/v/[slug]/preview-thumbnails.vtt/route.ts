@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { createClient } from "@/lib/supabase/server";
 import { getRecordingBySlug } from "@/db/queries/recordings";
 import { presignGet } from "@/lib/r2/presigned-get";
 import { cookieName, verifyUnlockToken } from "@/lib/viewer/unlock-cookie";
 import { spriteLayout } from "@/lib/queue/jobs/generate-preview-sprite";
+import { getOptionalAuthUser } from "@/lib/require-auth";
 
 /**
  * Serves a WebVTT file for Plyr's `previewThumbnails` config. Each cue maps
@@ -13,17 +13,14 @@ import { spriteLayout } from "@/lib/queue/jobs/generate-preview-sprite";
  * recordings don't leak preview frames.
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ slug: string }> }
 ) {
   const { slug } = await params;
   const rec = await getRecordingBySlug(slug);
   if (!rec) return new NextResponse("Not Found", { status: 404 });
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getOptionalAuthUser(request);
   const isOwner = !!user && user.id === rec.ownerId;
 
   if (rec.passwordHash && !isOwner) {

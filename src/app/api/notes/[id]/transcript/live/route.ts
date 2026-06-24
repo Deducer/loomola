@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getAudioNotePageData } from "@/db/queries/notes";
+import { getAudioNoteAccess } from "@/db/queries/notes";
 import {
   insertLiveTranscript,
   type WordTimestamp,
@@ -43,7 +43,7 @@ export async function POST(
   if (!enableGranola()) return granolaNotFound();
   const user = await requireAuth(request);
   const { id } = await params;
-  const data = await getAudioNotePageData(id, user.id);
+  const data = await getAudioNoteAccess(id, user.id);
   if (!data) return granolaNotFound();
 
   const json = await request.json().catch(() => null);
@@ -58,7 +58,7 @@ export async function POST(
   }
 
   const replacements = buildVariantReplacementMap(
-    await listDictionaryTerms(data.media.ownerId)
+    await listDictionaryTerms(data.ownerId)
   );
   const rewritten = collapseDictionaryVariants(
     fullText,
@@ -67,7 +67,7 @@ export async function POST(
   );
 
   const { transcript, inserted } = await insertLiveTranscript({
-    mediaObjectId: data.media.id,
+    mediaObjectId: data.id,
     providerRequestId: parsed.data.providerRequestId ?? null,
     language: parsed.data.language ?? "en",
     fullText: rewritten.fullText,

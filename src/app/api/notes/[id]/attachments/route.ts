@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { nanoid } from "nanoid";
 import {
   createNoteAttachment,
-  getAudioNotePageData,
+  getAudioNoteAccess,
   listNoteAttachments,
 } from "@/db/queries/notes";
 import { enableGranola } from "@/lib/feature-flags";
@@ -29,10 +29,10 @@ export async function GET(
   if (!enableGranola()) return granolaNotFound();
   const user = await requireAuth(request);
   const { id } = await params;
-  const data = await getAudioNotePageData(id, user.id);
+  const data = await getAudioNoteAccess(id, user.id);
   if (!data) return granolaNotFound();
 
-  const attachments = await listNoteAttachments(data.media.id, user.id);
+  const attachments = await listNoteAttachments(data.id, user.id);
   return NextResponse.json({
     attachments: await Promise.all(
       attachments.map(async (attachment) => ({
@@ -54,7 +54,7 @@ export async function POST(
   if (!enableGranola()) return granolaNotFound();
   const user = await requireAuth(request);
   const { id } = await params;
-  const data = await getAudioNotePageData(id, user.id);
+  const data = await getAudioNoteAccess(id, user.id);
   if (!data) return granolaNotFound();
 
   const formData = await request.formData();
@@ -72,11 +72,11 @@ export async function POST(
   }
 
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const key = `note-attachments/${user.id}/${data.media.id}/${nanoid(12)}.${ext}`;
+  const key = `note-attachments/${user.id}/${data.id}/${nanoid(12)}.${ext}`;
   await uploadBytes(key, bytes, file.type);
 
   const attachment = await createNoteAttachment({
-    mediaObjectId: data.media.id,
+    mediaObjectId: data.id,
     ownerId: user.id,
     r2Key: key,
     filename: file.name || `attachment.${ext}`,

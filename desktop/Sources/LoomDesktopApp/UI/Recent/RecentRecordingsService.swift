@@ -13,7 +13,7 @@ private let log = Logger(subsystem: "cloud.dissonance.loom.desktop", category: "
 ///   • App becomes active (`NSApplication.didBecomeActiveNotification`).
 ///   • Caller explicitly requests via `refresh()` (e.g., after a
 ///     successful upload completes).
-///   • 60-second timer while the window is visible.
+///   • 5-minute timer while the window is visible.
 @MainActor
 final class RecentRecordingsService: ObservableObject {
     @Published private(set) var items: [RecentRecording] = []
@@ -40,7 +40,7 @@ final class RecentRecordingsService: ObservableObject {
     /// exit.
     nonisolated(unsafe) private var didBecomeActiveObserver: NSObjectProtocol?
 
-    init(backend: BackendClient, limit: Int = 30) {
+    init(backend: BackendClient, limit: Int = 12) {
         self.backend = backend
         self.limit = limit
         wireLifecycleObservers()
@@ -206,11 +206,12 @@ final class RecentRecordingsService: ObservableObject {
                 self?.refresh()
             }
         }
-        // Periodic refresh — every 60s, while the app is alive. Lazy
-        // task; cancels on deinit.
+        // Periodic refresh while the app is alive. Launch, activation,
+        // and upload events already force immediate refreshes; the timer
+        // is only a quiet stale-data safety net.
         refreshTimerTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                try? await Task.sleep(nanoseconds: 300_000_000_000)
                 self?.refresh()
             }
         }

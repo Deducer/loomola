@@ -21,14 +21,14 @@ import { Button } from "@/components/ui/button";
 import { FolderSuggestionPill } from "./folder-suggestion-pill";
 import { cn } from "@/lib/cn";
 import type { Folder as DbFolder } from "@/db/queries/folders";
-import type { RecordingWithBrand } from "@/db/queries/recordings";
+import type { RecordingListItem } from "@/db/queries/recordings";
 
 export function NotesList({
   notes,
   folders,
   attachmentUrls = {},
 }: {
-  notes: RecordingWithBrand[];
+  notes: RecordingListItem[];
   folders: DbFolder[];
   attachmentUrls?: Record<string, string[]>;
 }) {
@@ -262,7 +262,7 @@ function NoteRow({
   selected,
   onToggleSelected,
 }: {
-  note: RecordingWithBrand;
+  note: RecordingListItem;
   title: string;
   folderName: string | null;
   duration: string | null;
@@ -370,8 +370,8 @@ export function noteDayLabel(date: Date, now = new Date()): string {
   });
 }
 
-function groupNotesByDay(notes: RecordingWithBrand[]) {
-  const groups = new Map<string, RecordingWithBrand[]>();
+function groupNotesByDay(notes: RecordingListItem[]) {
+  const groups = new Map<string, RecordingListItem[]>();
   for (const note of notes) {
     const label = noteDayLabel(new Date(note.createdAt));
     groups.set(label, [...(groups.get(label) ?? []), note]);
@@ -423,7 +423,7 @@ function NoteRowIcon({
   status,
   attachments,
 }: {
-  status: RecordingWithBrand["status"];
+  status: RecordingListItem["status"];
   attachments: ReadonlyArray<string>;
 }) {
   if (attachments.length === 0) {

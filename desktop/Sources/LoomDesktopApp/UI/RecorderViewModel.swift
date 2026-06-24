@@ -267,7 +267,7 @@ final class RecorderViewModel: ObservableObject {
             systemAudioCaptureMode == .audioDevice &&
             selectedSystemAudioDeviceID == nil
     }
-    private let obsidianSyncIntervalNanoseconds: UInt64 = 30_000_000_000
+    private let obsidianSyncIntervalNanoseconds: UInt64 = 300_000_000_000
     private let meetingWatchIntervalNanoseconds: UInt64 = 15_000_000_000
 
     init() {
@@ -2000,9 +2000,9 @@ final class RecorderViewModel: ObservableObject {
             refreshCaptureSources()
         }
         startObsidianAutoSync()
-        if let userId {
-            startObsidianRealtimeSync(userId: userId)
-        }
+        // Supabase Realtime kept a Postgres changes stream polling in
+        // production. The backup sync is enough for Obsidian export and
+        // avoids a persistent Realtime egress/DB-call source.
         if meetingDetectionEnabled {
             startMeetingWatch()
         }

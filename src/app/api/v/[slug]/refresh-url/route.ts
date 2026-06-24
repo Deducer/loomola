@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { createClient } from "@/lib/supabase/server";
 import { getRecordingBySlug } from "@/db/queries/recordings";
 import { presignGet } from "@/lib/r2/presigned-get";
 import { cookieName, verifyUnlockToken } from "@/lib/viewer/unlock-cookie";
+import { getOptionalAuthUser } from "@/lib/require-auth";
 
 export async function POST(
-  _req: Request,
+  request: Request,
   { params }: { params: Promise<{ slug: string }> }
 ) {
   const { slug } = await params;
@@ -19,10 +19,7 @@ export async function POST(
     return NextResponse.json({ error: "not_ready" }, { status: 409 });
   }
   if (rec.passwordHash) {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getOptionalAuthUser(request);
     const isOwner = !!user && user.id === rec.ownerId;
 
     const jar = await cookies();

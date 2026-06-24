@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getAudioNotePageData, markObsidianSynced } from "@/db/queries/notes";
+import { getAudioNoteAccess, markObsidianSynced } from "@/db/queries/notes";
 import { enableGranola } from "@/lib/feature-flags";
 import { requireAuth } from "@/lib/require-auth";
 
@@ -19,7 +19,7 @@ export async function POST(
   if (!enableGranola()) return granolaNotFound();
   const user = await requireAuth(request);
   const { id } = await params;
-  const data = await getAudioNotePageData(id, user.id);
+  const data = await getAudioNoteAccess(id, user.id);
   if (!data) return granolaNotFound();
 
   const json = await request.json().catch(() => ({}));
@@ -28,7 +28,7 @@ export async function POST(
     return NextResponse.json({ error: "file_path_required" }, { status: 400 });
   }
 
-  const synced = await markObsidianSynced(data.media.id, user.id);
+  const synced = await markObsidianSynced(data.id, user.id);
   if (!synced) return granolaNotFound();
 
   return NextResponse.json({ ok: true, filePath: parsed.data.filePath });

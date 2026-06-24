@@ -6,7 +6,7 @@ import { FolderInput, MousePointer2, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { RecordingCard } from "./recording-card";
 import { Button } from "@/components/ui/button";
-import type { RecordingWithBrand } from "@/db/queries/recordings";
+import type { RecordingListItem } from "@/db/queries/recordings";
 import type { Folder } from "@/db/queries/folders";
 
 export function RecordingsGrid({
@@ -15,7 +15,7 @@ export function RecordingsGrid({
   previewUrls,
   folders,
 }: {
-  recordings: RecordingWithBrand[];
+  recordings: RecordingListItem[];
   thumbnailUrls: Record<string, string | null>;
   previewUrls: Record<string, string | null>;
   folders: Folder[];

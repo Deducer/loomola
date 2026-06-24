@@ -9,7 +9,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { RecordingCardMenu } from "./recording-card-menu";
 import { FolderSuggestionPill } from "./folder-suggestion-pill";
-import type { RecordingWithBrand } from "@/db/queries/recordings";
+import type { RecordingListItem } from "@/db/queries/recordings";
 import type { Folder } from "@/db/queries/folders";
 
 function formatDuration(seconds: string | number | null): string {
@@ -47,7 +47,7 @@ export function RecordingCard({
   selected = false,
   onToggleSelected,
 }: {
-  rec: RecordingWithBrand;
+  rec: RecordingListItem;
   thumbnailUrl: string | null;
   previewUrl: string | null;
   folders: Folder[];

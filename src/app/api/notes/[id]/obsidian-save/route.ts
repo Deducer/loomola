@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
-  getAudioNotePageData,
+  getAudioNoteAccess,
   markObsidianSaveRequested,
 } from "@/db/queries/notes";
 import { enableGranola } from "@/lib/feature-flags";
@@ -23,7 +23,7 @@ export async function POST(
   if (!enableGranola()) return granolaNotFound();
   const user = await requireAuth(request);
   const { id } = await params;
-  const data = await getAudioNotePageData(id, user.id);
+  const data = await getAudioNoteAccess(id, user.id);
   if (!data) return granolaNotFound();
 
   const json = await request.json().catch(() => ({}));
@@ -32,7 +32,7 @@ export async function POST(
     return NextResponse.json({ error: "invalid_path" }, { status: 400 });
   }
 
-  const requested = await markObsidianSaveRequested(data.media.id, user.id);
+  const requested = await markObsidianSaveRequested(data.id, user.id);
   if (!requested) return granolaNotFound();
 
   return NextResponse.json(
@@ -41,9 +41,9 @@ export async function POST(
       status: "queued",
       path: resolveObsidianPath({
         overridePath: parsed.data.path,
-        projectPath: data.brandProfile?.meetingNotesVaultPath,
+        projectPath: data.meetingNotesVaultPath,
       }),
-      exportUrl: `/api/notes/${data.media.id}/export.md`,
+      exportUrl: `/api/notes/${data.id}/export.md`,
     },
     { status: 202 }
   );

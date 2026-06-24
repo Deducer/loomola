@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getRecordingBySlug } from "@/db/queries/recordings";
 import { upsertView } from "@/db/queries/views";
 import { hashVisitor } from "@/lib/viewer/visitor-id";
-import { createClient } from "@/lib/supabase/server";
+import { getOptionalAuthUser } from "@/lib/require-auth";
 import { sendEmail } from "@/lib/mail/mailgun";
 import { renderNewViewEmail } from "@/lib/mail/templates/new-view";
 import { getSupabaseService } from "@/lib/supabase/service";
@@ -21,10 +21,7 @@ export async function POST(
   // Owner viewing their own recording: don't track or notify.
   // Anonymous / private-window views still fall through (different
   // visitor hash, no auth user) — accepted trade-off.
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getOptionalAuthUser(request);
   if (user && user.id === rec.ownerId) {
     return NextResponse.json({ ok: true, skipped: "owner" });
   }
