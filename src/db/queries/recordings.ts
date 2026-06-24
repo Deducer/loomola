@@ -193,6 +193,38 @@ export async function getRecordingBySlug(
   };
 }
 
+/**
+ * Lightweight slug → recording lookup for high-frequency / utility share-page
+ * endpoints (progress pings, view tracking, refresh-url, preview-thumbnails).
+ * Selects ONLY the columns those routes read — deliberately NOT
+ * aiOutputs.summary (up to 200k chars), chapters/actionItems jsonb, the brand
+ * join, the comment-count subquery, or the viewCount round-trip that the full
+ * getRecordingBySlug pulls. getRecordingBySlug was being called on every 5s
+ * progress beacon during playback, dragging the entire summary out of Postgres
+ * each time — a dominant Supabase egress source. Use the fat lookup only for
+ * the share-page render itself.
+ */
+export async function getRecordingRefBySlug(slug: string) {
+  const [row] = await db
+    .select({
+      id: mediaObjects.id,
+      ownerId: mediaObjects.ownerId,
+      title: mediaObjects.title,
+      aiTitle: aiOutputs.titleSuggested,
+      status: mediaObjects.status,
+      passwordHash: mediaObjects.passwordHash,
+      playbackMp4Key: mediaObjects.playbackMp4Key,
+      r2CompositeKey: mediaObjects.r2CompositeKey,
+      previewSpriteKey: mediaObjects.previewSpriteKey,
+      durationSeconds: mediaObjects.durationSeconds,
+    })
+    .from(mediaObjects)
+    .leftJoin(aiOutputs, eq(aiOutputs.mediaObjectId, mediaObjects.id))
+    .where(and(eq(mediaObjects.slug, slug), isNull(mediaObjects.deletedAt)))
+    .limit(1);
+  return row ?? null;
+}
+
 export async function getRecordingOwned(
   id: string,
   ownerId: string

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getRecordingBySlug } from "@/db/queries/recordings";
+import { getRecordingRefBySlug } from "@/db/queries/recordings";
 import { upsertView } from "@/db/queries/views";
 import { hashVisitor } from "@/lib/viewer/visitor-id";
 import { getOptionalAuthUser } from "@/lib/require-auth";
@@ -13,7 +13,7 @@ export async function POST(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   const { slug } = await params;
-  const rec = await getRecordingBySlug(slug);
+  const rec = await getRecordingRefBySlug(slug);
   if (!rec) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }

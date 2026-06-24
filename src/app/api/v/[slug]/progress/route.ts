@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getRecordingBySlug } from "@/db/queries/recordings";
+import { getRecordingRefBySlug } from "@/db/queries/recordings";
 import { updateProgress } from "@/db/queries/views";
 import { hashVisitor } from "@/lib/viewer/visitor-id";
 
@@ -11,7 +11,7 @@ export async function POST(
   const body = (await request.json().catch(() => ({}))) as { t?: number };
   const t =
     typeof body.t === "number" && isFinite(body.t) && body.t >= 0 ? body.t : 0;
-  const rec = await getRecordingBySlug(slug);
+  const rec = await getRecordingRefBySlug(slug);
   if (!rec) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }

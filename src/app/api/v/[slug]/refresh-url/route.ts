@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { getRecordingBySlug } from "@/db/queries/recordings";
+import { getRecordingRefBySlug } from "@/db/queries/recordings";
 import { presignGet } from "@/lib/r2/presigned-get";
 import { cookieName, verifyUnlockToken } from "@/lib/viewer/unlock-cookie";
 import { getOptionalAuthUser } from "@/lib/require-auth";
@@ -10,7 +10,7 @@ export async function POST(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   const { slug } = await params;
-  const rec = await getRecordingBySlug(slug);
+  const rec = await getRecordingRefBySlug(slug);
   if (!rec) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
