@@ -18,6 +18,7 @@ final class RecorderViewModel: ObservableObject {
     @Published private(set) var state: RecorderState = .signedOut
     @Published var email = ""
     @Published var password = ""
+    @Published private(set) var isSigningIn = false
     @Published var audioTitle = ""
     @Published private(set) var audioTitleManuallyEdited = false
     @Published var includeMicInAudioNote = true
@@ -374,20 +375,36 @@ final class RecorderViewModel: ObservableObject {
 
     func signIn() {
         guard let authService else { return }
-        state = .preparingPermissions
+        guard !isSigningIn else { return }
+        isSigningIn = true
         statusMessage = "Signing in..."
-        let email = email
+        let email = email.trimmingCharacters(in: .whitespacesAndNewlines)
         let password = password
-        Task {
+        Task { @MainActor in
+            defer { isSigningIn = false }
             do {
                 let session = try await authService.signIn(email: email, password: password)
                 apply(session: session)
                 statusMessage = "Signed in. Backend upload client is ready."
+                recorderLog.notice("signIn — succeeded")
             } catch {
                 state = .signedOut
-                statusMessage = "Sign-in failed: \(error.localizedDescription)"
+                let message = signInFailureMessage(for: error)
+                statusMessage = message
+                recorderLog.error("signIn — failed: \(message, privacy: .public)")
             }
         }
+    }
+
+    private func signInFailureMessage(for error: Error) -> String {
+        let raw = error.localizedDescription
+        let lower = raw.lowercased()
+        if lower.contains("exceed_egress_quota") ||
+            lower.contains("payment required") ||
+            lower.contains("service for this project is restricted") {
+            return "Sign-in failed: Supabase has restricted this project for exceeding its egress quota. Upgrade or remove the spend cap in Supabase, then try again."
+        }
+        return "Sign-in failed: \(raw)"
     }
 
     func signOut() {
