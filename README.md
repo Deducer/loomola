@@ -56,9 +56,16 @@ Two choices up front:
 - **Loom-only or Loom + Granola.** Start with `ENABLE_GRANOLA=false` if you only want screen recordings. Set it to `true` when you also want the macOS audio-meeting-notes product.
 - **Local or deployed.** `http://localhost:3000` is enough to open the app and test auth/UI — and, with `TRANSCRIBE_PROVIDER=openai-whisper`, for the full record-to-transcript pipeline. Deepgram transcription callbacks, public share links, and social unfurls still need a public HTTPS app URL. Use a deploy, ngrok, or Cloudflare Tunnel if you want those.
 
+**Database & auth — two options:**
+
+- **Free Supabase cloud (default, recommended).** A free Supabase project gives you Postgres + auth in a couple of clicks, and it's what the quickstart below uses. Loomola's media (video/audio) is served from your own object storage, never through Supabase, so the only data crossing Supabase is small database query results — a single user stays comfortably inside the free tier. (Free-tier notes: ~5 GB/mo egress, and free projects pause after ~7 days with no activity — daily use keeps it awake. Limits change; check Supabase's current free tier.)
+- **Self-hosted Supabase = $0 forever (advanced).** Want nothing external and no usage caps at all? Run Supabase on your own VPS with Coolify — same software, no app changes, just your VPS. See [`docs/self-hosting-supabase.md`](docs/self-hosting-supabase.md). Best for people already comfortable with Coolify/VPS admin.
+
 ### Quickstart A — Docker Compose (recommended)
 
 Bundled MinIO for storage; you bring a free [Supabase](https://supabase.com) project (Postgres + auth) and a [Deepgram](https://deepgram.com) + [Anthropic](https://console.anthropic.com) key for the AI pipeline.
+
+**Getting your Supabase values:** create a free project at [supabase.com](https://supabase.com), then from the dashboard copy the **Project URL**, **anon key**, and **service-role key** (Settings → API) and the **database connection string** (Settings → Database). Those four fill the Supabase + `DATABASE_URL` lines in `.env.compose`. You don't need to create a user — Loomola's first-run screen does that. (Prefer no external account at all? See the self-hosted-Supabase option above.)
 
 ```bash
 git clone https://github.com/Deducer/loomola.git

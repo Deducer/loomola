@@ -6,6 +6,20 @@ version section (`## v1.1.0 — 2026-07-01`) accumulated under `## Unreleased`
 between tags. GitHub Releases are generated per tag by CI and point here
 for the curated notes.
 
+## Unreleased
+
+### Added
+
+- **Self-hosted Supabase guide ([`docs/self-hosting-supabase.md`](docs/self-hosting-supabase.md)).** A step-by-step Coolify recipe to run Supabase on your own VPS — the $0-forever path with no external account and no usage caps. Loomola needs no code changes; self-hosted Supabase is the same software. `getClaims` auth works against the default HS256 setup (it validates against your own GoTrue).
+
+### Changed
+
+- **Free Supabase cloud is now the documented default.** After the egress fixes below, a single user stays well within the free tier (media is served from your own object storage, never through Supabase). The README spells out the two database/auth options — free cloud (default) vs self-hosted ($0 forever) — and the free-tier caveats.
+
+### Fixed
+
+- **Cut Supabase egress on the public share page.** Slimmed the slug → recording lookup so the 5s progress beacon and the view / refresh-url / preview-thumbnail endpoints no longer drag the full AI summary, chapters, and action items out of Postgres on every call. Lengthened the view-progress beacon from 5s to 30s. The transcript word-timing blob is now fetched lazily (only when a viewer scrolls to the transcript) instead of on every share-page load. Together these remove what tripped the Supabase egress quota.
+
 ## v1.0.0 — 2026-06-11
 
 ### Added
