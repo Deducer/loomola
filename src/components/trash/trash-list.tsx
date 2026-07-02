@@ -10,17 +10,12 @@ type TrashItem = {
   id: string;
   type: string;
   title: string;
-  deletedAt: string;
   createdAt: string;
+  // Computed server-side: client render must stay pure (no Date.now()).
+  daysLeft: number;
 };
 
-export function TrashList({
-  items,
-  retentionDays,
-}: {
-  items: TrashItem[];
-  retentionDays: number;
-}) {
+export function TrashList({ items }: { items: TrashItem[] }) {
   const router = useRouter();
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -80,13 +75,7 @@ export function TrashList({
   return (
     <ul className="overflow-hidden rounded-lg border border-border bg-bg-subtle/55">
       {items.map((item) => {
-        const daysLeft = Math.max(
-          0,
-          retentionDays -
-            Math.floor(
-              (Date.now() - new Date(item.deletedAt).getTime()) / 86_400_000
-            )
-        );
+        const daysLeft = item.daysLeft;
         return (
           <li
             key={item.id}

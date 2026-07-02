@@ -9,6 +9,13 @@ import { enableGranola } from "@/lib/feature-flags";
 
 export const metadata = { title: "Trash · loomola" };
 
+function daysLeftFor(deletedAt: Date, retentionDays: number): number {
+  const elapsedDays = Math.floor(
+    (Date.now() - deletedAt.getTime()) / 86_400_000
+  );
+  return Math.max(0, retentionDays - elapsedDays);
+}
+
 export default async function TrashPage() {
   const user = await requireAuth();
   const items = await listTrashedRecordings(user.id);
@@ -42,10 +49,9 @@ export default async function TrashPage() {
               id: item.id,
               type: item.type,
               title: item.title || item.aiTitle || "Untitled",
-              deletedAt: item.deletedAt.toISOString(),
               createdAt: item.createdAt.toISOString(),
+              daysLeft: daysLeftFor(item.deletedAt, retentionDays),
             }))}
-            retentionDays={retentionDays}
           />
         </div>
       </main>
