@@ -1,4 +1,5 @@
-import { getAudioNoteOwnerId, getAudioNotePageData } from "@/db/queries/notes";
+import { getAudioNotePageData } from "@/db/queries/notes";
+import { getMcpOwnerId } from "@/app/api/mcp/tools/owner";
 import { listPeople } from "@/db/queries/people";
 import { listSpeakerAssignments } from "@/db/queries/speaker-assignments";
 import { hasIntegrationToken } from "@/lib/integration-auth";
@@ -66,5 +67,14 @@ export async function resolveNoteExportOwnerId(params: {
     const user = await requireAuth(params.request);
     return user.id;
   }
-  return getAudioNoteOwnerId(params.identifier);
+  // The integration token is instance-wide, not per-user. Resolving the owner
+  // from the note itself let the token export ANY user's note once invite-based
+  // multi-user shipped. Pin it to the same single account the MCP server uses
+  // (MCP_OWNER_ID / MCP_OWNER_EMAIL, or the sole user); throws on an unpinned
+  // multi-user instance, which we surface as not-found.
+  try {
+    return await getMcpOwnerId();
+  } catch {
+    return null;
+  }
 }

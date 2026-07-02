@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getRecordingRefBySlug } from "@/db/queries/recordings";
 import { upsertView } from "@/db/queries/views";
-import { hashVisitor } from "@/lib/viewer/visitor-id";
+import { hashVisitor, hashVisitorIp } from "@/lib/viewer/visitor-id";
+import { checkRateLimit } from "@/lib/rate-limit/check";
 import { getOptionalAuthUser } from "@/lib/require-auth";
 import { sendEmail } from "@/lib/mail/mailgun";
 import { renderNewViewEmail } from "@/lib/mail/templates/new-view";
@@ -13,6 +14,24 @@ export async function POST(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   const { slug } = await params;
+
+  // Every distinct visitor hash inserts a views row and emails the owner.
+  // Keyed on IP alone (not hashVisitor) because the UA half of the visitor
+  // hash is client-rotatable — see hashVisitorIp. 60/5min is far above any
+  // legitimate per-IP page-load rate, including shared-NAT offices.
+  const rate = await checkRateLimit({
+    scope: "view:ip",
+    key: hashVisitorIp(request),
+    max: 60,
+    windowSec: 300,
+  });
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { error: "rate_limited" },
+      { status: 429, headers: { "Retry-After": String(rate.retryAfterSec ?? 60) } }
+    );
+  }
+
   const rec = await getRecordingRefBySlug(slug);
   if (!rec) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });

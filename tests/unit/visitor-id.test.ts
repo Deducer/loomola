@@ -42,9 +42,20 @@ describe("hashVisitor", () => {
     expect(a).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it("takes the first IP from a comma-separated forwarded-for list", () => {
+  it("takes the LAST (proxy-appended) IP from a forwarded-for list", () => {
     const a = hashVisitor(req("1.2.3.4, 5.6.7.8", "Chrome/130"));
-    const b = hashVisitor(req("1.2.3.4", "Chrome/130"));
+    const b = hashVisitor(req("5.6.7.8", "Chrome/130"));
     expect(a).toBe(b);
+  });
+
+  it("is spoof-resistant: client-prepended XFF entries do not change the hash", () => {
+    // Traefik appends the real socket IP on the right; anything the client
+    // sends arrives to the left of it. Rotating those left entries must not
+    // mint a new visitor identity (rate-limit bypass, first-view email flood).
+    const real = hashVisitor(req("5.6.7.8", "Chrome/130"));
+    const spoofA = hashVisitor(req("6.6.6.6, 5.6.7.8", "Chrome/130"));
+    const spoofB = hashVisitor(req("7.7.7.7, 8.8.8.8, 5.6.7.8", "Chrome/130"));
+    expect(spoofA).toBe(real);
+    expect(spoofB).toBe(real);
   });
 });

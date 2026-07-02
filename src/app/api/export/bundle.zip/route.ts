@@ -5,6 +5,7 @@ import { createZip } from "@/lib/export/zip";
 import { enableGranola } from "@/lib/feature-flags";
 import { hasIntegrationToken } from "@/lib/integration-auth";
 import { requireAuth } from "@/lib/require-auth";
+import { getMcpOwnerId } from "@/app/api/mcp/tools/owner";
 
 function granolaNotFound() {
   return NextResponse.json({ error: "not_found" }, { status: 404 });
@@ -19,9 +20,19 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
 
-  const ownerId = hasIntegrationToken(request)
-    ? undefined
-    : (await requireAuth(request)).id;
+  // The integration token is instance-wide; leaving ownerId undefined exported
+  // every user's data on multi-user instances. Pin to the MCP owner account
+  // (MCP_OWNER_ID / MCP_OWNER_EMAIL, or the sole user).
+  let ownerId: string;
+  if (hasIntegrationToken(request)) {
+    try {
+      ownerId = await getMcpOwnerId();
+    } catch {
+      return granolaNotFound();
+    }
+  } else {
+    ownerId = (await requireAuth(request)).id;
+  }
   const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL ?? url.origin;
   const items = await listExportBundleMedia({ ownerId, ...parsed });
   const zip = createZip(
