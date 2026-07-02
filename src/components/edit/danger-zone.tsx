@@ -47,8 +47,8 @@ export function DangerZone({
         Danger zone
       </h2>
       <p className="mt-1 text-xs text-text-muted">
-        Deleting moves this recording to the trash bin (soft delete). The video
-        files in R2 are kept until a future cleanup job.
+        Deleting moves this recording to the trash. You can restore it from
+        there for 30 days; after that the files are permanently removed.
       </p>
       {!confirm ? (
         <Button

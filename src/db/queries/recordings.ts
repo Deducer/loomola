@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { mediaObjects, brandProfiles, aiOutputs, comments } from "@/db/schema";
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { presignGet } from "@/lib/r2/presigned-get";
 
 export type Recording = typeof mediaObjects.$inferSelect;
@@ -260,6 +260,64 @@ export async function softDeleteRecordings(
     .where(and(eq(mediaObjects.ownerId, ownerId), inArray(mediaObjects.id, ids)))
     .returning({ id: mediaObjects.id });
   return result.length;
+}
+
+export async function restoreRecording(
+  id: string,
+  ownerId: string
+): Promise<boolean> {
+  const result = await db
+    .update(mediaObjects)
+    .set({ deletedAt: null })
+    .where(
+      and(
+        eq(mediaObjects.id, id),
+        eq(mediaObjects.ownerId, ownerId),
+        isNotNull(mediaObjects.deletedAt)
+      )
+    )
+    .returning({ id: mediaObjects.id });
+  return result.length > 0;
+}
+
+export type TrashedRecording = {
+  id: string;
+  slug: string;
+  type: "video" | "audio";
+  title: string | null;
+  aiTitle: string | null;
+  status: string;
+  durationSeconds: string | null;
+  deletedAt: Date;
+  createdAt: Date;
+};
+
+export async function listTrashedRecordings(
+  ownerId: string
+): Promise<TrashedRecording[]> {
+  const rows = await db
+    .select({
+      id: mediaObjects.id,
+      slug: mediaObjects.slug,
+      type: mediaObjects.type,
+      title: mediaObjects.title,
+      aiTitle: aiOutputs.titleSuggested,
+      status: mediaObjects.status,
+      durationSeconds: mediaObjects.durationSeconds,
+      deletedAt: mediaObjects.deletedAt,
+      createdAt: mediaObjects.createdAt,
+    })
+    .from(mediaObjects)
+    .leftJoin(aiOutputs, eq(aiOutputs.mediaObjectId, mediaObjects.id))
+    .where(
+      and(eq(mediaObjects.ownerId, ownerId), isNotNull(mediaObjects.deletedAt))
+    )
+    .orderBy(desc(mediaObjects.deletedAt))
+    .limit(200);
+  // deletedAt is non-null by the WHERE clause; narrow the inferred type.
+  return rows.flatMap((row) =>
+    row.deletedAt === null ? [] : [{ ...row, deletedAt: row.deletedAt }]
+  );
 }
 
 export async function updateTrim(params: {

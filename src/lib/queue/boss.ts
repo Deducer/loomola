@@ -66,6 +66,7 @@ import {
   type AppendClipJobData,
 } from "./jobs/append-clip";
 import { WATCHDOG_JOB, WATCHDOG_CRON, runWatchdogJob } from "./jobs/watchdog";
+import { PURGE_JOB, PURGE_CRON, runPurgeJob } from "./jobs/purge-deleted";
 import { enableGranola } from "@/lib/feature-flags";
 
 // The singleton lives on globalThis, not module scope: instrumentation.ts
@@ -115,6 +116,7 @@ async function init(): Promise<PgBoss> {
   await boss.createQueue(SUGGEST_SPEAKERS_JOB);
   await boss.createQueue(APPEND_CLIP_JOB);
   await boss.createQueue(WATCHDOG_JOB);
+  await boss.createQueue(PURGE_JOB);
   if (granolaEnabled) {
     await boss.createQueue(MIX_AUDIO_JOB);
     await boss.createQueue(AUDIO_WAVEFORM_JOB);
@@ -257,9 +259,13 @@ async function init(): Promise<PgBoss> {
   await boss.work(WATCHDOG_JOB, WORKER_OPTIONS, async () => {
     await runWatchdogJob();
   });
+  await boss.work(PURGE_JOB, WORKER_OPTIONS, async () => {
+    await runPurgeJob();
+  });
   // Cron registration is an idempotent upsert in pg-boss v12 — safe on
   // every boot. UTC: thresholds are relative ages, tz is cosmetic.
   await boss.schedule(WATCHDOG_JOB, WATCHDOG_CRON, null, { tz: "UTC" });
+  await boss.schedule(PURGE_JOB, PURGE_CRON, null, { tz: "UTC" });
   if (granolaEnabled) {
     await boss.work<MixAudioJobData>(MIX_AUDIO_JOB, WORKER_OPTIONS, async (jobs) => {
       for (const job of jobs) {
@@ -296,7 +302,7 @@ async function init(): Promise<PgBoss> {
   }
 
   console.log(
-    `[pg-boss] started and workers registered (${granolaEnabled ? 13 : 9} queues)`
+    `[pg-boss] started and workers registered (${granolaEnabled ? 14 : 10} queues)`
   );
   return boss;
 }

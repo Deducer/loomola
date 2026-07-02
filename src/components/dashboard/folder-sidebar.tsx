@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ChevronRight,
@@ -152,6 +153,14 @@ export function FolderSidebar({
           />
         ))}
       </div>
+
+      <Link
+        href="/trash"
+        className="mt-4 flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-text-subtle transition-colors hover:bg-bg-subtle hover:text-text-muted"
+      >
+        <Trash2 className="h-4 w-4" />
+        <span className="truncate">Trash</span>
+      </Link>
     </aside>
   );
 }
