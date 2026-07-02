@@ -51,6 +51,7 @@ import type {
 } from "@/components/viewer/transcript-panel";
 import type { Word } from "@/lib/viewer/paragraphs";
 import { cn } from "@/lib/cn";
+import { useStatusPoll } from "@/lib/hooks/use-status-poll";
 
 type NotePageClientProps = {
   mediaId: string;
@@ -321,27 +322,34 @@ export function NotePageClient({
     }
   }, [lastSavedTitle, mediaId, title]);
 
-  useEffect(() => {
-    if (generationStatus !== "pending" && generationStatus !== "streaming") {
-      return;
-    }
-
-    let cancelled = false;
-    const tick = async () => {
+  // Poll the slim statusOnly variant while generating (backoff + hidden-tab
+  // pause + 10-minute give-up via useStatusPoll); fetch the full payload
+  // exactly once when the status flips. The old 3s setInterval fetched the
+  // entire summary/chapters/actionItems jsonb every tick, forever, even in
+  // backgrounded tabs — the note page's dominant egress.
+  useStatusPoll(
+    generationStatus === "pending" || generationStatus === "streaming",
+    async () => {
       try {
-        await refreshEnhancement();
+        const response = await fetch(`/api/notes/${mediaId}/enhance?statusOnly=1`);
+        if (!response.ok) throw new Error("enhance_status_failed");
+        const data = (await response.json()) as {
+          generationStatus: GenerationStatus;
+        };
+        if (data.generationStatus !== "pending" && data.generationStatus !== "streaming") {
+          await refreshEnhancement();
+        }
       } catch {
-        if (!cancelled) setEnhanceError("Could not refresh generated notes.");
+        setEnhanceError("Could not refresh generated notes.");
       }
-    };
-
-    void tick();
-    const timer = window.setInterval(tick, 3000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [generationStatus, refreshEnhancement]);
+    },
+    {
+      onGiveUp: () =>
+        setEnhanceError(
+          "Still generating after 10 minutes — reload the page to check again."
+        ),
+    }
+  );
 
   const refreshObsidianStatus = useCallback(async () => {
     const response = await fetch(`/api/notes/${mediaId}/obsidian-status`);
@@ -359,13 +367,11 @@ export function NotePageClient({
     void refreshObsidianStatus().catch(() => undefined);
   }, [actionsOpen, refreshObsidianStatus]);
 
-  useEffect(() => {
-    if (obsidianSaveState !== "queued") return;
-    const timer = window.setInterval(() => {
-      void refreshObsidianStatus().catch(() => undefined);
-    }, 5000);
-    return () => window.clearInterval(timer);
-  }, [obsidianSaveState, refreshObsidianStatus]);
+  useStatusPoll(
+    obsidianSaveState === "queued",
+    () => refreshObsidianStatus().catch(() => undefined),
+    { initialMs: 5000 }
+  );
 
   async function saveTitle() {
     const trimmed = title.trim();

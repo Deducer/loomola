@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { FolderInput, MousePointer2, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { RecordingCard } from "./recording-card";
+import { ProcessingStatusWatcher } from "@/components/processing-status-watcher";
 import { Button } from "@/components/ui/button";
 import type { RecordingListItem } from "@/db/queries/recordings";
 import type { Folder } from "@/db/queries/folders";
@@ -115,6 +116,9 @@ export function RecordingsGrid({
 
   return (
     <>
+      <ProcessingStatusWatcher
+        items={recordings.map((r) => ({ id: r.id, status: r.status }))}
+      />
       <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {recordings.map((r) => (
           <li key={r.id}>

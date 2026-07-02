@@ -18,6 +18,7 @@ import {
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ProcessingStatusWatcher } from "@/components/processing-status-watcher";
 import { FolderSuggestionPill } from "./folder-suggestion-pill";
 import { cn } from "@/lib/cn";
 import type { Folder as DbFolder } from "@/db/queries/folders";
@@ -134,6 +135,9 @@ export function NotesList({
 
   return (
     <>
+      <ProcessingStatusWatcher
+        items={notes.map((n) => ({ id: n.id, status: n.status }))}
+      />
       <div className="space-y-8">
         {groups.map((group) => (
           <section key={group.label}>

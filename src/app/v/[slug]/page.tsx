@@ -9,6 +9,7 @@ import { listCommentsForRecording } from "@/db/queries/comments";
 import { presignGet } from "@/lib/r2/presigned-get";
 import { BrandLogo } from "@/components/brand/brand-logo";
 import { ViewerShell } from "@/components/viewer/viewer-shell";
+import { ShareStatusWatcher } from "@/components/processing-status-watcher";
 import { PasswordGate } from "@/components/viewer/password-gate";
 import { ViewerThemeToggle } from "@/components/viewer/viewer-theme-toggle";
 import { cookieName, verifyUnlockToken } from "@/lib/viewer/unlock-cookie";
@@ -216,6 +217,8 @@ export default async function SharePage({
           />
         ) : (
           <div className="rounded-xl border border-dashed border-border bg-bg-subtle/40 p-12 text-center">
+            {/* Makes the "catches up automatically" copy below true. */}
+            <ShareStatusWatcher slug={slug} status={rec.status} />
             <div className="inline-flex items-center gap-2 text-base font-medium text-text">
               {rec.status === "failed" ? (
                 <span
@@ -248,8 +251,8 @@ export default async function SharePage({
               </p>
             ) : (
               <p className="mt-3 text-sm text-text-subtle">
-                Refresh in ~15–30 seconds — this page will catch up
-                automatically.
+                Usually ready in under a minute — this page updates
+                automatically when it&apos;s done.
               </p>
             )}
           </div>

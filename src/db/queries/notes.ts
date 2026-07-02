@@ -450,6 +450,40 @@ export async function getAudioNoteEnhancementStatus(
   return row ?? null;
 }
 
+/**
+ * Poll-tick variant of getAudioNoteEnhancementStatus: only the scalar fields
+ * a status poll needs. The full variant ships summary/chapters/actionItems
+ * jsonb on every call — at a 3s poll cadence that was the note page's
+ * dominant egress. The transcript-length check runs in SQL; the text never
+ * leaves Postgres.
+ */
+export async function getAudioNoteGenerationStatusLite(
+  identifier: string,
+  ownerId: string
+): Promise<{
+  mediaId: string;
+  mediaStatus: typeof mediaObjects.$inferSelect.status;
+  failureReason: string | null;
+  generationStatus: typeof aiOutputs.$inferSelect.generationStatusValue | null;
+  transcriptReady: boolean;
+} | null> {
+  const [row] = await db
+    .select({
+      mediaId: mediaObjects.id,
+      mediaStatus: mediaObjects.status,
+      failureReason: mediaObjects.failureReason,
+      generationStatus: aiOutputs.generationStatusValue,
+      transcriptReady: sql<boolean>`(${transcripts.fullText} is not null and length(btrim(${transcripts.fullText})) > 0)`,
+    })
+    .from(mediaObjects)
+    .leftJoin(transcripts, eq(transcripts.mediaObjectId, mediaObjects.id))
+    .leftJoin(aiOutputs, eq(aiOutputs.mediaObjectId, mediaObjects.id))
+    .where(audioNoteOwnerWhere(identifier, ownerId))
+    .limit(1);
+
+  return row ?? null;
+}
+
 export async function getAudioNoteOwnerId(
   identifier: string
 ): Promise<string | null> {

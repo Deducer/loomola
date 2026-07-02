@@ -18,6 +18,7 @@ import { DownloadsList } from "@/components/viewer/downloads-list";
 import { DropoffChart } from "@/components/edit/dropoff-chart";
 import { DangerZone } from "@/components/edit/danger-zone";
 import { ViewerShell } from "@/components/viewer/viewer-shell";
+import { ProcessingStatusWatcher } from "@/components/processing-status-watcher";
 import { extensionForKey } from "@/lib/recordings/artifact-keys";
 import type { Metadata } from "next";
 import type { Word } from "@/lib/viewer/paragraphs";
@@ -173,6 +174,9 @@ export default async function EditRecordingPage({
           />
         )}
         <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-10">
+          <ProcessingStatusWatcher
+            items={[{ id: rec.id, status: rec.status }]}
+          />
           <EditShell
             stickyPreview={false}
             header={

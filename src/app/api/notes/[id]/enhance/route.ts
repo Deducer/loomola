@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
   getAudioNoteEnhancementStatus,
+  getAudioNoteGenerationStatusLite,
   type AudioNoteEnhancementStatus,
 } from "@/db/queries/notes";
 import {
@@ -51,6 +52,21 @@ export async function GET(
   if (!enableGranola()) return granolaNotFound();
   const user = await requireAuth(request);
   const { id } = await params;
+
+  // ?statusOnly=1 — poll-tick variant that skips the summary/chapters/
+  // actionItems jsonb. The client polls this while generation is pending
+  // and fetches the full payload exactly once when the status flips.
+  if (new URL(request.url).searchParams.get("statusOnly") === "1") {
+    const lite = await getAudioNoteGenerationStatusLite(id, user.id);
+    if (!lite) return granolaNotFound();
+    return NextResponse.json({
+      generationStatus: lite.generationStatus ?? "idle",
+      mediaStatus: lite.mediaStatus,
+      failureReason: lite.failureReason,
+      transcriptReady: lite.transcriptReady,
+    });
+  }
+
   const data = await getAudioNoteEnhancementStatus(id, user.id);
   if (!data) return granolaNotFound();
 
