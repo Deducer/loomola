@@ -68,6 +68,8 @@ final class RecorderViewModel: ObservableObject {
         UserDefaults.standard.object(forKey: "loomola.floatingRecordingIndicatorEnabled") as? Bool ?? true
     @Published private(set) var liveTranscriptionEnabled: Bool =
         UserDefaults.standard.object(forKey: "loomola.liveTranscriptionEnabled") as? Bool ?? true
+    @Published private(set) var calendarAttendeesEnabled: Bool =
+        UserDefaults.standard.object(forKey: "loomola.calendarAttendeesEnabled") as? Bool ?? true
     @Published private(set) var nativeMessagingStatus = "Chrome bridge can be installed after the extension is loaded."
     @Published private(set) var isInstallingNativeMessagingHost = false
     @Published private(set) var captureSources = CaptureSourceSnapshot(
@@ -581,6 +583,15 @@ final class RecorderViewModel: ObservableObject {
                     }
                 }
             }
+        }
+    }
+
+    func setCalendarAttendeesEnabled(_ enabled: Bool) {
+        guard calendarAttendeesEnabled != enabled else { return }
+        calendarAttendeesEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: "loomola.calendarAttendeesEnabled")
+        if enabled, !CalendarAttendeeService.shared.hasAccess {
+            Task { await CalendarAttendeeService.shared.requestAccess() }
         }
     }
 
@@ -1435,6 +1446,7 @@ final class RecorderViewModel: ObservableObject {
                 statusMessage = "Recording audio note with \(session.tracks.count) track(s)."
                 startAudioInactivityMonitor()
                 isStartingRecording = false
+                attachCalendarAttendees(recordingId: session.backendRecordingId)
             } catch {
                 liveTranscription.stop()
                 cancelAudioInactivityMonitor()
@@ -2278,6 +2290,49 @@ final class RecorderViewModel: ObservableObject {
         }
         recorderLog.notice("currentAccessToken — loaded stored Supabase access token")
         return snapshot.accessToken
+    }
+
+    /// Best-effort calendar → attendees: find the event the user is in,
+    /// resolve its attendees to People on the backend (created on first
+    /// sight, self excluded), and set them on the recording so
+    /// suggest_speakers fires without manual filing. Never blocks or fails
+    /// the recording — every failure is a log line, not a user error.
+    private func attachCalendarAttendees(recordingId: String?) {
+        guard calendarAttendeesEnabled,
+              let recordingId,
+              let backendClient
+        else { return }
+        let service = CalendarAttendeeService.shared
+        let status = service.authorizationStatus
+        // First audio note is the natural moment to ask for Calendar access;
+        // once denied we stay quiet (Settings has the re-enable path).
+        guard status == .fullAccess || status == .notDetermined else { return }
+        Task {
+            if status == .notDetermined {
+                guard await service.requestAccess() else { return }
+            }
+            let attendees = service.attendeesForCurrentMeeting()
+            guard !attendees.isEmpty else { return }
+            recorderLog.notice("calendar attendees — attaching \(attendees.count, privacy: .public) to \(recordingId, privacy: .public)")
+            do {
+                let personIds = try await backendClient.resolveAttendeePersonIds(
+                    attendees.map {
+                        ResolveAttendeeRequest.Attendee(
+                            displayName: $0.displayName,
+                            email: $0.email
+                        )
+                    }
+                )
+                guard !personIds.isEmpty else { return }
+                try await backendClient.setRecordingAttendees(
+                    recordingId: recordingId,
+                    personIds: personIds
+                )
+                recorderLog.notice("calendar attendees — set \(personIds.count, privacy: .public) attendee(s) on \(recordingId, privacy: .public)")
+            } catch {
+                recorderLog.error("calendar attendees — failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
     }
 
     private func refreshStoredSessionBeforeRecordingStart() async throws {

@@ -16,6 +16,17 @@ struct SettingsSheet: View {
     @State private var diagnosticsExpanded = false
     @State private var preferences = UserPreferencesDTO.defaults
     @State private var preferencesStatus: String?
+
+    private var calendarAttendeesSubtitle: String {
+        switch CalendarAttendeeService.shared.authorizationStatus {
+        case .fullAccess:
+            return "Attendees from the calendar event you're in are added to each audio note automatically."
+        case .denied, .restricted:
+            return "Calendar access is denied — grant it in System Settings to auto-add attendees."
+        default:
+            return "Adds attendees from the calendar event you're in to each audio note. Asks for Calendar access when first enabled."
+        }
+    }
     @State private var serverVersion: ServerVersionResponse?
     @State private var serverVersionStatus: String = "Not checked"
     @State private var isCheckingServerVersion = false
@@ -142,6 +153,29 @@ struct SettingsSheet: View {
                         }
                     )
                 )
+                settingsToggleRow(
+                    title: "Calendar attendees",
+                    subtitle: calendarAttendeesSubtitle,
+                    isOn: Binding(
+                        get: { viewModel.calendarAttendeesEnabled },
+                        set: { enabled in
+                            viewModel.setCalendarAttendeesEnabled(enabled)
+                        }
+                    )
+                )
+                if viewModel.calendarAttendeesEnabled
+                    && CalendarAttendeeService.shared.authorizationStatus == .denied {
+                    Button("Open Calendar privacy settings") {
+                        if let url = URL(
+                            string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars"
+                        ) {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .font(DSFont.Body.sm())
+                    .foregroundStyle(DSColor.Accent.primary)
+                }
                 FieldPicker(
                     label: "Transcription language",
                     placeholder: "English",

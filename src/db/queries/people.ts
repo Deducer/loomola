@@ -36,6 +36,27 @@ export async function findPersonByAnyEmail(
   return row ?? null;
 }
 
+/** Case-insensitive exact display-name match — the fallback identity for
+ *  calendar attendees whose invite carries no email. */
+export async function findPersonByDisplayName(
+  ownerId: string,
+  displayName: string
+): Promise<Person | null> {
+  const lower = displayName.trim().toLowerCase();
+  if (!lower) return null;
+  const [row] = await db
+    .select()
+    .from(people)
+    .where(
+      and(
+        eq(people.ownerId, ownerId),
+        sql`lower(${people.displayName}) = ${lower}`
+      )
+    )
+    .limit(1);
+  return row ?? null;
+}
+
 export type CreatePersonInput = {
   displayName: string;
   email?: string | null;

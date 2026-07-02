@@ -125,6 +125,8 @@ When adding a new public-facing endpoint that accepts user input, default to `ch
 
 After `generate_title_summary` completes for an **audio note** that has attendee data, a `suggest_speakers` pg-boss job auto-suggests `speaker_idx → person` mappings using `media_objects.attendees` + the new `people.is_self` flag. ✓ accepts (creates a Person inline if needed); ✗ dismisses with a sticky lock. Pill UX shaped after G-M12 folder suggestion. Pure logic in `src/lib/speaker-suggestion/` (35 unit tests).
 
+**Attendees auto-populate from the calendar as of Stage 11 (2026-07-02):** the desktop's `CalendarAttendeeService` (EventKit) finds the event overlapping recording start, `POST /api/people/resolve` maps its attendees to People (email incl. aliases → case-insensitive name → create; `is_self` excluded), and `PATCH /api/recordings/[id]/attendees` sets them + re-enqueues suggestion. Also note: batch transcripts moved to mono+diarize the same day, so multi-party speaker indices exist for the matcher to work with (previously the stereo channel split capped speakers at 2). `sourceSeparated` in `speaker-suggestion.ts` now means `provider === "deepgram-live"` only.
+
 **v1 (Path B) limitations to be aware of when extending:**
 - Audio-only. Worker explicitly filters `type === "audio"` because the speaker-labeling UI in `transcript-panel.tsx` only exists for audio notes today. Video gets the same flow when a creator-side video transcript surface is added.
 - Strict-only matching: speaker_count == attendee_count + 1, and self-detection requires > 5% margin in total speech. When numbers don't line up the worker no-ops rather than guessing.

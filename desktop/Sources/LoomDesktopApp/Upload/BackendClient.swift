@@ -468,6 +468,35 @@ actor BackendClient {
         try await jsonRequest(method: "POST", path: path, body: body)
     }
 
+    private func patch<RequestBody: Encodable, ResponseBody: Decodable>(
+        path: String,
+        body: RequestBody
+    ) async throws -> ResponseBody {
+        try await jsonRequest(method: "PATCH", path: path, body: body)
+    }
+
+    /// Resolves calendar attendees to Person ids (creating People on first
+    /// sight, self excluded server-side). Backs the calendar auto-attendee
+    /// flow on audio note start.
+    func resolveAttendeePersonIds(
+        _ attendees: [ResolveAttendeeRequest.Attendee]
+    ) async throws -> [String] {
+        let response: ResolveAttendeesResponse = try await post(
+            path: "/api/people/resolve",
+            body: ResolveAttendeeRequest(attendees: attendees)
+        )
+        return response.personIds
+    }
+
+    /// Sets a recording's attendees (person ids). The server re-enqueues
+    /// speaker suggestion after the write.
+    func setRecordingAttendees(recordingId: String, personIds: [String]) async throws {
+        let _: EmptyResponse = try await patch(
+            path: "/api/recordings/\(recordingId)/attendees",
+            body: SetAttendeesRequest(personIds: personIds)
+        )
+    }
+
     private func jsonRequest<RequestBody: Encodable, ResponseBody: Decodable>(
         method: String,
         path: String,
@@ -867,6 +896,22 @@ struct ServerVersionResponse: Decodable, Equatable, Sendable {
 
 struct NoteBodyRequest: Encodable, Sendable {
     let body: String
+}
+
+struct ResolveAttendeeRequest: Encodable, Sendable {
+    struct Attendee: Encodable, Sendable {
+        let displayName: String
+        let email: String?
+    }
+    let attendees: [Attendee]
+}
+
+struct ResolveAttendeesResponse: Decodable, Sendable {
+    let personIds: [String]
+}
+
+struct SetAttendeesRequest: Encodable, Sendable {
+    let personIds: [String]
 }
 
 struct NoteBodyResponse: Decodable, Sendable {

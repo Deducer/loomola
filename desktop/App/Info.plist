@@ -39,6 +39,8 @@
 	<string>Loomola needs system audio access to record meeting participants without changing what you hear.</string>
 	<key>NSScreenCaptureUsageDescription</key>
 	<string>Loomola needs screen recording access to capture the selected screen or window.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Loomola reads the calendar event you're in so meeting attendees are added to your notes automatically.</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 </dict>
