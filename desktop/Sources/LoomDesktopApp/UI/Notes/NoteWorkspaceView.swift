@@ -1361,7 +1361,9 @@ struct NoteWorkspaceView: View {
                             proxy.scrollTo("transcript-bottom", anchor: .bottom)
                         }
                     } label: {
-                        Image(systemName: "arrow.down.to.line")
+                        // chevron, not arrow.down.to.line — the latter reads
+                        // as "download" next to the copy button.
+                        Image(systemName: "chevron.down.2")
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(DSColor.Text.secondary)
                             .frame(width: 28, height: 28)
@@ -1369,7 +1371,7 @@ struct NoteWorkspaceView: View {
                     .buttonStyle(.plain)
                     .disabled(transcriptTextForCopy.isEmpty)
                     .opacity(transcriptTextForCopy.isEmpty ? 0.45 : 1)
-                    .help("Jump to bottom")
+                    .help("Jump to latest")
                     Button {
                         copyTranscript()
                     } label: {
