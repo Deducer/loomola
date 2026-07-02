@@ -189,6 +189,8 @@ openssl rand -hex 32
 
 Use that for `VIEW_UNLOCK_SECRET`, `VISITOR_HASH_SALT`, `DEEPGRAM_CALLBACK_SIGNING_SECRET`, `INTEGRATION_API_TOKEN`, and `MCP_TOKEN` if you enable MCP.
 
+Deleted recordings go to an in-app trash and are permanently purged (storage + database) after `TRASH_RETENTION_DAYS` days — default 30. See [docs/self-hosting.md → Deletion and the trash](docs/self-hosting.md#deletion-and-the-trash).
+
 For local UI-only testing, `NEXT_PUBLIC_APP_URL=http://localhost:3000` is fine. For real transcription, set it to a public HTTPS URL:
 
 ```bash

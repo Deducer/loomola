@@ -147,6 +147,15 @@ rclone sync r2:your-bucket-name /backup/loomola-bucket/
 
 Suggested backup cadence: daily database dump + weekly full bucket sync.
 
+### Deletion and the trash
+
+Deleting a recording moves it to the trash (`/trash` in the app), where it can
+be restored for `TRASH_RETENTION_DAYS` days (default 30). After that a daily
+`purge_deleted` pg-boss job permanently removes its storage objects and
+database rows. "Delete forever" on the trash page does the same immediately.
+Purged data is only recoverable from your own backups — size your backup
+retention with that in mind.
+
 ### What is safe to lose
 
 **Thumbnails and preview sprites** (`thumbnail_key`, `preview_sprite_key`) are

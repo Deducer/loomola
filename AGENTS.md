@@ -60,7 +60,7 @@ This repo hosts **two products on one codebase**, gated by a single env flag:
 
 - **App:** Next.js 15 (App Router) + React 19 + TypeScript 5 + Tailwind CSS 4 (CSS-var tokens, dark/light via `next-themes`).
 - **DB + Auth:** Supabase (Postgres via `postgres` driver; Drizzle ORM for schema + migrations; Auth via `@supabase/ssr`).
-- **Background jobs:** `pg-boss` on the same Postgres (no Redis). Lazy-init via `getBoss()` — first send creates the queues. 6 queues: `transcribe`, `title_summary`, `chapters`, `action_items`, `thumbnail`, `preview_sprite`.
+- **Background jobs:** `pg-boss` on the same Postgres (no Redis). Lazy-init via `getBoss()` — first send creates the queues. Queues: `transcribe`, `title_summary`, `chapters`, `action_items`, `thumbnail`, `preview_sprite`, `transcode_playback`, `append_clip`, `watchdog_stuck_recordings`, `purge_deleted` (+ Granola-only: `mix_audio`, `audio_waveform`, `embed_transcript`, `embed_summary`, `suggest_folder`, `suggest_speakers`). `watchdog` (10min) and `purge_deleted` (daily) are boss.schedule crons.
 - **Object storage:** Cloudflare R2 (S3-compatible). Browser → R2 multipart upload via signed-URL-per-part flow (see `src/lib/r2/`). Zero egress (R2 free tier on reads).
 - **Player:** Plyr 3.x wrapping `<video>`. Custom `ChapterSegmentsOverlay` portaled to `document.body`. Hover-scrub previews via Plyr's `previewThumbnails` config + a server-served WebVTT.
 - **Recording:** Browser MediaRecorder x5 (composite + screen + camera + mic + system-audio raw tracks). Compositor canvas (`composite-canvas.ts`) draws screen + bubble for the composite. Bubble position is mutable mid-recording via a `BubblePositionController` ref.
@@ -82,7 +82,7 @@ This repo hosts **two products on one codebase**, gated by a single env flag:
 
 > **Note:** This file has drifted from the canonical project notes — `CLAUDE.md` is the up-to-date source for stage history, current architecture, and conventions. Read it first; this file's deeper sections are kept for compatibility but may lag.
 
-Stage 1 (M1–M11) + Stages 1.5–1.10 + 1.99 + Stage 2 (Granola-alt G-M1–M17) + Stage 3 (security) + Stage 4 (desktop M2 premium recorder) + Stage 5 (desktop M3 visual restructure) + Stage 6 (live notes) + Stage 7 (stability + Granola Recent UX + multi-folder Phase 1) + Stage 8 (Granola-grade desktop note workspace) + Stage 9 (reliability sprint: orphan recovery + boot-warmed pg-boss + brownout detection) all shipped. See `CLAUDE.md` for per-stage details. Big-picture surface area:
+Stage 1 (M1–M11) + Stages 1.5–1.10 + 1.99 + Stage 2 (Granola-alt G-M1–M17) + Stage 3 (security) + Stage 4 (desktop M2 premium recorder) + Stage 5 (desktop M3 visual restructure) + Stage 6 (live notes) + Stage 7 (stability + Granola Recent UX + multi-folder Phase 1) + Stage 8 (Granola-grade desktop note workspace) + Stage 9 (reliability sprint: orphan recovery + boot-warmed pg-boss + brownout detection) + Stage 10 (open-source readiness, v1.0.0) + Stage 11 (cost + trust sprint: mono+diarize transcription, real trash + daily purge reaper, processing-status liveness, XFF rate-limit fix) all shipped. See `CLAUDE.md` for per-stage details. Big-picture surface area:
 
 - `/` — dashboard with folder sidebar, search, sort/filter, drag-and-drop card-to-folder, hover card menu (Edit / Move / Delete). Cards click into the **edit** page (creator-first), not the share page.
 - `/record` — recording flow: pre-record form → preparing (permissions) → 3-2-1 countdown → recording → uploading → finished. Bubble can be dragged anywhere on screen during recording (Chrome `documentPictureInPicture` window with the live camera).
@@ -109,6 +109,8 @@ Stage 3 (security hardening pack, shipped 2026-05-04) brought the app to a postu
 - **Deepgram callback nonce.** Single-use nonces persisted in `webhook_nonces`, atomically consumed via `UPDATE ... WHERE consumed_at IS NULL AND expires_at > now()`. Webhook URL shape: `/api/webhooks/deepgram/[recordingId]/[nonce]/[sig]`.
 - **Persistent rate limits.** `src/lib/rate-limit/check.ts` (sliding-window over `rate_limit_events`) shared by comment posts (3/5min/visitor) and password unlock attempts (5/5min/visitor). Pure decision lives in `src/lib/rate-limit/evaluate.ts`.
 - **Desktop Keychain-only.** `desktop/Sources/LoomDesktopApp/Auth/AuthSessionStore.swift` no longer falls back to plaintext-file storage based on bundle path. `.fileForTesting` mode survives only as a unit-test seam.
+
+- **Visitor-hash spoofing fix (Stage 11, 2026-07-02).** `hashVisitor` keys on the LAST X-Forwarded-For entry (the one Traefik appended from the real socket) — the first entry is client-controlled and rotating it minted unlimited visitor hashes, bypassing every visitor rate limit. `POST /api/v/:slug/view` has a 60/5min IP-keyed limit (`hashVisitorIp`) because the UA half of the visitor hash is also client-rotatable and each new hash used to fire an owner email. `INTEGRATION_API_TOKEN` export routes pin to the MCP owner account instead of exporting all users' data on multi-user instances.
 
 When adding a new public-facing endpoint that accepts user input, default to `checkRateLimit({ scope: '<endpoint>:visitor', key: hashVisitor(req), max, windowSec })`.
 
