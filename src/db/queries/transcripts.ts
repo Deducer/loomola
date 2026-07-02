@@ -120,10 +120,16 @@ export async function getTranscriptByRecording(
   // Transcript type) stays intact.
   const includeWordTimestamps = opts.includeWordTimestamps ?? true;
   const columns = getTableColumns(transcripts);
+  // search_tsv mirrors fullText in size and is only ever consulted inside SQL
+  // WHERE clauses — no caller reads it. Null it out of every read path.
+  const base = {
+    ...columns,
+    searchTsv: sql<string | null>`null` as unknown as typeof columns.searchTsv,
+  };
   const selection = includeWordTimestamps
-    ? columns
+    ? base
     : {
-        ...columns,
+        ...base,
         wordTimestamps:
           sql<unknown>`'[]'::jsonb` as unknown as typeof columns.wordTimestamps,
       };

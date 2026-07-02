@@ -34,6 +34,7 @@ export async function GET(request: Request) {
     ownerId: user.id,
     type: kind ?? undefined,
     limit,
+    includeSummary: false,
   })).map((r) => ({
     id: r.id,
     slug: r.slug,

@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { mediaObjects } from "@/db/schema";
 import { and, eq, isNull, lt, sql } from "drizzle-orm";
+import { pruneExpiredNonces } from "@/lib/deepgram/callback-signature";
 
 export const WATCHDOG_JOB = "watchdog_stuck_recordings";
 export const WATCHDOG_CRON = "*/10 * * * *"; // every 10 minutes
@@ -83,6 +84,13 @@ export async function runWatchdogJob(now: Date = new Date()): Promise<number> {
       );
     }
     total += rows.length;
+  }
+  // Piggyback table hygiene on the same 10-minute tick: webhook_nonces
+  // otherwise grows one row per transcription forever.
+  try {
+    await pruneExpiredNonces(now);
+  } catch (err) {
+    console.error("[watchdog] nonce prune failed:", err);
   }
   return total;
 }

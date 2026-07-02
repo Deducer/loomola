@@ -9,7 +9,7 @@ import {
   speakerAssignments,
   transcripts,
 } from "@/db/schema";
-import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, inArray, isNull, or, sql } from "drizzle-orm";
 import { generateSlug } from "@/lib/slug";
 
 export type Note = typeof notes.$inferSelect;
@@ -355,13 +355,29 @@ export async function getAudioNotePageData(
   identifier: string,
   ownerId: string
 ): Promise<AudioNotePageData | null> {
+  // search_tsv columns are transcript-sized tsvectors only ever consulted in
+  // SQL WHERE clauses — no caller reads them. Null them out (SQL fields are
+  // ignored by Drizzle's left-join group nullification, so transcript/aiOutput
+  // still come back null when the joined row is missing).
+  const mediaColumns = getTableColumns(mediaObjects);
+  const transcriptColumns = getTableColumns(transcripts);
+  const aiColumns = getTableColumns(aiOutputs);
   const [row] = await db
     .select({
-      media: mediaObjects,
+      media: {
+        ...mediaColumns,
+        searchTsv: sql<string | null>`null` as unknown as typeof mediaColumns.searchTsv,
+      },
       brandProfile: brandProfiles,
       note: notes,
-      transcript: transcripts,
-      aiOutput: aiOutputs,
+      transcript: {
+        ...transcriptColumns,
+        searchTsv: sql<string | null>`null` as unknown as typeof transcriptColumns.searchTsv,
+      },
+      aiOutput: {
+        ...aiColumns,
+        searchTsv: sql<string | null>`null` as unknown as typeof aiColumns.searchTsv,
+      },
     })
     .from(mediaObjects)
     .leftJoin(brandProfiles, eq(mediaObjects.brandProfileId, brandProfiles.id))

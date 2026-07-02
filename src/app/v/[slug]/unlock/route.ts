@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
-import { getRecordingBySlug } from "@/db/queries/recordings";
+import { getRecordingRefBySlug } from "@/db/queries/recordings";
 import { cookieName, signUnlockToken } from "@/lib/viewer/unlock-cookie";
 import { hashVisitor } from "@/lib/viewer/visitor-id";
 import { checkRateLimit } from "@/lib/rate-limit/check";
@@ -38,7 +38,7 @@ export async function POST(
     );
   }
 
-  const rec = await getRecordingBySlug(slug);
+  const rec = await getRecordingRefBySlug(slug);
   if (!rec) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }

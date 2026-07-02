@@ -151,6 +151,10 @@ export async function recentMediaItems(params: {
   type?: MediaType;
   limit: number;
   daysBack?: number;
+  // ai_outputs.summary can run to 200K chars per row. The desktop recent
+  // route never returns it, so it passes false to keep the bytes in
+  // Postgres; the MCP tools (which do surface summaries) keep the default.
+  includeSummary?: boolean;
 }): Promise<RecentMediaItem[]> {
   const conditions = [
     eq(mediaObjects.ownerId, params.ownerId),
@@ -173,7 +177,10 @@ export async function recentMediaItems(params: {
       attendees: mediaObjects.attendees,
       createdAt: mediaObjects.createdAt,
       aiTitle: aiOutputs.titleSuggested,
-      aiSummary: aiOutputs.summary,
+      aiSummary:
+        (params.includeSummary ?? true)
+          ? aiOutputs.summary
+          : (sql<string | null>`null` as unknown as typeof aiOutputs.summary),
       folderName: folders.name,
       // Compute readiness in SQL instead of selecting the full transcript text.
       // Selecting transcripts.fullText here pulled every transcript in the list
@@ -253,22 +260,36 @@ export async function getMediaById(params: {
   // word_timestamps column for an empty jsonb literal (never read from disk),
   // while keeping the same result shape as typeof transcripts.$inferSelect.
   const transcriptColumns = getTableColumns(transcripts);
+  // search_tsv columns are transcript-sized tsvectors only ever consulted in
+  // SQL WHERE clauses — no caller reads them. Null them out of every select.
+  const transcriptBase = {
+    ...transcriptColumns,
+    searchTsv: sql<string | null>`null` as unknown as typeof transcriptColumns.searchTsv,
+  };
   const transcriptSelection = includeWordTimestamps
-    ? transcriptColumns
+    ? transcriptBase
     : {
-        ...transcriptColumns,
+        ...transcriptBase,
         // Empty literal, computed in SQL, so the real column bytes never leave
         // Postgres. Cast to the column type to preserve the result row shape.
         wordTimestamps: sql<unknown>`'[]'::jsonb` as unknown as typeof transcriptColumns.wordTimestamps,
       };
+  const mediaColumns = getTableColumns(mediaObjects);
+  const aiColumns = getTableColumns(aiOutputs);
 
   const [row] = await db
     .select({
-      media: mediaObjects,
+      media: {
+        ...mediaColumns,
+        searchTsv: sql<string | null>`null` as unknown as typeof mediaColumns.searchTsv,
+      },
       folder: folders,
       note: notes,
       transcript: transcriptSelection,
-      aiOutput: aiOutputs,
+      aiOutput: {
+        ...aiColumns,
+        searchTsv: sql<string | null>`null` as unknown as typeof aiColumns.searchTsv,
+      },
     })
     .from(mediaObjects)
     .leftJoin(folders, eq(folders.id, mediaObjects.folderId))

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { getRecordingBySlug } from "@/db/queries/recordings";
+import { getRecordingRefBySlug } from "@/db/queries/recordings";
 import { createComment } from "@/db/queries/comments";
 import { cookieName, verifyUnlockToken } from "@/lib/viewer/unlock-cookie";
 import { hashVisitor } from "@/lib/viewer/visitor-id";
@@ -44,7 +44,7 @@ export async function POST(
     return NextResponse.json({ error: "body_too_long" }, { status: 400 });
   }
 
-  const rec = await getRecordingBySlug(slug);
+  const rec = await getRecordingRefBySlug(slug);
   if (!rec) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
