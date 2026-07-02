@@ -48,8 +48,11 @@ export async function getNoteForSpeakerSuggestion(
     ownerId: row.ownerId,
     type: row.type,
     attendees: row.attendees,
-    sourceSeparated:
-      row.provider === "deepgram-live" || Boolean(row.r2MixedKey),
+    // Only live transcripts still carry channel-derived speaker labels
+    // (0=mic/self, 1=system). Batch transcripts moved to mono+diarize
+    // (2026-07-02), where indices are diarization order — the channel
+    // fast-path in compose.ts must not fire for them.
+    sourceSeparated: row.provider === "deepgram-live",
     words,
   };
 }
