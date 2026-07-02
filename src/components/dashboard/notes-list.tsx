@@ -11,6 +11,7 @@ import {
   Folder,
   FolderInput,
   MousePointer2,
+  RotateCcw,
   Trash2,
   UserRound,
   X,
@@ -334,6 +335,7 @@ function NoteRow({
         {note.status !== "ready" && (
           <Badge variant={note.status}>{note.status}</Badge>
         )}
+        {note.status === "failed" && <RetryNoteButton noteId={note.id} />}
         {folderName && (
           <span className="hidden max-w-36 items-center gap-1 rounded-full border border-border bg-bg-elevated px-2.5 py-1 text-xs text-text-muted sm:inline-flex">
             <Folder className="h-3.5 w-3.5" />
@@ -356,6 +358,48 @@ function NoteRow({
           : null}
       </span>
     </Link>
+  );
+}
+
+/** Inline retry for failed notes — the type-agnostic retry endpoint has
+ *  existed since Stage 10 but nothing in the notes UI ever called it. */
+function RetryNoteButton({ noteId }: { noteId: string }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+
+  async function retry(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/recordings/${noteId}/retry`, {
+        method: "POST",
+      });
+      const body = (await res.json().catch(() => null)) as {
+        message?: string;
+      } | null;
+      if (!res.ok) {
+        toast.error(body?.message ?? `Retry failed (${res.status}).`);
+        return;
+      }
+      toast.success("Retry started.");
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="h-6 px-2 text-xs"
+      onClick={(e) => void retry(e)}
+      disabled={busy}
+    >
+      <RotateCcw className="mr-1 h-3 w-3" />
+      Retry
+    </Button>
   );
 }
 

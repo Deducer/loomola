@@ -33,12 +33,14 @@ import {
   Play,
   Plus,
   RefreshCcw,
+  RotateCcw,
   Sparkles,
   Trash2,
   Users,
   Volume2,
   X,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -161,6 +163,7 @@ export function NotePageClient({
   const [templateState, setTemplateState] =
     useState<TemplateSaveState>("idle");
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
+  const [retryBusy, setRetryBusy] = useState(false);
   const [folderId, setFolderId] = useState<string | null>(initialFolderId);
   const [folderState, setFolderState] = useState<SaveState>("idle");
   const [lastSavedBody, setLastSavedBody] = useState(initialBody);
@@ -372,6 +375,28 @@ export function NotePageClient({
     () => refreshObsidianStatus().catch(() => undefined),
     { initialMs: 5000 }
   );
+
+  // Failed notes had no in-product recovery on web: the type-agnostic
+  // retry endpoint existed, but only the video card menu called it.
+  async function retryProcessing() {
+    setRetryBusy(true);
+    try {
+      const res = await fetch(`/api/recordings/${mediaId}/retry`, {
+        method: "POST",
+      });
+      const body = (await res.json().catch(() => null)) as {
+        message?: string;
+      } | null;
+      if (!res.ok) {
+        toast.error(body?.message ?? `Retry failed (${res.status}).`);
+        return;
+      }
+      toast.success("Retry started.");
+      window.setTimeout(() => window.location.reload(), 500);
+    } finally {
+      setRetryBusy(false);
+    }
+  }
 
   async function saveTitle() {
     const trimmed = title.trim();
@@ -809,6 +834,18 @@ export function NotePageClient({
               </div>
             )}
             <Badge variant={status}>{status}</Badge>
+            {status === "failed" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                disabled={retryBusy}
+                onClick={() => void retryProcessing()}
+              >
+                <RotateCcw className="mr-1 h-3 w-3" />
+                Retry
+              </Button>
+            )}
             <div className="relative">
               <Button
                 variant="ghost"
