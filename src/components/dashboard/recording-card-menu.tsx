@@ -20,6 +20,7 @@ export function RecordingCardMenu({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [showMove, setShowMove] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   async function moveTo(folderId: string | null) {
     await fetch(`/api/recordings/${recordingId}/folder`, {
@@ -48,10 +49,21 @@ export function RecordingCardMenu({
     router.refresh();
   }
 
+  // Two-tap confirm (same pattern as the bulk-select bar) instead of the
+  // native confirm() dialog.
   async function handleDelete() {
-    if (!confirm("Delete this recording?")) return;
-    await fetch(`/api/recordings/${recordingId}`, { method: "DELETE" });
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      return;
+    }
+    const res = await fetch(`/api/recordings/${recordingId}`, { method: "DELETE" });
     setOpen(false);
+    setConfirmingDelete(false);
+    if (!res.ok) {
+      toast.error(`Delete failed (${res.status}).`);
+      return;
+    }
+    toast.success("Recording moved to trash.");
     router.refresh();
   }
 
@@ -79,6 +91,7 @@ export function RecordingCardMenu({
             onClick={() => {
               setOpen(false);
               setShowMove(false);
+              setConfirmingDelete(false);
             }}
           />
           <div className="absolute right-0 top-8 z-50 w-48 rounded-md border border-border-strong bg-bg-elevated p-1 text-sm shadow-lg">
@@ -139,11 +152,15 @@ export function RecordingCardMenu({
                 )}
                 <button
                   type="button"
-                  onClick={handleDelete}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-destructive hover:bg-destructive/10"
+                  onClick={() => void handleDelete()}
+                  className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left ${
+                    confirmingDelete
+                      ? "bg-destructive/10 font-medium text-destructive"
+                      : "text-destructive hover:bg-destructive/10"
+                  }`}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
-                  Delete
+                  {confirmingDelete ? "Confirm delete?" : "Delete"}
                 </button>
               </>
             )}

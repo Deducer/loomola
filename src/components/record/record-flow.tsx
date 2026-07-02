@@ -25,6 +25,7 @@ import {
 
 type BubbleMode = "iframe" | "docpip";
 import type { BrandProfile } from "@/db/queries/brand-profiles";
+import { Button } from "@/components/ui/button";
 import { PreRecordForm } from "./pre-record-form";
 import { Countdown } from "./countdown";
 import { RecordingHud } from "./recording-hud";
@@ -438,13 +439,9 @@ export function RecordFlow({ brands }: { brands: BrandProfile[] }) {
         Couldn&apos;t complete recording
       </h2>
       <p className="text-sm text-text-muted">{state.message}</p>
-      <button
-        type="button"
-        onClick={onReset}
-        className="rounded-md border border-border-strong px-4 py-2 text-sm text-text-muted hover:bg-bg-elevated hover:text-text"
-      >
+      <Button variant="secondary" onClick={onReset}>
         Try again
-      </button>
+      </Button>
     </div>
   );
 }

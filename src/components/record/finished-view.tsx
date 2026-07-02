@@ -57,11 +57,12 @@ export function FinishedView({
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-semibold tracking-tight text-text">
-          Recording ready
+          Recording uploaded
         </h2>
         <p className="mt-1 text-sm text-text-muted">
           Duration: {result.durationSeconds.toFixed(1)}s · Resolution:{" "}
-          {result.settings.resolution.toUpperCase()} · Uploaded to your account
+          {result.settings.resolution.toUpperCase()} · Transcript and AI
+          summary are processing — the share page fills in as they finish
         </p>
       </div>
 

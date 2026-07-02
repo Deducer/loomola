@@ -46,9 +46,16 @@ export function CommentItem({
 }: Props) {
   const router = useRouter();
   const [deleting, setDeleting] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
+  // Two-tap confirm (same pattern as the bulk-select bar); disarms after 3s.
   async function handleDelete() {
-    if (!confirm("Delete this comment?")) return;
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      window.setTimeout(() => setConfirmingDelete(false), 3000);
+      return;
+    }
+    setConfirmingDelete(false);
     setDeleting(true);
     try {
       const res = await fetch(`/api/comments/${id}`, { method: "DELETE" });
@@ -93,8 +100,11 @@ export function CommentItem({
           size="icon"
           onClick={handleDelete}
           disabled={deleting}
-          aria-label="Delete comment"
-          className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100"
+          aria-label={confirmingDelete ? "Confirm delete comment" : "Delete comment"}
+          title={confirmingDelete ? "Click again to delete" : "Delete comment"}
+          className={`h-7 w-7 transition-opacity group-hover:opacity-100 ${
+            confirmingDelete ? "bg-destructive/15 opacity-100" : "opacity-0"
+          }`}
         >
           <X className="h-3.5 w-3.5 text-destructive" />
         </Button>

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { ThemeProvider } from "next-themes";
-import { Toaster } from "sonner";
+import { ThemedToaster } from "@/components/ui/themed-toaster";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -51,7 +51,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           {children}
-          <Toaster theme="dark" position="bottom-right" />
+          <ThemedToaster />
         </ThemeProvider>
       </body>
     </html>

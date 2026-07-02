@@ -41,6 +41,25 @@
   --color-warning: var(--warning);
   --color-destructive: var(--destructive);
   --color-destructive-fg: var(--destructive-fg);
+
+  --animate-countdown-tick: countdown-tick 450ms cubic-bezier(0.16, 1, 0.3, 1);
+
+  @keyframes countdown-tick {
+    from {
+      transform: scale(1.35);
+      opacity: 0;
+    }
+    to {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-countdown-tick {
+    animation: none;
+  }
 }
 
 :root {

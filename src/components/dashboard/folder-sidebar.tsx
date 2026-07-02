@@ -207,6 +207,7 @@ function FolderNodeRow({
   const isOpen = expanded.has(node.id);
   const active = currentFolderId === node.id;
   const [renaming, setRenaming] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const p = new URLSearchParams(params.toString());
 
   async function onDropRecording(e: React.DragEvent) {
@@ -222,14 +223,14 @@ function FolderNodeRow({
     router.refresh();
   }
 
+  // Two-tap confirm (same pattern as the bulk-select bar); disarms after 3s.
   async function deleteMe() {
-    if (
-      !confirm(
-        `Delete folder "${node.name}"? Subfolders are also deleted; recordings inside become unfiled.`
-      )
-    ) {
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      window.setTimeout(() => setConfirmingDelete(false), 3000);
       return;
     }
+    setConfirmingDelete(false);
     await fetch(`/api/folders/${node.id}`, { method: "DELETE" });
     router.refresh();
   }
@@ -300,9 +301,18 @@ function FolderNodeRow({
           <Button
             variant="ghost"
             size="icon"
-            className="h-5 w-5"
+            className={cn("h-5 w-5", confirmingDelete && "bg-destructive/15")}
             onClick={deleteMe}
-            aria-label="Delete folder"
+            aria-label={
+              confirmingDelete
+                ? "Confirm delete folder (subfolders deleted; recordings become unfiled)"
+                : "Delete folder"
+            }
+            title={
+              confirmingDelete
+                ? "Click again to delete — subfolders are deleted too; recordings become unfiled"
+                : "Delete folder"
+            }
           >
             <Trash2 className="h-3 w-3 text-destructive" />
           </Button>

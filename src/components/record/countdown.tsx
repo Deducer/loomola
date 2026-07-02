@@ -53,7 +53,11 @@ export function Countdown({
           />
         </div>
       )}
-      <div key={remaining} className="text-8xl font-bold tabular-nums">
+      {/* key remount restarts the tick animation each second */}
+      <div
+        key={remaining}
+        className="animate-countdown-tick text-8xl font-bold tabular-nums"
+      >
         {remaining > 0 ? remaining : "Go"}
       </div>
     </div>
