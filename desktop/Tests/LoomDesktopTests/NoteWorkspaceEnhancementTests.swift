@@ -48,6 +48,19 @@ final class NoteWorkspaceEnhancementTests: XCTestCase {
         )
     }
 
+    func testDesktopReviewShowsTimestampedActionItems() throws {
+        let source = try noteWorkspaceSource()
+
+        XCTAssertTrue(
+            source.contains("reviewActionItems = enhancement.actionItems ?? []"),
+            "Review mode should hydrate action items from the enhancement endpoint."
+        )
+        XCTAssertTrue(
+            source.contains("viewModel.openWebNote(slug: recording.slug, timestampSec: timestampSec)"),
+            "Desktop action-item rows should open the web player at the source timestamp."
+        )
+    }
+
     private func noteWorkspaceSource() throws -> String {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let file = root.appending(path: "Sources/LoomDesktopApp/UI/Notes/NoteWorkspaceView.swift")

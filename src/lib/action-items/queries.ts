@@ -14,6 +14,7 @@ export type LoomolaActionItem = {
   mediaSlug: string;
   mediaTitle: string;
   mediaShareUrl: string;
+  deepLink: string;
   mediaType: "video" | "audio";
   attributedTo: string | null;
   folderName: string | null;
@@ -31,6 +32,11 @@ function sinceDate(daysBack: number): Date {
 
 function parseActionItems(value: unknown): RawActionItem[] {
   return Array.isArray(value) ? (value as RawActionItem[]) : [];
+}
+
+function timestampDeepLink(baseUrl: string, timestampSec: number | null): string {
+  if (timestampSec == null || !Number.isFinite(timestampSec)) return baseUrl;
+  return `${baseUrl}#t=${Math.max(0, Math.floor(timestampSec))}`;
 }
 
 const UUID_RE =
@@ -103,16 +109,19 @@ export async function openActionItems(params: {
       if (typeof item.text !== "string" || item.text.trim().length === 0) {
         continue;
       }
+      const timestampSec =
+        typeof item.timestamp_sec === "number" ? item.timestamp_sec : null;
+      const shareUrl = mediaShareUrl({ type: row.mediaType, slug: row.mediaSlug });
       items.push({
         id: `${row.mediaId}:${index}`,
         text: item.text,
         status: "open",
-        timestampSec:
-          typeof item.timestamp_sec === "number" ? item.timestamp_sec : null,
+        timestampSec,
         mediaId: row.mediaId,
         mediaSlug: row.mediaSlug,
         mediaTitle: row.mediaTitle ?? row.aiTitle ?? "Untitled",
-        mediaShareUrl: mediaShareUrl({ type: row.mediaType, slug: row.mediaSlug }),
+        mediaShareUrl: shareUrl,
+        deepLink: timestampDeepLink(shareUrl, timestampSec),
         mediaType: row.mediaType,
         attributedTo: null,
         folderName: row.folderName,

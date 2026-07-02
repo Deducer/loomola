@@ -90,6 +90,91 @@ final class AuthSessionStoreTests: XCTestCase {
         XCTAssertEqual(try store.loadRefreshToken(), "refresh-2")
     }
 
+    func testFreshenSkipsNetworkWhenTokenHasPlentyOfLife() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let store = AuthSessionStore(storageMode: .file, fileURL: directory.appending(path: "auth-session.json"))
+        let freshToken = Self.jwt(exp: Date().timeIntervalSince1970 + 3_000)
+        try store.saveAccessToken(freshToken)
+        try store.saveRefreshToken("refresh-1")
+
+        let spy = RefreshSpy(response: RefreshTokenResponse(accessToken: Self.jwt(exp: 1_893_456_000), refreshToken: "refresh-2"))
+        let service = Self.makeService(store: store) { try await spy.refresh($0) }
+
+        let snapshot = try await service.freshenStoredSessionSnapshot()
+
+        XCTAssertEqual(snapshot?.accessToken, freshToken)
+        let stats = await spy.stats()
+        XCTAssertEqual(stats.callCount, 0)
+    }
+
+    func testFreshenRefreshesNearExpiryToken() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let store = AuthSessionStore(storageMode: .file, fileURL: directory.appending(path: "auth-session.json"))
+        try store.saveAccessToken(Self.jwt(exp: Date().timeIntervalSince1970 + 300))
+        try store.saveRefreshToken("refresh-1")
+
+        let refreshedToken = Self.jwt(exp: 1_893_456_000)
+        let spy = RefreshSpy(response: RefreshTokenResponse(accessToken: refreshedToken, refreshToken: "refresh-2"))
+        let service = Self.makeService(store: store) { try await spy.refresh($0) }
+
+        let snapshot = try await service.freshenStoredSessionSnapshot()
+
+        XCTAssertEqual(snapshot?.accessToken, refreshedToken)
+        let stats = await spy.stats()
+        XCTAssertEqual(stats.callCount, 1)
+    }
+
+    func testFreshenFallsBackToValidCachedTokenWhenRefreshFails() async throws {
+        // A Supabase blip must not block recording start while the cached token
+        // is still valid — the exact "flaky wifi in a meeting" scenario.
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let store = AuthSessionStore(storageMode: .file, fileURL: directory.appending(path: "auth-session.json"))
+        let cachedToken = Self.jwt(exp: Date().timeIntervalSince1970 + 300)
+        try store.saveAccessToken(cachedToken)
+        try store.saveRefreshToken("refresh-1")
+
+        let service = Self.makeService(store: store) { _ in
+            throw DesktopAuthRefreshError.refreshFailed(statusCode: 503, bodyPreview: nil)
+        }
+
+        let snapshot = try await service.freshenStoredSessionSnapshot()
+
+        XCTAssertEqual(snapshot?.accessToken, cachedToken)
+    }
+
+    func testFreshenThrowsWhenRefreshFailsAndTokenExpired() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let store = AuthSessionStore(storageMode: .file, fileURL: directory.appending(path: "auth-session.json"))
+        try store.saveAccessToken(Self.jwt(exp: Date().timeIntervalSince1970 - 10))
+        try store.saveRefreshToken("refresh-1")
+
+        let service = Self.makeService(store: store) { _ in
+            throw DesktopAuthRefreshError.refreshFailed(statusCode: 503, bodyPreview: nil)
+        }
+
+        do {
+            _ = try await service.freshenStoredSessionSnapshot()
+            XCTFail("expected refresh failure to propagate for an expired token")
+        } catch let error as DesktopAuthRefreshError {
+            XCTAssertEqual(error, .refreshFailed(statusCode: 503, bodyPreview: nil))
+        }
+    }
+
+    private static func makeService(
+        store: AuthSessionStore,
+        refreshSession: @escaping @Sendable (String) async throws -> RefreshTokenResponse
+    ) -> DesktopAuthService {
+        DesktopAuthService(
+            configuration: DesktopAuthConfiguration(
+                apiBaseURL: URL(string: "https://loom.example")!,
+                supabaseURL: URL(string: "https://supabase.example")!,
+                anonKey: "anon"
+            ),
+            store: store,
+            refreshSession: refreshSession
+        )
+    }
+
     private static func base64URL(_ data: Data) -> String {
         data
             .base64EncodedString()

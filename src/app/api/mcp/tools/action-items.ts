@@ -39,6 +39,8 @@ export function registerActionItemsTool(server: McpServer): void {
           mediaId: item.mediaId,
           mediaTitle: item.mediaTitle,
           mediaShareUrl: item.mediaShareUrl,
+          deepLink: item.deepLink,
+          timestampSec: item.timestampSec,
           attributedTo: item.attributedTo,
           createdAt: toIso(item.createdAt),
         })),

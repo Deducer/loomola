@@ -160,6 +160,7 @@ struct NoteWorkspaceView: View {
     /// Persisted transcript from the server. v1 small win: this is
     /// post-upload/batch transcript, not live streaming yet.
     @State private var transcript: NoteTranscriptResponse? = nil
+    @State private var reviewActionItems: [EnhanceActionItemDTO] = []
     @State private var transcriptDrawerOpen = false
     @State private var loadingTranscript = false
     @State private var transcriptError: String? = nil
@@ -277,6 +278,9 @@ struct NoteWorkspaceView: View {
                     titleEditor
                     pillRow
                     bodyEditor
+                    if !isRecording && !reviewActionItems.isEmpty {
+                        actionItemsPanel
+                    }
                 }
                 // Cap the readable column at ~600pt and center
                 // horizontally so the editor doesn't sprawl across
@@ -913,6 +917,70 @@ struct NoteWorkspaceView: View {
             // up with the title row above.
             .padding(.leading, -5)
         }
+    }
+
+    private var actionItemsPanel: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.sm) {
+            HStack(spacing: 6) {
+                Image(systemName: "checklist")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(DSColor.Accent.primary)
+                Text("Action items")
+                    .font(DSFont.Body.sm().weight(.semibold))
+                    .foregroundStyle(DSColor.Text.secondary)
+                Text("(\(reviewActionItems.count))")
+                    .font(DSFont.Body.sm())
+                    .foregroundStyle(DSColor.Text.tertiary)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(reviewActionItems) { item in
+                    actionItemRow(item)
+                }
+            }
+        }
+        .padding(.top, DSSpacing.sm)
+    }
+
+    private func actionItemRow(_ item: EnhanceActionItemDTO) -> some View {
+        Button {
+            openReviewNoteAt(timestampSec: item.timestampSec)
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: DSSpacing.sm) {
+                Image(systemName: "checkmark.circle")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(DSColor.Accent.primary)
+                    .frame(width: 16)
+                Text(item.text)
+                    .font(DSFont.Body.md())
+                    .foregroundStyle(DSColor.Text.primary.opacity(0.86))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                Spacer(minLength: DSSpacing.sm)
+                Text(timestampLabel(item.timestampSec))
+                    .font(DSFont.Mono.body())
+                    .foregroundStyle(DSColor.Text.tertiary)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(
+                        RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous)
+                            .fill(DSColor.Bg.subtle.opacity(0.72))
+                    )
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
+                    .fill(DSColor.Bg.surface.opacity(0.52))
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
+                    .strokeBorder(DSColor.Border.subtle.opacity(0.64), lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+        .help("Open web note at \(timestampLabel(item.timestampSec))")
     }
 
     // MARK: - Recording control bar (recording mode only)
@@ -2160,6 +2228,7 @@ struct NoteWorkspaceView: View {
         notesGeneratedForCurrentTranscript = false
         transcriptUpdatedAfterGeneration = false
         lastGeneratedTranscriptFingerprint = nil
+        reviewActionItems = []
 
         // Auto-focus the body editor so the user can start typing
         // immediately — Granola does this. Slight delay so the
@@ -2228,6 +2297,7 @@ struct NoteWorkspaceView: View {
                             }
                             if let enhancement {
                                 applyEnhancementReadiness(enhancement)
+                                reviewActionItems = enhancement.actionItems ?? []
                                 if enhancement.generationStatus == "complete" {
                                     notesGeneratedForCurrentTranscript = true
                                     if let transcript {
@@ -2307,6 +2377,14 @@ struct NoteWorkspaceView: View {
     private func handleEnhanceStartFailure(_ error: Error) {
         enhanceStatus = .failed
         enhanceFailureIsRetryable = true
+
+        if RecorderViewModel.isAuthRefreshFailure(error) {
+            enhanceFailureMessage = "Sign in again"
+            enhanceFailureIsRetryable = false
+            transcriptRetryAvailable = false
+            showToast(message: "Session expired. Transcript is saved locally; sign in again.", tone: .error)
+            return
+        }
 
         if let backendError = error as? BackendClientError {
             switch backendError.apiErrorCode {
@@ -2446,6 +2524,9 @@ struct NoteWorkspaceView: View {
                     !(status.summary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
                 guard hasSummary else { continue }
                 await applyGeneratedNotesResult(status, isActiveRecording: isActiveRecording)
+                if !isActiveRecording {
+                    reviewActionItems = status.actionItems ?? []
+                }
                 if let templateId = status.templateId {
                     selectedTemplateId = templateId
                 }
@@ -2679,6 +2760,15 @@ struct NoteWorkspaceView: View {
             return String(format: "%d:%02d:%02d", h, m, s)
         }
         return String(format: "%02d:%02d", m, s)
+    }
+
+    private func timestampLabel(_ seconds: Double) -> String {
+        elapsedString(seconds: max(0, seconds))
+    }
+
+    private func openReviewNoteAt(timestampSec: Double) {
+        guard case .reviewing(let recording) = target else { return }
+        viewModel.openWebNote(slug: recording.slug, timestampSec: timestampSec)
     }
 }
 

@@ -1,6 +1,7 @@
 import { generateObjectWithFallback } from "@/lib/ai/with-fallback";
 import { chaptersSchema } from "@/lib/ai/schemas";
 import { getTranscriptByRecording, type WordTimestamp } from "@/db/queries/transcripts";
+import { buildTimedTranscript } from "@/lib/transcript/timed-transcript";
 import {
   updateChapters,
   flipToReadyIfComplete,
@@ -9,30 +10,6 @@ import {
 export const CHAPTERS_JOB = "generate_chapters";
 
 export type ChaptersJobData = { mediaObjectId: string };
-
-/**
- * Serializes word timestamps in a compact "[Ns] word word word" form
- * every ~10 seconds so the LLM has rough time markers without being
- * overwhelmed by individual word data.
- */
-export function buildTimedTranscript(words: WordTimestamp[]): string {
-  if (words.length === 0) return "";
-  const lines: string[] = [];
-  let lineStart = words[0].start;
-  let lineWords: string[] = [];
-  for (const w of words) {
-    if (w.start - lineStart >= 10 && lineWords.length > 0) {
-      lines.push(`[${Math.floor(lineStart)}s] ${lineWords.join(" ")}`);
-      lineStart = w.start;
-      lineWords = [];
-    }
-    lineWords.push(w.word);
-  }
-  if (lineWords.length > 0) {
-    lines.push(`[${Math.floor(lineStart)}s] ${lineWords.join(" ")}`);
-  }
-  return lines.join("\n");
-}
 
 export async function runChaptersJob(data: ChaptersJobData): Promise<void> {
   const transcript = await getTranscriptByRecording(data.mediaObjectId);

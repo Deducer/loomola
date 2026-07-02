@@ -1395,16 +1395,17 @@ final class RecorderViewModel: ObservableObject {
             return
         }
         recorderLog.notice("startAudioNoteRecording — Task launching (mic=\(includeMic, privacy: .public), sys=\(includeSystemAudio, privacy: .public), sysMode=\(systemAudioCaptureMode.rawValue, privacy: .public))")
-        if let backendClient {
-            liveTranscription.start(
-                backend: backendClient,
-                includeMic: includeMic,
-                includeSystemAudio: includeSystemAudio,
-                enabled: liveTranscriptionEnabled
-            )
-        }
         Task {
             do {
+                try await refreshStoredSessionBeforeRecordingStart()
+                if let backendClient {
+                    liveTranscription.start(
+                        backend: backendClient,
+                        includeMic: includeMic,
+                        includeSystemAudio: includeSystemAudio,
+                        enabled: liveTranscriptionEnabled
+                    )
+                }
                 let session = try await startAudioNoteSessionWithRetry(
                     recorder: audioNoteRecorder,
                     title: title,
@@ -1441,8 +1442,13 @@ final class RecorderViewModel: ObservableObject {
                 activeRecordingKind = nil
                 finalizingRecordingKind = nil
                 activeAudioRecordingStartedAt = nil
-                state = .failed(message: error.localizedDescription)
-                statusMessage = "Audio note failed to start: \(error.localizedDescription)"
+                if Self.isAuthRefreshFailure(error) {
+                    state = .signedOut
+                    statusMessage = "Session expired. Sign in again before recording."
+                } else {
+                    state = .failed(message: error.localizedDescription)
+                    statusMessage = "Audio note failed to start: \(error.localizedDescription)"
+                }
                 isStartingRecording = false
             }
         }
@@ -2046,8 +2052,15 @@ final class RecorderViewModel: ObservableObject {
         NSWorkspace.shared.open(webURL())
     }
 
-    func openWebNote(slug: String) {
-        NSWorkspace.shared.open(webURL(pathComponents: ["notes", slug]))
+    func openWebNote(slug: String, timestampSec: Double? = nil) {
+        var url = webURL(pathComponents: ["notes", slug])
+        if let timestampSec {
+            let safeTimestamp = timestampSec.isFinite ? max(0, Int(timestampSec)) : 0
+            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            components?.fragment = "t=\(safeTimestamp)"
+            url = components?.url ?? url
+        }
+        NSWorkspace.shared.open(url)
     }
 
     private func webURL(pathComponents: [String] = []) -> URL {
@@ -2267,6 +2280,26 @@ final class RecorderViewModel: ObservableObject {
         return snapshot.accessToken
     }
 
+    private func refreshStoredSessionBeforeRecordingStart() async throws {
+        let snapshot: StoredDesktopSession?
+        do {
+            snapshot = try await authService?.freshenStoredSessionSnapshot()
+        } catch {
+            handleAuthRefreshFailure(error)
+            throw error
+        }
+        guard let snapshot else {
+            let error = RecorderViewModelError.missingAccessToken
+            handleAuthRefreshFailure(error)
+            throw error
+        }
+        accessToken = snapshot.accessToken
+        if email.isEmpty {
+            email = snapshot.email ?? ""
+        }
+        recorderLog.notice("recording start preflight — session token fresh enough or refreshed")
+    }
+
     private func handleAuthRefreshFailure(_ error: Error) {
         accessToken = nil
         lastBackendReadinessStatus = .unreachable("Sign in again before recording or retrying Recovery.")
@@ -2315,6 +2348,15 @@ final class RecorderViewModel: ObservableObject {
             NSURLErrorNetworkConnectionLost,
             NSURLErrorNotConnectedToInternet
         ].contains(nsError.code)
+    }
+
+    static func isAuthRefreshFailure(_ error: Error) -> Bool {
+        if error is DesktopAuthRefreshError { return true }
+        if let viewModelError = error as? RecorderViewModelError,
+           viewModelError == .missingAccessToken {
+            return true
+        }
+        return false
     }
 }
 

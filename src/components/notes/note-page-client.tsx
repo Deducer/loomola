@@ -7,6 +7,8 @@ import {
   useRef,
   useState,
   type DragEvent,
+  type KeyboardEvent,
+  type PointerEvent,
   type ReactNode,
 } from "react";
 import Link from "next/link";
@@ -42,6 +44,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { TranscriptPanel } from "@/components/viewer/transcript-panel";
+import { ActionItemsBlock } from "@/components/viewer/action-items-block";
 import type {
   TranscriptPerson,
   TranscriptSpeakerAssignment,
@@ -68,6 +71,7 @@ type NotePageClientProps = {
   initialGeneratedTemplateId: string | null;
   templates: NoteTemplate[];
   initialEnhancedSummary: string | null;
+  initialActionItems: NoteActionItem[];
   initialGenerationStatus: GenerationStatus;
   initialObsidianSaveState: ObsidianSaveState;
   initialObsidianPath: string;
@@ -82,6 +86,11 @@ type ObsidianSaveState = "idle" | "saving" | "queued" | "synced" | "error";
 type AttachmentSaveState = "idle" | "uploading" | "error";
 type TemplateSaveState = "idle" | "saving" | "error";
 type DictionaryApplyState = "idle" | "applying" | "applied" | "unchanged" | "error";
+
+export type NoteActionItem = {
+  timestamp_sec: number;
+  text: string;
+};
 
 type NotePerson = TranscriptPerson & {
   email: string | null;
@@ -131,6 +140,7 @@ export function NotePageClient({
   transcriptWords,
   initialAttachments,
   initialEnhancedSummary,
+  initialActionItems,
   initialGenerationStatus,
   initialObsidianSaveState,
   initialObsidianPath,
@@ -138,6 +148,7 @@ export function NotePageClient({
   speakerAssignments,
 }: NotePageClientProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const waveformRef = useRef<HTMLDivElement | null>(null);
   const titleRef = useRef<HTMLTextAreaElement | null>(null);
   const [body, setBody] = useState(initialBody);
   const [title, setTitle] = useState(initialTitle ?? "");
@@ -168,6 +179,7 @@ export function NotePageClient({
   const [speakerAssignmentsState, setSpeakerAssignmentsState] =
     useState(speakerAssignments);
   const [enhancedSummary, setEnhancedSummary] = useState(initialEnhancedSummary);
+  const [actionItems, setActionItems] = useState(initialActionItems);
   const [generationStatus, setGenerationStatus] = useState<GenerationStatus>(
     initialGenerationStatus
   );
@@ -189,7 +201,10 @@ export function NotePageClient({
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [draggingAttachment, setDraggingAttachment] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+  const [audioDurationFromMetadata, setAudioDurationFromMetadata] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [scrubbingWaveform, setScrubbingWaveform] = useState(false);
+  const hashSeekAppliedRef = useRef(false);
 
   const meetingDate = useMemo(
     () =>
@@ -200,16 +215,25 @@ export function NotePageClient({
       }).format(new Date(createdAt)),
     [createdAt]
   );
+  const audioDurationSec = useMemo(() => {
+    const serverSeconds = Number(durationSeconds ?? 0);
+    if (Number.isFinite(serverSeconds) && serverSeconds > 0) {
+      return serverSeconds;
+    }
+    return Number.isFinite(audioDurationFromMetadata) && audioDurationFromMetadata > 0
+      ? audioDurationFromMetadata
+      : 0;
+  }, [audioDurationFromMetadata, durationSeconds]);
   const durationLabel = useMemo(() => {
-    const seconds = Math.round(Number(durationSeconds ?? 0));
+    const seconds = Math.round(audioDurationSec);
     if (!Number.isFinite(seconds) || seconds <= 0) return null;
     return formatAudioTime(seconds);
-  }, [durationSeconds]);
+  }, [audioDurationSec]);
   const progressPercent = useMemo(() => {
-    const seconds = Number(durationSeconds ?? 0);
-    if (!Number.isFinite(seconds) || seconds <= 0) return 0;
-    return Math.min(100, Math.max(0, (currentTime / seconds) * 100));
-  }, [currentTime, durationSeconds]);
+    if (!Number.isFinite(audioDurationSec) || audioDurationSec <= 0) return 0;
+    return Math.min(100, Math.max(0, (currentTime / audioDurationSec) * 100));
+  }, [audioDurationSec, currentTime]);
+  const canSeekAudio = Boolean(audioUrl) && audioDurationSec > 0;
   const peopleById = useMemo(
     () => new Map(peopleState.map((person) => [person.id, person])),
     [peopleState]
@@ -278,12 +302,14 @@ export function NotePageClient({
     const data = (await response.json()) as {
       titleSuggested: string | null;
       summary: string | null;
+      actionItems: unknown;
       templateId: string | null;
       generationStatus: GenerationStatus;
     };
 
     setGenerationStatus(data.generationStatus);
     if (data.templateId) setGeneratedTemplateId(data.templateId);
+    setActionItems(normalizeActionItems(data.actionItems));
     if (data.summary) {
       setEnhancedSummary(data.summary);
       setViewMode("enhanced");
@@ -377,6 +403,7 @@ export function NotePageClient({
     setGenerationStatus("pending");
     setEnhanceError(null);
     setEnhancedSummary(null);
+    setActionItems([]);
     setViewMode("original");
     try {
       await saveBodyNow();
@@ -609,11 +636,100 @@ export function NotePageClient({
     void uploadAttachmentFiles(Array.from(event.dataTransfer.files));
   }
 
-  function seekTo(sec: number) {
-    if (!audioRef.current) return;
-    audioRef.current.currentTime = sec;
-    setCurrentTime(sec);
-    audioRef.current.play().catch(() => undefined);
+  const seekTo = useCallback(
+    (
+      sec: number,
+      options: { play?: boolean; updateHash?: boolean } = {}
+    ) => {
+      const audio = audioRef.current;
+      if (!audio) return;
+      const duration =
+        Number.isFinite(audio.duration) && audio.duration > 0
+          ? audio.duration
+          : audioDurationSec;
+      const nextTime =
+        Number.isFinite(duration) && duration > 0
+          ? Math.min(Math.max(0, sec), duration)
+          : Math.max(0, sec);
+      try {
+        audio.currentTime = nextTime;
+      } catch {
+        return;
+      }
+      setCurrentTime(nextTime);
+      if (options.updateHash) {
+        replaceTimestampHash(nextTime);
+      }
+      if (options.play ?? true) {
+        audio.play().catch(() => undefined);
+      }
+    },
+    [audioDurationSec]
+  );
+
+  function applyInitialHashSeek() {
+    if (hashSeekAppliedRef.current) return;
+    const hashTime = parseTimestampHash();
+    if (hashTime == null) return;
+    hashSeekAppliedRef.current = true;
+    seekTo(hashTime, { play: true });
+  }
+
+  function seekWaveformToClientX(clientX: number, play: boolean) {
+    const waveform = waveformRef.current;
+    if (!waveform || !canSeekAudio) return;
+    const rect = waveform.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const fraction = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    seekTo(fraction * audioDurationSec, { play });
+  }
+
+  function handleWaveformPointerDown(event: PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0 || !canSeekAudio) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setScrubbingWaveform(true);
+    seekWaveformToClientX(event.clientX, playing);
+  }
+
+  function handleWaveformPointerMove(event: PointerEvent<HTMLDivElement>) {
+    if (!scrubbingWaveform) return;
+    event.preventDefault();
+    seekWaveformToClientX(event.clientX, playing);
+  }
+
+  function handleWaveformPointerUp(event: PointerEvent<HTMLDivElement>) {
+    if (!scrubbingWaveform) return;
+    event.preventDefault();
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {
+      // Pointer capture can already be gone after a browser cancel.
+    }
+    setScrubbingWaveform(false);
+  }
+
+  function handleWaveformKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (!canSeekAudio) return;
+    const step = event.shiftKey ? 15 : 5;
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      seekTo(currentTime - step, { play: playing });
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      seekTo(currentTime + step, { play: playing });
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      seekTo(0, { play: playing });
+    } else if (event.key === "End") {
+      event.preventDefault();
+      seekTo(audioDurationSec, { play: playing });
+    }
+  }
+
+  function handleActionItemSeek(sec: number) {
+    seekTo(sec, { play: true, updateHash: true });
   }
 
   function togglePlay() {
@@ -812,7 +928,13 @@ export function NotePageClient({
 
         <section className="mt-6 flex-1">
           {viewMode === "enhanced" && enhancedSummary ? (
-            <EnhancedMarkdown markdown={enhancedSummary} />
+            <div>
+              <EnhancedMarkdown markdown={enhancedSummary} />
+              <ActionItemsBlock
+                actionItems={actionItems}
+                onSeek={handleActionItemSeek}
+              />
+            </div>
           ) : (
             <Textarea
               value={body}
@@ -862,7 +984,7 @@ export function NotePageClient({
               words={transcriptWords}
               fullText={transcriptText}
               currentTime={currentTime}
-              onSeek={seekTo}
+              onSeek={(sec) => seekTo(sec)}
               people={peopleState}
               speakerAssignments={speakerAssignmentsState}
               onSpeakerAssignmentsChange={setSpeakerAssignmentsState}
@@ -884,13 +1006,31 @@ export function NotePageClient({
           >
             {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
           </Button>
-          <button
-            type="button"
-            onClick={() => setTranscriptOpen((open) => !open)}
-            className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-bg-elevated"
-          >
+          <div className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-1.5 text-left">
             <Volume2 className="h-4 w-4 shrink-0 text-emerald-400" />
-            <span className="relative min-w-0 flex-1 overflow-hidden rounded-md border border-border bg-bg">
+            <div
+              ref={waveformRef}
+              role="slider"
+              tabIndex={canSeekAudio ? 0 : -1}
+              aria-label="Seek audio"
+              aria-valuemin={0}
+              aria-valuemax={Math.round(audioDurationSec)}
+              aria-valuenow={Math.round(currentTime)}
+              aria-valuetext={`${formatAudioTime(currentTime)}${
+                durationLabel ? ` of ${durationLabel}` : ""
+              }`}
+              onPointerDown={handleWaveformPointerDown}
+              onPointerMove={handleWaveformPointerMove}
+              onPointerUp={handleWaveformPointerUp}
+              onPointerCancel={handleWaveformPointerUp}
+              onKeyDown={handleWaveformKeyDown}
+              className={cn(
+                "relative min-w-0 flex-1 overflow-hidden rounded-md border border-border bg-bg outline-none transition-colors focus-visible:border-emerald-400 focus-visible:ring-2 focus-visible:ring-emerald-400/25",
+                canSeekAudio
+                  ? "cursor-pointer hover:border-border-strong"
+                  : "cursor-default opacity-80"
+              )}
+            >
               {waveformUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -903,20 +1043,25 @@ export function NotePageClient({
                   {status === "ready" ? "Waveform unavailable" : "Processing"}
                 </span>
               )}
+              {canSeekAudio && (
+                <span className="pointer-events-none absolute inset-0 opacity-0 transition-opacity hover:opacity-100">
+                  <span className="absolute inset-0 bg-emerald-400/[0.03]" />
+                </span>
+              )}
               <span
-                className="absolute inset-y-0 left-0 bg-emerald-500/10"
+                className="pointer-events-none absolute inset-y-0 left-0 bg-emerald-500/10"
                 style={{ width: `${progressPercent}%` }}
               />
               <span
-                className="absolute bottom-0 left-0 h-0.5 bg-emerald-400"
+                className="pointer-events-none absolute bottom-0 left-0 h-0.5 bg-emerald-400"
                 style={{ width: `${progressPercent}%` }}
               />
-            </span>
+            </div>
             <span className="hidden w-[74px] shrink-0 text-right text-xs tabular-nums text-text-subtle sm:block">
               {formatAudioTime(currentTime)}
               {durationLabel ? ` / ${durationLabel}` : ""}
             </span>
-          </button>
+          </div>
           <Button
             variant="ghost"
             size="icon"
@@ -936,6 +1081,10 @@ export function NotePageClient({
             preload="metadata"
             onPlay={() => setPlaying(true)}
             onPause={() => setPlaying(false)}
+            onLoadedMetadata={(event) => {
+              setAudioDurationFromMetadata(event.currentTarget.duration);
+              applyInitialHashSeek();
+            }}
             onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
             onEnded={() => setPlaying(false)}
           />
@@ -1678,6 +1827,36 @@ function formatAttendeeLabel(names: string[]): string {
   if (names.length === 0) return "Me";
   if (names.length === 1) return `Me, ${names[0]}`;
   return `Me, ${names[0]} +${names.length - 1}`;
+}
+
+function normalizeActionItems(value: unknown): NoteActionItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const text = "text" in item ? item.text : null;
+    const timestamp = "timestamp_sec" in item ? item.timestamp_sec : null;
+    if (typeof text !== "string" || !text.trim()) return [];
+    if (typeof timestamp !== "number" || !Number.isFinite(timestamp)) return [];
+    return [{ text: text.trim(), timestamp_sec: Math.max(0, timestamp) }];
+  });
+}
+
+function parseTimestampHash(): number | null {
+  if (typeof window === "undefined") return null;
+  const match = window.location.hash.match(/^#t=(\d+(?:\.\d+)?)/);
+  if (!match) return null;
+  const seconds = Number.parseFloat(match[1]);
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
+}
+
+function replaceTimestampHash(seconds: number): void {
+  if (typeof window === "undefined") return;
+  const timestamp = Math.max(0, Math.floor(seconds));
+  window.history.replaceState(
+    null,
+    "",
+    `${window.location.pathname}${window.location.search}#t=${timestamp}`
+  );
 }
 
 function formatAudioTime(value: number): string {

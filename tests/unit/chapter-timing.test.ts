@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildTimedTranscript } from "@/lib/queue/jobs/generate-chapters";
+import { buildTimedTranscript } from "@/lib/transcript/timed-transcript";
 import type { WordTimestamp } from "@/db/queries/transcripts";
 
 describe("buildTimedTranscript", () => {

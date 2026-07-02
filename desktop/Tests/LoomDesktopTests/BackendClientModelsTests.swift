@@ -154,6 +154,31 @@ final class BackendClientModelsTests: XCTestCase {
         XCTAssertEqual(response.paragraphs.first?.text, "Hello world")
     }
 
+    func testEnhancementStatusDecodesTimestampedActionItems() throws {
+        let json = """
+        {
+          "titleSuggested": "Weekly sync",
+          "summary": "Generated notes.",
+          "actionItems": [
+            { "text": "Send the Muse partner follow-up.", "timestamp_sec": 83 }
+          ],
+          "templateId": "general-meeting",
+          "generationStatus": "complete",
+          "mediaStatus": "ready",
+          "transcriptReady": true,
+          "transcriptTextLength": 120,
+          "transcriptState": "ready",
+          "failureReason": null,
+          "canRetryTranscript": false
+        }
+        """.data(using: .utf8)!
+
+        let response = try JSONDecoder().decode(EnhanceStatusResponse.self, from: json)
+
+        XCTAssertEqual(response.actionItems?.first?.text, "Send the Muse partner follow-up.")
+        XCTAssertEqual(response.actionItems?.first?.timestampSec, 83)
+    }
+
     func testAttachmentUploadFailureMessageExplainsLikelyAction() throws {
         let unsupportedBody = #"{"error":"unsupported_image"}"#.data(using: .utf8)!
         let unsupported = BackendClientError.badStatus(

@@ -18,6 +18,9 @@ final class AudioAssetWriter: @unchecked Sendable {
     private let outputURL: URL
     private let settings: [String: Any]
     private var audioFile: AVAudioFile?
+    private var converter: AVAudioConverter?
+    private var converterInputSignature: AudioFormatSignature?
+    private var converterOutputSignature: AudioFormatSignature?
     private var finished = false
     private let writeLock = NSLock()
 
@@ -89,7 +92,10 @@ final class AudioAssetWriter: @unchecked Sendable {
         defer { writeLock.unlock() }
         if finished { return }
         let file = try ensureFileLocked(inputFormat: pcmBuffer.format)
-        try file.write(from: pcmBuffer)
+        let writableBuffer = Self.formatsMatch(pcmBuffer.format, file.processingFormat)
+            ? pcmBuffer
+            : try convertedBufferLocked(pcmBuffer, to: file.processingFormat)
+        try file.write(from: writableBuffer)
     }
 
     private func ensureFileLocked(inputFormat: AVAudioFormat) throws -> AVAudioFile {
@@ -106,6 +112,62 @@ final class AudioAssetWriter: @unchecked Sendable {
         )
         audioFile = file
         return file
+    }
+
+    private func convertedBufferLocked(
+        _ inputBuffer: AVAudioPCMBuffer,
+        to outputFormat: AVAudioFormat
+    ) throws -> AVAudioPCMBuffer {
+        let inputSignature = AudioFormatSignature(inputBuffer.format)
+        let outputSignature = AudioFormatSignature(outputFormat)
+        if converter == nil ||
+            converterInputSignature != inputSignature ||
+            converterOutputSignature != outputSignature {
+            converter = AVAudioConverter(from: inputBuffer.format, to: outputFormat)
+            converterInputSignature = inputSignature
+            converterOutputSignature = outputSignature
+        }
+        guard let converter else {
+            throw AudioAssetWriterError.conversionUnavailable
+        }
+
+        let sampleRateRatio = outputFormat.sampleRate / max(inputBuffer.format.sampleRate, 1)
+        let capacity = AVAudioFrameCount(
+            max(1, ceil(Double(inputBuffer.frameLength) * sampleRateRatio) + 32)
+        )
+        guard let outputBuffer = AVAudioPCMBuffer(
+            pcmFormat: outputFormat,
+            frameCapacity: capacity
+        ) else {
+            throw AudioAssetWriterError.conversionUnavailable
+        }
+
+        var didProvideInput = false
+        var conversionError: NSError?
+        let status = converter.convert(to: outputBuffer, error: &conversionError) { _, outStatus in
+            if didProvideInput {
+                outStatus.pointee = .noDataNow
+                return nil
+            }
+            didProvideInput = true
+            outStatus.pointee = .haveData
+            return inputBuffer
+        }
+
+        if status == .error {
+            throw conversionError ?? AudioAssetWriterError.conversionFailed
+        }
+        return outputBuffer
+    }
+
+    private static func formatsMatch(
+        _ lhs: AVAudioFormat,
+        _ rhs: AVAudioFormat
+    ) -> Bool {
+        lhs.sampleRate == rhs.sampleRate &&
+            lhs.channelCount == rhs.channelCount &&
+            lhs.commonFormat == rhs.commonFormat &&
+            lhs.isInterleaved == rhs.isInterleaved
     }
 
     private static func makePCMBuffer(from sampleBuffer: CMSampleBuffer) -> AVAudioPCMBuffer? {
@@ -129,5 +191,33 @@ final class AudioAssetWriter: @unchecked Sendable {
         )
         guard status == noErr else { return nil }
         return pcmBuffer
+    }
+}
+
+private struct AudioFormatSignature: Equatable {
+    let sampleRate: Double
+    let channelCount: AVAudioChannelCount
+    let commonFormat: AVAudioCommonFormat
+    let isInterleaved: Bool
+
+    init(_ format: AVAudioFormat) {
+        sampleRate = format.sampleRate
+        channelCount = format.channelCount
+        commonFormat = format.commonFormat
+        isInterleaved = format.isInterleaved
+    }
+}
+
+private enum AudioAssetWriterError: LocalizedError {
+    case conversionUnavailable
+    case conversionFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .conversionUnavailable:
+            return "Could not convert changed audio format for writing."
+        case .conversionFailed:
+            return "Audio format conversion failed."
+        }
     }
 }

@@ -703,11 +703,12 @@ private final class LiveTranscriptionStream: @unchecked Sendable {
             if self.sampleRate == nil {
                 self.sampleRate = packet.sampleRate
             }
-            guard self.sampleRate == packet.sampleRate else {
+            if let currentSampleRate = self.sampleRate,
+               currentSampleRate != packet.sampleRate {
                 liveTranscriptLog.error(
-                    "sample rate changed mid-stream source=\(self.source.rawValue, privacy: .public)"
+                    "sample rate changed mid-stream source=\(self.source.rawValue, privacy: .public) old=\(currentSampleRate, privacy: .public) new=\(packet.sampleRate, privacy: .public); reopening stream"
                 )
-                return
+                self.reopenForSampleRateChange(packet.sampleRate)
             }
             self.pendingAudio.append(packet.data)
             if self.pendingAudio.count > 120 {
@@ -743,6 +744,19 @@ private final class LiveTranscriptionStream: @unchecked Sendable {
             self.opening = false
             self.onState(.closed)
         }
+    }
+
+    private func reopenForSampleRateChange(_ nextSampleRate: Int) {
+        sendText(#"{"type":"CloseStream"}"#)
+        closing = true
+        keepAliveTimer?.cancel()
+        keepAliveTimer = nil
+        webSocket?.cancel(with: .normalClosure, reason: nil)
+        webSocket = nil
+        opening = false
+        pendingAudio = []
+        sampleRate = nextSampleRate
+        closing = false
     }
 
     private func openIfNeeded() {

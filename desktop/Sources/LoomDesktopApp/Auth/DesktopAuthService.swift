@@ -47,18 +47,50 @@ actor DesktopAuthService {
 
     func loadStoredSessionSnapshot() async throws -> StoredDesktopSession? {
         guard let accessToken = try store.loadAccessToken() else { return nil }
-        var tokenForSnapshot = accessToken
-        var claims = Self.decodeAccessTokenClaims(accessToken)
+        let claims = Self.decodeAccessTokenClaims(accessToken)
         if claims.isExpired() {
-            guard let refreshToken = try store.loadRefreshToken() else { return nil }
-            let refreshed = try await refreshStoredSession(refreshToken: refreshToken)
-            try store.saveAccessToken(refreshed.accessToken)
-            try store.saveRefreshToken(refreshed.refreshToken)
-            tokenForSnapshot = refreshed.accessToken
-            claims = Self.decodeAccessTokenClaims(refreshed.accessToken)
+            return try await refreshStoredSessionSnapshot()
         }
         return StoredDesktopSession(
-            accessToken: tokenForSnapshot,
+            accessToken: accessToken,
+            userId: claims.sub.flatMap(UUID.init(uuidString:)),
+            email: claims.email
+        )
+    }
+
+    /// Recording-start preflight: only hits the network when the stored token is
+    /// within `minimumRemaining` seconds of expiry, and falls back to the still-valid
+    /// cached token when the refresh fails. A brief Supabase blip must never block
+    /// starting a local recording.
+    func freshenStoredSessionSnapshot(minimumRemaining: TimeInterval = 900) async throws -> StoredDesktopSession? {
+        guard let accessToken = try store.loadAccessToken() else { return nil }
+        let claims = Self.decodeAccessTokenClaims(accessToken)
+        let cached = StoredDesktopSession(
+            accessToken: accessToken,
+            userId: claims.sub.flatMap(UUID.init(uuidString:)),
+            email: claims.email
+        )
+        if !claims.isExpired(leeway: minimumRemaining) {
+            return cached
+        }
+        do {
+            return try await refreshStoredSessionSnapshot()
+        } catch {
+            if !claims.isExpired() {
+                return cached
+            }
+            throw error
+        }
+    }
+
+    func refreshStoredSessionSnapshot() async throws -> StoredDesktopSession? {
+        guard let refreshToken = try store.loadRefreshToken() else { return nil }
+        let refreshed = try await refreshStoredSession(refreshToken: refreshToken)
+        try store.saveAccessToken(refreshed.accessToken)
+        try store.saveRefreshToken(refreshed.refreshToken)
+        let claims = Self.decodeAccessTokenClaims(refreshed.accessToken)
+        return StoredDesktopSession(
+            accessToken: refreshed.accessToken,
             userId: claims.sub.flatMap(UUID.init(uuidString:)),
             email: claims.email
         )

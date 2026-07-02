@@ -139,9 +139,11 @@ describe("Loomola MCP tools", () => {
         id: "audio-1:0",
         text: "Ship Phase 1.",
         status: "open",
+        timestampSec: 10,
         mediaId: "audio-1",
         mediaTitle: "Audio One",
         mediaShareUrl: "http://localhost:3000/notes/audio-one",
+        deepLink: "http://localhost:3000/notes/audio-one#t=10",
         attributedTo: null,
         createdAt,
       },
@@ -214,6 +216,9 @@ describe("Loomola MCP tools", () => {
       })
     );
     expect(actions.actionItems).toHaveLength(1);
+    expect((actions.actionItems as Array<Record<string, unknown>>)[0]?.deepLink).toBe(
+      "http://localhost:3000/notes/audio-one#t=10"
+    );
 
     await clientTransport.close();
     await serverTransport.close();

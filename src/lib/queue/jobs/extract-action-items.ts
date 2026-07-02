@@ -4,6 +4,7 @@ import {
   getTranscriptByRecording,
   type WordTimestamp,
 } from "@/db/queries/transcripts";
+import { buildTimedTranscript } from "@/lib/transcript/timed-transcript";
 import {
   updateActionItems,
   flipToReadyIfComplete,
@@ -33,12 +34,15 @@ export async function runActionItemsJob(
     Array.isArray(words) && words.length > 0
       ? words[words.length - 1]?.end ?? 0
       : 0;
+  const timedTranscript =
+    Array.isArray(words) && words.length > 0 ? buildTimedTranscript(words) : "";
 
   const { object } = await generateObjectWithFallback({
     schema: actionItemsSchema,
     schemaName: "ActionItems",
     prompt: [
       "You extract concrete action items from screen-recording transcripts.",
+      "When timed transcript markers are available, choose the timestamp where the action item was discussed or committed.",
       "",
       "Rules:",
       "- Include only items that represent a specific committed action or next step.",
@@ -50,14 +54,16 @@ export async function runActionItemsJob(
       "",
       `Recording duration: ${Math.ceil(durationSec)} seconds.`,
       "",
-      "Transcript:",
-      text,
+      timedTranscript
+        ? "Timed transcript (seconds in brackets):"
+        : "Transcript:",
+      timedTranscript || text,
     ].join("\n"),
   });
 
   const clamped = object.action_items.map((a) => ({
     text: a.text,
-    timestamp_sec: Math.min(a.timestamp_sec, durationSec),
+    timestamp_sec: Math.min(Math.max(0, a.timestamp_sec), durationSec),
   }));
 
   await updateActionItems(data.mediaObjectId, clamped);

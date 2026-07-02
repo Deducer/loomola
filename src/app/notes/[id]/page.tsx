@@ -9,7 +9,10 @@ import {
 import { listPeople } from "@/db/queries/people";
 import { listSpeakerAssignments } from "@/db/queries/speaker-assignments";
 import { listFoldersForOwner } from "@/db/queries/folders";
-import { NotePageClient } from "@/components/notes/note-page-client";
+import {
+  NotePageClient,
+  type NoteActionItem,
+} from "@/components/notes/note-page-client";
 import { resolveObsidianPath } from "@/lib/notes/obsidian-path";
 import type { Word } from "@/lib/viewer/paragraphs";
 import {
@@ -93,6 +96,7 @@ export default async function NotesPage({
         }))
       )}
       initialEnhancedSummary={data.aiOutput?.summary ?? null}
+      initialActionItems={normalizeActionItems(data.aiOutput?.actionItems)}
       initialGenerationStatus={data.aiOutput?.generationStatusValue ?? "idle"}
       initialObsidianSaveState={initialObsidianStatus}
       initialObsidianPath={resolveObsidianPath({
@@ -137,5 +141,17 @@ function normalizeWords(value: unknown): Word[] {
         ...(typeof speaker === "number" ? { speaker } : {}),
       },
     ];
+  });
+}
+
+function normalizeActionItems(value: unknown): NoteActionItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const text = "text" in item ? item.text : null;
+    const timestamp = "timestamp_sec" in item ? item.timestamp_sec : null;
+    if (typeof text !== "string" || !text.trim()) return [];
+    if (typeof timestamp !== "number" || !Number.isFinite(timestamp)) return [];
+    return [{ text: text.trim(), timestamp_sec: Math.max(0, timestamp) }];
   });
 }

@@ -1035,13 +1035,25 @@ struct CreateAttachmentResponse: Decodable, Sendable {
     let attachment: NoteAttachmentDTO
 }
 
-/// Response shape from GET /api/notes/<id>/enhance. Chapters /
-/// actionItems are jsonb in the DB and don't have stable shapes
-/// the desktop needs yet — keep them out and add later if a UI
-/// surface needs them.
+struct EnhanceActionItemDTO: Decodable, Equatable, Sendable, Identifiable {
+    let text: String
+    let timestampSec: Double
+
+    var id: String {
+        "\(Int(timestampSec))-\(text)"
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case text
+        case timestampSec = "timestamp_sec"
+    }
+}
+
+/// Response shape from GET /api/notes/<id>/enhance.
 struct EnhanceStatusResponse: Decodable, Sendable {
     let titleSuggested: String?
     let summary: String?
+    let actionItems: [EnhanceActionItemDTO]?
     let templateId: String?
     let generationStatus: String  // "pending" | "streaming" | "complete" | "failed"
     let mediaStatus: String?

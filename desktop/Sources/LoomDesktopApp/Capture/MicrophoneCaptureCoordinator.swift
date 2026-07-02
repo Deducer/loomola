@@ -39,6 +39,7 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
     private var lastBufferUptime: TimeInterval = 0
     private var restarting = false
     private var stopping = false
+    private var suppressedRestartLogged = false
     /// When true, the engine tap continues firing but every buffer is
     /// discarded — no file write, no level meter, no compositor
     /// callback. Pause = no audio data captured during this interval;
@@ -69,6 +70,7 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
         selectedOutputURL = outputURL
         selectedVoiceProcessingEnabled = voiceProcessingEnabled
         stopping = false
+        suppressedRestartLogged = false
         try startEngine(
             deviceID: deviceID,
             outputURL: outputURL,
@@ -197,6 +199,7 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
         self.formatDescription = nil
         self.nextSampleTime = 0
         self.restarting = false
+        self.suppressedRestartLogged = false
 
         // If the writer was set up (audio-note flow), finalize and
         // return the resulting URL. If not (composite flow), there
@@ -331,6 +334,15 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
         recoveryQueue.async { [weak self] in
             guard let self else { return }
             guard !self.stopping, !self.restarting else { return }
+            if self.selectedOutputURL != nil {
+                if !self.suppressedRestartLogged {
+                    microphoneCaptureLog.error(
+                        "microphone restart suppressed during file-backed recording: \(reason, privacy: .public)"
+                    )
+                    self.suppressedRestartLogged = true
+                }
+                return
+            }
             self.restarting = true
             self.recoveryQueue.asyncAfter(deadline: .now() + 0.25) { [weak self] in
                 self?.restartEngine(reason: reason)
