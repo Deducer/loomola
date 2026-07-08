@@ -1609,6 +1609,13 @@ final class RecorderViewModel: ObservableObject {
                 let complete = try await audioNoteRecorder.stopAndUpload()
                 activeAudioRecordingId = nil
                 liveNotesBody = ""
+                // The title belongs to the note that just finished — the
+                // workspace's review mode reads its own server-fetched copy,
+                // and leaving it here made the NEXT note inherit it.
+                audioTitle = ""
+                audioTitleManuallyEdited = false
+                lastSyncedAudioTitle = ""
+                autoSuggestedAudioTitle = nil
                 state = .complete(slug: complete.slug)
                 statusMessage = "Uploaded audio note. Slug: \(complete.slug)"
                 _recentService?.refresh()
@@ -1645,6 +1652,12 @@ final class RecorderViewModel: ObservableObject {
                 let recoveryHint = captured == nil
                     ? error.localizedDescription
                     : "\(error.localizedDescription) Recording saved locally — open Settings → Recovery to retry."
+                // Title is preserved in the orphan metadata; don't let it
+                // leak into the next recording.
+                audioTitle = ""
+                audioTitleManuallyEdited = false
+                lastSyncedAudioTitle = ""
+                autoSuggestedAudioTitle = nil
                 state = .failed(message: recoveryHint)
                 statusMessage = "Audio note upload failed: \(recoveryHint)"
             }
@@ -1842,6 +1855,8 @@ final class RecorderViewModel: ObservableObject {
         audioNotePausedAccumulatedSeconds = 0
         audioLevel = 0
         liveNotesBody = ""
+        audioTitle = ""
+        autoSuggestedAudioTitle = nil
         lastStoppedAudioRecordingForReview = nil
         state = .signedInIdle
         statusMessage = "Audio note discarded."
