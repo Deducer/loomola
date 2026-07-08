@@ -382,6 +382,16 @@ The remaining failure modes that could either lose a recording or hide a failure
 | **Merged video AI call** | Video recordings get title+summary+chapters+action-items from ONE `video_insights` Claude call instead of three jobs that each re-billed the same transcript (~3x input-token cut per video). Audio keeps its separate long-form enhancement call. Legacy jobs remain registered for in-flight queue items. |
 | **Recent-list pagination (desktop/web parity)** | The desktop only ever fetched the 12 most recent items per kind — older calls were unreachable on desktop, full stop. `GET /api/recordings/recent` accepts `?offset=`; the notes list shows "Show older notes" which pages by 12 (deduped by id); periodic refreshes preserve loaded depth. |
 
+## Stage 14 — Granola-parity surfaces on desktop (✅ shipped 2026-07-07)
+
+G-M12 (folder suggestion) and G-M13 + Stage 11 (calendar-attendee speaker matching) already produced the right data — but their only UI lived on web surfaces the user never visits. This stage puts them where the notes actually get read: the desktop workspace. Reference UX: Granola (screenshots 2026-07-07).
+
+| Area | What it ships |
+|---|---|
+| **Suggested-folder banner** | Unfiled notes with an active G-M12 suggestion show a banner under the title: "✦ Suggested folder — [name] — Add (⌘↩) / ✕", wired to the existing accept/dismiss endpoints. Folder-list membership is re-checked client-side (hallucination-defense parity with web). `suggestedFolderId` added to the recent-route DTO (emitted only while unfiled + undismissed). |
+| **Speaker names in the transcript drawer** | Batch-transcript bubbles map "Speaker N" → the assigned or suggested person's name (live-provider transcripts keep mic/system labels). When pending suggestions exist, a bar above the transcript shows "✦ Suggested speakers: …" with Apply names / dismiss — one click accepts every suggestion via the per-idx accept endpoint. The names PREVIEW in the transcript before acceptance, Granola-style. |
+| **My notes / Enhanced split** | The workspace previously poured the AI-generated notes into the same editor as the user's raw notes — and the next autosave silently overwrote `notes.body` with generated content. Now: raw notes stay in the editable pane (autosave tracks ONLY raw), generated notes render in a read-only Enhanced pane (`MarkdownTextEditor(isEditable: false)`), and a "My notes / ✦ Enhanced" pill flips between them. Opens on Enhanced when generated notes exist; generation completion auto-switches to Enhanced with the reveal animation. Web remains the editor of record for generated content. |
+
 ## Open follow-ups (next milestones to spec)
 
 | Topic | Why | Rough effort |

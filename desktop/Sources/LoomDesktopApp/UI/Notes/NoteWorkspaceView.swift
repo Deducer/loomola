@@ -162,6 +162,22 @@ struct NoteWorkspaceView: View {
     @State private var transcript: NoteTranscriptResponse? = nil
     @State private var reviewActionItems: [EnhanceActionItemDTO] = []
     @State private var transcriptDrawerOpen = false
+
+    /// AI-enhanced notes (ai_outputs.summary), kept SEPARATE from the
+    /// user's raw notes — Granola's "My notes / Enhanced" split. The
+    /// enhanced pane is read-only on desktop; web remains the editor
+    /// of record for generated content.
+    @State private var enhancedBody = ""
+    @State private var showEnhanced = false
+    @State private var enhancedEditorMeasuredHeight: CGFloat = 320
+
+    /// G-M12 folder suggestion banner state (review mode).
+    @State private var folderSuggestionHandled = false
+    @State private var acceptingFolderSuggestion = false
+
+    /// G-M13 speaker suggestions for the transcript drawer.
+    @State private var speakerAssignments: [SpeakerAssignmentDTO] = []
+    @State private var applyingSpeakerSuggestions = false
     @State private var loadingTranscript = false
     @State private var transcriptError: String? = nil
     @State private var notesGeneratedForCurrentTranscript = false
@@ -276,6 +292,9 @@ struct NoteWorkspaceView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: DSSpacing.xl) {
                     titleEditor
+                    if let suggestion = activeFolderSuggestion {
+                        folderSuggestionBanner(suggestion)
+                    }
                     pillRow
                     bodyEditor
                     if !isRecording && !reviewActionItems.isEmpty {
@@ -691,15 +710,130 @@ struct NoteWorkspaceView: View {
         }
     }
 
+    // MARK: - Folder suggestion banner (G-M12, Granola pattern)
+
+    /// The suggestion is actionable when the note is unfiled, the AI
+    /// suggested a folder that still exists in the user's folder list
+    /// (hallucination defense parity with web), and the user hasn't
+    /// acted on it in this session.
+    private var activeFolderSuggestion: (folderId: String, name: String)? {
+        guard case .reviewing(let recording) = target,
+              !folderSuggestionHandled,
+              folderId == nil,
+              let suggestedId = recording.suggestedFolderId,
+              let folder = viewModel.recentRecordings.folders.first(where: { $0.id == suggestedId })
+        else { return nil }
+        return (suggestedId, folder.name)
+    }
+
+    private func folderSuggestionBanner(_ suggestion: (folderId: String, name: String)) -> some View {
+        HStack(spacing: DSSpacing.sm) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(DSColor.Accent.primary)
+            Text("Suggested folder")
+                .font(DSFont.Body.sm())
+                .foregroundStyle(DSColor.Text.secondary)
+            HStack(spacing: 4) {
+                Image(systemName: "folder")
+                    .font(.system(size: 11))
+                Text(suggestion.name)
+                    .font(DSFont.Body.sm().weight(.medium))
+            }
+            .foregroundStyle(DSColor.Text.primary)
+            .padding(.horizontal, DSSpacing.sm)
+            .padding(.vertical, 4)
+            .background(RoundedRectangle(cornerRadius: DSRadius.sm).fill(DSColor.Bg.subtle))
+            Spacer()
+            Button {
+                acceptFolderSuggestion(suggestion)
+            } label: {
+                HStack(spacing: 4) {
+                    Text("Add")
+                    Text("⌘↩")
+                        .foregroundStyle(DSColor.Text.tertiary)
+                }
+                .font(DSFont.Body.sm().weight(.medium))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(DSColor.Accent.primary)
+            .keyboardShortcut(.return, modifiers: .command)
+            .disabled(acceptingFolderSuggestion)
+            IconButton(icon: "xmark", size: 22) {
+                dismissFolderSuggestion()
+            }
+            .help("Dismiss suggestion")
+        }
+        .padding(.horizontal, DSSpacing.md)
+        .padding(.vertical, DSSpacing.sm)
+        .background(
+            RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
+                .fill(DSColor.Accent.primary.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
+                .strokeBorder(DSColor.Accent.primary.opacity(0.25), lineWidth: 1)
+        )
+    }
+
+    private func acceptFolderSuggestion(_ suggestion: (folderId: String, name: String)) {
+        guard case .reviewing(let recording) = target,
+              let backend = viewModel.backendClient,
+              !acceptingFolderSuggestion
+        else { return }
+        acceptingFolderSuggestion = true
+        Task { @MainActor in
+            defer { acceptingFolderSuggestion = false }
+            do {
+                try await backend.acceptSuggestedFolder(recordingId: recording.id)
+                reviewFolderId = suggestion.folderId
+                reviewFolderName = suggestion.name
+                folderSuggestionHandled = true
+                viewModel.recentRecordings.refresh()
+                showToast(message: "Filed in \(suggestion.name)")
+            } catch {
+                showToast(message: "Couldn't file note", tone: .error)
+            }
+        }
+    }
+
+    private func dismissFolderSuggestion() {
+        guard case .reviewing(let recording) = target,
+              let backend = viewModel.backendClient
+        else { return }
+        folderSuggestionHandled = true
+        Task {
+            try? await backend.dismissSuggestedFolder(recordingId: recording.id)
+            await MainActor.run { viewModel.recentRecordings.refresh() }
+        }
+    }
+
     // MARK: - Pill row
 
     private var pillRow: some View {
         HStack(spacing: DSSpacing.md) {
+            if !enhancedBody.isEmpty {
+                notesModePill
+            }
             todayPill
             mePill
             folderPill
             templatePill
         }
+    }
+
+    /// Granola's "My notes / ✦ Enhanced" switch. Only rendered once an
+    /// enhanced version exists; clicking flips between the user's raw
+    /// notes (editable) and the AI-generated notes (read-only — web is
+    /// the editor of record for generated content).
+    private var notesModePill: some View {
+        WorkspacePill(
+            icon: showEnhanced ? "sparkles" : "text.alignleft",
+            label: showEnhanced ? "Enhanced" : "My notes",
+            isActive: showEnhanced,
+            action: { withAnimation(LoomolaMotion.quick) { showEnhanced.toggle() } }
+        )
+        .help(showEnhanced ? "Showing AI-enhanced notes — click for your raw notes" : "Showing your raw notes — click for the AI-enhanced version")
     }
 
     private var todayPill: some View {
@@ -905,17 +1039,29 @@ struct NoteWorkspaceView: View {
 
     private var bodyEditor: some View {
         ZStack(alignment: .topLeading) {
-            MarkdownTextEditor(
-                text: bodyBinding,
-                measuredHeight: $bodyEditorMeasuredHeight,
-                placeholder: loadingBody ? "Loading…" : "Write notes",
-                isFocused: $bodyFocused
-            )
-            .frame(height: max(320, bodyEditorMeasuredHeight))
-            // Pull 5pt back to compensate for NSTextView's internal
-            // text container inset so the heading text origin lines
-            // up with the title row above.
-            .padding(.leading, -5)
+            if showEnhanced && !enhancedBody.isEmpty {
+                MarkdownTextEditor(
+                    text: $enhancedBody,
+                    measuredHeight: $enhancedEditorMeasuredHeight,
+                    placeholder: "",
+                    isFocused: $bodyFocused,
+                    isEditable: false
+                )
+                .frame(height: max(320, enhancedEditorMeasuredHeight))
+                .padding(.leading, -5)
+            } else {
+                MarkdownTextEditor(
+                    text: bodyBinding,
+                    measuredHeight: $bodyEditorMeasuredHeight,
+                    placeholder: loadingBody ? "Loading…" : "Write notes",
+                    isFocused: $bodyFocused
+                )
+                .frame(height: max(320, bodyEditorMeasuredHeight))
+                // Pull 5pt back to compensate for NSTextView's internal
+                // text container inset so the heading text origin lines
+                // up with the title row above.
+                .padding(.leading, -5)
+            }
         }
     }
 
@@ -1406,6 +1552,13 @@ struct NoteWorkspaceView: View {
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
 
+                if !isRecording, !pendingSpeakerSuggestions.isEmpty {
+                    speakerSuggestionBar
+                        .padding(.horizontal, DSSpacing.lg)
+                        .padding(.bottom, DSSpacing.sm)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         Group {
@@ -1660,7 +1813,7 @@ struct NoteWorkspaceView: View {
                 return TranscriptDisplayBubble(
                     id: paragraph.id,
                     source: source,
-                    speaker: source?.displayName ?? paragraph.speaker,
+                    speaker: speakerDisplayName(forLabel: paragraph.speaker),
                     text: paragraph.text,
                     isInterim: false,
                     startSec: paragraph.startSec,
@@ -2217,6 +2370,144 @@ struct NoteWorkspaceView: View {
         }
     }
 
+    /// Granola-style speaker identification bar: names came from the
+    /// calendar-attendee match (G-M13 + Stage 11), the transcript below
+    /// already previews them, and one click makes them stick.
+    private var speakerSuggestionBar: some View {
+        HStack(spacing: DSSpacing.sm) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(DSColor.Accent.primary)
+            Text(speakerSuggestionSummary)
+                .font(DSFont.Body.sm())
+                .foregroundStyle(DSColor.Text.secondary)
+                .lineLimit(1)
+            Spacer()
+            if applyingSpeakerSuggestions {
+                ProgressView()
+                    .controlSize(.small)
+            } else {
+                Button("Apply names") {
+                    applyAllSpeakerSuggestions()
+                }
+                .buttonStyle(.plain)
+                .font(DSFont.Body.sm().weight(.medium))
+                .foregroundStyle(DSColor.Accent.primary)
+                IconButton(icon: "xmark", size: 20) {
+                    dismissAllSpeakerSuggestions()
+                }
+                .help("Dismiss suggested names")
+            }
+        }
+        .padding(.horizontal, DSSpacing.md)
+        .padding(.vertical, DSSpacing.xs)
+        .background(
+            RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
+                .fill(DSColor.Accent.primary.opacity(0.08))
+        )
+    }
+
+    private var speakerSuggestionSummary: String {
+        let names = pendingSpeakerSuggestions.compactMap(personName(for:))
+        guard !names.isEmpty else { return "Speaker names suggested" }
+        return "Suggested speakers: \(names.joined(separator: ", "))"
+    }
+
+    private func loadSpeakerAssignments() {
+        guard case .reviewing(let recording) = target else { return }
+        guard let backend = viewModel.backendClient else { return }
+        Task { @MainActor in
+            if let list = try? await backend.speakerAssignments(mediaId: recording.id) {
+                speakerAssignments = list
+            }
+        }
+    }
+
+    /// Pending G-M13 suggestions that can be applied in one click
+    /// (have a resolved person; not dismissed).
+    private var pendingSpeakerSuggestions: [SpeakerAssignmentDTO] {
+        speakerAssignments
+            .filter { $0.isSuggestion && $0.dismissedAt == nil && $0.personId != nil }
+            .sorted { $0.speakerIdx < $1.speakerIdx }
+    }
+
+    private func personName(for assignment: SpeakerAssignmentDTO) -> String? {
+        if let override = assignment.displayLabelOverride, !override.isEmpty {
+            return override
+        }
+        guard let personId = assignment.personId else { return nil }
+        return people.first(where: { $0.id == personId })?.displayName
+    }
+
+    /// Maps a batch transcript's "Speaker N" label to an assigned or
+    /// suggested person name. Live-provider transcripts keep their
+    /// mic/system source mapping.
+    private func speakerDisplayName(forLabel label: String?) -> String? {
+        if let source = transcriptSource(forSpeaker: label) {
+            return source.displayName
+        }
+        guard let label,
+              label.hasPrefix("Speaker "),
+              let number = Int(label.dropFirst("Speaker ".count))
+        else { return label }
+        let idx = number - 1
+        guard let assignment = speakerAssignments.first(where: {
+            $0.speakerIdx == idx && $0.dismissedAt == nil
+        }), let name = personName(for: assignment) else {
+            return label
+        }
+        return name
+    }
+
+    private func applyAllSpeakerSuggestions() {
+        guard case .reviewing(let recording) = target,
+              let backend = viewModel.backendClient,
+              !applyingSpeakerSuggestions
+        else { return }
+        let pending = pendingSpeakerSuggestions
+        guard !pending.isEmpty else { return }
+        applyingSpeakerSuggestions = true
+        Task { @MainActor in
+            defer { applyingSpeakerSuggestions = false }
+            var applied = 0
+            for suggestion in pending {
+                guard let personId = suggestion.personId else { continue }
+                do {
+                    try await backend.acceptSpeakerSuggestion(
+                        recordingId: recording.id,
+                        speakerIdx: suggestion.speakerIdx,
+                        personId: personId
+                    )
+                    applied += 1
+                } catch {
+                    // Keep going — a 409 just means that idx was already
+                    // accepted or dismissed elsewhere (e.g., on web).
+                }
+            }
+            if let list = try? await backend.speakerAssignments(mediaId: recording.id) {
+                speakerAssignments = list
+            }
+            showToast(message: applied > 0 ? "Speaker names applied" : "Names were already applied")
+        }
+    }
+
+    private func dismissAllSpeakerSuggestions() {
+        guard case .reviewing(let recording) = target,
+              let backend = viewModel.backendClient
+        else { return }
+        let pending = pendingSpeakerSuggestions
+        // Optimistic: hide the bar immediately.
+        speakerAssignments = speakerAssignments.filter { !$0.isSuggestion }
+        Task {
+            for suggestion in pending {
+                try? await backend.dismissSpeakerSuggestion(
+                    recordingId: recording.id,
+                    speakerIdx: suggestion.speakerIdx
+                )
+            }
+        }
+    }
+
     private func copyTranscript() {
         let text = transcriptTextForCopy
         guard !text.isEmpty else { return }
@@ -2275,8 +2566,13 @@ struct NoteWorkspaceView: View {
                 uniqueKeysWithValues: recording.attendees.map { ($0.id, $0.name) }
             )
             reviewBody = ""
+            enhancedBody = ""
+            showEnhanced = false
+            folderSuggestionHandled = false
+            speakerAssignments = []
             loadingBody = true
             loadTranscript()
+            loadSpeakerAssignments()
             Task {
                 if let backend = viewModel.backendClient {
                     do {
@@ -2291,9 +2587,15 @@ struct NoteWorkspaceView: View {
                             let generatedBody = generatedRaw
                                 .map(MarkdownDisplayNormalizer.normalizeGeneratedNotes)?
                                 .trimmingCharacters(in: .whitespacesAndNewlines)
-                            let displayBody = generatedBody ?? savedBody
-                            reviewBody = displayBody
-                            reviewLastSaved = displayBody
+                            // Raw notes stay in the editable pane; the
+                            // enhanced version gets its own read-only pane
+                            // (Granola's "My notes / Enhanced" split).
+                            // Default to Enhanced when it exists — that's
+                            // the note you usually came back to read.
+                            reviewBody = savedBody
+                            reviewLastSaved = savedBody
+                            enhancedBody = generatedBody ?? ""
+                            showEnhanced = !(generatedBody ?? "").isEmpty
                             if let templateId = note.templateId {
                                 selectedTemplateId = templateId
                             }
@@ -2673,13 +2975,12 @@ struct NoteWorkspaceView: View {
 
         guard let rawSummary = status.summary, !rawSummary.isEmpty else { return }
         let summary = MarkdownDisplayNormalizer.normalizeGeneratedNotes(rawSummary)
+        // Generated notes land in the ENHANCED pane; the user's raw notes
+        // (reviewBody / liveNotesBody) are never overwritten — they used
+        // to be, which silently destroyed the raw notes on the next
+        // autosave.
+        withAnimation(LoomolaMotion.quick) { showEnhanced = true }
         await revealGeneratedNotesBody(summary, isActiveRecording: isActiveRecording)
-
-        if isActiveRecording {
-            viewModel.applyGeneratedAudioNote(title: nil, body: summary)
-        } else {
-            reviewLastSaved = summary
-        }
     }
 
     private func revealGeneratedNotesBody(
@@ -2721,11 +3022,7 @@ struct NoteWorkspaceView: View {
     }
 
     private func updateDisplayedBody(_ body: String, isActiveRecording: Bool) {
-        if isActiveRecording {
-            viewModel.liveNotesBody = body
-        } else {
-            reviewBody = body
-        }
+        enhancedBody = body
     }
 
     private func scheduleReviewAutosave(_ next: String) {

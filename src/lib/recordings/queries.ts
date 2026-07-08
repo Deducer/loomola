@@ -41,6 +41,10 @@ export type RecentMediaItem = {
   transcriptReady: boolean | null;
   folderId: string | null;
   folderName: string | null;
+  /// Set only while the G-M12 suggestion is actionable: a folder was
+  /// suggested, the recording is still unfiled, and the user hasn't
+  /// dismissed it.
+  suggestedFolderId: string | null;
   attendees: Array<{ id: string; name: string; email: string | null }>;
 };
 
@@ -175,6 +179,8 @@ export async function recentMediaItems(params: {
       durationSeconds: mediaObjects.durationSeconds,
       compositeThumbnailKey: mediaObjects.compositeThumbnailKey,
       folderId: mediaObjects.folderId,
+      suggestedFolderId: mediaObjects.suggestedFolderId,
+      suggestedFolderDismissedAt: mediaObjects.suggestedFolderDismissedAt,
       attendees: mediaObjects.attendees,
       createdAt: mediaObjects.createdAt,
       aiTitle: aiOutputs.titleSuggested,
@@ -230,6 +236,10 @@ export async function recentMediaItems(params: {
         transcriptReady: row.type === "audio" ? row.transcriptReady : null,
         folderId: row.folderId,
         folderName: row.folderName,
+        suggestedFolderId:
+          row.folderId == null && row.suggestedFolderDismissedAt == null
+            ? row.suggestedFolderId
+            : null,
         attendees: attendeeMap.get(row.id) ?? [],
       };
     })

@@ -1,16 +1,29 @@
 import XCTest
 
 final class NoteWorkspaceEnhancementTests: XCTestCase {
-    func testDesktopReviewPrefersGeneratedNotesWhenAvailable() throws {
+    func testDesktopReviewKeepsRawAndEnhancedNotesSeparate() throws {
         let source = try noteWorkspaceSource()
 
+        // Granola's "My notes / Enhanced" split: generated notes live in
+        // their own read-only pane and default to shown when present;
+        // the user's raw notes are never overwritten by generation
+        // (the old merge-into-one-editor behavior destroyed raw notes
+        // on the next autosave).
         XCTAssertTrue(
-            source.contains("let displayBody = generatedBody ?? savedBody"),
-            "Review mode should mirror web by showing generated notes when ai_outputs.summary exists."
+            source.contains("enhancedBody = generatedBody ?? \"\""),
+            "Generated notes should hydrate the enhanced pane, not the raw editor."
+        )
+        XCTAssertTrue(
+            source.contains("showEnhanced = !(generatedBody ?? \"\").isEmpty"),
+            "Review mode should default to the Enhanced pane when generated notes exist."
+        )
+        XCTAssertTrue(
+            source.contains("reviewLastSaved = savedBody"),
+            "Autosave must track the RAW body — tracking generated content overwrote raw notes."
         )
         XCTAssertFalse(
-            source.contains("} else {\n                                displayBody = savedBody\n                            }"),
-            "Review mode should not hide generated notes merely because the raw note body is non-empty."
+            source.contains("let displayBody = generatedBody ?? savedBody"),
+            "The merged single-editor behavior should be gone."
         )
     }
 

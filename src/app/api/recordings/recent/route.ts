@@ -54,6 +54,7 @@ export async function GET(request: Request) {
     thumbnailUrl: r.thumbnailUrl,
     folderId: r.folderId,
     folderName: r.folderName,
+    suggestedFolderId: r.suggestedFolderId,
     attendees: r.attendees,
   }));
 

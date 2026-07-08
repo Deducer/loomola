@@ -284,6 +284,7 @@ struct RecentRecording: Identifiable, Equatable {
     var folderId: String?
     var folderName: String?
     var attendees: [RecentAttendeeDTO]
+    var suggestedFolderId: String?
 
     init(
         id: String,
@@ -297,7 +298,8 @@ struct RecentRecording: Identifiable, Equatable {
         thumbnailURL: URL?,
         folderId: String?,
         folderName: String?,
-        attendees: [RecentAttendeeDTO] = []
+        attendees: [RecentAttendeeDTO] = [],
+        suggestedFolderId: String? = nil
     ) {
         self.id = id
         self.slug = slug
@@ -311,6 +313,7 @@ struct RecentRecording: Identifiable, Equatable {
         self.folderId = folderId
         self.folderName = folderName
         self.attendees = attendees
+        self.suggestedFolderId = suggestedFolderId
     }
 
     init?(dto: RecentRecordingDTO) {
@@ -337,6 +340,7 @@ struct RecentRecording: Identifiable, Equatable {
         self.folderId = dto.folderId
         self.folderName = dto.folderName
         self.attendees = dto.attendees ?? []
+        self.suggestedFolderId = dto.suggestedFolderId
     }
 
     /// Builds a copy with overridden folder assignment. Used by the
@@ -345,6 +349,10 @@ struct RecentRecording: Identifiable, Equatable {
         var copy = self
         copy.folderId = folderId
         copy.folderName = folderName
+        if folderId != nil {
+            // Filing the note makes any pending suggestion moot.
+            copy.suggestedFolderId = nil
+        }
         return copy
     }
 }

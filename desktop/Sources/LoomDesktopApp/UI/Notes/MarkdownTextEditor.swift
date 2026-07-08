@@ -26,6 +26,9 @@ struct MarkdownTextEditor: NSViewRepresentable {
     @Binding var measuredHeight: CGFloat
     let placeholder: String
     let isFocused: FocusState<Bool>.Binding
+    /// False renders the same tokenized markdown read-only — used by the
+    /// Enhanced pane, where web remains the editor of record.
+    var isEditable: Bool = true
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSScrollView()
@@ -58,6 +61,7 @@ struct MarkdownTextEditor: NSViewRepresentable {
         textView.textContainerInset = NSSize(width: 0, height: 4)
         textView.delegate = context.coordinator
         textView.placeholderString = placeholder
+        textView.isEditable = isEditable
         textView.string = text
         context.coordinator.applyAttributes(to: textView)
         context.coordinator.reportHeight(for: textView)
@@ -68,6 +72,7 @@ struct MarkdownTextEditor: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? MarkdownTextView else { return }
+        textView.isEditable = isEditable
         textView.textContainer?.containerSize = NSSize(width: scrollView.contentSize.width, height: CGFloat.greatestFiniteMagnitude)
         if textView.string != text {
             // External update (e.g., body fetched from server) —

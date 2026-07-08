@@ -138,6 +138,38 @@ actor BackendClient {
         try await get(path: "/api/people")
     }
 
+    func speakerAssignments(mediaId: String) async throws -> [SpeakerAssignmentDTO] {
+        try await get(path: "/api/speaker-assignments/\(mediaId)")
+    }
+
+    func acceptSpeakerSuggestion(recordingId: String, speakerIdx: Int, personId: String) async throws {
+        let _: EmptyResponse = try await post(
+            path: "/api/recordings/\(recordingId)/speaker-suggestions/accept",
+            body: SpeakerSuggestionAcceptRequest(speakerIdx: speakerIdx, personId: personId)
+        )
+    }
+
+    func dismissSpeakerSuggestion(recordingId: String, speakerIdx: Int) async throws {
+        let _: EmptyResponse = try await post(
+            path: "/api/recordings/\(recordingId)/speaker-suggestions/dismiss",
+            body: SpeakerSuggestionDismissRequest(speakerIdx: speakerIdx)
+        )
+    }
+
+    func acceptSuggestedFolder(recordingId: String) async throws {
+        let _: EmptyResponse = try await post(
+            path: "/api/recordings/\(recordingId)/suggested-folder/accept",
+            body: EmptyRequest()
+        )
+    }
+
+    func dismissSuggestedFolder(recordingId: String) async throws {
+        let _: EmptyResponse = try await post(
+            path: "/api/recordings/\(recordingId)/suggested-folder/dismiss",
+            body: EmptyRequest()
+        )
+    }
+
     func listNoteTemplates() async throws -> NoteTemplatesResponse {
         try await get(path: "/api/note-templates")
     }
@@ -866,6 +898,8 @@ struct RecentRecordingDTO: Decodable, Equatable, Sendable {
     let folderId: String?
     let folderName: String?
     let attendees: [RecentAttendeeDTO]?
+    /// Active G-M12 folder suggestion (unfiled + undismissed only).
+    let suggestedFolderId: String?
 
     init(
         id: String,
@@ -879,7 +913,8 @@ struct RecentRecordingDTO: Decodable, Equatable, Sendable {
         folderName: String?,
         attendees: [RecentAttendeeDTO]? = nil,
         status: String? = nil,
-        transcriptReady: Bool? = nil
+        transcriptReady: Bool? = nil,
+        suggestedFolderId: String? = nil
     ) {
         self.id = id
         self.slug = slug
@@ -893,7 +928,25 @@ struct RecentRecordingDTO: Decodable, Equatable, Sendable {
         self.folderId = folderId
         self.folderName = folderName
         self.attendees = attendees
+        self.suggestedFolderId = suggestedFolderId
     }
+}
+
+struct SpeakerAssignmentDTO: Decodable, Equatable, Sendable {
+    let speakerIdx: Int
+    let personId: String?
+    let displayLabelOverride: String?
+    let isSuggestion: Bool
+    let dismissedAt: String?
+}
+
+private struct SpeakerSuggestionAcceptRequest: Encodable {
+    let speakerIdx: Int
+    let personId: String
+}
+
+private struct SpeakerSuggestionDismissRequest: Encodable {
+    let speakerIdx: Int
 }
 
 struct RecentAttendeeDTO: Decodable, Equatable, Sendable, Identifiable {
