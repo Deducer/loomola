@@ -503,6 +503,33 @@ export const speakerAssignments = pgTable(
 // dictionary_terms — shared vocabulary for transcription
 // ---------------------------------------------------------------------------
 
+// Per-user note templates (Stage 18). Built-in templates stay in
+// src/lib/ai/note-templates.ts; personal templates live here so a
+// public codebase never carries anyone's private meeting shapes.
+// `id` is a text slug so a template moved out of the code keeps its id
+// and existing notes' template_id references keep resolving.
+export const noteTemplates = pgTable(
+  "note_templates",
+  {
+    ownerId: uuid("owner_id").notNull(),
+    id: text("id").notNull(),
+    name: text("name").notNull(),
+    category: text("category").notNull().default("Custom"),
+    description: text("description").notNull().default(""),
+    meetingContext: text("meeting_context").notNull(),
+    sections: jsonb("sections").notNull().default([]),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.ownerId, t.id] }),
+  })
+);
+
 export const dictionaryTerms = pgTable(
   "dictionary_terms",
   {

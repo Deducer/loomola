@@ -44,23 +44,7 @@ export const SYSTEM_NOTE_TEMPLATES: NoteTemplate[] = [
       { title: "Next milestone", prompt: "Clear next steps and accountability." },
     ],
   },
-  {
-    id: "sydney-ian-relationship-call",
-    name: "Sydney and Ian relationship call",
-    category: "Personal",
-    description: "Personal 1:1 calls between Sydney and Ian while getting to know each other.",
-    meetingContext:
-      "This is a personal 1:1 call between Ian Cross and Sydney McCoy in a social and romantic context. They are still getting to know each other, so the notes should preserve emotional nuance, curiosity, attraction, compatibility signals, logistical plans, and meaningful personal details without making the call feel clinical or transactional. Default speaker mapping: Ian is the user, self, microphone, or Me channel; Sydney is the remote call audio, Them, or Call audio channel. Use Ian and Sydney by name when attributing what each person shared. Distinguish clearly between what was explicitly said and any gentle interpretation; do not overstate certainty, diagnose, or invent relationship conclusions.",
-    sections: [
-      { title: "Connection snapshot", prompt: "The overall feel of the call, including warmth, playfulness, intimacy, momentum, or distance." },
-      { title: "What Sydney shared", prompt: "Personal details, stories, desires, concerns, values, preferences, plans, or emotional texture Sydney shared." },
-      { title: "What Ian shared", prompt: "Personal details, stories, desires, concerns, values, preferences, plans, or emotional texture Ian shared." },
-      { title: "Relationship signals", prompt: "Signals of compatibility, mutual curiosity, attraction, trust, friction, or uncertainty, labeled as signals rather than conclusions." },
-      { title: "Plans and logistics", prompt: "Future calls, visits, timing, travel, events, promises, or practical follow-ups mentioned." },
-      { title: "Questions to revisit", prompt: "Open questions, topics to ask about later, things worth clarifying, and threads that may deepen the connection." },
-    ],
-  },
-  {
+{
     id: "customer-discovery",
     name: "Customer discovery",
     category: "Commercial",
@@ -177,39 +161,6 @@ export const SYSTEM_NOTE_TEMPLATES: NoteTemplate[] = [
       { title: "Implications", prompt: "What this means for the user's work, decisions, or research." },
       { title: "Quotes and memorable phrasing", prompt: "Short, important phrasing only when present in the notes or transcript." },
       { title: "Follow-up", prompt: "Questions to investigate, ideas to try, or references to find." },
-    ],
-  },
-  {
-    id: "living-flow-next-level-group-call",
-    name: "Living Flow Next Level group call",
-    category: "Spiritual practice",
-    description: "Weekly meditation group with teaching, group Q&A, and integration.",
-    meetingContext:
-      "This is a Living Flow Next Level weekly meditation and spiritual group call. The call usually includes an opening meditation, a teaching from Javier, group questions and answers, and a closing meditation. Capture the lived teaching, practical guidance, questions, practices, and integration themes. Respect the spiritual language used in the call, but do not invent mystical claims or summarize silent meditation periods unless guidance was spoken.",
-    sections: [
-      { title: "Session arc", prompt: "The overall flow of the call, including meditation, teaching, Q&A, and closing integration when present." },
-      { title: "Opening meditation", prompt: "Guidance, themes, instructions, or experiential cues from the opening meditation; omit silent portions with no spoken content." },
-      { title: "Javier's teaching", prompt: "Core teaching, stories, distinctions, metaphors, practices, and spiritual principles Javier emphasized." },
-      { title: "Group Q&A", prompt: "Questions from participants and Javier's answers, grouped by topic or person when names are clear." },
-      { title: "Practices and invitations", prompt: "Exercises, contemplations, homework, ways of practicing during the week, and concrete integration guidance." },
-      { title: "Closing meditation and takeaways", prompt: "Closing practice guidance, final reminders, and the most important takeaways to carry forward." },
-    ],
-  },
-  {
-    id: "project-win-weekly-sync",
-    name: "Project Win weekly sync",
-    category: "Project Win",
-    description: "Ian and Abb's weekly founder sync for Project Win LLC.",
-    meetingContext:
-      "This is the weekly Project Win LLC founder sync between Ian Cross and Abb Kapoor. Default speaker mapping: Ian is the user, self, microphone, or Me channel; Abb is the remote call audio, Them, or Call audio channel. Use Ian and Abb by name when attributing viewpoints, task ownership, decisions, and uncertainty. Turn the call into an operating record for the Project Win OS: capture founder context, key topics, actual decisions, singular-owner action items, new or updated venture ideas, open questions, and parking-lot items. Be generous about ideas, strict about decisions, and never invent owners, due dates, or commitments.",
-    sections: [
-      { title: "Summary", prompt: "A concise operating summary of what happened, what changed, and what matters before the next sync." },
-      { title: "Founder context", prompt: "Personal, professional, capacity, or relationship context that materially affects Project Win execution." },
-      { title: "Key topics", prompt: "Main discussion threads, grouped by project, venture, operating-system topic, or strategic question." },
-      { title: "Decisions made", prompt: "Only actual agreements or explicit commitments, with rationale and who the decision belongs to when clear." },
-      { title: "Action items", prompt: "Specific next actions with a single owner, due dates or dependencies when stated, and unclear fields marked rather than invented." },
-      { title: "Ideas and opportunities", prompt: "New venture ideas, product angles, distribution plays, validation paths, or updates to existing Project Win ideas." },
-      { title: "Open questions and parking lot", prompt: "Unresolved questions, deferred topics, risks, and items to revisit in a future sync." },
     ],
   },
 ];

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isKnownNoteTemplateId } from "@/db/queries/note-templates";
 import { z } from "zod";
 import {
   getAudioNoteEnhancementStatus,
@@ -14,7 +15,6 @@ import { enableGranola } from "@/lib/feature-flags";
 import { requireAuth } from "@/lib/require-auth";
 import {
   DEFAULT_NOTE_TEMPLATE_ID,
-  isSystemNoteTemplateId,
 } from "@/lib/ai/note-templates";
 
 const enhanceRequestSchema = z.object({
@@ -129,7 +129,7 @@ export async function POST(
   }
   const templateId =
     parsed.data.templateId ?? data.noteTemplateId ?? DEFAULT_NOTE_TEMPLATE_ID;
-  if (!isSystemNoteTemplateId(templateId)) {
+  if (!(await isKnownNoteTemplateId(user.id, templateId))) {
     return NextResponse.json({ error: "unknown_template" }, { status: 400 });
   }
   if (templateId !== data.noteTemplateId) {

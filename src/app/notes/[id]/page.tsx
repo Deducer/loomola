@@ -7,6 +7,10 @@ import {
   listNoteAttachments,
 } from "@/db/queries/notes";
 import { listPeople } from "@/db/queries/people";
+import {
+  listNoteTemplatesForOwner,
+  resolveNoteTemplate,
+} from "@/db/queries/note-templates";
 import { listSpeakerAssignments } from "@/db/queries/speaker-assignments";
 import { listFoldersForOwner } from "@/db/queries/folders";
 import {
@@ -17,8 +21,6 @@ import { resolveObsidianPath } from "@/lib/notes/obsidian-path";
 import type { Word } from "@/lib/viewer/paragraphs";
 import {
   DEFAULT_NOTE_TEMPLATE_ID,
-  getNoteTemplate,
-  listNoteTemplates,
 } from "@/lib/ai/note-templates";
 
 export default async function NotesPage({
@@ -73,14 +75,17 @@ export default async function NotesPage({
       }))}
       initialBody={data.note?.body ?? ""}
       initialTemplateId={
-        getNoteTemplate(
-          data.note?.templateId ??
-            data.aiOutput?.templateId ??
-            DEFAULT_NOTE_TEMPLATE_ID
+        (
+          await resolveNoteTemplate(
+            user.id,
+            data.note?.templateId ??
+              data.aiOutput?.templateId ??
+              DEFAULT_NOTE_TEMPLATE_ID
+          )
         ).id
       }
       initialGeneratedTemplateId={data.aiOutput?.templateId ?? null}
-      templates={listNoteTemplates()}
+      templates={await listNoteTemplatesForOwner(user.id)}
       audioUrl={audioUrl}
       waveformUrl={waveformUrl}
       transcriptText={data.transcript?.fullText ?? ""}

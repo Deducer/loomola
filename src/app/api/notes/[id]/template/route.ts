@@ -3,7 +3,7 @@ import { z } from "zod";
 import { upsertNoteTemplate } from "@/db/queries/notes";
 import { enableGranola } from "@/lib/feature-flags";
 import { requireAuth } from "@/lib/require-auth";
-import { isSystemNoteTemplateId } from "@/lib/ai/note-templates";
+import { isKnownNoteTemplateId } from "@/db/queries/note-templates";
 
 const templateSchema = z.object({
   templateId: z.string().min(1),
@@ -26,7 +26,7 @@ export async function PATCH(
   if (!parsed.success) {
     return NextResponse.json({ error: "template_required" }, { status: 400 });
   }
-  if (!isSystemNoteTemplateId(parsed.data.templateId)) {
+  if (!(await isKnownNoteTemplateId(user.id, parsed.data.templateId))) {
     return NextResponse.json({ error: "unknown_template" }, { status: 400 });
   }
 

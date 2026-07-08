@@ -28,6 +28,7 @@ import {
   type NoteTemplate,
 } from "@/lib/ai/note-templates";
 import { getUserPreferences } from "@/db/queries/user-preferences";
+import { resolveNoteTemplate } from "@/db/queries/note-templates";
 import { listAttendeeNamesForMedia } from "@/db/queries/people";
 import { buildSummaryLanguageInstruction } from "@/lib/preferences/user-preferences";
 import { normalizeGeneratedNotesMarkdown } from "@/lib/ai/normalize-generated-notes";
@@ -271,7 +272,7 @@ async function runTitleSummaryJobInner(
     const prompt = buildAudioNotesEnhancementPrompt({
       title: media.title,
       sourceContextHint: media.sourceContextHint,
-      template: getNoteTemplate(note?.templateId),
+      template: await resolveNoteTemplate(media.ownerId, note?.templateId),
       outputLanguageInstruction: buildSummaryLanguageInstruction({
         summaryLanguage: preferences.summaryLanguage,
         transcriptLanguage: transcript.language,
