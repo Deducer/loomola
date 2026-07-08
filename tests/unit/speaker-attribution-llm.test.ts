@@ -8,24 +8,24 @@ import {
 
 const TRANSCRIPT = [
   "Welcome everyone let's get started",
-  "Thanks Neely happy to be here",
-  "Bhaskar what do you think about the entrainment defaults",
+  "Thanks Maya happy to be here",
+  "Priya what do you think about the entrainment defaults",
   "I think we should keep singing bowls as the default",
 ].join("\n");
 
 function raw(overrides: Partial<RawAttribution>): RawAttribution {
   return {
     speakerIdx: 1,
-    attendeeName: "Neely",
+    attendeeName: "Maya",
     confidence: "high",
-    evidence: "Thanks Neely happy to be here",
+    evidence: "Thanks Maya happy to be here",
     ...overrides,
   };
 }
 
 describe("verifyAttributions — the never-misattribute gate", () => {
   const base = {
-    attendeeNames: ["Neely", "Bhaskar", "Ann Callison"],
+    attendeeNames: ["Maya", "Priya", "Sam Ortiz"],
     speakerIdxs: [1, 2, 3],
     transcriptText: TRANSCRIPT,
   };
@@ -35,15 +35,15 @@ describe("verifyAttributions — the never-misattribute gate", () => {
     expect(result).toEqual([
       {
         speakerIdx: 1,
-        attendeeName: "Neely",
-        evidence: "Thanks Neely happy to be here",
+        attendeeName: "Maya",
+        evidence: "Thanks Maya happy to be here",
       },
     ]);
   });
 
   it("normalizes punctuation and casing when matching evidence", () => {
     const result = verifyAttributions({
-      raw: [raw({ evidence: "Thanks, Neely — happy to be here!" })],
+      raw: [raw({ evidence: "Thanks, Maya — happy to be here!" })],
       ...base,
     });
     expect(result).toHaveLength(1);
@@ -51,7 +51,7 @@ describe("verifyAttributions — the never-misattribute gate", () => {
 
   it("drops attributions whose evidence is not in the transcript", () => {
     const result = verifyAttributions({
-      raw: [raw({ evidence: "Neely said she would handle the rollout" })],
+      raw: [raw({ evidence: "Maya said she would handle the rollout" })],
       ...base,
     });
     expect(result).toEqual([]);
@@ -87,25 +87,25 @@ describe("verifyAttributions — the never-misattribute gate", () => {
   it("a conflict drops EVERY involved attribution, not the loser", () => {
     const result = verifyAttributions({
       raw: [
-        raw({ speakerIdx: 1, attendeeName: "Neely" }),
+        raw({ speakerIdx: 1, attendeeName: "Maya" }),
         raw({
           speakerIdx: 2,
-          attendeeName: "Neely",
-          evidence: "Bhaskar what do you think about the entrainment defaults",
+          attendeeName: "Maya",
+          evidence: "Priya what do you think about the entrainment defaults",
         }),
         raw({
           speakerIdx: 3,
-          attendeeName: "Bhaskar",
+          attendeeName: "Priya",
           evidence: "I think we should keep singing bowls as the default",
         }),
       ],
       ...base,
     });
-    // Neely claimed by two speakers → both dropped; Bhaskar survives.
+    // Maya claimed by two speakers → both dropped; Priya survives.
     expect(result).toEqual([
       {
         speakerIdx: 3,
-        attendeeName: "Bhaskar",
+        attendeeName: "Priya",
         evidence: "I think we should keep singing bowls as the default",
       },
     ]);
@@ -113,10 +113,10 @@ describe("verifyAttributions — the never-misattribute gate", () => {
 
   it("matches attendee names case-insensitively but returns canonical spelling", () => {
     const result = verifyAttributions({
-      raw: [raw({ attendeeName: "neely" })],
+      raw: [raw({ attendeeName: "maya" })],
       ...base,
     });
-    expect(result[0]?.attendeeName).toBe("Neely");
+    expect(result[0]?.attendeeName).toBe("Maya");
   });
 });
 
@@ -144,7 +144,7 @@ describe("buildAttributionTranscript", () => {
         { speakerIdx: 0, startSec: 0, text: "Hello" },
         { speakerIdx: 1, startSec: 65, text: "Hi there" },
       ],
-      attendeeNames: ["Neely"],
+      attendeeNames: ["Maya"],
     });
     expect(text).toBe("[Speaker 1 @ 0:00] Hello\n[Speaker 2 @ 1:05] Hi there");
   });
@@ -158,15 +158,15 @@ describe("buildAttributionTranscript", () => {
     const utterances = [
       ...filler,
       { speakerIdx: 1, startSec: 3000, text: "before the mention" },
-      { speakerIdx: 0, startSec: 3010, text: "thanks Neely that was great" },
+      { speakerIdx: 0, startSec: 3010, text: "thanks Maya that was great" },
       { speakerIdx: 1, startSec: 3020, text: "after the mention" },
     ];
     const text = buildAttributionTranscript({
       utterances,
-      attendeeNames: ["Neely"],
+      attendeeNames: ["Maya"],
       maxChars: 6000,
     });
-    expect(text).toContain("thanks Neely that was great");
+    expect(text).toContain("thanks Maya that was great");
     expect(text).toContain("before the mention");
     expect(text).toContain("after the mention");
     expect(text).toContain("[…]");

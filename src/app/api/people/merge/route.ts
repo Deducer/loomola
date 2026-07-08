@@ -2,7 +2,7 @@
 // Body: { canonicalId: string, mergeIds: string[] }
 //
 // Combines N+1 `people` rows that turned out to be the same human (e.g.
-// "Bhaskar @vayulabs" and "Bhaskar @verda" — same person, two emails).
+// "chris@acme.com" and "chris@acme.dev" — same person, two emails).
 // In one transaction:
 //   1. Reassign every speaker_assignments.person_id from merged → canonical.
 //   2. Replace each merged row's display name/email in

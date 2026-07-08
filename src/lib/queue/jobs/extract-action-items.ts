@@ -49,7 +49,7 @@ export async function runActionItemsJob(
       ...(attendeeNames.length > 0
         ? [
             "",
-            `Known attendees: ${attendeeNames.join(", ")}. The transcript was produced by automatic speech recognition, which frequently renders these names with a different but similar-sounding spelling (e.g. "Anne" for "Ann", "Bosco" for "Bhaskar") — any name in the transcript that sounds like one of the attendees IS that attendee. Always write the attendee's exact spelling from this list, never the transcript's variant.`,
+            `Known attendees: ${attendeeNames.join(", ")}. The transcript was produced by automatic speech recognition, which frequently renders these names with a different but similar-sounding spelling (e.g. "Anne" for "Ann", "Kris" for "Chris") — any name in the transcript that sounds like one of the attendees IS that attendee. Always write the attendee's exact spelling from this list, never the transcript's variant.`,
           ]
         : []),
       "",

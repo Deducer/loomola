@@ -38,7 +38,7 @@ This repo hosts **two products on one codebase**, gated by a single env flag:
 | Resource | Where | Notes |
 |---|---|---|
 | Production domain | `https://loom.dissonance.cloud` | Coolify on Hostinger VPS, Traefik for TLS + routing |
-| GitHub repo | https://github.com/Deducer/loom-clone | Private; push to `main` → Coolify rebuilds + deploys |
+| GitHub repo | https://github.com/Deducer/loomola | Public (open-sourced); push to `main` → Coolify rebuilds + deploys. No secrets or personal/business-contact names in committed files — docs use generic examples. |
 | Coolify | (manual UI on the VPS) | Container env contains only `DOPPLER_TOKEN`; everything else is injected at boot |
 | Doppler project / config | `dissonance-cloud` → `prd_loom` | Non-inheriting branch config scoped to this app only |
 | Supabase project | `eghwhnxuvbguoayzdlof` (`loom-clone`) | Org: Dissonance Inc. (`fpbgreogfejqrurxqnvq`), region `us-east-1` |

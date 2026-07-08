@@ -3,7 +3,7 @@ import type { WordTimestamp } from "@/db/queries/transcripts";
 
 /**
  * Transcript-content speaker attribution (Stage 17). People address each
- * other by name constantly — "Thanks, Ann", "Bhaskar, what do you
+ * other by name constantly — "Thanks, Maya", "Chris, what do you
  * think?" — so an LLM pass over the diarized transcript can map voices
  * to attendees with actual evidence, unlike the positional G-M13 v1
  * mapping.
@@ -151,14 +151,14 @@ export function buildAttributionPrompt(params: {
     `Speakers to identify: ${params.speakerIdxs.map((i) => `Speaker ${i + 1}`).join(", ")}. speakerIdx in your output is ZERO-based (Speaker 1 → speakerIdx 0).`,
     "",
     "Evidence that counts:",
-    "- A speaker introduces themself: \"Hi, this is Bhaskar\" said BY that speaker.",
-    "- Direct address then response: \"What do you think, Ann?\" followed by a different speaker answering — the responder is Ann, IF the turn structure is unambiguous.",
-    "- A speaker is thanked or named immediately after finishing: \"Thanks, Neely\" right after Speaker 4's turn → Speaker 4 is Neely.",
+    "- A speaker introduces themself: \"Hi, this is Priya\" said BY that speaker.",
+    "- Direct address then response: \"What do you think, Maya?\" followed by a different speaker answering — the responder is Maya, IF the turn structure is unambiguous.",
+    "- A speaker is thanked or named immediately after finishing: \"Thanks, Sam\" right after Speaker 4's turn → Speaker 4 is Sam.",
     "- An unambiguous third-person reference that pins a specific voice to a name.",
     "",
     "Hard rules:",
     "- NEVER infer from speaking order, role, topic, or amount of speech. When evidence is indirect, ambiguous, or absent, output attendeeName null with confidence \"low\" for that speaker.",
-    "- Automatic transcription misspells names; a similar-sounding name IS the attendee (\"Anne\"→\"Ann\", \"Bosco\"→\"Bhaskar\"), but attendeeName must be the EXACT spelling from the attendee list.",
+    "- Automatic transcription misspells names; a similar-sounding name IS the attendee (\"Anne\"→\"Ann\", \"Kris\"→\"Chris\"), but attendeeName must be the EXACT spelling from the attendee list.",
     "- evidence must be copied VERBATIM from the transcript (≤300 chars, the utterance text only, without the [Speaker N @ time] prefix). It is checked literally against the transcript; any paraphrase invalidates the attribution.",
     "- confidence \"high\" ONLY when exactly one reading of the evidence is possible.",
     "- One attendee cannot be two different speakers; if evidence points both ways, mark both null.",

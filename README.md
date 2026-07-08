@@ -338,7 +338,7 @@ For user-facing release notes, see [`CHANGELOG.md`](CHANGELOG.md).
 - **Team workspaces / sharing between users.** Invite-based multi-user exists (each user manages their own recordings, folders, and notes in isolation). Shared folders, cross-user permissions, and team-level workspaces are not built yet.
 - **iOS / Android / Windows desktop.** macOS only for native capture. The web `/record` flow works on any Chrome.
 - **Loom's advanced editing surface.** Basic trim (start / end) is shipped. Filler-word removal, edit-by-transcript, AI silence-removal, speed ramps, cursor-zoom, drawing — none built yet.
-- **Voice-biometric speaker recognition.** ("Here's Bhaskar's voice across all my recordings.") Spec'd, deferred. See [`docs/superpowers/specs/2026-05-04-speaker-recognition-design.md`](docs/superpowers/specs/2026-05-04-speaker-recognition-design.md).
+- **Voice-biometric speaker recognition.** ("Here's this teammate's voice across all my recordings.") Spec'd, deferred. See [`docs/superpowers/specs/2026-05-04-speaker-recognition-design.md`](docs/superpowers/specs/2026-05-04-speaker-recognition-design.md).
 - **Loom migration tool.** The Granola migrator (`migrate/`) is shipped; Loom import is a separate piece of work.
 - **Custom share-page domains** per brand profile (something like `videos.acme.com` mapping to a Loomola brand). Pairs with Brand Layer 2.
 

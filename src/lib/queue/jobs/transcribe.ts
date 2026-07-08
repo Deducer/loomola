@@ -44,7 +44,7 @@ export async function runTranscribeJob(data: TranscribeJobData): Promise<void> {
   const canonical = ownerId ? await getCanonicalTerms(ownerId) : [];
   // Attendee names are the highest-value keywords a meeting recording
   // has — Deepgram boosting them fixes most misheard names at the
-  // source ("Bosco" → "Bhaskar") without dictionary curation.
+  // source ("Anne" → "Ann") without dictionary curation.
   const attendeeNames = await listAttendeeNamesForMedia(mediaObjectId);
   const terms = Array.from(
     new Set([...attendeeNames, ...canonical.map((term) => term.term)])

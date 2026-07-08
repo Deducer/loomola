@@ -92,7 +92,7 @@ final class BackendClientModelsTests: XCTestCase {
           "folderId": null,
           "folderName": null,
           "attendees": [
-            { "id": "person-1", "name": "Javier", "email": "javier@example.com" }
+            { "id": "person-1", "name": "Jordan", "email": "jordan@example.com" }
           ]
         }
         """.data(using: .utf8)!
@@ -101,7 +101,7 @@ final class BackendClientModelsTests: XCTestCase {
         let recording = try XCTUnwrap(RecentRecording(dto: dto))
 
         XCTAssertEqual(recording.attendees.first?.id, "person-1")
-        XCTAssertEqual(recording.attendees.first?.name, "Javier")
+        XCTAssertEqual(recording.attendees.first?.name, "Jordan")
     }
 
     func testAssignAttendeesRequestUsesPersonIds() throws {

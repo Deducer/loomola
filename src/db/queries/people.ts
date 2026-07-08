@@ -8,7 +8,7 @@ export type Person = typeof people.$inferSelect;
  * Display names of a recording's attendees (media_objects.attendees is a
  * jsonb array of person UUIDs). Used to make transcription and AI runs
  * name-aware: attendee names go to Deepgram as keyword boosts and into
- * the enhancement prompts so "Bosco" comes out as "Bhaskar" without the
+ * the enhancement prompts so "Anne" comes out as "Ann" without the
  * user hand-curating dictionary variants.
  */
 export async function listAttendeeNamesForMedia(
