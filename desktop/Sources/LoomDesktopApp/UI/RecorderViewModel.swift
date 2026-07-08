@@ -3,7 +3,6 @@ import Combine
 import CoreGraphics
 import Foundation
 import OSLog
-import Supabase
 
 private let recorderLog = Logger(subsystem: "cloud.dissonance.loom.desktop", category: "recorder")
 
@@ -26,7 +25,16 @@ final class RecorderViewModel: ObservableObject {
         RecorderViewModel.defaultIncludeSystemAudioInAudioNote()
     @Published private(set) var statusMessage = "Sign in to capture with Loomola."
     @Published private(set) var configuration: DesktopAuthConfiguration?
-    @Published private(set) var activeRecordingKind: DesktopRecordingKind?
+    @Published private(set) var activeRecordingKind: DesktopRecordingKind? {
+        didSet {
+            guard oldValue != activeRecordingKind else { return }
+            if activeRecordingKind != nil {
+                startSessionKeepAlive()
+            } else {
+                stopSessionKeepAlive()
+            }
+        }
+    }
     @Published private(set) var finalizingRecordingKind: DesktopRecordingKind?
     @Published private(set) var activeAudioRecordingStartedAt: Date?
     @Published private(set) var activeAudioRecordingSlug: String?
@@ -332,46 +340,22 @@ final class RecorderViewModel: ObservableObject {
             recorderLog.notice("restoreSession — no authService configured (env missing?)")
             return
         }
-        recorderLog.notice("restoreSession — attempting restore (10s timeout)")
+        recorderLog.notice("restoreSession — attempting restore")
         do {
-            // Wrap in a continuation-based race so a hung
-            // Supabase `client.auth.setSession(...)` (which we've
-            // empirically seen never return on this user's setup)
-            // doesn't pin the user on the signed-out screen with
-            // a hidden task spinning forever. A regular task-group
-            // timeout doesn't help because cancelling the network
-            // task waits for it to exit, which it won't. Detached
-            // tasks + a one-shot resolver = no waiting for the
-            // hung task to acknowledge cancellation; it leaks
-            // until the process exits, which is fine.
-            let session: Session? = try await withCheckedThrowingContinuation { continuation in
-                let resolver = RestoreResolver(continuation)
-                Task {
-                    do {
-                        let result = try await authService.restoreSession()
-                        resolver.resolve(.success(result))
-                    } catch {
-                        resolver.resolve(.failure(error))
-                    }
-                }
-                Task {
-                    try? await Task.sleep(nanoseconds: 10_000_000_000)
-                    resolver.resolve(.failure(RestoreSessionError.timedOut))
-                }
-            }
-            if let session {
+            // Plain REST call with a bounded timeoutInterval — the old
+            // continuation-race workaround existed because the Supabase
+            // SDK's setSession could hang forever; the SDK is gone from
+            // the auth path.
+            if let session = try await authService.restoreSession() {
                 apply(session: session)
                 statusMessage = "Signed in from saved session."
                 recorderLog.notice("restoreSession — succeeded, applied session")
             } else {
                 recorderLog.notice("restoreSession — returned nil (no saved session)")
             }
-        } catch RestoreSessionError.timedOut {
-            recorderLog.error("restoreSession — timed out after 10s (Supabase setSession hung)")
-            await restoreFromStoredToken(reason: "setSession timed out")
         } catch {
             recorderLog.error("restoreSession — failed: \(error.localizedDescription, privacy: .public)")
-            await restoreFromStoredToken(reason: error.localizedDescription)
+            statusMessage = "Saved session could not be restored. Sign in again."
         }
     }
 
@@ -751,7 +735,9 @@ final class RecorderViewModel: ObservableObject {
             if let backendClient, isSignedIn {
                 lastBackendReadinessStatus = await checkBackendReadiness(backendClient)
             } else {
-                lastBackendReadinessStatus = .unreachable("Sign in before recording.")
+                // Signed out ≠ offline: the evaluator already surfaces its
+                // own "Sign in needed" blocker from isSignedIn.
+                lastBackendReadinessStatus = .unknown
             }
         }
 
@@ -1965,13 +1951,13 @@ final class RecorderViewModel: ObservableObject {
         }
     }
 
-    private func apply(session: Session) {
+    private func apply(session: StoredDesktopSession) {
         applyAuthenticatedSession(
             accessToken: session.accessToken,
-            email: session.user.email,
-            userId: session.user.id,
+            email: session.email,
+            userId: session.userId,
             status: "Signed in from saved session.",
-            logSource: "supabase session"
+            logSource: "stored session"
         )
     }
 
@@ -2026,30 +2012,41 @@ final class RecorderViewModel: ObservableObject {
         }
         refreshUserPreferencesFromBackend()
         scheduleReadinessRefresh(checkBackend: true)
+        autoRetryUnrescuedOrphans()
     }
 
-    private func restoreFromStoredToken(reason: String) async {
-        guard let authService else {
-            statusMessage = "Saved session could not be restored. Sign in again."
-            return
-        }
-        do {
-            guard let snapshot = try await authService.loadStoredSessionSnapshot() else {
-                statusMessage = "Saved session could not be restored. Sign in again."
-                recorderLog.notice("restoreSession fallback — no stored access token")
-                return
+    /// Signing in again IS the fix for an upload that failed on auth, so
+    /// don't make the user find Settings → Recovery → Retry afterwards —
+    /// push pending Recovery items up as soon as a session is available.
+    private func autoRetryUnrescuedOrphans() {
+        guard let backendClient else { return }
+        let pending = OrphanedRecordingStore.shared.orphans.filter { $0.rescuedAt == nil }
+        guard !pending.isEmpty, orphanRetryInProgress == nil else { return }
+        recorderLog.notice("auto-retrying \(pending.count, privacy: .public) orphaned recording(s) after sign-in")
+        statusMessage = "Uploading \(pending.count) recording\(pending.count == 1 ? "" : "s") saved in Recovery..."
+        Task { @MainActor in
+            let coordinator = OrphanRetryCoordinator(backend: backendClient)
+            var rescued = 0
+            for orphan in pending {
+                orphanRetryInProgress = orphan.id
+                do {
+                    let outcome = try await coordinator.retry(orphan)
+                    try? OrphanedRecordingStore.shared.markRescued(orphan, rescuedSlug: outcome.slug)
+                    rescued += 1
+                } catch {
+                    try? OrphanedRecordingStore.shared.updateError(orphan, error: error.localizedDescription)
+                    recorderLog.error("auto-retry failed: \(error.localizedDescription, privacy: .public)")
+                }
+                orphanRetryInProgress = nil
             }
-            applyAuthenticatedSession(
-                accessToken: snapshot.accessToken,
-                email: snapshot.email,
-                userId: snapshot.userId,
-                status: "Signed in from saved access token.",
-                logSource: "stored token fallback after \(reason)"
-            )
-            recorderLog.notice("restoreSession fallback — applied stored access token")
-        } catch {
-            statusMessage = "Saved session could not be restored. Sign in again."
-            recorderLog.error("restoreSession fallback — failed: \(error.localizedDescription, privacy: .public)")
+            if rescued == pending.count {
+                statusMessage = "Recovered \(rescued) recording\(rescued == 1 ? "" : "s") from Recovery."
+            } else {
+                statusMessage = "Recovered \(rescued) of \(pending.count) — check Settings → Recovery for the rest."
+            }
+            if rescued > 0 {
+                _recentService?.refresh()
+            }
         }
     }
 
@@ -2335,6 +2332,46 @@ final class RecorderViewModel: ObservableObject {
         }
     }
 
+    /// Long recordings outlive the 1-hour Supabase access token, and
+    /// discovering that at upload time means the audio strands in Recovery.
+    /// While a recording is active, keep the stored token comfortably fresh
+    /// (10-minute cadence, refresh when < 25 minutes remain) and warn the
+    /// user IMMEDIATELY if refresh fails hard, so they can sign in again
+    /// during the call instead of after it.
+    private var sessionKeepAliveTask: Task<Void, Never>?
+
+    private func startSessionKeepAlive() {
+        sessionKeepAliveTask?.cancel()
+        sessionKeepAliveTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 600 * 1_000_000_000)
+                guard !Task.isCancelled, let self else { return }
+                await self.keepSessionFreshDuringRecording()
+            }
+        }
+    }
+
+    private func stopSessionKeepAlive() {
+        sessionKeepAliveTask?.cancel()
+        sessionKeepAliveTask = nil
+    }
+
+    private func keepSessionFreshDuringRecording() async {
+        guard let authService else { return }
+        do {
+            if let snapshot = try await authService.freshenStoredSessionSnapshot(minimumRemaining: 1_500) {
+                accessToken = snapshot.accessToken
+            }
+        } catch let error as DesktopAuthRefreshError {
+            recorderLog.error("mid-recording session refresh failed hard: \(error.localizedDescription, privacy: .public)")
+            statusMessage = "Sign-in needs attention — sign in again now. The recording continues and is safe locally."
+        } catch {
+            // Transient network blips are retried on the next cycle; the
+            // recording itself never depends on this succeeding.
+            recorderLog.notice("mid-recording session refresh skipped: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     private func refreshStoredSessionBeforeRecordingStart() async throws {
         let snapshot: StoredDesktopSession?
         do {
@@ -2357,7 +2394,11 @@ final class RecorderViewModel: ObservableObject {
 
     private func handleAuthRefreshFailure(_ error: Error) {
         accessToken = nil
-        lastBackendReadinessStatus = .unreachable("Sign in again before recording or retrying Recovery.")
+        // Auth failure is not a server outage. Leave backend status
+        // unknown and let isSignedIn drive the "Sign in needed" blocker —
+        // reporting "Loomola is offline" here sent debugging down a
+        // network rabbit hole during the 2026-07-07 incident.
+        lastBackendReadinessStatus = .unknown
         recorderLog.error("auth refresh failed: \(error.localizedDescription, privacy: .public)")
 
         let isUploadingState: Bool
@@ -2476,32 +2517,3 @@ private enum AudioNoteStartRetryError: LocalizedError {
     }
 }
 
-enum RestoreSessionError: Error {
-    case timedOut
-}
-
-/// One-shot resolver for the restoreSession timeout race. The first
-/// caller wins; subsequent calls are silently ignored. Lock-protected
-/// so the two racing tasks don't double-resume the continuation.
-private final class RestoreResolver: @unchecked Sendable {
-    private let lock = NSLock()
-    private var continuation: CheckedContinuation<Session?, Error>?
-
-    init(_ continuation: CheckedContinuation<Session?, Error>) {
-        self.continuation = continuation
-    }
-
-    func resolve(_ result: Result<Session?, Error>) {
-        lock.lock()
-        guard let continuation else {
-            lock.unlock()
-            return
-        }
-        self.continuation = nil
-        lock.unlock()
-        switch result {
-        case .success(let value): continuation.resume(returning: value)
-        case .failure(let error): continuation.resume(throwing: error)
-        }
-    }
-}

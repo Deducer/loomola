@@ -1,6 +1,5 @@
 import Foundation
 import Security
-import Supabase
 
 enum AuthSessionStorageMode: Equatable {
     /// Tokens persisted to ~/Library/Application Support/LoomDesktop/auth-session.json
@@ -98,24 +97,12 @@ final class AuthSessionStore {
     /// Test-only accessor; mirrors the internal usesFileStore predicate.
     var usesFileStoreForTesting: Bool { usesFileStore }
 
-    func makeClient(configuration: DesktopAuthConfiguration) -> SupabaseClient {
-        SupabaseClient(
-            supabaseURL: configuration.supabaseURL,
-            supabaseKey: configuration.anonKey
-        )
-    }
-
     func saveAccessToken(_ token: String) throws {
         try save(value: token, account: "supabase-access-token")
     }
 
     func saveRefreshToken(_ token: String) throws {
         try save(value: token, account: "supabase-refresh-token")
-    }
-
-    func save(session: Session) throws {
-        try saveAccessToken(session.accessToken)
-        try saveRefreshToken(session.refreshToken)
     }
 
     func loadAccessToken() throws -> String? {

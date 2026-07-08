@@ -160,6 +160,78 @@ final class AuthSessionStoreTests: XCTestCase {
         }
     }
 
+    func testSignInPersistsGrantedTokensAndReturnsSession() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let store = AuthSessionStore(storageMode: .file, fileURL: directory.appending(path: "auth-session.json"))
+        let grantedToken = Self.jwt(exp: 1_893_456_000)
+        let service = DesktopAuthService(
+            configuration: DesktopAuthConfiguration(
+                apiBaseURL: URL(string: "https://loom.example")!,
+                supabaseURL: URL(string: "https://supabase.example")!,
+                anonKey: "anon"
+            ),
+            store: store,
+            refreshSession: { _ in
+                XCTFail("sign-in must not consume a refresh token")
+                throw DesktopAuthRefreshError.refreshFailed(statusCode: 500, bodyPreview: nil)
+            },
+            passwordGrant: { _, _ in
+                RefreshTokenResponse(accessToken: grantedToken, refreshToken: "refresh-granted")
+            }
+        )
+
+        let session = try await service.signIn(email: "ian@example.com", password: "pw")
+
+        XCTAssertEqual(session.accessToken, grantedToken)
+        XCTAssertEqual(session.email, "ian@example.com")
+        XCTAssertEqual(try store.loadAccessToken(), grantedToken)
+        XCTAssertEqual(try store.loadRefreshToken(), "refresh-granted")
+    }
+
+    func testSignOutClearsStoredTokens() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let store = AuthSessionStore(storageMode: .file, fileURL: directory.appending(path: "auth-session.json"))
+        try store.saveAccessToken(Self.jwt(exp: 1_893_456_000))
+        try store.saveRefreshToken("refresh-1")
+        let service = Self.makeService(store: store) { _ in
+            throw DesktopAuthRefreshError.refreshFailed(statusCode: 500, bodyPreview: nil)
+        }
+
+        try await service.signOut()
+
+        XCTAssertNil(try store.loadAccessToken())
+        XCTAssertNil(try store.loadRefreshToken())
+    }
+
+    func testRestoreSessionRefreshesExpiredStoredToken() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let store = AuthSessionStore(storageMode: .file, fileURL: directory.appending(path: "auth-session.json"))
+        try store.saveAccessToken(Self.jwt(exp: Date().timeIntervalSince1970 - 100))
+        try store.saveRefreshToken("refresh-1")
+        let refreshedToken = Self.jwt(exp: Date().timeIntervalSince1970 + 3_600)
+        let service = Self.makeService(store: store) { _ in
+            RefreshTokenResponse(accessToken: refreshedToken, refreshToken: "refresh-2")
+        }
+
+        let session = try await service.restoreSession()
+
+        XCTAssertEqual(session?.accessToken, refreshedToken)
+        XCTAssertEqual(try store.loadRefreshToken(), "refresh-2")
+    }
+
+    func testRestoreSessionReturnsNilWithNoStoredTokens() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let store = AuthSessionStore(storageMode: .file, fileURL: directory.appending(path: "auth-session.json"))
+        let service = Self.makeService(store: store) { _ in
+            XCTFail("no refresh should happen without stored tokens")
+            throw DesktopAuthRefreshError.refreshFailed(statusCode: 500, bodyPreview: nil)
+        }
+
+        let session = try await service.restoreSession()
+
+        XCTAssertNil(session)
+    }
+
     private static func makeService(
         store: AuthSessionStore,
         refreshSession: @escaping @Sendable (String) async throws -> RefreshTokenResponse

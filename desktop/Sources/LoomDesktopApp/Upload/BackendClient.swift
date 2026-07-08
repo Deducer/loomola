@@ -19,15 +19,78 @@ actor BackendClient {
     }
 
     func startRecording(_ request: StartRecordingRequest) async throws -> StartRecordingResponse {
-        try await post(path: "/api/recordings/start", body: request)
+        try await withUploadRetry(label: "start", retryAmbiguousDrops: true) {
+            try await self.post(path: "/api/recordings/start", body: request)
+        }
     }
 
     func partURL(recordingId: String, request: PartURLRequest) async throws -> PartURLResponse {
-        try await post(path: "/api/recordings/\(recordingId)/part-url", body: request)
+        try await withUploadRetry(label: "part-url", retryAmbiguousDrops: true) {
+            try await self.post(path: "/api/recordings/\(recordingId)/part-url", body: request)
+        }
     }
 
     func complete(recordingId: String, request: CompleteRecordingRequest) async throws -> CompleteRecordingResponse {
-        try await post(path: "/api/recordings/\(recordingId)/complete", body: request)
+        try await withUploadRetry(label: "complete", retryAmbiguousDrops: false) {
+            try await self.post(path: "/api/recordings/\(recordingId)/complete", body: request)
+        }
+    }
+
+    /// Transient-failure retry for the upload path. A single brownout or
+    /// connect failure must not strand a recording in Recovery — the
+    /// 2026-07-05 232-minute note sat unrescued for two days because one
+    /// request timed out and was never retried.
+    ///
+    /// `retryAmbiguousDrops`: a timeout or mid-response connection loss
+    /// doesn't say whether the server processed the request. Fine to replay
+    /// for start/part-url; NOT for complete — replaying a complete that
+    /// actually succeeded server-side turns into a confusing multipart
+    /// error, so complete only retries failures that provably happened
+    /// before the app could handle the request (DNS, connect, TLS,
+    /// Traefik brownout page, gateway 5xx).
+    private func withUploadRetry<T>(
+        label: String,
+        retryAmbiguousDrops: Bool,
+        _ operation: () async throws -> T
+    ) async throws -> T {
+        let maxAttempts = 3
+        for attempt in 1...maxAttempts {
+            do {
+                return try await operation()
+            } catch {
+                guard attempt < maxAttempts,
+                      Self.isRetryableUploadError(error, includeAmbiguousDrops: retryAmbiguousDrops)
+                else { throw error }
+                log.notice("\(label, privacy: .public) transient failure attempt=\(attempt, privacy: .public): \(error.localizedDescription, privacy: .public) — retrying")
+                try await Task.sleep(nanoseconds: UInt64(attempt) * 2_000_000_000)
+            }
+        }
+        fatalError("unreachable: loop either returns or throws")
+    }
+
+    private static func isRetryableUploadError(_ error: Error, includeAmbiguousDrops: Bool) -> Bool {
+        if let backendError = error as? BackendClientError {
+            switch backendError {
+            case .serviceUnavailable:
+                return true
+            case .badStatus(let statusCode, _, _):
+                return statusCode == 429 || statusCode == 502 || statusCode == 503 || statusCode == 504
+            default:
+                return false
+            }
+        }
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed,
+                 .notConnectedToInternet, .secureConnectionFailed:
+                return true
+            case .timedOut, .networkConnectionLost:
+                return includeAmbiguousDrops
+            default:
+                return false
+            }
+        }
+        return false
     }
 
     func abort(recordingId: String) async throws {
