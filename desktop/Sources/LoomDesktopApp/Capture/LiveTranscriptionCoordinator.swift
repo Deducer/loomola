@@ -677,6 +677,21 @@ private final class LiveTranscriptionStream: @unchecked Sendable {
     private var pendingAudio: [Data] = []
     private var keepAliveTimer: DispatchSourceTimer?
     private(set) var requestId: String?
+    /// Reconnect-with-backoff state. A dropped socket (VPN toggle, wifi
+    /// handoff, sleep/wake) used to kill live captions for the rest of
+    /// the call: the immediate one-shot retry re-minted a token through
+    /// the SAME flapping network, failed, and set a terminal
+    /// failedMessage. Now transient failures schedule retries with
+    /// exponential backoff (2s → 30s cap) for as long as the recording
+    /// runs; only genuinely terminal errors (endpoint missing, auth)
+    /// give up.
+    private var reconnectAttempts = 0
+    private var reconnectScheduled = false
+    /// Deepgram stream timestamps restart at 0 on every connection.
+    /// Track the last transcribed moment and shift post-reconnect events
+    /// by it so segments stay on the recording's timeline.
+    private var timelineOffset: Double = 0
+    private var lastEventEnd: Double = 0
 
     init(
         source: LiveTranscriptAudioSource,
@@ -773,10 +788,17 @@ private final class LiveTranscriptionStream: @unchecked Sendable {
             } catch {
                 self.queue.async {
                     self.opening = false
-                    self.pendingAudio = []
-                    let message = Self.startFailureMessage(for: error)
-                    self.failedMessage = message
-                    self.onState(.failed(message))
+                    if Self.isTerminalStartFailure(error) {
+                        self.pendingAudio = []
+                        let message = Self.startFailureMessage(for: error)
+                        self.failedMessage = message
+                        self.onState(.failed(message))
+                    } else {
+                        // Transient (network blip mid-VPN-toggle, brownout):
+                        // keep buffering audio and retry with backoff.
+                        self.onState(.failed(Self.startFailureMessage(for: error)))
+                        self.scheduleReconnect()
+                    }
                 }
             }
         }
@@ -798,6 +820,37 @@ private final class LiveTranscriptionStream: @unchecked Sendable {
             }
         }
         return "Could not start Deepgram live transcription."
+    }
+
+    /// Token-mint failures that retrying can never fix: the endpoint
+    /// doesn't exist on this backend, or the session is signed out
+    /// (mid-recording keep-alive owns nagging about that).
+    private static func isTerminalStartFailure(_ error: Error) -> Bool {
+        guard let backendError = error as? BackendClientError else { return false }
+        switch backendError {
+        case .badStatus(401, _, _), .badStatus(403, _, _), .badStatus(404, _, _):
+            return true
+        case .serviceUnavailable(_, 404):
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func scheduleReconnect() {
+        guard !closing, !reconnectScheduled, failedMessage == nil else { return }
+        reconnectScheduled = true
+        reconnectAttempts += 1
+        let delay = min(30.0, pow(2.0, Double(min(reconnectAttempts, 5))))
+        liveTranscriptLog.notice(
+            "live transcript reconnect scheduled source=\(self.source.rawValue, privacy: .public) attempt=\(self.reconnectAttempts, privacy: .public) delay=\(delay, privacy: .public)s"
+        )
+        queue.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+            self.reconnectScheduled = false
+            guard !self.closing, self.failedMessage == nil else { return }
+            self.openIfNeeded()
+        }
     }
 
     private func openWebSocket(token: String, sampleRate: Int) {
@@ -825,6 +878,13 @@ private final class LiveTranscriptionStream: @unchecked Sendable {
         webSocket = task
         opening = false
         closing = false
+        // A fresh Deepgram connection restarts its clock at 0; anchor its
+        // events after everything the previous connection transcribed so
+        // segments stay on the recording's timeline. (Also fixes the
+        // pre-existing timestamp reset in the sample-rate reopen path.)
+        if lastEventEnd > 0 {
+            timelineOffset = lastEventEnd
+        }
         task.resume()
         startKeepAlive()
         receiveNext(on: task)
@@ -905,7 +965,11 @@ private final class LiveTranscriptionStream: @unchecked Sendable {
             pendingAudio = []
             return
         }
-        openIfNeeded()
+        // Backoff instead of an immediate reopen: during a VPN toggle or
+        // wifi handoff the network is still down "right now", and the
+        // immediate retry's token mint was exactly what used to fail
+        // terminally.
+        scheduleReconnect()
     }
 
     private func handle(_ message: URLSessionWebSocketTask.Message) {
@@ -933,19 +997,24 @@ private final class LiveTranscriptionStream: @unchecked Sendable {
         else { return }
 
         if event.isFinal == true {
+            // A successfully decoded Results event means the connection is
+            // healthy again — reset the reconnect backoff.
+            reconnectAttempts = 0
+            let offset = timelineOffset
             let words = (alternative.words ?? []).compactMap { word -> LiveTranscriptWord? in
                 let text = word.punctuatedWord ?? word.word
                 guard !text.isEmpty else { return nil }
                 return LiveTranscriptWord(
                     word: text,
-                    start: word.start,
-                    end: word.end,
+                    start: word.start + offset,
+                    end: word.end + offset,
                     confidence: word.confidence,
                     source: source
                 )
             }
-            let start = words.first?.start ?? event.start ?? 0
-            let end = words.last?.end ?? ((event.start ?? 0) + (event.duration ?? 0))
+            let start = words.first?.start ?? ((event.start ?? 0) + offset)
+            let end = words.last?.end ?? ((event.start ?? 0) + (event.duration ?? 0) + offset)
+            lastEventEnd = max(lastEventEnd, end)
             onResult(
                 .final(
                     LiveTranscriptSegment(

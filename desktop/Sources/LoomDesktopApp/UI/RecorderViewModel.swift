@@ -1208,6 +1208,12 @@ final class RecorderViewModel: ObservableObject {
         statusMessage = "Finalizing composite recording..."
 
         Task {
+            // Hoisted so the catch block can rescue a finalized MP4 into
+            // the orphan store (and reference the server row, if one was
+            // created) after any downstream failure.
+            var finalizedURL: URL?
+            var startedRecordingId: String?
+            var startedSlug: String?
             do {
                 // Stop screen capture first so no more frames arrive.
                 try? await screenCaptureCoordinator.stop()
@@ -1219,6 +1225,7 @@ final class RecorderViewModel: ObservableObject {
 
                 // Finalize composite MP4.
                 let outputURL = try await compositor.finish()
+                finalizedURL = outputURL
                 let durationSeconds = max(Date().timeIntervalSince(startedAt), 1)
                 let outputBytes = Self.fileSize(outputURL)
                 recorderLog.notice(
@@ -1237,6 +1244,8 @@ final class RecorderViewModel: ObservableObject {
                 recorderLog.notice(
                     "video upload: backend row created id=\(start.recordingId, privacy: .public) slug=\(start.slug, privacy: .public)"
                 )
+                startedRecordingId = start.recordingId
+                startedSlug = start.slug
                 let uploader = MultipartUploadCoordinator(backend: backendClient)
                 statusMessage = "Uploading video..."
                 let parts = try await uploader.uploadFile(
@@ -1274,8 +1283,28 @@ final class RecorderViewModel: ObservableObject {
                 _recentService?.refresh()
             } catch {
                 recorderLog.error("video upload: failed \(error.localizedDescription, privacy: .public)")
-                state = .failed(message: error.localizedDescription)
-                statusMessage = "Composite upload failed: \(error.localizedDescription)"
+                // Rescue the finalized MP4 into the durable orphan store —
+                // it lives in a temp dir the OS can purge, and until Stage
+                // 12.5 a failed video upload was simply gone (audio had
+                // Recovery since Stage 9; video did not).
+                var recoveryHint = error.localizedDescription
+                if let finalizedURL {
+                    do {
+                        try OrphanedRecordingStore.shared.captureVideo(
+                            compositeURL: finalizedURL,
+                            startedAt: startedAt,
+                            durationSeconds: max(Date().timeIntervalSince(startedAt), 1),
+                            originalRecordingId: startedRecordingId,
+                            originalSlug: startedSlug,
+                            lastError: error.localizedDescription
+                        )
+                        recoveryHint += " Recording saved locally — open Settings → Recovery to retry."
+                    } catch {
+                        recorderLog.error("video orphan capture failed: \(error.localizedDescription, privacy: .public)")
+                    }
+                }
+                state = .failed(message: recoveryHint)
+                statusMessage = "Composite upload failed: \(recoveryHint)"
             }
         }
     }

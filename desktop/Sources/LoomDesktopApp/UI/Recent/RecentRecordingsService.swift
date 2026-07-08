@@ -26,10 +26,18 @@ final class RecentRecordingsService: ObservableObject {
     /// refresh re-shows the skeleton briefly, which reads as a
     /// distracting flash.
     @Published private(set) var hasLoaded = false
+    /// True while a "Show older" page fetch is in flight.
+    @Published private(set) var isLoadingMore = false
+    /// Whether the last page fetch for each kind came back full —
+    /// i.e. older items probably exist. Drives the "Show older"
+    /// affordance.
+    @Published private(set) var hasMoreAudio = false
+    @Published private(set) var hasMoreVideo = false
 
     private let backend: BackendClient
     private let limit: Int
     private var refreshTask: Task<Void, Never>?
+    private var loadMoreTask: Task<Void, Never>?
     private var refreshTimerTask: Task<Void, Never>?
     /// Observer for `NSApplication.didBecomeActiveNotification`. We
     /// keep a reference so we could remove it on deinit, but Swift 6
@@ -80,8 +88,14 @@ final class RecentRecordingsService: ObservableObject {
         // each media kind separately prevents a run of recent notes
         // from crowding all Loom videos out of the desktop's Video
         // Recent section.
-        async let videoItemsResponse = fetchRecent(kind: "video")
-        async let audioItemsResponse = fetchRecent(kind: "audio")
+        //
+        // Refresh re-fetches at least as many items as are currently
+        // loaded (capped at the server's 50) so the periodic timer
+        // doesn't truncate a list the user paged deeper into.
+        let videoLimit = min(50, max(limit, loadedCount(of: .video)))
+        let audioLimit = min(50, max(limit, loadedCount(of: .audio)))
+        async let videoItemsResponse = fetchRecent(kind: "video", limit: videoLimit)
+        async let audioItemsResponse = fetchRecent(kind: "audio", limit: audioLimit)
         async let foldersResponse = backend.listFolders()
 
         let (videoResult, audioResult) = await (videoItemsResponse, audioItemsResponse)
@@ -94,6 +108,7 @@ final class RecentRecordingsService: ObservableObject {
         case .success(let response):
             hadSuccessfulSection = true
             combined.append(contentsOf: response.items)
+            hasMoreVideo = response.items.count >= videoLimit
         case .failure(let error):
             failures.append("videos: \(error.localizedDescription)")
             log.error("video recents refresh failed: \(error.localizedDescription, privacy: .public)")
@@ -103,6 +118,7 @@ final class RecentRecordingsService: ObservableObject {
         case .success(let response):
             hadSuccessfulSection = true
             combined.append(contentsOf: response.items)
+            hasMoreAudio = response.items.count >= audioLimit
         case .failure(let error):
             failures.append("notes: \(error.localizedDescription)")
             log.error("audio recents refresh failed: \(error.localizedDescription, privacy: .public)")
@@ -133,11 +149,42 @@ final class RecentRecordingsService: ObservableObject {
         }
     }
 
-    private func fetchRecent(kind: String) async -> Result<RecentRecordingsResponse, Error> {
+    private func fetchRecent(kind: String, limit: Int, offset: Int = 0) async -> Result<RecentRecordingsResponse, Error> {
         do {
-            return .success(try await backend.recentRecordings(limit: limit, kind: kind))
+            return .success(try await backend.recentRecordings(limit: limit, kind: kind, offset: offset))
         } catch {
             return .failure(error)
+        }
+    }
+
+    private func loadedCount(of kind: RecentRecording.Kind) -> Int {
+        items.filter { $0.kind == kind }.count
+    }
+
+    /// Fetch the next page of older items for one kind and append.
+    /// Duplicates (an item that shifted pages because something newer
+    /// arrived) are dropped by id.
+    func loadMore(kind: RecentRecording.Kind) {
+        guard loadMoreTask == nil else { return }
+        loadMoreTask = Task { @MainActor in
+            defer { loadMoreTask = nil }
+            isLoadingMore = true
+            defer { isLoadingMore = false }
+            let offset = loadedCount(of: kind)
+            let result = await fetchRecent(kind: kind.rawValue, limit: limit, offset: offset)
+            switch result {
+            case .success(let response):
+                let known = Set(items.map(\.id))
+                let fresh = response.items
+                    .compactMap { RecentRecording(dto: $0) }
+                    .filter { !known.contains($0.id) }
+                items = (items + fresh).sorted { $0.createdAt > $1.createdAt }
+                let more = response.items.count >= limit
+                if kind == .audio { hasMoreAudio = more } else { hasMoreVideo = more }
+                log.notice("loadMore \(kind.rawValue, privacy: .public) — +\(fresh.count, privacy: .public) item(s), offset \(offset, privacy: .public)")
+            case .failure(let error):
+                log.error("loadMore \(kind.rawValue, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+            }
         }
     }
 

@@ -150,6 +150,7 @@ export async function recentMediaItems(params: {
   ownerId: string;
   type?: MediaType;
   limit: number;
+  offset?: number;
   daysBack?: number;
   // ai_outputs.summary can run to 200K chars per row. The desktop recent
   // route never returns it, so it passes false to keep the bytes in
@@ -194,7 +195,8 @@ export async function recentMediaItems(params: {
     .leftJoin(transcripts, eq(transcripts.mediaObjectId, mediaObjects.id))
     .where(and(...conditions))
     .orderBy(desc(mediaObjects.createdAt))
-    .limit(params.limit);
+    .limit(params.limit)
+    .offset(params.offset ?? 0);
 
   const audioIds = rows.filter((row) => row.type === "audio").map((row) => row.id);
   const attachments =

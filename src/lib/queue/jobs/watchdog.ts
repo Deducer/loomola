@@ -2,6 +2,12 @@ import { db } from "@/db";
 import { mediaObjects } from "@/db/schema";
 import { and, eq, isNull, lt, sql } from "drizzle-orm";
 import { pruneExpiredNonces } from "@/lib/deepgram/callback-signature";
+import { sendEmail, isEmailConfigured } from "@/lib/mail/mailgun";
+import {
+  renderRecordingFailedEmail,
+  type FailedRecordingEmailItem,
+} from "@/lib/mail/templates/recording-failed";
+import { getSupabaseService } from "@/lib/supabase/service";
 
 export const WATCHDOG_JOB = "watchdog_stuck_recordings";
 export const WATCHDOG_CRON = "*/10 * * * *"; // every 10 minutes
@@ -59,6 +65,7 @@ export function stuckReasonFor(
  */
 export async function runWatchdogJob(now: Date = new Date()): Promise<number> {
   let total = 0;
+  const failedByOwner = new Map<string, FailedRecordingEmailItem[]>();
   for (const threshold of STUCK_THRESHOLDS) {
     const cutoff = new Date(now.getTime() - threshold.maxAgeMs);
     const rows = await db
@@ -75,15 +82,63 @@ export async function runWatchdogJob(now: Date = new Date()): Promise<number> {
           lt(mediaObjects.updatedAt, cutoff)
         )
       )
-      .returning({ id: mediaObjects.id });
+      .returning({
+        id: mediaObjects.id,
+        slug: mediaObjects.slug,
+        title: mediaObjects.title,
+        type: mediaObjects.type,
+        ownerId: mediaObjects.ownerId,
+        failureReason: mediaObjects.failureReason,
+      });
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
     for (const row of rows) {
       console.warn(
         `[watchdog] ${row.id}: stuck in '${threshold.status}' past ${Math.round(
           threshold.maxAgeMs / 60_000
         )}min — marked failed`
       );
+      const items = failedByOwner.get(row.ownerId) ?? [];
+      items.push({
+        title: row.title ?? "Untitled recording",
+        kind: row.type === "audio" ? "audio" : "video",
+        reason: row.failureReason ?? threshold.reason,
+        url:
+          row.type === "audio"
+            ? `${appUrl}/notes/${row.slug}`
+            : `${appUrl}/recordings/${row.id}/edit`,
+      });
+      failedByOwner.set(row.ownerId, items);
     }
     total += rows.length;
+  }
+
+  // Email each affected owner once per tick. The stuck→failed transition
+  // only happens once per row, so there's no repeat-nag risk. Best-effort:
+  // a mail failure must never fail the watchdog job (it would retry the
+  // UPDATE against rows that are no longer in a stuck state and do nothing,
+  // but the log noise misleads).
+  if (failedByOwner.size > 0 && isEmailConfigured()) {
+    const service = getSupabaseService();
+    for (const [ownerId, items] of failedByOwner) {
+      try {
+        const { data } = await service.auth.admin.getUserById(ownerId);
+        const ownerEmail = data?.user?.email;
+        if (!ownerEmail) {
+          console.warn(`[watchdog] owner email missing for ${ownerId}; skipping failure email`);
+          continue;
+        }
+        const tpl = renderRecordingFailedEmail({ items });
+        await sendEmail({
+          to: ownerEmail,
+          subject: tpl.subject,
+          text: tpl.text,
+          html: tpl.html,
+        });
+        console.log(`[watchdog] failure email sent to owner ${ownerId} (${items.length} recording(s))`);
+      } catch (err) {
+        console.error(`[watchdog] failure email to ${ownerId} failed:`, err);
+      }
+    }
   }
   // Piggyback table hygiene on the same 10-minute tick: webhook_nonces
   // otherwise grows one row per transcription forever.

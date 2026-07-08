@@ -77,6 +77,22 @@ struct OrphanedRecording: Codable, Identifiable, Equatable, Sendable {
         storageDirectory = URL(fileURLWithPath: "/")
     }
 
+    static func fileName(for track: TrackKind) -> String {
+        switch track {
+        case .composite: return "composite.mp4"
+        case .mic: return "mic.m4a"
+        case .systemAudio: return "system-audio.m4a"
+        case .screen: return "screen.mp4"
+        case .camera: return "camera.mp4"
+        }
+    }
+
+    /// A video orphan holds one composite.mp4; audio orphans hold
+    /// mic.m4a / system-audio.m4a.
+    var isVideo: Bool {
+        tracks.contains(.composite)
+    }
+
     func micFileURL() -> URL? {
         let url = storageDirectory.appending(path: "mic.m4a")
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
@@ -84,6 +100,11 @@ struct OrphanedRecording: Codable, Identifiable, Equatable, Sendable {
 
     func systemAudioFileURL() -> URL? {
         let url = storageDirectory.appending(path: "system-audio.m4a")
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    func compositeFileURL() -> URL? {
+        let url = storageDirectory.appending(path: "composite.mp4")
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
@@ -109,7 +130,7 @@ struct OrphanedRecording: Codable, Identifiable, Equatable, Sendable {
     func totalBytes() -> Int64 {
         var total: Int64 = 0
         for track in tracks {
-            let url = storageDirectory.appending(path: track == .mic ? "mic.m4a" : "system-audio.m4a")
+            let url = storageDirectory.appending(path: Self.fileName(for: track))
             if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
                let size = attrs[.size] as? NSNumber {
                 total += size.int64Value
@@ -246,7 +267,7 @@ final class OrphanedRecordingStore: ObservableObject {
                 log.error("orphan capture: missing source file for \(track.rawValue, privacy: .public)")
                 continue
             }
-            let dst = dir.appending(path: track == .mic ? "mic.m4a" : "system-audio.m4a")
+            let dst = dir.appending(path: OrphanedRecording.fileName(for: track))
             try fileManager.copyItem(at: src, to: dst)
         }
 
@@ -278,6 +299,52 @@ final class OrphanedRecordingStore: ObservableObject {
         )
         try writeMetadata(orphan)
         log.notice("orphan captured: id=\(id.uuidString, privacy: .public) dir=\(dir.path, privacy: .public) bytes=\(orphan.totalBytes(), privacy: .public)")
+        refresh()
+        return orphan
+    }
+
+    /// Video counterpart of `capture(from:)`: preserves a finalized
+    /// composite MP4 whose upload failed. The compositor writes to a
+    /// temp dir the OS can purge, so the copy here is what makes the
+    /// Recovery offer real.
+    @discardableResult
+    func captureVideo(
+        compositeURL: URL,
+        startedAt: Date,
+        durationSeconds: Double,
+        originalRecordingId: String?,
+        originalSlug: String?,
+        lastError: String?
+    ) throws -> OrphanedRecording {
+        let id = UUID()
+        let timestamp = ISO8601DateFormatter().string(from: startedAt)
+            .replacingOccurrences(of: ":", with: "-")
+        let slugComponent = originalSlug ?? id.uuidString.prefix(8).lowercased()
+        let dir = storeRoot.appending(path: "\(timestamp)-\(slugComponent)")
+        try fileManager.createDirectory(
+            at: dir,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try fileManager.copyItem(
+            at: compositeURL,
+            to: dir.appending(path: OrphanedRecording.fileName(for: .composite))
+        )
+
+        let orphan = OrphanedRecording(
+            id: id,
+            storageDirectory: dir,
+            originalRecordingId: originalRecordingId,
+            originalSlug: originalSlug,
+            title: nil,
+            capturedAt: startedAt,
+            stoppedAt: Date(),
+            durationSeconds: durationSeconds,
+            tracks: [.composite],
+            lastError: lastError
+        )
+        try writeMetadata(orphan)
+        log.notice("video orphan captured: id=\(id.uuidString, privacy: .public) dir=\(dir.path, privacy: .public) bytes=\(orphan.totalBytes(), privacy: .public)")
         refresh()
         return orphan
     }

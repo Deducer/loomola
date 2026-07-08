@@ -197,6 +197,26 @@ struct RecentStrip: View {
                     }
                 }
             }
+            // Older notes exist beyond the loaded window (the strip only
+            // fetches a page at a time — this is how notes older than the
+            // first page become reachable on desktop at all).
+            if service.hasMoreAudio, folderFilterId == nil {
+                HStack {
+                    Spacer()
+                    if service.isLoadingMore {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Text("Show older notes")
+                            .font(DSFont.Body.sm())
+                            .foregroundStyle(DSColor.Accent.primary)
+                            .contentShape(Rectangle())
+                            .overlay { ActionHitArea(action: { service.loadMore(kind: .audio) }) }
+                    }
+                    Spacer()
+                }
+                .padding(.top, DSSpacing.xs)
+            }
         }
     }
 

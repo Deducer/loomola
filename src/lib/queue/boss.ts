@@ -1,6 +1,11 @@
 import { PgBoss } from "pg-boss";
 import { TRANSCRIBE_JOB, runTranscribeJob, type TranscribeJobData } from "./jobs/transcribe";
 import {
+  VIDEO_INSIGHTS_JOB,
+  runVideoInsightsJob,
+  type VideoInsightsJobData,
+} from "./jobs/generate-video-insights";
+import {
   TITLE_SUMMARY_JOB,
   runTitleSummaryJob,
   type TitleSummaryJobData,
@@ -107,6 +112,7 @@ async function init(): Promise<PgBoss> {
   // Idempotent: safe to call on every boot.
   await boss.createQueue(TRANSCRIBE_JOB);
   await boss.createQueue(TITLE_SUMMARY_JOB);
+  await boss.createQueue(VIDEO_INSIGHTS_JOB);
   await boss.createQueue(CHAPTERS_JOB);
   await boss.createQueue(ACTION_ITEMS_JOB);
   await boss.createQueue(THUMBNAIL_JOB);
@@ -168,6 +174,40 @@ async function init(): Promise<PgBoss> {
       } catch (err) {
         console.error(
           `[pg-boss] failed to enqueue speaker suggestion for ${job.data.mediaObjectId}:`,
+          err
+        );
+      }
+    }
+  });
+  await boss.work<VideoInsightsJobData>(VIDEO_INSIGHTS_JOB, WORKER_OPTIONS, async (jobs) => {
+    for (const job of jobs) {
+      await runVideoInsightsJob(job.data);
+      // Same post-completion fan-out as TITLE_SUMMARY_JOB — the merged
+      // job replaces it on the video path, so downstream consumers
+      // (summary embedding, folder suggestion) must still fire.
+      if (granolaEnabled) {
+        try {
+          await boss.send(
+            EMBED_SUMMARY_JOB,
+            { mediaObjectId: job.data.mediaObjectId },
+            EMBEDDING_JOB_OPTIONS
+          );
+        } catch (err) {
+          console.error(
+            `[pg-boss] failed to enqueue summary embedding for ${job.data.mediaObjectId}:`,
+            err
+          );
+        }
+      }
+      try {
+        await boss.send(
+          SUGGEST_FOLDER_JOB,
+          { mediaObjectId: job.data.mediaObjectId },
+          SUGGEST_FOLDER_JOB_OPTIONS
+        );
+      } catch (err) {
+        console.error(
+          `[pg-boss] failed to enqueue folder suggestion for ${job.data.mediaObjectId}:`,
           err
         );
       }

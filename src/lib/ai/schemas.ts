@@ -79,6 +79,19 @@ export const actionItemsSchema = z.object({
 
 export type ActionItems = z.infer<typeof actionItemsSchema>;
 
+// Merged single-call output for video recordings: title + summary +
+// chapters + action items in one generation instead of three separate
+// calls over the same transcript (the transcript dominates input tokens,
+// so three calls billed it three times).
+export const videoInsightsSchema = z.object({
+  title: titleSummarySchema.shape.title,
+  summary: titleSummarySchema.shape.summary,
+  chapters: chaptersSchema.shape.chapters,
+  action_items: actionItemsSchema.shape.action_items,
+});
+
+export type VideoInsights = z.infer<typeof videoInsightsSchema>;
+
 // ---------------------------------------------------------------------------
 // Folder-suggestion classifier — picks one of the user's existing folders
 // for a newly-processed note, or null. The worker gates on confidence ===

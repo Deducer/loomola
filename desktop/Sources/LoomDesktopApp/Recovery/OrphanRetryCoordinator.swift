@@ -36,6 +36,10 @@ final class OrphanRetryCoordinator {
     func retry(_ orphan: OrphanedRecording) async throws -> Outcome {
         log.notice("retry begin: orphan=\(orphan.id.uuidString, privacy: .public) tracks=\(orphan.tracks.count, privacy: .public) bytes=\(orphan.totalBytes(), privacy: .public)")
 
+        if orphan.isVideo {
+            return try await retryVideo(orphan)
+        }
+
         let originalNote: NoteBodyResponse?
         let originalRecent: RecentRecordingDTO?
         if let originalId = orphan.originalRecordingId {
@@ -146,6 +150,60 @@ final class OrphanRetryCoordinator {
         return Outcome(recordingId: started.recordingId, slug: completeResponse.slug)
     }
 
+    /// Video retry: abort the stale original row, start a fresh video
+    /// recording with one composite track, multipart-upload the local
+    /// MP4, and complete — the server enqueues transcribe, transcode,
+    /// thumbnail, and preview-sprite from there, same as a live upload.
+    private func retryVideo(_ orphan: OrphanedRecording) async throws -> Outcome {
+        guard let compositeURL = orphan.compositeFileURL() else {
+            throw OrphanRetryError.noTracks
+        }
+
+        if let originalId = orphan.originalRecordingId {
+            do {
+                try await backend.abort(recordingId: originalId)
+                log.notice("video retry: aborted original \(originalId, privacy: .public)")
+            } catch {
+                log.notice("video retry: abort skipped (\(error.localizedDescription, privacy: .public)) — proceeding")
+            }
+        }
+
+        let started = try await backend.startRecording(
+            StartRecordingRequest(
+                tracks: [.init(kind: .composite, mimeType: "video/mp4")],
+                resolution: "screen-native",
+                brandProfileId: nil,
+                title: orphan.title,
+                sourceContextHint: "rescued from local cache after upload failure"
+            )
+        )
+        log.notice("video retry: started new recording id=\(started.recordingId, privacy: .public) slug=\(started.slug, privacy: .public)")
+
+        let uploader = MultipartUploadCoordinator(backend: backend)
+        let parts = try await uploader.uploadFile(
+            url: compositeURL,
+            recordingId: started.recordingId,
+            track: .composite
+        )
+        guard !parts.isEmpty else {
+            throw OrphanRetryError.noUploadedTracks
+        }
+
+        let durationSeconds = await Self.recoveredDurationSeconds(
+            for: [.composite],
+            orphan: orphan
+        )
+        let completeResponse = try await backend.complete(
+            recordingId: started.recordingId,
+            request: CompleteRecordingRequest(
+                tracks: [.composite: parts],
+                durationSeconds: durationSeconds
+            )
+        )
+        log.notice("video retry complete: slug=\(completeResponse.slug, privacy: .public)")
+        return Outcome(recordingId: started.recordingId, slug: completeResponse.slug)
+    }
+
     private func usableTracks(for orphan: OrphanedRecording) -> [TrackKind] {
         orphan.tracks.filter { track in
             let url = (track == .mic) ? orphan.micFileURL() : orphan.systemAudioFileURL()
@@ -168,7 +226,12 @@ final class OrphanRetryCoordinator {
     ) async -> Double {
         var durations: [Double] = []
         for track in tracks {
-            let url = (track == .mic) ? orphan.micFileURL() : orphan.systemAudioFileURL()
+            let url: URL?
+            switch track {
+            case .mic: url = orphan.micFileURL()
+            case .composite: url = orphan.compositeFileURL()
+            default: url = orphan.systemAudioFileURL()
+            }
             guard let url else { continue }
             let asset = AVURLAsset(url: url)
             guard let duration = try? await asset.load(.duration) else { continue }

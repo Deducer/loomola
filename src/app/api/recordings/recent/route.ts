@@ -9,6 +9,10 @@ import { recentMediaItems } from "@/lib/recordings/queries";
 ///
 /// Query: ?limit=N (default 8, capped at 50)
 ///        ?kind=video|audio (optional; filters before applying limit)
+///        ?offset=N (default 0; createdAt-desc pagination for the
+///          desktop's "Show more" — offset paging is fine here because
+///          new recordings only prepend and duplicates are deduped
+///          client-side by id)
 ///
 /// `thumbnailUrl` semantics:
 ///   • video → composite thumbnail (signed R2 URL) or null
@@ -29,11 +33,14 @@ export async function GET(request: Request) {
   if (kind !== null && kind !== "video" && kind !== "audio") {
     return NextResponse.json({ error: "invalid_kind" }, { status: 400 });
   }
+  const requestedOffset = Number.parseInt(url.searchParams.get("offset") ?? "0", 10);
+  const offset = Math.min(1000, Math.max(0, Number.isFinite(requestedOffset) ? requestedOffset : 0));
 
   const items = (await recentMediaItems({
     ownerId: user.id,
     type: kind ?? undefined,
     limit,
+    offset,
     includeSummary: false,
   })).map((r) => ({
     id: r.id,

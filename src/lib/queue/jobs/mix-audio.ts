@@ -56,10 +56,24 @@ function ffmpegMixToMono(params: {
   outputPath: string;
 }): Promise<void> {
   return new Promise((resolve, reject) => {
+    // Sidechain-duck the mic under system audio before mixing. When the
+    // user is on speakers, the mic re-captures the remote participants
+    // ~10-50ms late; a plain amix feeds Deepgram both copies and the
+    // transcript stutters ("that that that") AND drops words. Measured on
+    // a real contaminated call (2026-07-07, two 3-min segments, nova-2 +
+    // diarize): plain amix = 7.0-11.4% doubled words, 290-359 words
+    // recognized; this duck = 2.6-3.3% doubled (the natural-speech floor,
+    // matching a system-only reference) with 487-502 words recognized.
+    // The mic still carries the user's voice whenever the remote side is
+    // quiet; simultaneous crosstalk ducks the user, which is the same
+    // trade every AEC makes. Headphone users' mic has no bleed, so the
+    // duck almost never engages.
     const filter = [
       "[0:a]aformat=channel_layouts=mono[mic]",
       "[1:a]aformat=channel_layouts=mono[system]",
-      "[mic][system]amix=inputs=2:duration=longest:normalize=1[out]",
+      "[system]asplit=2[sc][sysmix]",
+      "[mic][sc]sidechaincompress=threshold=0.004:ratio=20:attack=3:release=400:level_sc=2[micducked]",
+      "[micducked][sysmix]amix=inputs=2:duration=longest:normalize=1[out]",
     ].join(";");
     const args = [
       "-hide_banner",

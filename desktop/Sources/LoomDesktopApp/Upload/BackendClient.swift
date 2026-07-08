@@ -119,10 +119,13 @@ actor BackendClient {
         )
     }
 
-    func recentRecordings(limit: Int = 4, kind: String? = nil) async throws -> RecentRecordingsResponse {
+    func recentRecordings(limit: Int = 4, kind: String? = nil, offset: Int = 0) async throws -> RecentRecordingsResponse {
         var path = "/api/recordings/recent?limit=\(limit)"
         if let kind {
             path += "&kind=\(kind)"
+        }
+        if offset > 0 {
+            path += "&offset=\(offset)"
         }
         return try await get(path: path)
     }

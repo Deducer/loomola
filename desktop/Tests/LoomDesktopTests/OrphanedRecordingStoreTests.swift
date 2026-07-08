@@ -184,6 +184,37 @@ final class OrphanedRecordingStoreTests: XCTestCase {
         XCTAssertFalse(store.orphans.contains { $0.id == orphan.id })
     }
 
+    func testCaptureVideoPersistsCompositeAndRoundTrips() throws {
+        let sourceDir = makeTempDir()
+        defer { try? FileManager.default.removeItem(at: sourceDir) }
+        let compositeURL = sourceDir.appending(path: "recording.mp4")
+        try Data([0x00, 0x01, 0x02, 0x03, 0x04]).write(to: compositeURL)
+
+        let store = makeStore()
+        let orphan = try store.captureVideo(
+            compositeURL: compositeURL,
+            startedAt: Date(timeIntervalSince1970: 1751920000),
+            durationSeconds: 312.5,
+            originalRecordingId: "vid-rec-uuid",
+            originalSlug: "vidSlug123",
+            lastError: "The request timed out."
+        )
+
+        XCTAssertTrue(orphan.isVideo)
+        XCTAssertEqual(orphan.tracks, [.composite])
+        XCTAssertEqual(orphan.totalBytes(), 5)
+        XCTAssertNotNil(orphan.compositeFileURL())
+        XCTAssertNil(orphan.micFileURL())
+
+        // Round-trip through a fresh store instance (refresh from disk).
+        let reloaded = OrphanedRecordingStore(storeRoot: testStoreRoot)
+        let loaded = try XCTUnwrap(reloaded.orphans.first(where: { $0.id == orphan.id }))
+        XCTAssertTrue(loaded.isVideo)
+        XCTAssertEqual(loaded.originalRecordingId, "vid-rec-uuid")
+        XCTAssertEqual(loaded.durationSeconds, 312.5)
+        XCTAssertNotNil(loaded.compositeFileURL())
+    }
+
     // MARK: - Helpers
 
     private var testStoreRoot: URL {
