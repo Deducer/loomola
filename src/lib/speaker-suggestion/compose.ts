@@ -12,6 +12,8 @@ export interface SpeakerSuggestion {
   personId: string | null;
   confidence: MatchConfidence;
   reason: string;
+  /** Verbatim transcript quote justifying an LLM attribution (Stage 17). */
+  evidence?: string;
   /** When set, the caller should create a new Person row from this data
    *  before applying the speaker_assignment. */
   suggestedNewPerson?: {

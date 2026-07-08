@@ -57,6 +57,9 @@ private struct TranscriptDisplayBubble: Identifiable, Equatable {
     let isInterim: Bool
     let startSec: Double
     let endSec: Double
+    /// Diarized index for batch transcripts — nil for live/full-text
+    /// bubbles. Drives the "who is this?" manual-identify fallback.
+    var speakerIdx: Int? = nil
 }
 
 private struct TranscriptSearchMatch: Identifiable, Equatable {
@@ -1946,7 +1949,8 @@ struct NoteWorkspaceView: View {
                     text: paragraph.text,
                     isInterim: false,
                     startSec: paragraph.startSec,
-                    endSec: paragraph.endSec
+                    endSec: paragraph.endSec,
+                    speakerIdx: Self.speakerIdx(fromLabel: paragraph.speaker)
                 )
             }
         }
@@ -1979,10 +1983,42 @@ struct NoteWorkspaceView: View {
             if isMine { Spacer(minLength: 54) }
             VStack(alignment: horizontalAlignment, spacing: 5) {
                 if let speaker, !speaker.isEmpty {
-                    Text(speaker)
-                        .font(DSFont.Body.sm())
-                        .foregroundStyle(DSColor.Text.tertiary.opacity(0.9))
-                        .padding(.horizontal, 4)
+                    if !isRecording, let idx = bubble.speakerIdx, !people.isEmpty {
+                        // Never-misattribute fallback: any voice the
+                        // pipeline couldn't identify with evidence stays
+                        // "Speaker N" — click to say who it is (also
+                        // works to fix an accepted name).
+                        Menu {
+                            Section(speaker.hasPrefix("Speaker ") ? "Who is this?" : "Reassign speaker") {
+                                ForEach(identifyCandidates) { person in
+                                    Button(person.displayName) {
+                                        assignSpeaker(idx: idx, personId: person.id)
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Text(speaker)
+                                    .font(DSFont.Body.sm())
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 7, weight: .semibold))
+                            }
+                            .foregroundStyle(
+                                speaker.hasPrefix("Speaker ")
+                                    ? DSColor.Accent.primary.opacity(0.9)
+                                    : DSColor.Text.tertiary.opacity(0.9)
+                            )
+                            .padding(.horizontal, 4)
+                        }
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
+                        .fixedSize()
+                    } else {
+                        Text(speaker)
+                            .font(DSFont.Body.sm())
+                            .foregroundStyle(DSColor.Text.tertiary.opacity(0.9))
+                            .padding(.horizontal, 4)
+                    }
                 }
                 Text(attributedTranscriptText(for: bubble, activeMatch: activeSearchMatch))
                     .font(.system(size: 13, weight: .regular))
@@ -2511,6 +2547,7 @@ struct NoteWorkspaceView: View {
                 .font(DSFont.Body.sm())
                 .foregroundStyle(DSColor.Text.secondary)
                 .lineLimit(1)
+                .help(speakerSuggestionEvidenceHelp)
             Spacer()
             if applyingSpeakerSuggestions {
                 ProgressView()
@@ -2540,6 +2577,21 @@ struct NoteWorkspaceView: View {
         let names = pendingSpeakerSuggestions.compactMap(personName(for:))
         guard !names.isEmpty else { return "Speaker names suggested" }
         return "Suggested speakers: \(names.joined(separator: ", "))"
+    }
+
+    /// Hover detail: the verbatim transcript quotes behind LLM
+    /// attributions — the user can judge the evidence before applying.
+    private var speakerSuggestionEvidenceHelp: String {
+        let lines = pendingSpeakerSuggestions.compactMap { suggestion -> String? in
+            guard let name = personName(for: suggestion),
+                  let evidence = suggestion.suggestionEvidence,
+                  !evidence.isEmpty
+            else { return nil }
+            return "\(name): “\(evidence)”"
+        }
+        return lines.isEmpty
+            ? "Matched from the calendar attendee list"
+            : lines.joined(separator: "\n")
     }
 
     private var distinctSavedSpeakerCount: Int {
@@ -2573,6 +2625,14 @@ struct NoteWorkspaceView: View {
         return people.first(where: { $0.id == personId })?.displayName
     }
 
+    static func speakerIdx(fromLabel label: String?) -> Int? {
+        guard let label,
+              label.hasPrefix("Speaker "),
+              let number = Int(label.dropFirst("Speaker ".count))
+        else { return nil }
+        return number - 1
+    }
+
     /// Maps a batch transcript's "Speaker N" label to an assigned or
     /// suggested person name. Live-provider transcripts keep their
     /// mic/system source mapping.
@@ -2580,17 +2640,46 @@ struct NoteWorkspaceView: View {
         if let source = transcriptSource(forSpeaker: label) {
             return source.displayName
         }
-        guard let label,
-              label.hasPrefix("Speaker "),
-              let number = Int(label.dropFirst("Speaker ".count))
-        else { return label }
-        let idx = number - 1
+        guard let idx = Self.speakerIdx(fromLabel: label) else { return label }
         guard let assignment = speakerAssignments.first(where: {
             $0.speakerIdx == idx && $0.dismissedAt == nil
         }), let name = personName(for: assignment) else {
             return label
         }
         return name
+    }
+
+    /// Manual-identify fallback: attendees first, then the rest of the
+    /// people library — shown when the user assigns a voice by hand.
+    private var identifyCandidates: [PersonDTO] {
+        let attendeeSet = Set(attendeeIds)
+        return people.sorted { a, b in
+            let aAttendee = attendeeSet.contains(a.id)
+            let bAttendee = attendeeSet.contains(b.id)
+            if aAttendee != bAttendee { return aAttendee }
+            return a.displayName.localizedCompare(b.displayName) == .orderedAscending
+        }
+    }
+
+    private func assignSpeaker(idx: Int, personId: String) {
+        guard case .reviewing(let recording) = target,
+              let backend = viewModel.backendClient
+        else { return }
+        Task { @MainActor in
+            do {
+                try await backend.assignSpeaker(
+                    mediaId: recording.id,
+                    speakerIdx: idx,
+                    personId: personId
+                )
+                if let list = try? await backend.speakerAssignments(mediaId: recording.id) {
+                    speakerAssignments = list
+                }
+                showToast(message: "Speaker assigned")
+            } catch {
+                showToast(message: "Couldn't assign speaker", tone: .error)
+            }
+        }
     }
 
     private func applyAllSpeakerSuggestions() {

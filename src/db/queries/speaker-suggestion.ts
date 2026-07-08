@@ -117,6 +117,8 @@ export async function persistSpeakerSuggestions(args: {
     suggestedNewPersonPayload: s.suggestedNewPerson
       ? { displayName: s.suggestedNewPerson.displayName, email: s.suggestedNewPerson.email }
       : null,
+    suggestionConfidence: s.reason,
+    suggestionEvidence: s.evidence ?? null,
   }));
 
   await db

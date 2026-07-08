@@ -482,6 +482,12 @@ export const speakerAssignments = pgTable(
     // Shape: { displayName: string | null, email: string | null }. NULL
     // when person_id is set (no creation needed).
     suggestedNewPersonPayload: jsonb("suggested_new_person_payload"),
+    // Stage 17 transcript-content attribution: how the suggestion was
+    // derived ("self_via_dominant_speech", "llm_transcript_evidence", …)
+    // and the verbatim quote that justifies it — surfaced in the UI so
+    // the user can judge before accepting.
+    suggestionConfidence: text("suggestion_confidence"),
+    suggestionEvidence: text("suggestion_evidence"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

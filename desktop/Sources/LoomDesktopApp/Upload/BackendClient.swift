@@ -175,6 +175,13 @@ actor BackendClient {
         try await get(path: "/api/speaker-assignments/\(mediaId)")
     }
 
+    func assignSpeaker(mediaId: String, speakerIdx: Int, personId: String) async throws {
+        let _: EmptyResponse = try await put(
+            path: "/api/speaker-assignments/\(mediaId)",
+            body: AssignSpeakerRequest(speakerIdx: speakerIdx, personId: personId)
+        )
+    }
+
     func acceptSpeakerSuggestion(recordingId: String, speakerIdx: Int, personId: String) async throws {
         let _: EmptyResponse = try await post(
             path: "/api/recordings/\(recordingId)/speaker-suggestions/accept",
@@ -1003,6 +1010,15 @@ struct SpeakerAssignmentDTO: Decodable, Equatable, Sendable {
     let displayLabelOverride: String?
     let isSuggestion: Bool
     let dismissedAt: String?
+    /// Stage 17: derivation + verbatim transcript quote behind an
+    /// LLM-attributed suggestion. Optional for older servers.
+    var suggestionConfidence: String?
+    var suggestionEvidence: String?
+}
+
+private struct AssignSpeakerRequest: Encodable {
+    let speakerIdx: Int
+    let personId: String
 }
 
 private struct SpeakerSuggestionAcceptRequest: Encodable {
