@@ -7,7 +7,7 @@ describe("parseAttendeeIds", () => {
       parseAttendeeIds([
         "3541b953-2b90-4e3f-8594-5b4e54a005c4",
         "Ian",
-        "Bhaskar",
+        "Priya",
         "",
         null,
         { displayName: "Harsha" },
