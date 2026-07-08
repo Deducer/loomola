@@ -418,6 +418,10 @@ Replaces G-M13's positional attendee→voice mapping (attendee #1 = voice #1, co
 
 Validation note: the gate logic is unit-tested; the end-to-end LLM pass gets its first real exercise on the next multi-party meeting (existing notes keep their prior suggestions — the once-per-recording guard is unchanged).
 
+## Stage 18 — Per-user note templates (✅ shipped 2026-07-07)
+
+Personal templates no longer live in the public codebase. New `note_templates` table (PK `owner_id + id`, text slugs so a template moved out of code keeps its id and existing notes' `template_id` references keep resolving). `GET /api/note-templates` merges built-ins with the caller's rows; `POST` upserts a custom template (slug from name, explicit id supported; a user row can deliberately shadow a built-in id); `DELETE /api/note-templates/[id]` removes one. Resolution everywhere goes through `resolveNoteTemplate(ownerId, id)`: user row → built-in → default — wired into the enhancement job, the enhance/template routes' validation, and the web note page. The maintainer's personal templates were migrated into their own rows via an uncommitted local script and verified resolving through the live API. Follow-up: a template-editor UI (web settings) so custom templates don't require the API.
+
 ## Open follow-ups (next milestones to spec)
 
 | Topic | Why | Rough effort |
