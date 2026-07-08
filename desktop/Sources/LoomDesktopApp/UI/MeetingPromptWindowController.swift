@@ -37,7 +37,7 @@ final class MeetingPromptWindowController {
         panel.setContentSize(size)
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = true
+        panel.hasShadow = false
         panel.level = .popUpMenu
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .transient]
         panel.hidesOnDeactivate = false
@@ -119,7 +119,6 @@ private struct MeetingPromptPanelView: View {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .stroke(Color.white.opacity(0.18), lineWidth: 1)
         )
-        .shadow(color: .black.opacity(0.34), radius: 18, x: 0, y: 10)
     }
 
     private var primaryAction: some View {
@@ -185,7 +184,7 @@ private struct MeetingPromptPanelView: View {
         .frame(width: 194, height: 48)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.white.opacity(0.045))
+                .fill(Color(red: 0.18, green: 0.18, blue: 0.18))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
