@@ -392,6 +392,10 @@ G-M12 (folder suggestion) and G-M13 + Stage 11 (calendar-attendee speaker matchi
 | **Speaker names in the transcript drawer** | Batch-transcript bubbles map "Speaker N" → the assigned or suggested person's name (live-provider transcripts keep mic/system labels). When pending suggestions exist, a bar above the transcript shows "✦ Suggested speakers: …" with Apply names / dismiss — one click accepts every suggestion via the per-idx accept endpoint. The names PREVIEW in the transcript before acceptance, Granola-style. |
 | **My notes / Enhanced split** | The workspace previously poured the AI-generated notes into the same editor as the user's raw notes — and the next autosave silently overwrote `notes.body` with generated content. Now: raw notes stay in the editable pane (autosave tracks ONLY raw), generated notes render in a read-only Enhanced pane (`MarkdownTextEditor(isEditable: false)`), and a "My notes / ✦ Enhanced" pill flips between them. Opens on Enhanced when generated notes exist; generation completion auto-switches to Enhanced with the reveal animation. Web remains the editor of record for generated content. |
 
+## Stage 15 — Sidebar favorites + emoji icons (✅ shipped 2026-07-07)
+
+Granola-pattern sidebar organization. `folders.is_favorite` + `folders.icon` (migration 0028 — hand-trimmed: drizzle-kit's diff re-emitted stages 7–11 DDL because the meta snapshots lagged hand-authored migrations; the 0028 snapshot healed the chain, future generates diff cleanly). `GET /api/folders` returns both; `PATCH /api/folders/[id]` accepts `isFavorite` + `icon` (explicit null clears). Desktop sidebar: Favorites section above Spaces; right-click a folder → Add/Remove from Favorites, Set emoji… (popover field; fn/🌐 opens the system picker), Clear emoji; emoji replaces the folder glyph. Optimistic updates with revert-on-failure. Web sidebar parity is an open follow-up.
+
 ## Open follow-ups (next milestones to spec)
 
 | Topic | Why | Rough effort |
