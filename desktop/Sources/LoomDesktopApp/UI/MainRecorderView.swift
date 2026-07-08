@@ -38,25 +38,15 @@ struct MainRecorderView: View {
             HStack(spacing: 0) {
                 if homeSidebarVisible {
                     SidebarPanel(
-                        folders: viewModel.recentRecordings.folders,
+                        recents: viewModel.recentRecordings,
                         query: $sidebarQuery,
                         selectedFolderId: $folderFilterId,
                         topPadding: sidebarTopPadding,
                         onClose: {
                             withAnimation(LoomolaMotion.quick) { sidebarOpen = false }
                         },
-                        onToggleFavorite: { folder in
-                            Task {
-                                await viewModel.recentRecordings.setFolderFavorite(
-                                    folder,
-                                    isFavorite: !folder.favorite
-                                )
-                            }
-                        },
-                        onSetIcon: { folder, icon in
-                            Task {
-                                await viewModel.recentRecordings.setFolderIcon(folder, icon: icon)
-                            }
+                        onOpenSearchResult: { result in
+                            openSearchResult(result)
                         }
                     )
                     .transition(.move(edge: .leading))
@@ -406,6 +396,32 @@ struct MainRecorderView: View {
             windowIsFullScreen ||
             window.frame.width >= visibleFrame.width * 0.9 ||
             window.frame.height >= visibleFrame.height * 0.86
+    }
+
+    /// Sidebar search result → audio notes open in the native workspace,
+    /// videos open their share page in the browser.
+    private func openSearchResult(_ result: SearchResultDTO) {
+        guard result.kind == "audio" else {
+            viewModel.openWebSharePage(slug: result.slug)
+            return
+        }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let createdAt = formatter.date(from: result.createdAt) ?? Date()
+        let recording = RecentRecording(
+            id: result.id,
+            slug: result.slug,
+            title: result.title,
+            kind: .audio,
+            createdAt: createdAt,
+            durationSeconds: result.durationSeconds,
+            status: result.status,
+            transcriptReady: nil,
+            thumbnailURL: nil,
+            folderId: nil,
+            folderName: nil
+        )
+        noteTarget = .reviewing(recording: recording)
     }
 
     private func updateMeetingPromptWindow() {

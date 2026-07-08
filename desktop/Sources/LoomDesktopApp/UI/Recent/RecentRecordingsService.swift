@@ -90,10 +90,10 @@ final class RecentRecordingsService: ObservableObject {
         // Recent section.
         //
         // Refresh re-fetches at least as many items as are currently
-        // loaded (capped at the server's 50) so the periodic timer
-        // doesn't truncate a list the user paged deeper into.
-        let videoLimit = min(50, max(limit, loadedCount(of: .video)))
-        let audioLimit = min(50, max(limit, loadedCount(of: .audio)))
+        // loaded (capped at the server's 200) so the periodic timer
+        // doesn't truncate a list the user scrolled deeper into.
+        let videoLimit = min(200, max(limit, loadedCount(of: .video)))
+        let audioLimit = min(200, max(limit, loadedCount(of: .audio)))
         async let videoItemsResponse = fetchRecent(kind: "video", limit: videoLimit)
         async let audioItemsResponse = fetchRecent(kind: "audio", limit: audioLimit)
         async let foldersResponse = backend.listFolders()
@@ -161,6 +161,10 @@ final class RecentRecordingsService: ObservableObject {
         items.filter { $0.kind == kind }.count
     }
 
+    /// Older-history page size. Bigger than the initial page so the
+    /// scroll-triggered chain reaches full history in a few requests.
+    private let loadMorePageSize = 50
+
     /// Fetch the next page of older items for one kind and append.
     /// Duplicates (an item that shifted pages because something newer
     /// arrived) are dropped by id.
@@ -171,7 +175,7 @@ final class RecentRecordingsService: ObservableObject {
             isLoadingMore = true
             defer { isLoadingMore = false }
             let offset = loadedCount(of: kind)
-            let result = await fetchRecent(kind: kind.rawValue, limit: limit, offset: offset)
+            let result = await fetchRecent(kind: kind.rawValue, limit: loadMorePageSize, offset: offset)
             switch result {
             case .success(let response):
                 let known = Set(items.map(\.id))
@@ -179,12 +183,23 @@ final class RecentRecordingsService: ObservableObject {
                     .compactMap { RecentRecording(dto: $0) }
                     .filter { !known.contains($0.id) }
                 items = (items + fresh).sorted { $0.createdAt > $1.createdAt }
-                let more = response.items.count >= limit
+                let more = response.items.count >= loadMorePageSize
                 if kind == .audio { hasMoreAudio = more } else { hasMoreVideo = more }
                 log.notice("loadMore \(kind.rawValue, privacy: .public) — +\(fresh.count, privacy: .public) item(s), offset \(offset, privacy: .public)")
             case .failure(let error):
                 log.error("loadMore \(kind.rawValue, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
             }
+        }
+    }
+
+    /// Full-text search (titles + summaries + transcripts + attendees)
+    /// for the sidebar. Best-effort: failures return empty.
+    func search(query: String, limit: Int = 15) async -> [SearchResultDTO] {
+        do {
+            return try await backend.searchRecordings(query: query, limit: limit).items
+        } catch {
+            log.error("search failed: \(error.localizedDescription, privacy: .public)")
+            return []
         }
     }
 

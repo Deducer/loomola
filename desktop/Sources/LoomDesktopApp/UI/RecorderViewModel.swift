@@ -2123,6 +2123,10 @@ final class RecorderViewModel: ObservableObject {
         NSWorkspace.shared.open(webURL())
     }
 
+    func openWebSharePage(slug: String) {
+        NSWorkspace.shared.open(webURL(pathComponents: ["v", slug]))
+    }
+
     func openWebNote(slug: String, timestampSec: Double? = nil) {
         var url = webURL(pathComponents: ["notes", slug])
         if let timestampSec {

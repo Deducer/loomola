@@ -27,8 +27,11 @@ export async function GET(request: Request) {
   const user = await requireAuth(request);
 
   const url = new URL(request.url);
+  // Cap raised 50 → 200 for the desktop's full-history scroll: the
+  // periodic refresh re-fetches everything already loaded so paging
+  // depth survives, and 200 slim rows is still a small payload.
   const requested = Number.parseInt(url.searchParams.get("limit") ?? "8", 10);
-  const limit = Math.min(50, Math.max(1, Number.isFinite(requested) ? requested : 8));
+  const limit = Math.min(200, Math.max(1, Number.isFinite(requested) ? requested : 8));
   const kind = url.searchParams.get("kind");
   if (kind !== null && kind !== "video" && kind !== "audio") {
     return NextResponse.json({ error: "invalid_kind" }, { status: 400 });

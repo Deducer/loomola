@@ -16,21 +16,25 @@ import SwiftUI
 ///   • People + Companies bottom rail
 ///   • Workspace switcher at bottom
 struct SidebarPanel: View {
-    let folders: [FolderDTO]
+    /// Observed directly (not a copied array) so optimistic favorite/
+    /// emoji updates render instantly — as a plain prop the sidebar
+    /// only re-rendered when something ELSE nudged the parent view.
+    @ObservedObject var recents: RecentRecordingsService
     @Binding var query: String
     @Binding var selectedFolderId: String?
     let topPadding: CGFloat
     let onClose: () -> Void
-    let onToggleFavorite: (FolderDTO) -> Void
-    let onSetIcon: (FolderDTO, String?) -> Void
+    let onOpenSearchResult: (SearchResultDTO) -> Void
 
     @FocusState private var searchFocused: Bool
     @State private var emojiEditingFolder: FolderDTO?
     @State private var emojiDraft = ""
+    @State private var searchResults: [SearchResultDTO] = []
+    @State private var searchTask: Task<Void, Never>?
 
     private var filteredFolders: [FolderDTO] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let sorted = folders.sorted { $0.name.localizedCompare($1.name) == .orderedAscending }
+        let sorted = recents.folders.sorted { $0.name.localizedCompare($1.name) == .orderedAscending }
         if trimmed.isEmpty { return sorted }
         return sorted.filter { $0.name.localizedCaseInsensitiveContains(trimmed) }
     }
@@ -102,6 +106,9 @@ struct SidebarPanel: View {
         ScrollView {
             VStack(alignment: .leading, spacing: DSSpacing.lg) {
                 primaryNav
+                if !trimmedQuery.isEmpty {
+                    searchResultsSection
+                }
                 if !favoriteFolders.isEmpty {
                     folderSection(title: "Favorites", sectionFolders: favoriteFolders)
                 }
@@ -113,6 +120,61 @@ struct SidebarPanel: View {
         }
         .popover(item: $emojiEditingFolder, arrowEdge: .trailing) { folder in
             emojiEditor(for: folder)
+        }
+        .onChange(of: query) { _, newValue in
+            scheduleSearch(newValue)
+        }
+    }
+
+    private var trimmedQuery: String {
+        query.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Global full-text results (titles + summaries + transcripts) —
+    /// the search box filters folders locally AND searches every
+    /// recording server-side, debounced.
+    private var searchResultsSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Notes & videos")
+                .font(DSFont.Body.sm())
+                .foregroundStyle(DSColor.Text.tertiary)
+                .padding(.horizontal, DSSpacing.sm)
+                .padding(.vertical, 4)
+            if searchResults.isEmpty {
+                Text(trimmedQuery.count < 2 ? "Keep typing…" : "No matches")
+                    .font(DSFont.Body.sm())
+                    .foregroundStyle(DSColor.Text.tertiary)
+                    .padding(.horizontal, DSSpacing.sm)
+                    .padding(.vertical, DSSpacing.xs)
+            } else {
+                ForEach(searchResults) { result in
+                    SidebarNavRow(
+                        label: result.title,
+                        systemImage: result.kind == "audio" ? "doc.text" : "video",
+                        isActive: false,
+                        action: {
+                            onOpenSearchResult(result)
+                            onClose()
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    private func scheduleSearch(_ raw: String) {
+        searchTask?.cancel()
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2 else {
+            searchResults = []
+            return
+        }
+        searchTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled else { return }
+            let results = await recents.search(query: trimmed)
+            guard !Task.isCancelled else { return }
+            searchResults = results
         }
     }
 
@@ -147,7 +209,8 @@ struct SidebarPanel: View {
 
     private func commitEmoji(for folder: FolderDTO) {
         let trimmed = emojiDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        onSetIcon(folder, trimmed.isEmpty ? nil : String(trimmed.prefix(2)))
+        let icon = trimmed.isEmpty ? nil : String(trimmed.prefix(2))
+        Task { await recents.setFolderIcon(folder, icon: icon) }
         emojiEditingFolder = nil
         emojiDraft = ""
     }
@@ -194,7 +257,7 @@ struct SidebarPanel: View {
                     )
                     .contextMenu {
                         Button(folder.favorite ? "Remove from Favorites" : "Add to Favorites") {
-                            onToggleFavorite(folder)
+                            Task { await recents.setFolderFavorite(folder, isFavorite: !folder.favorite) }
                         }
                         Button(folder.icon == nil ? "Set emoji…" : "Change emoji…") {
                             emojiDraft = folder.icon ?? ""
@@ -202,7 +265,7 @@ struct SidebarPanel: View {
                         }
                         if folder.icon != nil {
                             Button("Clear emoji") {
-                                onSetIcon(folder, nil)
+                                Task { await recents.setFolderIcon(folder, icon: nil) }
                             }
                         }
                     }

@@ -166,6 +166,11 @@ actor BackendClient {
         )
     }
 
+    func searchRecordings(query: String, limit: Int = 15) async throws -> SearchResultsResponse {
+        let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+        return try await get(path: "/api/search?q=\(encoded)&limit=\(limit)")
+    }
+
     func speakerAssignments(mediaId: String) async throws -> [SpeakerAssignmentDTO] {
         try await get(path: "/api/speaker-assignments/\(mediaId)")
     }
@@ -976,6 +981,20 @@ struct RecentRecordingDTO: Decodable, Equatable, Sendable {
         self.calendarEventTitle = calendarEventTitle
         self.calendarEventStartedAt = calendarEventStartedAt
     }
+}
+
+struct SearchResultsResponse: Decodable, Sendable {
+    let items: [SearchResultDTO]
+}
+
+struct SearchResultDTO: Decodable, Equatable, Sendable, Identifiable {
+    let id: String
+    let slug: String
+    let title: String
+    let kind: String  // "video" | "audio"
+    let createdAt: String
+    let durationSeconds: Double?
+    let status: String?
 }
 
 struct SpeakerAssignmentDTO: Decodable, Equatable, Sendable {
