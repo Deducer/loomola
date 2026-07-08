@@ -109,7 +109,14 @@ struct RecentStrip: View {
     }
 
     private var videoGrid: some View {
-        HStack(alignment: .top, spacing: DSSpacing.lg) {
+        // Adaptive columns instead of three fixed-width cards: the fixed
+        // row overflowed the window once the Spaces sidebar existed, and
+        // the centered overflow clipped the sidebar's leading edge.
+        LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: 200, maximum: 320), spacing: DSSpacing.lg, alignment: .top)],
+            alignment: .leading,
+            spacing: DSSpacing.lg
+        ) {
             ForEach(filteredItems.prefix(3)) { recording in
                 RecentCard(
                     recording: recording,
@@ -146,7 +153,6 @@ struct RecentStrip: View {
                     onCopyLink: { copyShareLink(recording) }
                 )
             }
-            Spacer()
         }
     }
 
@@ -353,13 +359,16 @@ struct RecentStrip: View {
     private var skeleton: some View {
         switch captureMode {
         case .video:
-            HStack(spacing: DSSpacing.xl) {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 200, maximum: 320), spacing: DSSpacing.lg)],
+                alignment: .leading,
+                spacing: DSSpacing.lg
+            ) {
                 ForEach(0..<3, id: \.self) { _ in
                     RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
                         .fill(DSColor.Bg.subtle)
-                        .frame(width: 320, height: 180)
+                        .aspectRatio(16.0 / 9.0, contentMode: .fit)
                 }
-                Spacer()
             }
         case .audio:
             VStack(spacing: 8) {

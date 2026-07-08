@@ -25,13 +25,11 @@ struct RecentCard: View {
     @State private var showFolderPicker = false
     @State private var showCardMenu = false
 
-    // 16:9 cards sized so 3 fit comfortably in the default 1080pt
-    // window AND don't overflow at the 920pt min width: 3 × 264 +
-    // 2 × 16 (lg gap) + 64 (xxl horizontal padding × 2) = 824pt
-    // content vs. 920–1080pt window → 96–256pt margin on each side.
-    private let cardWidth: CGFloat = 264
-    private let thumbnailHeight: CGFloat = 148  // 16:9 (264 × 9/16 ≈ 148.5)
-
+    // Cards fill whatever column the grid gives them (16:9 thumbnail).
+    // They were fixed at 264pt, sized for a 920–1080pt window with NO
+    // sidebar — once the Spaces sidebar landed, the fixed 3-card row
+    // overflowed the window and the centered overflow clipped the
+    // sidebar's leading edge in video mode.
     private var checkboxVisible: Bool {
         hovering || isSelected || selectionActive
     }
@@ -43,7 +41,8 @@ struct RecentCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DSSpacing.sm) {
             thumbnail
-                .frame(width: cardWidth, height: thumbnailHeight)
+                .frame(maxWidth: .infinity)
+                .aspectRatio(16.0 / 9.0, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
@@ -77,7 +76,7 @@ struct RecentCard: View {
                     folderPill
                 }
             }
-            .frame(width: cardWidth, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .onHover { hovering = $0 }
         .scaleEffect(hovering ? 1.015 : 1.0)
