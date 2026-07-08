@@ -138,6 +138,34 @@ actor BackendClient {
         try await get(path: "/api/people")
     }
 
+    func setFolderFavorite(folderId: String, isFavorite: Bool) async throws {
+        struct Body: Encodable { let isFavorite: Bool }
+        let _: EmptyResponse = try await jsonRequest(
+            method: "PATCH",
+            path: "/api/folders/\(folderId)",
+            body: Body(isFavorite: isFavorite)
+        )
+    }
+
+    func setFolderIcon(folderId: String, icon: String?) async throws {
+        // Explicit-null body: the synthesized encoder would DROP a nil
+        // icon key entirely, which the server reads as "no change" —
+        // clearing an emoji requires sending `"icon": null`.
+        struct Body: Encodable {
+            let icon: String?
+            func encode(to encoder: Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                try container.encode(icon, forKey: .icon)
+            }
+            enum CodingKeys: String, CodingKey { case icon }
+        }
+        let _: EmptyResponse = try await jsonRequest(
+            method: "PATCH",
+            path: "/api/folders/\(folderId)",
+            body: Body(icon: icon)
+        )
+    }
+
     func speakerAssignments(mediaId: String) async throws -> [SpeakerAssignmentDTO] {
         try await get(path: "/api/speaker-assignments/\(mediaId)")
     }
@@ -963,6 +991,12 @@ struct FolderDTO: Decodable, Equatable, Sendable, Identifiable {
     let id: String
     let name: String
     let parentId: String?
+    // Optional so decoding stays compatible with servers predating
+    // the Stage 15 favorites/icon columns.
+    var isFavorite: Bool?
+    var icon: String?
+
+    var favorite: Bool { isFavorite ?? false }
 }
 
 struct AssignFolderRequest: Encodable, Sendable {

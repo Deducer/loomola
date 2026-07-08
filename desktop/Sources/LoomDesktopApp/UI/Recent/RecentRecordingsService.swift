@@ -188,6 +188,38 @@ final class RecentRecordingsService: ObservableObject {
         }
     }
 
+    /// Optimistically toggle a folder's favorite pin; reverts on failure.
+    func setFolderFavorite(_ folder: FolderDTO, isFavorite: Bool) async {
+        guard let index = folders.firstIndex(where: { $0.id == folder.id }) else { return }
+        let original = folders[index]
+        var updated = original
+        updated.isFavorite = isFavorite
+        folders[index] = updated
+        do {
+            try await backend.setFolderFavorite(folderId: folder.id, isFavorite: isFavorite)
+            log.notice("folder \(folder.id, privacy: .public) favorite=\(isFavorite, privacy: .public)")
+        } catch {
+            folders[index] = original
+            log.error("set favorite failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Optimistically set (or clear, with nil) a folder's emoji icon.
+    func setFolderIcon(_ folder: FolderDTO, icon: String?) async {
+        guard let index = folders.firstIndex(where: { $0.id == folder.id }) else { return }
+        let original = folders[index]
+        var updated = original
+        updated.icon = icon
+        folders[index] = updated
+        do {
+            try await backend.setFolderIcon(folderId: folder.id, icon: icon)
+            log.notice("folder \(folder.id, privacy: .public) icon=\(icon ?? "<cleared>", privacy: .public)")
+        } catch {
+            folders[index] = original
+            log.error("set icon failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     /// Create a new folder and append it to the published list.
     /// Used by the folder picker's inline "+ New folder" action.
     /// Returns the new folder so the caller can immediately assign

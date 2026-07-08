@@ -17,6 +17,8 @@ export async function PATCH(
   const body = (await request.json().catch(() => ({}))) as {
     name?: string;
     parentId?: string | null;
+    isFavorite?: boolean;
+    icon?: string | null;
   };
 
   const current = await getFolderOwned(id, user.id);
@@ -50,12 +52,26 @@ export async function PATCH(
     }
   }
 
+  if (body.isFavorite !== undefined && typeof body.isFavorite !== "boolean") {
+    return NextResponse.json({ error: "invalid_is_favorite" }, { status: 400 });
+  }
+  // Icon is a short emoji (or null to clear) — cap length so nobody
+  // stores an essay in the sidebar.
+  const icon =
+    body.icon === undefined
+      ? undefined
+      : body.icon === null
+        ? null
+        : String(body.icon).trim().slice(0, 8) || null;
+
   try {
     const ok = await updateFolder({
       id,
       ownerId: user.id,
       name,
       parentId: body.parentId,
+      isFavorite: body.isFavorite,
+      icon,
     });
     if (!ok) {
       return NextResponse.json({ error: "not_found" }, { status: 404 });

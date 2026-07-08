@@ -47,14 +47,20 @@ export async function updateFolder(params: {
   ownerId: string;
   name?: string;
   parentId?: string | null;
+  isFavorite?: boolean;
+  icon?: string | null;
 }): Promise<boolean> {
   const set: Partial<{
     name: string;
     parentId: string | null;
+    isFavorite: boolean;
+    icon: string | null;
     updatedAt: Date;
   }> = {};
   if (params.name !== undefined) set.name = params.name;
   if (params.parentId !== undefined) set.parentId = params.parentId;
+  if (params.isFavorite !== undefined) set.isFavorite = params.isFavorite;
+  if (params.icon !== undefined) set.icon = params.icon;
   if (Object.keys(set).length === 0) return true;
   const result = await db
     .update(folders)
@@ -208,6 +214,8 @@ export async function listFoldersForRecording(params: {
       name: folders.name,
       importSource: folders.importSource,
       importSourceId: folders.importSourceId,
+      isFavorite: folders.isFavorite,
+      icon: folders.icon,
       createdAt: folders.createdAt,
       updatedAt: folders.updatedAt,
     })
@@ -244,6 +252,8 @@ export async function listFolderAssignmentsForRecordings(params: {
         name: folders.name,
         importSource: folders.importSource,
         importSourceId: folders.importSourceId,
+        isFavorite: folders.isFavorite,
+        icon: folders.icon,
         createdAt: folders.createdAt,
         updatedAt: folders.updatedAt,
       },

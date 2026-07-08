@@ -14,6 +14,8 @@ export async function GET(request: Request) {
       id: f.id,
       name: f.name,
       parentId: f.parentId,
+      isFavorite: f.isFavorite,
+      icon: f.icon,
     })),
   });
 }

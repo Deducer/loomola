@@ -99,6 +99,9 @@ export const folders = pgTable(
     // migration 0022.
     importSource: text("import_source"),
     importSourceId: text("import_source_id"),
+    // Sidebar pinning + per-space emoji icon (Granola pattern, Stage 15).
+    isFavorite: boolean("is_favorite").default(false).notNull(),
+    icon: text("icon"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

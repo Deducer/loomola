@@ -44,6 +44,19 @@ struct MainRecorderView: View {
                         topPadding: sidebarTopPadding,
                         onClose: {
                             withAnimation(LoomolaMotion.quick) { sidebarOpen = false }
+                        },
+                        onToggleFavorite: { folder in
+                            Task {
+                                await viewModel.recentRecordings.setFolderFavorite(
+                                    folder,
+                                    isFavorite: !folder.favorite
+                                )
+                            }
+                        },
+                        onSetIcon: { folder, icon in
+                            Task {
+                                await viewModel.recentRecordings.setFolderIcon(folder, icon: icon)
+                            }
                         }
                     )
                     .transition(.move(edge: .leading))
