@@ -417,7 +417,7 @@ struct MainRecorderView: View {
             context: context,
             startDisabled: audioStartDisabled,
             start: { viewModel.startDetectedMeetingAudioNote() },
-            join: { viewModel.joinDetectedMeeting() },
+            join: { viewModel.joinDetectedMeetingFromPrompt() },
             dismiss: { viewModel.dismissMeetingPrompt() }
         )
     }

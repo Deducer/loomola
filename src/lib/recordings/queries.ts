@@ -45,6 +45,9 @@ export type RecentMediaItem = {
   /// suggested, the recording is still unfiled, and the user hasn't
   /// dismissed it.
   suggestedFolderId: string | null;
+  /// Calendar-event provenance for the Today pill (Stage 16).
+  calendarEventTitle: string | null;
+  calendarEventStartedAt: Date | null;
   attendees: Array<{ id: string; name: string; email: string | null }>;
 };
 
@@ -181,6 +184,8 @@ export async function recentMediaItems(params: {
       folderId: mediaObjects.folderId,
       suggestedFolderId: mediaObjects.suggestedFolderId,
       suggestedFolderDismissedAt: mediaObjects.suggestedFolderDismissedAt,
+      calendarEventTitle: mediaObjects.calendarEventTitle,
+      calendarEventStartedAt: mediaObjects.calendarEventStartedAt,
       attendees: mediaObjects.attendees,
       createdAt: mediaObjects.createdAt,
       aiTitle: aiOutputs.titleSuggested,
@@ -240,6 +245,8 @@ export async function recentMediaItems(params: {
           row.folderId == null && row.suggestedFolderDismissedAt == null
             ? row.suggestedFolderId
             : null,
+        calendarEventTitle: row.calendarEventTitle,
+        calendarEventStartedAt: row.calendarEventStartedAt,
         attendees: attendeeMap.get(row.id) ?? [],
       };
     })

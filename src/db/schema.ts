@@ -225,6 +225,12 @@ export const mediaObjects = pgTable("media_objects", {
     withTimezone: true,
   }),
   attendees: jsonb("attendees"),
+  // Which calendar event the desktop matched at recording start (or the
+  // user linked afterwards). Provenance for the Today pill — Stage 16.
+  calendarEventTitle: text("calendar_event_title"),
+  calendarEventStartedAt: timestamp("calendar_event_started_at", {
+    withTimezone: true,
+  }),
   r2MixedKey: text("r2_mixed_key"),
   obsidianSaveRequestedAt: timestamp("obsidian_save_requested_at", {
     withTimezone: true,

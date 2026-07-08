@@ -317,6 +317,7 @@ struct RecentRecording: Identifiable, Equatable {
     var folderName: String?
     var attendees: [RecentAttendeeDTO]
     var suggestedFolderId: String?
+    var calendarEventTitle: String?
 
     init(
         id: String,
@@ -373,6 +374,7 @@ struct RecentRecording: Identifiable, Equatable {
         self.folderName = dto.folderName
         self.attendees = dto.attendees ?? []
         self.suggestedFolderId = dto.suggestedFolderId
+        self.calendarEventTitle = dto.calendarEventTitle
     }
 
     /// Builds a copy with overridden folder assignment. Used by the

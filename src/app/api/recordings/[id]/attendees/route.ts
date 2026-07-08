@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { db } from "@/db";
+import { mediaObjects } from "@/db/schema";
+import { and, eq, sql } from "drizzle-orm";
 import {
   AttendeeUpdateError,
   updateAudioNoteAttendees,
@@ -10,6 +13,11 @@ import { requireAuth } from "@/lib/require-auth";
 
 const attendeesSchema = z.object({
   personIds: z.array(z.string().uuid()).max(50),
+  // Optional provenance: which calendar event these attendees came from
+  // (set by the desktop at recording start, or when the user links an
+  // event afterwards). Drives the workspace's Today pill.
+  calendarEventTitle: z.string().trim().max(300).nullish(),
+  calendarEventStartedAt: z.string().datetime({ offset: true }).nullish(),
 });
 
 function granolaNotFound() {
@@ -35,6 +43,19 @@ export async function PATCH(
       ownerId: user.id,
       personIds: parsed.data.personIds,
     });
+
+    if (parsed.data.calendarEventTitle !== undefined) {
+      await db
+        .update(mediaObjects)
+        .set({
+          calendarEventTitle: parsed.data.calendarEventTitle ?? null,
+          calendarEventStartedAt: parsed.data.calendarEventStartedAt
+            ? new Date(parsed.data.calendarEventStartedAt)
+            : null,
+          updatedAt: sql`now()`,
+        })
+        .where(and(eq(mediaObjects.id, id), eq(mediaObjects.ownerId, user.id)));
+    }
 
     try {
       await enqueueSpeakerSuggestion({ mediaObjectId: id });

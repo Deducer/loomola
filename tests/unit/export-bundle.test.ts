@@ -70,6 +70,8 @@ function baseItem(type: "audio" | "video"): ExportBundleMediaData {
       importSource: null,
       importSourceId: null,
       failureReason: null,
+      calendarEventTitle: null,
+      calendarEventStartedAt: null,
       createdAt: new Date("2026-05-01T20:08:00.000Z"),
       updatedAt: new Date("2026-05-01T20:09:00.000Z"),
       deletedAt: null,

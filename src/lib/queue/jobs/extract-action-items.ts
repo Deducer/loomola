@@ -1,5 +1,6 @@
 import { generateObjectWithFallback } from "@/lib/ai/with-fallback";
 import { actionItemsSchema } from "@/lib/ai/schemas";
+import { listAttendeeNamesForMedia } from "@/db/queries/people";
 import {
   getTranscriptByRecording,
   type WordTimestamp,
@@ -37,12 +38,20 @@ export async function runActionItemsJob(
   const timedTranscript =
     Array.isArray(words) && words.length > 0 ? buildTimedTranscript(words) : "";
 
+  const attendeeNames = await listAttendeeNamesForMedia(data.mediaObjectId);
+
   const { object } = await generateObjectWithFallback({
     schema: actionItemsSchema,
     schemaName: "ActionItems",
     prompt: [
       "You extract concrete action items from screen-recording transcripts.",
       "When timed transcript markers are available, choose the timestamp where the action item was discussed or committed.",
+      ...(attendeeNames.length > 0
+        ? [
+            "",
+            `Known attendees: ${attendeeNames.join(", ")}. Automatic transcription often misspells these names — always use these exact spellings.`,
+          ]
+        : []),
       "",
       "Rules:",
       "- Include only items that represent a specific committed action or next step.",

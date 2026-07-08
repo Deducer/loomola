@@ -58,8 +58,23 @@ export function composeSpeakerSuggestions(args: {
   const speakers = Array.from(speakerSet).sort((a, b) => a - b);
   if (speakers.length < 2) return [];
 
-  // Path B's strict-only rule: attendees + 1 (you) must equal speaker count.
-  if (attendees.length !== speakers.length - 1) return [];
+  // Path B's strict rule: attendees + 1 (you) must equal speaker count
+  // for FULL mapping. When numbers don't line up (a no-show, an extra
+  // voice), positional mapping would be a guess — but self-detection is
+  // still evidence-based (dominant speech share), so label just the
+  // user and leave the rest for manual assignment (Stage 16 relaxation).
+  if (attendees.length !== speakers.length - 1) {
+    const selfOnlyIdx = detectSelfSpeakerIdx(words);
+    if (selfOnlyIdx === null || !speakers.includes(selfOnlyIdx)) return [];
+    return [
+      {
+        speakerIdx: selfOnlyIdx,
+        personId: selfPersonId,
+        confidence: "high",
+        reason: "self_via_dominant_speech",
+      },
+    ];
+  }
 
   if (
     sourceSeparated &&

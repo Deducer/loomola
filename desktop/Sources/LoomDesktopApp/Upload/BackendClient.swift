@@ -616,10 +616,21 @@ actor BackendClient {
 
     /// Sets a recording's attendees (person ids). The server re-enqueues
     /// speaker suggestion after the write.
-    func setRecordingAttendees(recordingId: String, personIds: [String]) async throws {
+    func setRecordingAttendees(
+        recordingId: String,
+        personIds: [String],
+        calendarEventTitle: String? = nil,
+        calendarEventStartedAt: Date? = nil
+    ) async throws {
         let _: EmptyResponse = try await patch(
             path: "/api/recordings/\(recordingId)/attendees",
-            body: SetAttendeesRequest(personIds: personIds)
+            body: SetAttendeesRequest(
+                personIds: personIds,
+                calendarEventTitle: calendarEventTitle,
+                calendarEventStartedAt: calendarEventStartedAt.map {
+                    ISO8601DateFormatter().string(from: $0)
+                }
+            )
         )
     }
 
@@ -928,6 +939,9 @@ struct RecentRecordingDTO: Decodable, Equatable, Sendable {
     let attendees: [RecentAttendeeDTO]?
     /// Active G-M12 folder suggestion (unfiled + undismissed only).
     let suggestedFolderId: String?
+    /// Calendar-event provenance (Stage 16 Today pill).
+    let calendarEventTitle: String?
+    let calendarEventStartedAt: String?
 
     init(
         id: String,
@@ -942,7 +956,9 @@ struct RecentRecordingDTO: Decodable, Equatable, Sendable {
         attendees: [RecentAttendeeDTO]? = nil,
         status: String? = nil,
         transcriptReady: Bool? = nil,
-        suggestedFolderId: String? = nil
+        suggestedFolderId: String? = nil,
+        calendarEventTitle: String? = nil,
+        calendarEventStartedAt: String? = nil
     ) {
         self.id = id
         self.slug = slug
@@ -957,6 +973,8 @@ struct RecentRecordingDTO: Decodable, Equatable, Sendable {
         self.folderName = folderName
         self.attendees = attendees
         self.suggestedFolderId = suggestedFolderId
+        self.calendarEventTitle = calendarEventTitle
+        self.calendarEventStartedAt = calendarEventStartedAt
     }
 }
 
@@ -1065,6 +1083,8 @@ struct ResolveAttendeesResponse: Decodable, Sendable {
 
 struct SetAttendeesRequest: Encodable, Sendable {
     let personIds: [String]
+    var calendarEventTitle: String?
+    var calendarEventStartedAt: String?
 }
 
 struct NoteBodyResponse: Decodable, Sendable {

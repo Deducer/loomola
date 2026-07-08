@@ -178,6 +178,13 @@ struct NoteWorkspaceView: View {
     /// G-M13 speaker suggestions for the transcript drawer.
     @State private var speakerAssignments: [SpeakerAssignmentDTO] = []
     @State private var applyingSpeakerSuggestions = false
+
+    /// Stage 16 Today pill: matched/linked calendar event.
+    @State private var linkedCalendarEventTitle: String?
+    @State private var showCalendarPopover = false
+    @State private var todayEvents: [CalendarEventCandidate] = []
+    @State private var linkingCalendarEvent = false
+
     @State private var loadingTranscript = false
     @State private var transcriptError: String? = nil
     @State private var notesGeneratedForCurrentTranscript = false
@@ -839,11 +846,125 @@ struct NoteWorkspaceView: View {
     private var todayPill: some View {
         WorkspacePill(
             icon: "calendar",
-            label: "Today",
-            isActive: false,
-            action: { /* deferred — calendar integration */ }
+            label: calendarPillLabel,
+            isActive: linkedCalendarEventTitle != nil,
+            action: {
+                todayEvents = CalendarAttendeeService.shared.eventsToday()
+                showCalendarPopover.toggle()
+            }
         )
-        .help("Calendar linking coming soon")
+        .help(linkedCalendarEventTitle ?? "Link a calendar event")
+        .popover(isPresented: $showCalendarPopover, arrowEdge: .top) {
+            calendarEventPopover
+        }
+    }
+
+    private var calendarPillLabel: String {
+        guard let title = linkedCalendarEventTitle, !title.isEmpty else { return "Today" }
+        return title.count <= 24 ? title : String(title.prefix(23)) + "…"
+    }
+
+    /// Granola's event popover: which event this note belongs to, with
+    /// the ability to fix a wrong match or link one after the fact —
+    /// linking re-resolves attendees and re-runs speaker suggestions.
+    private var calendarEventPopover: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.sm) {
+            if let title = linkedCalendarEventTitle {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(DSFont.Body.md().weight(.medium))
+                        .foregroundStyle(DSColor.Text.primary)
+                    Text("Attendees were added from this event")
+                        .font(DSFont.Body.sm())
+                        .foregroundStyle(DSColor.Text.tertiary)
+                }
+            } else {
+                Text("No calendar event")
+                    .font(DSFont.Body.md().weight(.medium))
+                    .foregroundStyle(DSColor.Text.secondary)
+            }
+
+            if !CalendarAttendeeService.shared.hasAccess {
+                Button("Allow calendar access…") {
+                    Task { await CalendarAttendeeService.shared.requestAccess() }
+                }
+                .buttonStyle(.plain)
+                .font(DSFont.Body.sm().weight(.medium))
+                .foregroundStyle(DSColor.Accent.primary)
+            } else if case .reviewing = target {
+                Divider()
+                Text(linkedCalendarEventTitle == nil ? "Link an event from today" : "Wrong event? Pick another")
+                    .font(DSFont.Body.sm())
+                    .foregroundStyle(DSColor.Text.tertiary)
+                if todayEvents.isEmpty {
+                    Text("No events with attendees today")
+                        .font(DSFont.Body.sm())
+                        .foregroundStyle(DSColor.Text.tertiary)
+                } else {
+                    ForEach(Array(todayEvents.enumerated()), id: \.offset) { _, event in
+                        Button {
+                            linkCalendarEvent(event)
+                        } label: {
+                            HStack(spacing: DSSpacing.sm) {
+                                Text(event.start.formatted(date: .omitted, time: .shortened))
+                                    .font(DSFont.Mono.body())
+                                    .foregroundStyle(DSColor.Text.tertiary)
+                                Text(event.title)
+                                    .font(DSFont.Body.sm())
+                                    .foregroundStyle(DSColor.Text.primary)
+                                    .lineLimit(1)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(linkingCalendarEvent)
+                    }
+                }
+            }
+        }
+        .padding(DSSpacing.md)
+        .frame(width: 300, alignment: .leading)
+    }
+
+    private func linkCalendarEvent(_ event: CalendarEventCandidate) {
+        guard case .reviewing(let recording) = target,
+              let backend = viewModel.backendClient,
+              !linkingCalendarEvent
+        else { return }
+        linkingCalendarEvent = true
+        Task { @MainActor in
+            defer { linkingCalendarEvent = false }
+            do {
+                let attendees = CalendarAttendeePicker.dedupedAttendees(of: event)
+                let personIds = try await backend.resolveAttendeePersonIds(
+                    attendees.map {
+                        ResolveAttendeeRequest.Attendee(
+                            displayName: $0.displayName,
+                            email: $0.email
+                        )
+                    }
+                )
+                try await backend.setRecordingAttendees(
+                    recordingId: recording.id,
+                    personIds: personIds,
+                    calendarEventTitle: event.title,
+                    calendarEventStartedAt: event.start
+                )
+                linkedCalendarEventTitle = event.title
+                attendeeIds = personIds
+                if let list = try? await backend.listPeople() {
+                    people = list
+                }
+                // The server re-enqueued suggest_speakers; refresh so new
+                // suggestions surface in the transcript drawer.
+                loadSpeakerAssignments()
+                viewModel.recentRecordings.refresh()
+                showCalendarPopover = false
+                showToast(message: "Linked \(event.title) — \(personIds.count) attendee\(personIds.count == 1 ? "" : "s")")
+            } catch {
+                showToast(message: "Couldn't link event", tone: .error)
+            }
+        }
     }
 
     private var mePill: some View {
@@ -1498,6 +1619,14 @@ struct NoteWorkspaceView: View {
                     let wordCount = isRecording ? liveTranscriptWordCount : (transcript?.wordCount ?? 0)
                     if wordCount > 0 {
                         Text("\(wordCount) words")
+                            .font(DSFont.Body.sm())
+                            .foregroundStyle(DSColor.Text.tertiary)
+                    }
+                    // Invited-vs-spoke visibility: diarized voices against
+                    // the attendee list (+ you). A mismatch explains why
+                    // full name suggestions may not have fired.
+                    if !isRecording, distinctSavedSpeakerCount > 1 {
+                        Text("· \(distinctSavedSpeakerCount) voices\(attendeeIds.isEmpty ? "" : " · \(attendeeIds.count + 1) expected")")
                             .font(DSFont.Body.sm())
                             .foregroundStyle(DSColor.Text.tertiary)
                     }
@@ -2413,6 +2542,11 @@ struct NoteWorkspaceView: View {
         return "Suggested speakers: \(names.joined(separator: ", "))"
     }
 
+    private var distinctSavedSpeakerCount: Int {
+        guard let transcript else { return 0 }
+        return Set(transcript.paragraphs.compactMap(\.speaker)).count
+    }
+
     private func loadSpeakerAssignments() {
         guard case .reviewing(let recording) = target else { return }
         guard let backend = viewModel.backendClient else { return }
@@ -2561,6 +2695,7 @@ struct NoteWorkspaceView: View {
             reviewTitle = recording.title
             reviewFolderId = recording.folderId
             reviewFolderName = recording.folderName
+            linkedCalendarEventTitle = recording.calendarEventTitle
             attendeeIds = recording.attendees.map(\.id)
             attendeeNameFallbacks = Dictionary(
                 uniqueKeysWithValues: recording.attendees.map { ($0.id, $0.name) }

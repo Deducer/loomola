@@ -19,7 +19,10 @@ final class MeetingPromptWindowController {
                 self?.hide()
                 start()
             },
-            join: join,
+            join: { [weak self] in
+                self?.hide()
+                join()
+            },
             dismiss: { [weak self] in
                 self?.hide()
                 dismiss()

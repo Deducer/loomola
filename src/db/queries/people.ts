@@ -1,8 +1,35 @@
 import { db } from "@/db";
-import { people } from "@/db/schema";
-import { and, desc, eq, or, sql } from "drizzle-orm";
+import { mediaObjects, people } from "@/db/schema";
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 
 export type Person = typeof people.$inferSelect;
+
+/**
+ * Display names of a recording's attendees (media_objects.attendees is a
+ * jsonb array of person UUIDs). Used to make transcription and AI runs
+ * name-aware: attendee names go to Deepgram as keyword boosts and into
+ * the enhancement prompts so "Bosco" comes out as "Bhaskar" without the
+ * user hand-curating dictionary variants.
+ */
+export async function listAttendeeNamesForMedia(
+  mediaObjectId: string
+): Promise<string[]> {
+  const [media] = await db
+    .select({ ownerId: mediaObjects.ownerId, attendees: mediaObjects.attendees })
+    .from(mediaObjects)
+    .where(eq(mediaObjects.id, mediaObjectId))
+    .limit(1);
+  if (!media) return [];
+  const ids = Array.isArray(media.attendees)
+    ? media.attendees.filter((v): v is string => typeof v === "string")
+    : [];
+  if (ids.length === 0) return [];
+  const rows = await db
+    .select({ displayName: people.displayName })
+    .from(people)
+    .where(and(eq(people.ownerId, media.ownerId), inArray(people.id, ids)));
+  return rows.map((row) => row.displayName).filter((name) => name.trim().length > 0);
+}
 
 /**
  * Find a person row that matches the given email — checking both

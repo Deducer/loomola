@@ -69,6 +69,15 @@ enum MeetingDetector {
                 bundleIdentifier: "Cisco-Systems.Spark"
             )
         }
+        if haystack.contains("facetime") {
+            return MeetingContext(
+                detectedApp: "facetime",
+                sourceContextHint: hint,
+                suggestedTitle: suggestedTitle(from: title, fallback: "FaceTime call"),
+                joinURL: nil,
+                bundleIdentifier: "com.apple.FaceTime"
+            )
+        }
 
         return nil
     }

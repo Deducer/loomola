@@ -886,18 +886,36 @@ final class RecorderViewModel: ObservableObject {
     func joinDetectedMeeting() {
         let context = meetingPromptContext ?? meetingContext
         guard let context else { return }
-        if let url = context.joinURL {
+        // Direct URL from detection (Chrome tab), else the calendar
+        // invite's conferencing link — window-title detection (Zoom/
+        // Teams desktop apps) never has a URL, and "activate the app"
+        // is invisible when the app is already frontmost, which read
+        // as a dead button.
+        if let url = context.joinURL ?? CalendarAttendeeService.shared.joinURLForCurrentMeeting() {
             NSWorkspace.shared.open(url)
+            statusMessage = "Opening meeting link…"
             return
         }
         if let bundleID = context.bundleIdentifier,
            let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first {
-            app.activate(options: [.activateAllWindows])
+            if app.isActive {
+                statusMessage = "The meeting app is already in front."
+            } else {
+                app.activate(options: [.activateAllWindows])
+                statusMessage = "Brought the meeting forward."
+            }
             return
         }
-        // Last-ditch: try opening the bundle ID as a URL via NSWorkspace
-        // (e.g., x-zoom-call://). Most call apps register a scheme.
-        statusMessage = "Couldn't bring the meeting forward — open it manually from your dock."
+        statusMessage = "Couldn't find a meeting link — open it manually from your dock."
+    }
+
+    /// Prompt-panel variant: join, then retire the prompt so the click
+    /// always has visible feedback and the panel doesn't linger looking
+    /// ignored (and doesn't re-show on the next detection tick).
+    func joinDetectedMeetingFromPrompt() {
+        joinDetectedMeeting()
+        dismissedMeetingContext = meetingPromptContext
+        meetingPromptContext = nil
     }
 
     func startScreenPreview() {
@@ -2352,12 +2370,11 @@ final class RecorderViewModel: ObservableObject {
             if status == .notDetermined {
                 guard await service.requestAccess() else { return }
             }
-            let attendees = service.attendeesForCurrentMeeting()
-            guard !attendees.isEmpty else { return }
-            recorderLog.notice("calendar attendees — attaching \(attendees.count, privacy: .public) to \(recordingId, privacy: .public)")
+            guard let matched = service.matchedMeeting(), !matched.attendees.isEmpty else { return }
+            recorderLog.notice("calendar attendees — attaching \(matched.attendees.count, privacy: .public) to \(recordingId, privacy: .public)")
             do {
                 let personIds = try await backendClient.resolveAttendeePersonIds(
-                    attendees.map {
+                    matched.attendees.map {
                         ResolveAttendeeRequest.Attendee(
                             displayName: $0.displayName,
                             email: $0.email
@@ -2367,9 +2384,11 @@ final class RecorderViewModel: ObservableObject {
                 guard !personIds.isEmpty else { return }
                 try await backendClient.setRecordingAttendees(
                     recordingId: recordingId,
-                    personIds: personIds
+                    personIds: personIds,
+                    calendarEventTitle: matched.event.title,
+                    calendarEventStartedAt: matched.event.start
                 )
-                recorderLog.notice("calendar attendees — set \(personIds.count, privacy: .public) attendee(s) on \(recordingId, privacy: .public)")
+                recorderLog.notice("calendar attendees — set \(personIds.count, privacy: .public) attendee(s) on \(recordingId, privacy: .public) from event \(matched.event.title, privacy: .public)")
             } catch {
                 recorderLog.error("calendar attendees — failed: \(error.localizedDescription, privacy: .public)")
             }

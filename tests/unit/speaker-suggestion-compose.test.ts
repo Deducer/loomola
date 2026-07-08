@@ -125,9 +125,30 @@ describe("composeSpeakerSuggestions", () => {
     expect(bySpeaker.get(2)?.personId).toBe(ALEX.id);
   });
 
-  it("attendee count mismatch (3 speakers, 1 attendee) => no suggestions", () => {
+  it("attendee count mismatch (3 speakers, 1 attendee) => self-only suggestion", () => {
+    // Stage 16 relaxation: positional mapping would be a guess when
+    // counts don't line up, but self-detection is evidence-based —
+    // label just the user.
     const r = composeSpeakerSuggestions({
       words: [...w(0, 30), ...w(1, 10), ...w(2, 10)],
+      attendees: [{ displayName: "Sarah Chen", email: "sarah@example.com" }],
+      people: [SELF, SARAH],
+      selfPersonId: SELF.id,
+    });
+    expect(r).toEqual([
+      {
+        speakerIdx: 0,
+        personId: SELF.id,
+        confidence: "high",
+        reason: "self_via_dominant_speech",
+      },
+    ]);
+  });
+
+  it("count mismatch with tied self-detection => no suggestions", () => {
+    const r = composeSpeakerSuggestions({
+      // Three voices, one attendee, and no dominant speaker.
+      words: [...w(0, 50), ...w(1, 49.5), ...w(2, 48)],
       attendees: [{ displayName: "Sarah Chen", email: "sarah@example.com" }],
       people: [SELF, SARAH],
       selfPersonId: SELF.id,

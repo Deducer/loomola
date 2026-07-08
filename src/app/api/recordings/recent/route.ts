@@ -55,6 +55,8 @@ export async function GET(request: Request) {
     folderId: r.folderId,
     folderName: r.folderName,
     suggestedFolderId: r.suggestedFolderId,
+    calendarEventTitle: r.calendarEventTitle,
+    calendarEventStartedAt: r.calendarEventStartedAt?.toISOString() ?? null,
     attendees: r.attendees,
   }));
 

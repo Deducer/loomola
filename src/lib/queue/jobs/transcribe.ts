@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { mediaObjects } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getCanonicalTerms } from "@/db/queries/dictionary-terms";
+import { listAttendeeNamesForMedia } from "@/db/queries/people";
 import { getUserPreferences } from "@/db/queries/user-preferences";
 import { deepgramLanguageOption } from "@/lib/preferences/user-preferences";
 import { setRecordingFailed } from "@/db/queries/recordings";
@@ -41,7 +42,13 @@ export async function runTranscribeJob(data: TranscribeJobData): Promise<void> {
   const preferences = ownerId ? await getUserPreferences(ownerId) : null;
   const language = deepgramLanguageOption(preferences?.transcriptionLanguage);
   const canonical = ownerId ? await getCanonicalTerms(ownerId) : [];
-  const terms = canonical.slice(0, 100).map((term) => term.term);
+  // Attendee names are the highest-value keywords a meeting recording
+  // has — Deepgram boosting them fixes most misheard names at the
+  // source ("Bosco" → "Bhaskar") without dictionary curation.
+  const attendeeNames = await listAttendeeNamesForMedia(mediaObjectId);
+  const terms = Array.from(
+    new Set([...attendeeNames, ...canonical.map((term) => term.term)])
+  ).slice(0, 100);
 
   const outcome = await submitTranscription({
     mediaObjectId,

@@ -28,6 +28,7 @@ import {
   type NoteTemplate,
 } from "@/lib/ai/note-templates";
 import { getUserPreferences } from "@/db/queries/user-preferences";
+import { listAttendeeNamesForMedia } from "@/db/queries/people";
 import { buildSummaryLanguageInstruction } from "@/lib/preferences/user-preferences";
 import { normalizeGeneratedNotesMarkdown } from "@/lib/ai/normalize-generated-notes";
 
@@ -107,11 +108,15 @@ export function buildAudioNotesEnhancementPrompt(params: {
   template?: NoteTemplate;
   outputLanguageInstruction?: string;
   attachmentNames?: string[];
+  attendeeNames?: string[];
   rawNotes: string;
   transcript: string;
 }): string {
   const template = params.template ?? getNoteTemplate(DEFAULT_NOTE_TEMPLATE_ID);
   const transcriptCharCount = params.transcript.trim().length;
+  const attendeeLine = params.attendeeNames?.length
+    ? `Known attendees: ${params.attendeeNames.join(", ")}. Automatic transcription often misspells these names (a similar-sounding name in the transcript is almost certainly one of them) — always use these exact spellings in the notes.`
+    : null;
   return [
     "You are an AI meeting note-taker. The user hand-typed raw notes during a meeting, and you also have the transcript.",
     "",
@@ -137,6 +142,7 @@ export function buildAudioNotesEnhancementPrompt(params: {
     "- Finish the final sentence or bullet completely; never end mid-phrase.",
     "- Return only the polished markdown notes. Do not wrap the notes in JSON or code fences.",
     "",
+    ...(attendeeLine ? [attendeeLine, ""] : []),
     `Current title: ${params.title?.trim() || "Untitled note"}`,
     `Source context: ${params.sourceContextHint?.trim() || "Unknown"}`,
     `Selected template id: ${template.id}`,
@@ -254,6 +260,7 @@ async function runTitleSummaryJobInner(
   if (media?.type === "audio") {
     const preferences = await getUserPreferences(media.ownerId);
     const note = await getNotesByMediaObjectForJob(data.mediaObjectId);
+    const attendeeNames = await listAttendeeNamesForMedia(data.mediaObjectId);
     const attachments = await listNoteAttachmentsForJob(data.mediaObjectId);
     const imageAttachments = await Promise.all(
       attachments.slice(0, 6).map(async (attachment) => ({
@@ -270,6 +277,7 @@ async function runTitleSummaryJobInner(
         transcriptLanguage: transcript.language,
       }),
       attachmentNames: attachments.map((attachment) => attachment.filename),
+      attendeeNames,
       rawNotes: note?.body ?? "",
       transcript: text,
     });
