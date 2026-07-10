@@ -93,6 +93,38 @@ struct OrphanedRecording: Codable, Identifiable, Equatable, Sendable {
         tracks.contains(.composite)
     }
 
+    /// Recovery keeps a local safety copy even after the cloud upload
+    /// succeeds. These labels make the destructive boundary explicit in UI.
+    var isRescued: Bool {
+        rescuedSlug != nil
+    }
+
+    var recoveryStatusLabel: String {
+        isRescued ? "Uploaded" : "Needs upload"
+    }
+
+    var localCopyActionLabel: String {
+        isRescued ? "Delete local copy" : "Delete only copy"
+    }
+
+    var localCopyDetail: String {
+        if isRescued {
+            return "Cloud copy uploaded. Local recovery files are still on this Mac."
+        }
+        return "Upload has not succeeded. These local files may be the only copy."
+    }
+
+    var discardConfirmationTitle: String {
+        isRescued ? "Delete local recovery copy?" : "Permanently delete this recording?"
+    }
+
+    var discardConfirmationMessage: String {
+        if isRescued {
+            return "This removes the local recovery files from this Mac. The uploaded Loomola recording will not be deleted."
+        }
+        return "This upload has not been rescued. Deleting the local recovery files may permanently erase the only copy of this recording. This cannot be undone."
+    }
+
     func micFileURL() -> URL? {
         let url = storageDirectory.appending(path: "mic.m4a")
         return FileManager.default.fileExists(atPath: url.path) ? url : nil

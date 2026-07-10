@@ -1948,14 +1948,16 @@ final class RecorderViewModel: ObservableObject {
         }
     }
 
-    /// Permanently remove an orphan from the store + delete its local
-    /// audio files. Caller is responsible for confirming rescue first.
+    /// Permanently remove an orphan from the local recovery store.
+    /// This never deletes the cloud recording created by a successful rescue.
     func discardOrphan(_ orphan: OrphanedRecording) {
         do {
             try OrphanedRecordingStore.shared.discard(orphan)
-            statusMessage = "Discarded orphaned recording."
+            statusMessage = orphan.isRescued
+                ? "Deleted local recovery copy. Cloud recording was not changed."
+                : "Deleted local recovery copy."
         } catch {
-            statusMessage = "Could not discard recording: \(error.localizedDescription)"
+            statusMessage = "Could not delete local recovery copy: \(error.localizedDescription)"
         }
     }
 

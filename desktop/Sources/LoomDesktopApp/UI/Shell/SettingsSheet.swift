@@ -16,6 +16,7 @@ struct SettingsSheet: View {
     @State private var diagnosticsExpanded = false
     @State private var preferences = UserPreferencesDTO.defaults
     @State private var preferencesStatus: String?
+    @State private var orphanPendingDiscard: OrphanedRecording?
 
     private var calendarAttendeesSubtitle: String {
         switch CalendarAttendeeService.shared.authorizationStatus {
@@ -63,6 +64,24 @@ struct SettingsSheet: View {
         }
         .frame(width: 580, height: 620)
         .background(DSColor.Bg.surface)
+        .alert(
+            orphanPendingDiscard?.discardConfirmationTitle ?? "Delete recovery copy?",
+            isPresented: Binding(
+                get: { orphanPendingDiscard != nil },
+                set: { if !$0 { orphanPendingDiscard = nil } }
+            ),
+            presenting: orphanPendingDiscard
+        ) { orphan in
+            Button("Cancel", role: .cancel) {
+                orphanPendingDiscard = nil
+            }
+            Button(orphan.localCopyActionLabel, role: .destructive) {
+                viewModel.discardOrphan(orphan)
+                orphanPendingDiscard = nil
+            }
+        } message: { orphan in
+            Text(orphan.discardConfirmationMessage)
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
             permissionStatus = PermissionChecker.currentStatus()
         }
@@ -588,7 +607,7 @@ struct SettingsSheet: View {
     private var recoverySection: some View {
         Section(
             title: "Recovery",
-            subtitle: "Audio recordings whose upload failed. Retry uploads to the cloud, or discard once you've verified a successful retry."
+            subtitle: "Local safety copies from failed uploads. Uploaded copies stay in Loomola when you delete the local recovery files."
         ) {
             VStack(alignment: .leading, spacing: DSSpacing.md) {
                 ForEach(orphanStore.orphans) { orphan in
@@ -606,7 +625,9 @@ struct SettingsSheet: View {
         return VStack(alignment: .leading, spacing: DSSpacing.sm) {
             HStack(spacing: DSSpacing.md) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(orphan.title?.isEmpty == false ? orphan.title! : "Untitled audio recording")
+                    Text(orphan.title?.isEmpty == false
+                        ? orphan.title!
+                        : (orphan.isVideo ? "Untitled video recording" : "Untitled audio recording"))
                         .font(DSFont.Body.lg())
                         .foregroundStyle(DSColor.Text.primary)
                     Text(orphanSubtitle(orphan))
@@ -614,13 +635,20 @@ struct SettingsSheet: View {
                         .foregroundStyle(DSColor.Text.secondary)
                 }
                 Spacer()
+                Pill(
+                    orphan.recoveryStatusLabel,
+                    kind: orphan.isRescued ? .success : .warning
+                )
                 if let rescuedSlug = orphan.rescuedSlug {
-                    Pill("Rescued", kind: .success)
-                    SecondaryButton("Open", icon: "arrow.up.right.square") {
+                    SecondaryButton("Open cloud copy", icon: "arrow.up.right.square") {
                         viewModel.openWebNote(slug: rescuedSlug)
                     }
                 }
             }
+            Text(orphan.localCopyDetail)
+                .font(DSFont.Body.sm())
+                .foregroundStyle(orphan.isRescued ? DSColor.Text.secondary : DSColor.State.warning)
+                .fixedSize(horizontal: false, vertical: true)
             if let lastError = orphan.lastError, !lastError.isEmpty, orphan.rescuedSlug == nil {
                 Text("Last error: \(lastError)")
                     .font(DSFont.Body.sm())
@@ -637,11 +665,11 @@ struct SettingsSheet: View {
                     }
                     .disabled(isRetrying)
                 }
-                SecondaryButton("Reveal in Finder", icon: "folder") {
+                SecondaryButton("Show local files", icon: "folder") {
                     NSWorkspace.shared.activateFileViewerSelecting([orphan.storageDirectory])
                 }
-                SecondaryButton("Discard", icon: "trash") {
-                    viewModel.discardOrphan(orphan)
+                SecondaryButton(orphan.localCopyActionLabel, icon: "trash") {
+                    orphanPendingDiscard = orphan
                 }
                 .disabled(isRetrying)
             }

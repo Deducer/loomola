@@ -157,6 +157,34 @@ final class OrphanedRecordingStoreTests: XCTestCase {
         XCTAssertFalse(store.hasUnrescuedOrphans)
     }
 
+    func testRecoveryCopyPresentationDistinguishesUploadedFromOnlyCopy() {
+        let base = OrphanedRecording(
+            id: UUID(),
+            storageDirectory: URL(fileURLWithPath: "/tmp/orphan"),
+            originalRecordingId: nil,
+            originalSlug: nil,
+            title: "Important call",
+            capturedAt: Date(),
+            stoppedAt: Date(),
+            durationSeconds: 60,
+            tracks: [.mic]
+        )
+
+        XCTAssertEqual(base.recoveryStatusLabel, "Needs upload")
+        XCTAssertEqual(base.localCopyActionLabel, "Delete only copy")
+        XCTAssertTrue(base.localCopyDetail.contains("only copy"))
+        XCTAssertTrue(base.discardConfirmationMessage.contains("cannot be undone"))
+
+        var rescued = base
+        rescued.rescuedAt = Date()
+        rescued.rescuedSlug = "uploadedSlug"
+
+        XCTAssertEqual(rescued.recoveryStatusLabel, "Uploaded")
+        XCTAssertEqual(rescued.localCopyActionLabel, "Delete local copy")
+        XCTAssertTrue(rescued.localCopyDetail.contains("still on this Mac"))
+        XCTAssertTrue(rescued.discardConfirmationMessage.contains("will not be deleted"))
+    }
+
     func testDiscardRemovesFilesAndEntry() throws {
         let sourceDir = makeTempDir()
         defer { try? FileManager.default.removeItem(at: sourceDir) }
