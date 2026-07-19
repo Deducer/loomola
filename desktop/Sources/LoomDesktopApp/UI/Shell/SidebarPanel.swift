@@ -148,15 +148,10 @@ struct SidebarPanel: View {
                     .padding(.vertical, DSSpacing.xs)
             } else {
                 ForEach(searchResults) { result in
-                    SidebarNavRow(
-                        label: result.title,
-                        systemImage: result.kind == "audio" ? "doc.text" : "video",
-                        isActive: false,
-                        action: {
-                            onOpenSearchResult(result)
-                            onClose()
-                        }
-                    )
+                    SearchResultRow(result: result) {
+                        onOpenSearchResult(result)
+                        onClose()
+                    }
                 }
             }
         }
@@ -331,5 +326,60 @@ private struct SidebarNavRow: View {
         if isActive { return DSColor.Bg.subtle }
         if hovering { return DSColor.Bg.subtle.opacity(0.5) }
         return Color.clear
+    }
+}
+
+/// Search hits need more than a nav row gives: similar meeting names
+/// ("… marketing and sales…") truncate identically at sidebar width.
+/// Wrap the title to two lines and show the date — that's what actually
+/// tells two weekly calls apart. Full title on hover via tooltip.
+private struct SearchResultRow: View {
+    let result: SearchResultDTO
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    private static let isoFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private var dateLabel: String {
+        guard let date = Self.isoFormatter.date(from: result.createdAt) else { return "" }
+        return date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: DSSpacing.sm) {
+            Image(systemName: result.kind == "audio" ? "doc.text" : "video")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(DSColor.Text.secondary)
+                .frame(width: 18)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(result.title)
+                    .font(DSFont.Body.md())
+                    .foregroundStyle(DSColor.Text.primary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                if !dateLabel.isEmpty {
+                    Text(dateLabel)
+                        .font(DSFont.Body.sm())
+                        .foregroundStyle(DSColor.Text.tertiary)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, DSSpacing.sm)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous)
+                .fill(hovering ? DSColor.Bg.subtle.opacity(0.5) : Color.clear)
+        )
+        .contentShape(Rectangle())
+        .overlay { ActionHitArea(action: action) }
+        .onHover { hovering = $0 }
+        .help(result.title)
     }
 }
