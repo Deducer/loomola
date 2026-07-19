@@ -31,6 +31,12 @@ ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN NEXT_PUBLIC_BUILD_COMMIT="${NEXT_PUBLIC_BUILD_COMMIT:-${SOURCE_COMMIT:-${COOLIFY_GIT_COMMIT:-$GIT_COMMIT}}}" npm run build
+# Runtime-readable deploy stamp: /api/health reports it. The commit ARGs
+# don't reliably arrive from Coolify; the timestamp alone still proves
+# which build is serving.
+RUN printf '{"commit":"%s","builtAt":"%s"}' \
+      "${NEXT_PUBLIC_BUILD_COMMIT:-${SOURCE_COMMIT:-${COOLIFY_GIT_COMMIT:-${GIT_COMMIT:-unknown}}}}" \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > build-stamp.json
 # Bundle migrate.ts into self-contained CJS so runtime needs no tsx/esbuild.
 RUN npx esbuild scripts/migrate.ts \
       --bundle \
@@ -58,6 +64,7 @@ COPY --from=build /app/public ./public
 # Migration artifacts (SQL files + bundled runner)
 COPY --from=build /app/drizzle ./drizzle
 COPY --from=build /app/scripts/migrate.cjs ./scripts/migrate.cjs
+COPY --from=build /app/build-stamp.json ./build-stamp.json
 
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh

@@ -14,6 +14,10 @@ export type HealthPayload = {
   status: "ok" | "degraded" | "down";
   ts: string;
   commit: string;
+  /// When the container image was built (UTC). Deploy verification: even
+  /// when no commit ARG reaches the build, this stamp still proves which
+  /// build is serving.
+  builtAt: string | null;
   db: "ok" | "down";
   boss: { started: boolean; queues: QueueHealth[] };
 };
@@ -27,9 +31,11 @@ export function buildHealthPayload(input: {
   bossStarted: boolean;
   queues: QueueHealth[];
   commit: string;
+  builtAt?: string | null;
   now?: Date;
 }): { body: HealthPayload; httpStatus: number } {
   const ts = (input.now ?? new Date()).toISOString();
+  const builtAt = input.builtAt ?? null;
 
   if (!input.dbOk) {
     return {
@@ -37,6 +43,7 @@ export function buildHealthPayload(input: {
         status: "down",
         ts,
         commit: input.commit,
+        builtAt,
         db: "down",
         boss: { started: input.bossStarted, queues: [] },
       },
@@ -55,6 +62,7 @@ export function buildHealthPayload(input: {
       status: degraded ? "degraded" : "ok",
       ts,
       commit: input.commit,
+      builtAt,
       db: "ok",
       boss: { started: input.bossStarted, queues: input.queues },
     },

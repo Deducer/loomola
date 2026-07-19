@@ -1,10 +1,31 @@
 import { NextResponse } from "next/server";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { getStartedBoss } from "@/lib/queue/boss";
 import { buildHealthPayload, type QueueHealth } from "@/lib/health/payload";
 
 export const dynamic = "force-dynamic";
+
+/// Written by the Dockerfile build stage. NEXT_PUBLIC_BUILD_COMMIT is
+/// inlined at build time and Coolify doesn't reliably pass a commit ARG,
+/// so a runtime-readable file is the stamp that always works — worst
+/// case it still carries the build timestamp.
+type BuildStamp = { commit?: string; builtAt?: string };
+let cachedStamp: BuildStamp | null | undefined;
+
+function readBuildStamp(): BuildStamp | null {
+  if (cachedStamp !== undefined) return cachedStamp;
+  try {
+    cachedStamp = JSON.parse(
+      readFileSync(join(process.cwd(), "build-stamp.json"), "utf8")
+    ) as BuildStamp;
+  } catch {
+    cachedStamp = null;
+  }
+  return cachedStamp;
+}
 
 type QueueStatRow = {
   name: string;
@@ -15,7 +36,11 @@ type QueueStatRow = {
 };
 
 export async function GET() {
-  const commit = process.env.NEXT_PUBLIC_BUILD_COMMIT ?? "unknown";
+  const stamp = readBuildStamp();
+  const commit =
+    (stamp?.commit && stamp.commit !== "unknown" ? stamp.commit : null) ??
+    process.env.NEXT_PUBLIC_BUILD_COMMIT ??
+    "unknown";
 
   let dbOk = false;
   try {
@@ -59,6 +84,7 @@ export async function GET() {
     bossStarted: getStartedBoss() !== null,
     queues,
     commit,
+    builtAt: stamp?.builtAt ?? null,
   });
   return NextResponse.json(body, { status: httpStatus });
 }
