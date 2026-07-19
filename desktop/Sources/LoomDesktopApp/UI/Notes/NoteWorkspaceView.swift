@@ -305,6 +305,16 @@ struct NoteWorkspaceView: View {
                     if let suggestion = activeFolderSuggestion {
                         folderSuggestionBanner(suggestion)
                     }
+                    // Speaker suggestions used to render only inside the
+                    // transcript drawer — closed by default, so pending
+                    // names sat invisible. Surface them at the workspace
+                    // level like the folder banner; the drawer keeps its
+                    // own copy for when it's open.
+                    if !isRecording, !transcriptDrawerOpen, !pendingSpeakerSuggestions.isEmpty {
+                        speakerSuggestionBar
+                    } else if let nudgeText = speakerIdentifyNudgeText {
+                        speakerIdentifyNudge(nudgeText)
+                    }
                     pillRow
                     bodyEditor
                     if !isRecording && !reviewActionItems.isEmpty {
@@ -2597,6 +2607,48 @@ struct NoteWorkspaceView: View {
     private var distinctSavedSpeakerCount: Int {
         guard let transcript else { return 0 }
         return Set(transcript.paragraphs.compactMap(\.speaker)).count
+    }
+
+    /// A multi-voice note with no attendees can never get speaker
+    /// suggestions — the worker skips without an attendee list. Point at
+    /// the link-event path that feeds it instead of failing silently.
+    private var speakerIdentifyNudgeText: String? {
+        guard !isRecording,
+              case .reviewing = target,
+              attendeeIds.isEmpty,
+              pendingSpeakerSuggestions.isEmpty,
+              distinctSavedSpeakerCount > 1
+        else { return nil }
+        return "\(distinctSavedSpeakerCount) voices in this call — link its calendar event to identify speakers"
+    }
+
+    private func speakerIdentifyNudge(_ text: String) -> some View {
+        HStack(spacing: DSSpacing.sm) {
+            Image(systemName: "person.crop.circle.badge.questionmark")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(DSColor.Text.secondary)
+            Text(text)
+                .font(DSFont.Body.sm())
+                .foregroundStyle(DSColor.Text.secondary)
+                .lineLimit(1)
+            Spacer()
+            Button("Link event") {
+                showCalendarPopover = true
+            }
+            .buttonStyle(.plain)
+            .font(DSFont.Body.sm().weight(.medium))
+            .foregroundStyle(DSColor.Accent.primary)
+        }
+        .padding(.horizontal, DSSpacing.md)
+        .padding(.vertical, DSSpacing.xs)
+        .background(
+            RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
+                .fill(DSColor.Bg.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
+                .strokeBorder(DSColor.Border.subtle, lineWidth: 1)
+        )
     }
 
     private func loadSpeakerAssignments() {
