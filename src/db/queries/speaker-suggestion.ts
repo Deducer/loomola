@@ -132,6 +132,24 @@ export async function persistSpeakerSuggestions(args: {
     });
 }
 
+/** Deletes suggestion rows that are still pending (never accepted, never
+ *  dismissed) so a re-run of the worker can recompute them. Used when the
+ *  attendee list changes — stale pending suggestions from a wrong event
+ *  would otherwise block the worker's existing-assignments gate forever.
+ *  Accepted and dismissed rows are user decisions and stay untouched. */
+export async function clearPendingSpeakerSuggestions(
+  mediaObjectId: string
+): Promise<void> {
+  await db
+    .delete(speakerAssignments)
+    .where(
+      and(
+        eq(speakerAssignments.mediaObjectId, mediaObjectId),
+        eq(speakerAssignments.isSuggestion, true)
+      )
+    );
+}
+
 /** Used by the API to apply an accepted suggestion: flip is_suggestion
  *  to false, optionally set person_id (when accepting a "create new
  *  person" suggestion the API does the INSERT into people first). */

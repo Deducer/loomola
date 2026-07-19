@@ -8,6 +8,7 @@ import {
   updateAudioNoteAttendees,
 } from "@/db/queries/notes";
 import { enqueueSpeakerSuggestion } from "@/lib/queue/boss";
+import { clearPendingSpeakerSuggestions } from "@/db/queries/speaker-suggestion";
 import { enableGranola } from "@/lib/feature-flags";
 import { requireAuth } from "@/lib/require-auth";
 import { recordingWorkspaceContext } from "@/lib/recordings/queries";
@@ -77,6 +78,10 @@ export async function PATCH(
     }
 
     try {
+      // Pending suggestions computed from the previous attendee list are
+      // stale now, and they'd trip the worker's existing-assignments gate.
+      // Clear them (accepted/dismissed rows stay) before re-running.
+      await clearPendingSpeakerSuggestions(id);
       await enqueueSpeakerSuggestion({ mediaObjectId: id });
     } catch (err) {
       console.error(

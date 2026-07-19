@@ -862,7 +862,7 @@ struct NoteWorkspaceView: View {
             label: calendarPillLabel,
             isActive: linkedCalendarEventTitle != nil,
             action: {
-                todayEvents = CalendarAttendeeService.shared.eventsToday()
+                todayEvents = CalendarAttendeeService.shared.eventsToday(now: eventPickerReferenceDate)
                 showCalendarPopover.toggle()
             }
         )
@@ -870,6 +870,20 @@ struct NoteWorkspaceView: View {
         .popover(isPresented: $showCalendarPopover, arrowEdge: .top) {
             calendarEventPopover
         }
+    }
+
+    /// The day whose events the link-event picker offers: the note's own
+    /// day, not the viewer's — reviewing Tuesday's call on Friday must
+    /// list Tuesday's events.
+    private var eventPickerReferenceDate: Date {
+        if case .reviewing(let recording) = target { return recording.createdAt }
+        return Date()
+    }
+
+    private var eventPickerDayLabel: String {
+        let reference = eventPickerReferenceDate
+        if Calendar.current.isDateInToday(reference) { return "today" }
+        return reference.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
     }
 
     private var calendarPillLabel: String {
@@ -906,11 +920,11 @@ struct NoteWorkspaceView: View {
                 .foregroundStyle(DSColor.Accent.primary)
             } else if case .reviewing = target {
                 Divider()
-                Text(linkedCalendarEventTitle == nil ? "Link an event from today" : "Wrong event? Pick another")
+                Text(linkedCalendarEventTitle == nil ? "Link an event from \(eventPickerDayLabel)" : "Wrong event? Pick another from \(eventPickerDayLabel)")
                     .font(DSFont.Body.sm())
                     .foregroundStyle(DSColor.Text.tertiary)
                 if todayEvents.isEmpty {
-                    Text("No events with attendees today")
+                    Text("No events with attendees \(eventPickerDayLabel == "today" ? "today" : "on \(eventPickerDayLabel)")")
                         .font(DSFont.Body.sm())
                         .foregroundStyle(DSColor.Text.tertiary)
                 } else {
@@ -968,9 +982,17 @@ struct NoteWorkspaceView: View {
                 if let list = try? await backend.listPeople() {
                     people = list
                 }
-                // The server re-enqueued suggest_speakers; refresh so new
-                // suggestions surface in the transcript drawer.
+                // The server re-enqueued suggest_speakers, but that job
+                // takes seconds-to-a-minute (LLM attribution) — a single
+                // immediate refresh always missed it. Re-poll a few times
+                // so the suggestion bar appears without reopening the note.
                 loadSpeakerAssignments()
+                for delaySeconds in [5, 15, 35] {
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: UInt64(delaySeconds) * 1_000_000_000)
+                        loadSpeakerAssignments()
+                    }
+                }
                 viewModel.recentRecordings.refresh()
                 showCalendarPopover = false
                 showToast(message: "Linked \(event.title) — \(personIds.count) attendee\(personIds.count == 1 ? "" : "s")")
