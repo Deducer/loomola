@@ -2661,6 +2661,28 @@ struct NoteWorkspaceView: View {
         }
     }
 
+    /// Notes opened from search arrive with a slim DTO (no attendees,
+    /// folder, or calendar event) and Recent rows can be stale — the pills
+    /// were rendering that missing data as truth ("Me" with attendees on
+    /// the server). Always re-hydrate from the server on open.
+    private func hydrateWorkspaceContext(recordingId: String) {
+        guard let backend = viewModel.backendClient else { return }
+        Task { @MainActor in
+            guard let context = try? await backend.recordingWorkspaceContext(recordingId: recordingId) else { return }
+            attendeeIds = context.attendees.map(\.id)
+            attendeeNameFallbacks = Dictionary(
+                uniqueKeysWithValues: context.attendees.map { ($0.id, $0.name) }
+            )
+            if let eventTitle = context.calendarEventTitle {
+                linkedCalendarEventTitle = eventTitle
+            }
+            if let folder = context.folder, reviewFolderId == nil {
+                reviewFolderId = folder.id
+                reviewFolderName = folder.name
+            }
+        }
+    }
+
     /// Pending G-M13 suggestions that can be applied in one click
     /// (have a resolved person; not dismissed).
     private var pendingSpeakerSuggestions: [SpeakerAssignmentDTO] {
@@ -2849,6 +2871,7 @@ struct NoteWorkspaceView: View {
             loadingBody = true
             loadTranscript()
             loadSpeakerAssignments()
+            hydrateWorkspaceContext(recordingId: recording.id)
             Task {
                 if let backend = viewModel.backendClient {
                     do {

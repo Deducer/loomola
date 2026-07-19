@@ -175,6 +175,13 @@ actor BackendClient {
         try await get(path: "/api/speaker-assignments/\(mediaId)")
     }
 
+    /// Attendees + folder + calendar-event context for one recording.
+    /// Search results carry only a slim DTO, so the workspace re-hydrates
+    /// these from the server instead of trusting what it was handed.
+    func recordingWorkspaceContext(recordingId: String) async throws -> WorkspaceContextDTO {
+        try await get(path: "/api/recordings/\(recordingId)/attendees")
+    }
+
     func assignSpeaker(mediaId: String, speakerIdx: Int, personId: String) async throws {
         let _: EmptyResponse = try await put(
             path: "/api/speaker-assignments/\(mediaId)",
@@ -1002,6 +1009,21 @@ struct SearchResultDTO: Decodable, Equatable, Sendable, Identifiable {
     let createdAt: String
     let durationSeconds: Double?
     let status: String?
+}
+
+struct WorkspaceContextDTO: Decodable, Equatable, Sendable {
+    struct Attendee: Decodable, Equatable, Sendable {
+        let id: String
+        let name: String
+        let email: String?
+    }
+    struct Folder: Decodable, Equatable, Sendable {
+        let id: String
+        let name: String
+    }
+    let attendees: [Attendee]
+    let calendarEventTitle: String?
+    let folder: Folder?
 }
 
 struct SpeakerAssignmentDTO: Decodable, Equatable, Sendable {

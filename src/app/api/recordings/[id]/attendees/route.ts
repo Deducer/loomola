@@ -10,6 +10,7 @@ import {
 import { enqueueSpeakerSuggestion } from "@/lib/queue/boss";
 import { enableGranola } from "@/lib/feature-flags";
 import { requireAuth } from "@/lib/require-auth";
+import { recordingWorkspaceContext } from "@/lib/recordings/queries";
 
 const attendeesSchema = z.object({
   personIds: z.array(z.string().uuid()).max(50),
@@ -22,6 +23,24 @@ const attendeesSchema = z.object({
 
 function granolaNotFound() {
   return NextResponse.json({ error: "not_found" }, { status: 404 });
+}
+
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  if (!enableGranola()) return granolaNotFound();
+  const user = await requireAuth(request);
+  const { id } = await params;
+
+  const context = await recordingWorkspaceContext({
+    ownerId: user.id,
+    mediaObjectId: id,
+  });
+  if (!context) {
+    return NextResponse.json({ error: "not_found" }, { status: 404 });
+  }
+  return NextResponse.json(context, { status: 200 });
 }
 
 export async function PATCH(

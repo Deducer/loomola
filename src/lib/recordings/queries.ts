@@ -153,6 +153,49 @@ async function attendeesForRows(
   return result;
 }
 
+/// Workspace context for a single recording: resolved attendees plus the
+/// folder / calendar-event provenance the pills render. Exists because the
+/// desktop's search results carry only a slim DTO — a note opened from
+/// search would otherwise show empty pills while the server has the data.
+export async function recordingWorkspaceContext(params: {
+  ownerId: string;
+  mediaObjectId: string;
+}): Promise<{
+  attendees: RecentMediaItem["attendees"];
+  calendarEventTitle: string | null;
+  folder: { id: string; name: string } | null;
+} | null> {
+  const [row] = await db
+    .select({
+      id: mediaObjects.id,
+      attendees: mediaObjects.attendees,
+      calendarEventTitle: mediaObjects.calendarEventTitle,
+      folderId: folders.id,
+      folderName: folders.name,
+    })
+    .from(mediaObjects)
+    .leftJoin(folders, eq(folders.id, mediaObjects.folderId))
+    .where(
+      and(
+        eq(mediaObjects.id, params.mediaObjectId),
+        eq(mediaObjects.ownerId, params.ownerId),
+        isNull(mediaObjects.deletedAt)
+      )
+    )
+    .limit(1);
+  if (!row) return null;
+
+  const attendeeMap = await attendeesForRows(params.ownerId, [row]);
+  return {
+    attendees: attendeeMap.get(row.id) ?? [],
+    calendarEventTitle: row.calendarEventTitle,
+    folder:
+      row.folderId && row.folderName
+        ? { id: row.folderId, name: row.folderName }
+        : null,
+  };
+}
+
 export async function recentMediaItems(params: {
   ownerId: string;
   type?: MediaType;
