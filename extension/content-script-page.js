@@ -159,7 +159,8 @@ const MEETING_DETECTORS = [
     label: "Google Meet",
     hostMatches: () => location.hostname === "meet.google.com",
     matches: () =>
-      location.hostname === "meet.google.com" && location.pathname !== "/",
+      location.hostname === "meet.google.com" &&
+      /^\/[a-z]{3}-[a-z]{4}-[a-z]{3}(?:\/|$)/.test(location.pathname),
   },
   {
     source: "teams",

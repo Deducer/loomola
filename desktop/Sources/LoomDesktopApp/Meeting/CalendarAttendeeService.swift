@@ -9,11 +9,37 @@ struct CalendarAttendee: Equatable, Sendable {
 }
 
 struct CalendarEventCandidate: Equatable, Sendable {
+    let identifier: String
     let title: String
     let start: Date
     let end: Date
     let isAllDay: Bool
     let attendees: [CalendarAttendee]
+    let joinURL: URL?
+    let isCanceled: Bool
+    let isDeclined: Bool
+
+    init(
+        identifier: String = "",
+        title: String,
+        start: Date,
+        end: Date,
+        isAllDay: Bool,
+        attendees: [CalendarAttendee],
+        joinURL: URL? = nil,
+        isCanceled: Bool = false,
+        isDeclined: Bool = false
+    ) {
+        self.identifier = identifier
+        self.title = title
+        self.start = start
+        self.end = end
+        self.isAllDay = isAllDay
+        self.attendees = attendees
+        self.joinURL = joinURL
+        self.isCanceled = isCanceled
+        self.isDeclined = isDeclined
+    }
 }
 
 /// Pure event-selection logic, split from EventKit for tests.
@@ -23,10 +49,9 @@ enum CalendarAttendeePicker {
     static let earlyJoinGrace: TimeInterval = 5 * 60
 
     /// Picks the meeting the user is most plausibly in at `now` and returns
-    /// its attendees excluding the user themself. All-day events and events
-    /// with no other attendees never match. When events overlap (a 1:1
-    /// inside a blocked-out afternoon), the latest-starting one wins — it's
-    /// the most specific.
+    /// its attendees excluding the user themself. When events overlap (a 1:1
+    /// inside a blocked-out afternoon), joinable conference events win,
+    /// followed by attendee events, then the latest-starting event.
     static func attendeesForCurrentMeeting(
         events: [CalendarEventCandidate],
         now: Date
@@ -45,11 +70,27 @@ enum CalendarAttendeePicker {
     ) -> CalendarEventCandidate? {
         let candidates = events.filter { event in
             !event.isAllDay
+                && !event.isCanceled
+                && !event.isDeclined
+                && isMeetingLike(event)
                 && event.start <= now.addingTimeInterval(earlyJoinGrace)
                 && event.end >= now
-                && event.attendees.contains { !$0.isSelf }
         }
-        return candidates.max(by: { $0.start < $1.start })
+        return candidates.max { lhs, rhs in
+            let lhsScore = meetingSpecificityScore(lhs)
+            let rhsScore = meetingSpecificityScore(rhs)
+            return lhsScore == rhsScore ? lhs.start < rhs.start : lhsScore < rhsScore
+        }
+    }
+
+    private static func meetingSpecificityScore(_ event: CalendarEventCandidate) -> Int {
+        if event.joinURL != nil { return 2 }
+        if event.attendees.contains(where: { !$0.isSelf }) { return 1 }
+        return 0
+    }
+
+    static func isMeetingLike(_ event: CalendarEventCandidate) -> Bool {
+        event.joinURL != nil || event.attendees.contains(where: { !$0.isSelf })
     }
 
     static func dedupedAttendees(of event: CalendarEventCandidate) -> [CalendarAttendee] {
@@ -89,6 +130,10 @@ final class CalendarAttendeeService {
         do {
             let granted = try await store.requestFullAccessToEvents()
             log.notice("calendar access request → \(granted ? "granted" : "denied", privacy: .public)")
+            NotificationCenter.default.post(
+                name: CalendarReminderPreferences.changed,
+                object: nil
+            )
             return granted
         } catch {
             log.error("calendar access request failed: \(error.localizedDescription, privacy: .public)")
@@ -117,8 +162,9 @@ final class CalendarAttendeeService {
         return (best, attendees)
     }
 
-    /// Today's non-all-day events with other attendees — the "link a
-    /// calendar event" picker in the workspace.
+    /// Today's meeting-like events. A conferencing link is enough even when
+    /// EventKit exposes no invitees, while personal routine blocks stay out
+    /// of the picker.
     func eventsToday(now: Date = Date()) -> [CalendarEventCandidate] {
         guard hasAccess else { return [] }
         let calendar = Calendar.current
@@ -131,7 +177,26 @@ final class CalendarAttendeeService {
         return store.events(matching: predicate)
             .filter { !$0.isAllDay }
             .map(Self.candidate(from:))
-            .filter { $0.attendees.contains { !$0.isSelf } }
+            .filter { !$0.isCanceled && !$0.isDeclined }
+            .filter(CalendarAttendeePicker.isMeetingLike)
+            .sorted { $0.start < $1.start }
+    }
+
+    /// Future events considered by the local reminder scheduler. Eligibility
+    /// stays in the pure planner so it can be tested without EventKit.
+    func eventsStarting(
+        after now: Date = Date(),
+        before end: Date
+    ) -> [CalendarEventCandidate] {
+        guard hasAccess else { return [] }
+        let predicate = store.predicateForEvents(
+            withStart: now,
+            end: end,
+            calendars: nil
+        )
+        return store.events(matching: predicate)
+            .map(Self.candidate(from:))
+            .filter { $0.start > now && $0.start <= end }
             .sorted { $0.start < $1.start }
     }
 
@@ -147,12 +212,23 @@ final class CalendarAttendeeService {
     }
 
     private static func candidate(from event: EKEvent) -> CalendarEventCandidate {
-        CalendarEventCandidate(
+        let haystack = [
+            event.url?.absoluteString,
+            event.location,
+            event.notes,
+        ].compactMap { $0 }.joined(separator: "\n")
+        return CalendarEventCandidate(
+            identifier: event.eventIdentifier ?? event.calendarItemIdentifier,
             title: event.title ?? "",
             start: event.startDate,
             end: event.endDate,
             isAllDay: event.isAllDay,
-            attendees: (event.attendees ?? []).compactMap(Self.attendee(from:))
+            attendees: (event.attendees ?? []).compactMap(Self.attendee(from:)),
+            joinURL: ConferenceLink.extract(from: haystack),
+            isCanceled: event.status == .canceled,
+            isDeclined: event.attendees?.contains {
+                $0.isCurrentUser && $0.participantStatus == .declined
+            } == true
         )
     }
 
@@ -163,27 +239,12 @@ final class CalendarAttendeeService {
     /// no access, no matching event, or no recognizable link.
     func joinURLForCurrentMeeting(now: Date = Date()) -> URL? {
         guard hasAccess else { return nil }
-        let predicate = store.predicateForEvents(
-            withStart: now.addingTimeInterval(-8 * 60 * 60),
-            end: now.addingTimeInterval(CalendarAttendeePicker.earlyJoinGrace + 60),
-            calendars: nil
-        )
-        let candidates = store.events(matching: predicate).filter { event in
-            !event.isAllDay
-                && event.startDate <= now.addingTimeInterval(CalendarAttendeePicker.earlyJoinGrace)
-                && event.endDate >= now
-        }
-        guard let best = candidates.max(by: { $0.startDate < $1.startDate }) else {
+        let candidates = eventCandidates(now: now).filter { $0.joinURL != nil }
+        guard let best = CalendarAttendeePicker.bestCurrentEvent(events: candidates, now: now) else {
             return nil
         }
-        let haystack = [
-            best.url?.absoluteString,
-            best.location,
-            best.notes,
-        ].compactMap { $0 }.joined(separator: "\n")
-        let url = ConferenceLink.extract(from: haystack)
-        log.notice("calendar join-url lookup → \(url?.host ?? "none", privacy: .public) from event \(best.title ?? "?", privacy: .public)")
-        return url
+        log.notice("calendar join-url lookup → \(best.joinURL?.host ?? "none", privacy: .public) from event \(best.title, privacy: .public)")
+        return best.joinURL
     }
 
     private static func attendee(from participant: EKParticipant) -> CalendarAttendee? {

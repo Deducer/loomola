@@ -48,6 +48,10 @@ final class RecorderViewModel: ObservableObject {
     /// AudioNoteRecorder.paused but kept as an @Published mirror
     /// so SwiftUI re-renders on transition.
     @Published private(set) var isAudioNotePaused: Bool = false
+    /// True only while a confirmed audio-note discard is stopping capture
+    /// and deleting its local/backend draft. This keeps the UI honest without
+    /// routing a discard through the upload-oriented `.finalizing` state.
+    @Published private(set) var isDiscardingAudioNote: Bool = false
     /// Wall-clock time of the most recent pause for the active audio
     /// note recording. Used to freeze the elapsed-timer display while
     /// paused. Nil when running.
@@ -78,6 +82,8 @@ final class RecorderViewModel: ObservableObject {
         UserDefaults.standard.object(forKey: "loomola.liveTranscriptionEnabled") as? Bool ?? true
     @Published private(set) var calendarAttendeesEnabled: Bool =
         UserDefaults.standard.object(forKey: "loomola.calendarAttendeesEnabled") as? Bool ?? true
+    @Published private(set) var calendarRemindersEnabled: Bool =
+        CalendarReminderPreferences.isEnabled
     @Published private(set) var nativeMessagingStatus = "Chrome bridge can be installed after the extension is loaded."
     @Published private(set) var isInstallingNativeMessagingHost = false
     @Published private(set) var captureSources = CaptureSourceSnapshot(
@@ -417,6 +423,7 @@ final class RecorderViewModel: ObservableObject {
             obsidianRealtimeTask?.cancel()
             meetingWatchTask?.cancel()
             readinessRefreshTask?.cancel()
+            notesAutosaveTask?.cancel()
             audioTitleAutosaveTask?.cancel()
             cancelAudioInactivityMonitor()
             await obsidianRealtimeSubscriber?.stop()
@@ -424,9 +431,14 @@ final class RecorderViewModel: ObservableObject {
             obsidianRealtimeTask = nil
             meetingWatchTask = nil
             readinessRefreshTask = nil
+            notesAutosaveTask = nil
             audioTitleAutosaveTask = nil
+            lastSyncedNotesBody = ""
             lastSyncedAudioTitle = ""
+            liveNotesBody = ""
+            audioTitle = ""
             audioTitleManuallyEdited = false
+            isDiscardingAudioNote = false
             lastStoppedAudioRecordingForReview = nil
             obsidianSyncInFlight = false
             meetingContext = nil
@@ -577,6 +589,23 @@ final class RecorderViewModel: ObservableObject {
         if enabled, !CalendarAttendeeService.shared.hasAccess {
             Task { await CalendarAttendeeService.shared.requestAccess() }
         }
+    }
+
+    func setCalendarRemindersEnabled(_ enabled: Bool) {
+        guard calendarRemindersEnabled != enabled else { return }
+        calendarRemindersEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: CalendarReminderPreferences.enabledKey)
+        if enabled, !CalendarAttendeeService.shared.hasAccess {
+            Task {
+                _ = await CalendarAttendeeService.shared.requestAccess()
+                NotificationCenter.default.post(name: CalendarReminderPreferences.changed, object: nil)
+            }
+        } else {
+            NotificationCenter.default.post(name: CalendarReminderPreferences.changed, object: nil)
+        }
+        statusMessage = enabled
+            ? "Calendar reminders enabled."
+            : "Calendar reminders disabled."
     }
 
     func setLiveTranscriptionEnabled(_ enabled: Bool) {
@@ -876,6 +905,13 @@ final class RecorderViewModel: ObservableObject {
         }
         meetingPromptContext = nil
         startAudioNoteRecording()
+    }
+
+    func handleCalendarMeetingAction(_ action: RecorderCommands.CalendarMeetingAction) {
+        applyMeetingContext(action.context)
+        if action.intent == .startNotes {
+            startDetectedMeetingAudioNote()
+        }
     }
 
     /// Open the detected meeting — direct URL when we have one (Meet
@@ -1394,6 +1430,7 @@ final class RecorderViewModel: ObservableObject {
             recorderLog.error("startAudioNoteRecording — blocked: audioNoteRecorder is nil")
             return
         }
+        prepareForFreshAudioNote()
         // SCStream + backend.startRecording can take 3-4 seconds.
         // Flip isStartingRecording so the button shows "Starting…"
         // and disables — without this the click looked dead.
@@ -1497,6 +1534,27 @@ final class RecorderViewModel: ObservableObject {
                 isStartingRecording = false
             }
         }
+    }
+
+    /// A new recording is a new draft boundary. Clear every user-visible
+    /// field and pending autosave before starting so a previous note cannot
+    /// survive a reused SwiftUI view or a failed/aborted upload path.
+    private func prepareForFreshAudioNote() {
+        notesAutosaveTask?.cancel()
+        notesAutosaveTask = nil
+        audioTitleAutosaveTask?.cancel()
+        audioTitleAutosaveTask = nil
+        lastSyncedNotesBody = ""
+        lastSyncedAudioTitle = ""
+        liveNotesBody = ""
+        audioTitle = ""
+        audioTitleManuallyEdited = false
+        activeAudioRecordingStartedAt = nil
+        activeAudioRecordingSlug = nil
+        activeAudioRecordingId = nil
+        lastStoppedAudioRecordingForReview = nil
+        isDiscardingAudioNote = false
+        liveTranscription.reset()
     }
 
     private func startAudioNoteSessionWithRetry(
@@ -1846,7 +1904,13 @@ final class RecorderViewModel: ObservableObject {
         )
     }
 
-    func applyGeneratedAudioNote(title: String?, body: String?) {
+    func applyGeneratedAudioNote(mediaId: String, title: String?, body: String?) {
+        guard activeRecordingKind == .audio,
+              activeAudioRecordingId == mediaId
+        else {
+            recorderLog.notice("Ignoring generated note result for inactive media id")
+            return
+        }
         if let title, !title.isEmpty, shouldApplyGeneratedAudioTitle {
             audioTitle = title
             lastSyncedAudioTitle = title
@@ -1874,20 +1938,21 @@ final class RecorderViewModel: ObservableObject {
     }
 
     func cancelAudioNoteRecording() {
+        guard !isDiscardingAudioNote else { return }
         Task {
             await discardAudioNoteRecording()
         }
     }
 
     private func discardAudioNoteRecording() async {
-        guard let audioNoteRecorder else { return }
+        guard let audioNoteRecorder, !isDiscardingAudioNote else { return }
+        isDiscardingAudioNote = true
         notesAutosaveTask?.cancel()
         notesAutosaveTask = nil
         audioTitleAutosaveTask?.cancel()
         audioTitleAutosaveTask = nil
         lastSyncedAudioTitle = ""
         audioTitleManuallyEdited = false
-        state = .finalizing
         statusMessage = "Discarding audio note..."
         await audioNoteRecorder.cancel()
         liveTranscription.reset()
@@ -1902,10 +1967,12 @@ final class RecorderViewModel: ObservableObject {
         audioNotePausedAccumulatedSeconds = 0
         audioLevel = 0
         liveNotesBody = ""
+        lastSyncedNotesBody = ""
         audioTitle = ""
         autoSuggestedAudioTitle = nil
         lastStoppedAudioRecordingForReview = nil
         state = .signedInIdle
+        isDiscardingAudioNote = false
         statusMessage = "Audio note discarded."
     }
 
@@ -2273,19 +2340,11 @@ final class RecorderViewModel: ObservableObject {
     private func startMeetingWatch() {
         guard meetingDetectionEnabled else { return }
         guard meetingWatchTask == nil else { return }
-        refreshChromeMeetingContext(showStatus: false)
-        // The idle meeting-watch loop is intentionally minimal: it
-        // only reads the Chrome extension's signal file from disk
-        // (~1ms). It used to also call SCShareableContent.current as
-        // a fallback for non-extension users — but that enumerates
-        // every window in the session (~10–50ms of WindowServer +
-        // kernel work, ~240 calls/hour), which is wasteful on a
-        // background-running app. SCShareableContent still runs on
-        // explicit user actions (Settings → Refresh Sources, or
-        // start-of-recording), and the heuristic detector via
-        // MeetingDetector.detect(from:) gets called on those refresh
-        // paths — so detection still works for non-Chrome users,
-        // just at user-driven cadence rather than every 15s.
+        refreshIdleMeetingContext()
+        // The idle loop stays lightweight: a tiny Chrome signal file plus
+        // Core Graphics' existing on-screen window list. It deliberately
+        // does not call SCShareableContent.current, which rebuilds the full
+        // capture-source graph and was too expensive at polling cadence.
         meetingWatchTask = Task { [weak self] in
             while !Task.isCancelled {
                 do {
@@ -2293,9 +2352,34 @@ final class RecorderViewModel: ObservableObject {
                 } catch {
                     return
                 }
-                self?.refreshChromeMeetingContext(showStatus: false)
+                self?.refreshIdleMeetingContext()
             }
         }
+    }
+
+    private func refreshIdleMeetingContext() {
+        let detectedContext = ChromeMeetingSignalStore.readLatest()
+            ?? NativeMeetingWindowScanner.currentContext()
+        let context = detectedContext.map(enrichWithCurrentCalendarEvent)
+        let previousContext = meetingContext
+        applyMeetingContext(context)
+        if let context, context != previousContext {
+            statusMessage = "Detected \(context.detectedApp): \(context.sourceContextHint)"
+        }
+    }
+
+    private func enrichWithCurrentCalendarEvent(_ context: MeetingContext) -> MeetingContext {
+        guard let event = CalendarAttendeeService.shared.matchedMeeting()?.event else {
+            return context
+        }
+        let title = event.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return MeetingContext(
+            detectedApp: context.detectedApp,
+            sourceContextHint: context.sourceContextHint,
+            suggestedTitle: title.isEmpty ? context.suggestedTitle : title,
+            joinURL: context.joinURL ?? event.joinURL,
+            bundleIdentifier: context.bundleIdentifier
+        )
     }
 
     @discardableResult
@@ -2376,8 +2460,8 @@ final class RecorderViewModel: ObservableObject {
             if status == .notDetermined {
                 guard await service.requestAccess() else { return }
             }
-            guard let matched = service.matchedMeeting(), !matched.attendees.isEmpty else { return }
-            recorderLog.notice("calendar attendees — attaching \(matched.attendees.count, privacy: .public) to \(recordingId, privacy: .public)")
+            guard let matched = service.matchedMeeting() else { return }
+            recorderLog.notice("calendar event — attaching provenance and \(matched.attendees.count, privacy: .public) attendee(s) to \(recordingId, privacy: .public)")
             do {
                 let personIds = try await backendClient.resolveAttendeePersonIds(
                     matched.attendees.map {
@@ -2387,14 +2471,13 @@ final class RecorderViewModel: ObservableObject {
                         )
                     }
                 )
-                guard !personIds.isEmpty else { return }
                 try await backendClient.setRecordingAttendees(
                     recordingId: recordingId,
                     personIds: personIds,
                     calendarEventTitle: matched.event.title,
                     calendarEventStartedAt: matched.event.start
                 )
-                recorderLog.notice("calendar attendees — set \(personIds.count, privacy: .public) attendee(s) on \(recordingId, privacy: .public) from event \(matched.event.title, privacy: .public)")
+                recorderLog.notice("calendar event — linked \(recordingId, privacy: .public) to \(matched.event.title, privacy: .public) with \(personIds.count, privacy: .public) attendee(s)")
             } catch {
                 recorderLog.error("calendar attendees — failed: \(error.localizedDescription, privacy: .public)")
             }
@@ -2585,4 +2668,3 @@ private enum AudioNoteStartRetryError: LocalizedError {
         "Audio note could not start after retrying."
     }
 }
-

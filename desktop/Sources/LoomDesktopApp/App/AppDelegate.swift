@@ -2,6 +2,7 @@ import AppKit
 import Carbon.HIToolbox
 import OSLog
 import SwiftUI
+@preconcurrency import UserNotifications
 
 private let bootLog = Logger(subsystem: "cloud.dissonance.loom.desktop", category: "boot")
 
@@ -48,6 +49,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSLog("[loomola] applicationDidFinishLaunching — boot")
         configureMenuBar()
         configureGlobalHotkeys()
+        UNUserNotificationCenter.current().delegate = self
+        CalendarReminderCoordinator.shared.start()
         // Refresh menubar item titles when the recording state flips
         // so "Start Recording" ↔ "Stop Recording" tracks reality.
         // Also auto-show the bubble overlay when video recording
@@ -257,5 +260,54 @@ extension AppDelegate: NSMenuItemValidation {
                 : "Start Recording"
         }
         return true
+    }
+}
+
+extension AppDelegate: UNUserNotificationCenterDelegate {
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        // Meeting reminders should remain visible even when Loomola happens
+        // to be the active app; no auto-recording or surprise window focus.
+        completionHandler([.banner, .sound])
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        guard let context = CalendarReminderNotification.context(
+            from: response.notification.request.content.userInfo
+        ) else {
+            completionHandler()
+            return
+        }
+
+        let actionIdentifier = response.actionIdentifier
+        Task { @MainActor [weak self] in
+            defer { completionHandler() }
+            guard let self else { return }
+            switch actionIdentifier {
+            case CalendarReminderNotification.joinActionIdentifier:
+                if let url = context.joinURL {
+                    NSWorkspace.shared.open(url)
+                }
+            case CalendarReminderNotification.takeNotesActionIdentifier:
+                showRecorder()
+                RecorderCommands.postCalendarMeetingAction(
+                    .init(context: context, intent: .startNotes)
+                )
+            case UNNotificationDefaultActionIdentifier:
+                showRecorder()
+                RecorderCommands.postCalendarMeetingAction(
+                    .init(context: context, intent: .show)
+                )
+            default:
+                break
+            }
+        }
     }
 }

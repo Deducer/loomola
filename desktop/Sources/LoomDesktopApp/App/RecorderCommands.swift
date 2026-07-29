@@ -7,6 +7,16 @@ import Foundation
 /// lifecycle; notifications + a tiny shared atomic are the simplest
 /// cross-cut.
 enum RecorderCommands {
+    struct CalendarMeetingAction: Sendable {
+        enum Intent: Equatable, Sendable {
+            case show
+            case startNotes
+        }
+
+        let context: MeetingContext
+        let intent: Intent
+    }
+
     /// Posted to toggle composite recording: starts if idle, stops +
     /// uploads if currently recording. Receiver maps to view-model
     /// state.
@@ -22,12 +32,24 @@ enum RecorderCommands {
     /// replies to AppKit's pending termination request.
     static let discardRecordingAndQuit = Notification.Name("loomola.discardRecordingAndQuit")
 
+    /// Routes a macOS calendar-notification response into the SwiftUI-owned
+    /// recorder view model.
+    static let calendarMeetingAction = Notification.Name("loomola.calendarMeetingAction")
+
     static func postToggleRecording() {
         NotificationCenter.default.post(name: toggleRecording, object: nil)
     }
 
     static func postDiscardRecordingAndQuit() {
         NotificationCenter.default.post(name: discardRecordingAndQuit, object: nil)
+    }
+
+    static func postCalendarMeetingAction(_ action: CalendarMeetingAction) {
+        NotificationCenter.default.post(
+            name: calendarMeetingAction,
+            object: nil,
+            userInfo: ["action": action]
+        )
     }
 
     /// Set by the view model whenever a video composite recording

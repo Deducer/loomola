@@ -115,6 +115,7 @@ struct NoteWorkspaceView: View {
     @State private var showFolderPicker = false
     @State private var showAttendeePicker = false
     @State private var showRowMenu = false
+    @State private var showDiscardAudioConfirmation = false
     @State private var menuActionInFlight: NoteWorkspaceMenuAction? = nil
     @State private var loadingBody = false
     @State private var bodyEditorMeasuredHeight: CGFloat = 320
@@ -451,6 +452,18 @@ struct NoteWorkspaceView: View {
         .onChange(of: transcript?.fullText ?? "") { _, _ in
             markTranscriptUpdatedAfterGenerationIfNeeded()
         }
+        .alert("Discard this audio note?", isPresented: $showDiscardAudioConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Discard", role: .destructive) {
+                viewModel.cancelAudioNoteRecording()
+                onClose()
+            }
+        } message: {
+            Text(
+                "The captured audio will be deleted, and the draft note will be moved to Trash. " +
+                    "The audio can’t be recovered."
+            )
+        }
     }
 
     // MARK: - ⋯ menu content
@@ -549,13 +562,9 @@ struct NoteWorkspaceView: View {
             }
             if isRecording {
                 Divider().overlay(DSColor.Border.subtle)
-                // Granola pattern: Discard is a destructive action
-                // that doesn't compete with the prominent Stop pill —
-                // tucked in the ⋯ menu, one click away.
-                menuItem(label: "Discard recording", icon: "trash", tint: DSColor.State.danger) {
+                menuItem(label: "Discard audio note", icon: "trash", tint: DSColor.State.danger) {
                     showRowMenu = false
-                    viewModel.cancelAudioNoteRecording()
-                    onClose()
+                    showDiscardAudioConfirmation = true
                 }
             }
             if case .reviewing = target {
@@ -901,7 +910,7 @@ struct NoteWorkspaceView: View {
                     Text(title)
                         .font(DSFont.Body.md().weight(.medium))
                         .foregroundStyle(DSColor.Text.primary)
-                    Text("Attendees were added from this event")
+                    Text(attendeeIds.isEmpty ? "This note is linked to the calendar event" : "Attendees were added from this event")
                         .font(DSFont.Body.sm())
                         .foregroundStyle(DSColor.Text.tertiary)
                 }
@@ -924,7 +933,7 @@ struct NoteWorkspaceView: View {
                     .font(DSFont.Body.sm())
                     .foregroundStyle(DSColor.Text.tertiary)
                 if todayEvents.isEmpty {
-                    Text("No events with attendees \(eventPickerDayLabel == "today" ? "today" : "on \(eventPickerDayLabel)")")
+                    Text("No calendar events \(eventPickerDayLabel == "today" ? "today" : "on \(eventPickerDayLabel)")")
                         .font(DSFont.Body.sm())
                         .foregroundStyle(DSColor.Text.tertiary)
                 } else {
@@ -995,7 +1004,10 @@ struct NoteWorkspaceView: View {
                 }
                 viewModel.recentRecordings.refresh()
                 showCalendarPopover = false
-                showToast(message: "Linked \(event.title) — \(personIds.count) attendee\(personIds.count == 1 ? "" : "s")")
+                let attendeeSummary = personIds.isEmpty
+                    ? "no invitees found"
+                    : "\(personIds.count) attendee\(personIds.count == 1 ? "" : "s")"
+                showToast(message: "Linked \(event.title) — \(attendeeSummary)")
             } catch {
                 showToast(message: "Couldn't link event", tone: .error)
             }
@@ -2876,6 +2888,14 @@ struct NoteWorkspaceView: View {
         case .recording:
             attendeeIds = []
             attendeeNameFallbacks = [:]
+            // The backend calendar attachment is intentionally best-effort
+            // and asynchronous. Hydrate the visible pill directly from
+            // EventKit so an in-progress note shows its meeting immediately
+            // instead of saying "No calendar event" until it is reopened.
+            linkedCalendarEventTitle = CalendarAttendeeService.shared
+                .matchedMeeting()?
+                .event
+                .title
         case .reviewing(let recording):
             reviewTitle = recording.title
             reviewFolderId = recording.folderId
@@ -2946,6 +2966,7 @@ struct NoteWorkspaceView: View {
                 }
             }
         }
+        todayEvents = CalendarAttendeeService.shared.eventsToday(now: eventPickerReferenceDate)
     }
 
     // MARK: - AI enhance
@@ -3148,7 +3169,12 @@ struct NoteWorkspaceView: View {
                 let hasSummary =
                     !(status.summary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
                 guard hasSummary else { continue }
-                await applyGeneratedNotesResult(status, isActiveRecording: isActiveRecording)
+                let applied = await applyGeneratedNotesResult(
+                    status,
+                    mediaId: mediaId,
+                    isActiveRecording: isActiveRecording
+                )
+                guard applied else { return }
                 if !isActiveRecording {
                     reviewActionItems = status.actionItems ?? []
                 }
@@ -3284,17 +3310,25 @@ struct NoteWorkspaceView: View {
 
     private func applyGeneratedNotesResult(
         _ status: EnhanceStatusResponse,
+        mediaId: String,
         isActiveRecording: Bool
-    ) async {
+    ) async -> Bool {
+        guard workspaceMatches(mediaId: mediaId, isActiveRecording: isActiveRecording) else {
+            return false
+        }
         if isActiveRecording {
-            viewModel.applyGeneratedAudioNote(title: status.titleSuggested, body: nil)
+            viewModel.applyGeneratedAudioNote(
+                mediaId: mediaId,
+                title: status.titleSuggested,
+                body: nil
+            )
         } else if let suggested = status.titleSuggested,
                   !suggested.isEmpty,
                   reviewTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             reviewTitle = suggested
         }
 
-        guard let rawSummary = status.summary, !rawSummary.isEmpty else { return }
+        guard let rawSummary = status.summary, !rawSummary.isEmpty else { return true }
         let summary = MarkdownDisplayNormalizer.normalizeGeneratedNotes(rawSummary)
         // Generated notes land in the ENHANCED pane; the user's raw notes
         // (reviewBody / liveNotesBody) are never overwritten — they used
@@ -3302,6 +3336,17 @@ struct NoteWorkspaceView: View {
         // autosave.
         withAnimation(LoomolaMotion.quick) { showEnhanced = true }
         await revealGeneratedNotesBody(summary, isActiveRecording: isActiveRecording)
+        return true
+    }
+
+    private func workspaceMatches(mediaId: String, isActiveRecording: Bool) -> Bool {
+        if isActiveRecording {
+            return target == .recording &&
+                viewModel.activeRecordingKind == .audio &&
+                viewModel.activeAudioRecordingId == mediaId
+        }
+        guard case .reviewing(let recording) = target else { return false }
+        return recording.id == mediaId
     }
 
     private func revealGeneratedNotesBody(

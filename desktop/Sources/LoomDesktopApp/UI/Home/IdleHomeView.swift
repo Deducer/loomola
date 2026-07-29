@@ -7,6 +7,7 @@ struct IdleHomeView: View {
     @ObservedObject var recentService: RecentRecordingsService
     @Binding var captureMode: CaptureMode
     @Binding var folderFilterId: String?
+    @State private var showDiscardAudioConfirmation = false
     let topContentPadding: CGFloat
     let onOpenLiveAudioNote: () -> Void
     let onOpenAudioNote: (RecentRecording) -> Void
@@ -108,14 +109,26 @@ struct IdleHomeView: View {
                             ? DSColor.Text.tertiary.opacity(0.16)
                             : DSColor.State.recording.opacity(0.16)
                     )
-                Image(systemName: viewModel.isAudioNotePaused ? "pause.fill" : "waveform")
+                Image(
+                    systemName: viewModel.isDiscardingAudioNote
+                        ? "trash"
+                        : (viewModel.isAudioNotePaused ? "pause.fill" : "waveform")
+                )
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(viewModel.isAudioNotePaused ? DSColor.Text.secondary : DSColor.State.recording)
+                    .foregroundStyle(
+                        viewModel.isDiscardingAudioNote
+                            ? DSColor.Text.secondary
+                            : (viewModel.isAudioNotePaused ? DSColor.Text.secondary : DSColor.State.recording)
+                    )
             }
             .frame(width: 44, height: 44)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(viewModel.isAudioNotePaused ? "Audio note paused" : "Audio note recording")
+                Text(
+                    viewModel.isDiscardingAudioNote
+                        ? "Discarding audio note…"
+                        : (viewModel.isAudioNotePaused ? "Audio note paused" : "Audio note recording")
+                )
                     .font(DSFont.Body.lg())
                     .foregroundStyle(DSColor.Text.primary)
                 activeAudioElapsed
@@ -123,27 +136,40 @@ struct IdleHomeView: View {
 
             Spacer(minLength: DSSpacing.lg)
 
-            HStack(spacing: DSSpacing.sm) {
-                SecondaryButton(
-                    viewModel.isAudioNotePaused ? "Resume" : "Pause",
-                    icon: viewModel.isAudioNotePaused ? "play.fill" : "pause.fill"
-                ) {
-                    if viewModel.isAudioNotePaused {
-                        viewModel.resumeAudioNoteRecording()
-                    } else {
-                        viewModel.pauseAudioNoteRecording()
-                    }
+            if viewModel.isDiscardingAudioNote {
+                HStack(spacing: DSSpacing.sm) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Deleting local audio…")
+                        .font(DSFont.Body.sm())
+                        .foregroundStyle(DSColor.Text.secondary)
                 }
-                SecondaryButton("Open note", icon: "square.and.pencil") {
-                    onOpenLiveAudioNote()
-                }
-                if viewModel.isAudioNotePaused {
-                    PrimaryButton(
-                        "End & upload",
-                        icon: "checkmark",
-                        kind: .destructive
+            } else {
+                HStack(spacing: DSSpacing.sm) {
+                    SecondaryButton(
+                        viewModel.isAudioNotePaused ? "Resume" : "Pause",
+                        icon: viewModel.isAudioNotePaused ? "play.fill" : "pause.fill"
                     ) {
-                        viewModel.stopAudioNoteRecordingAndUpload()
+                        if viewModel.isAudioNotePaused {
+                            viewModel.resumeAudioNoteRecording()
+                        } else {
+                            viewModel.pauseAudioNoteRecording()
+                        }
+                    }
+                    SecondaryButton("Open note", icon: "square.and.pencil") {
+                        onOpenLiveAudioNote()
+                    }
+                    SecondaryButton("Discard", icon: "trash") {
+                        showDiscardAudioConfirmation = true
+                    }
+                    if viewModel.isAudioNotePaused {
+                        PrimaryButton(
+                            "End & upload",
+                            icon: "checkmark",
+                            kind: .destructive
+                        ) {
+                            viewModel.stopAudioNoteRecordingAndUpload()
+                        }
                     }
                 }
             }
@@ -157,6 +183,17 @@ struct IdleHomeView: View {
                 .strokeBorder(DSColor.Border.subtle, lineWidth: 1)
         )
         .dsShadow(.subtle)
+        .alert("Discard this audio note?", isPresented: $showDiscardAudioConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Discard", role: .destructive) {
+                viewModel.cancelAudioNoteRecording()
+            }
+        } message: {
+            Text(
+                "The captured audio will be deleted, and the draft note will be moved to Trash. " +
+                    "The audio can’t be recovered."
+            )
+        }
     }
 
     @ViewBuilder

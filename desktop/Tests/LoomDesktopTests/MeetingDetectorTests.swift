@@ -19,7 +19,7 @@ final class MeetingDetectorTests: XCTestCase {
             "zoom"
         )
         XCTAssertEqual(
-            MeetingDetector.detect(applicationName: "Microsoft Teams", title: "Daily Standup")?.detectedApp,
+            MeetingDetector.detect(applicationName: "Microsoft Teams", title: "Daily Standup Meeting")?.detectedApp,
             "teams"
         )
     }

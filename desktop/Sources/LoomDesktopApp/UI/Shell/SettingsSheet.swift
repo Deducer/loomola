@@ -17,6 +17,10 @@ struct SettingsSheet: View {
     @State private var preferences = UserPreferencesDTO.defaults
     @State private var preferencesStatus: String?
     @State private var orphanPendingDiscard: OrphanedRecording?
+    @State private var calendarReminderStatus = CalendarReminderPreferences.statusSummary
+    @State private var nextCalendarReminder = CalendarReminderPreferences.nextReminderSummary
+    @State private var launchAtLoginEnabled = LaunchAtLoginController.isEnabled
+    @State private var launchAtLoginStatus = LaunchAtLoginController.statusSummary
 
     private var calendarAttendeesSubtitle: String {
         switch CalendarAttendeeService.shared.authorizationStatus {
@@ -84,6 +88,12 @@ struct SettingsSheet: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
             permissionStatus = PermissionChecker.currentStatus()
+            launchAtLoginEnabled = LaunchAtLoginController.isEnabled
+            launchAtLoginStatus = LaunchAtLoginController.statusSummary
+        }
+        .onReceive(NotificationCenter.default.publisher(for: CalendarReminderPreferences.statusChanged)) { _ in
+            calendarReminderStatus = CalendarReminderPreferences.statusSummary
+            nextCalendarReminder = CalendarReminderPreferences.nextReminderSummary
         }
         .task {
             await loadPreferences()
@@ -237,8 +247,51 @@ struct SettingsSheet: View {
     }
 
     private var notificationsSection: some View {
-        Section(title: "Notifications", subtitle: "Email preferences for shared recordings.") {
+        Section(title: "Notifications", subtitle: "Meeting reminders and email preferences.") {
             VStack(alignment: .leading, spacing: DSSpacing.lg) {
+                settingsToggleRow(
+                    title: "Upcoming meeting reminders",
+                    subtitle: "Notify one minute before calendar meetings with a recognized join link.",
+                    isOn: Binding(
+                        get: { viewModel.calendarRemindersEnabled },
+                        set: { viewModel.setCalendarRemindersEnabled($0) }
+                    )
+                )
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(calendarReminderStatus)
+                        .font(DSFont.Body.sm())
+                        .foregroundStyle(DSColor.Text.secondary)
+                    if let nextCalendarReminder {
+                        Text("Next: \(nextCalendarReminder)")
+                            .font(DSFont.Body.sm())
+                            .foregroundStyle(DSColor.Text.tertiary)
+                    }
+                    Button("Open macOS notification settings") {
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .font(DSFont.Body.sm())
+                    .foregroundStyle(DSColor.Accent.primary)
+                }
+                settingsToggleRow(
+                    title: "Launch at login",
+                    subtitle: launchAtLoginStatus,
+                    isOn: Binding(
+                        get: { launchAtLoginEnabled },
+                        set: { enabled in
+                            do {
+                                try LaunchAtLoginController.setEnabled(enabled)
+                                launchAtLoginEnabled = LaunchAtLoginController.isEnabled
+                                launchAtLoginStatus = LaunchAtLoginController.statusSummary
+                            } catch {
+                                launchAtLoginEnabled = LaunchAtLoginController.isEnabled
+                                launchAtLoginStatus = "Couldn't update Login Items: \(error.localizedDescription)"
+                            }
+                        }
+                    )
+                )
                 settingsToggleRow(
                     title: "First view emails",
                     subtitle: "Notify when a new visitor opens a shared recording.",

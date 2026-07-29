@@ -156,6 +156,13 @@ struct MainRecorderView: View {
         .onReceive(NotificationCenter.default.publisher(for: RecorderCommands.discardRecordingAndQuit)) { _ in
             handleDiscardRecordingAndQuit()
         }
+        .onReceive(NotificationCenter.default.publisher(for: RecorderCommands.calendarMeetingAction)) { notification in
+            guard let action = notification.userInfo?["action"] as? RecorderCommands.CalendarMeetingAction else {
+                return
+            }
+            captureMode = .audio
+            viewModel.handleCalendarMeetingAction(action)
+        }
         .onChange(of: viewModel.state) { _, newState in
             // After a successful upload, hold the "Uploaded" success
             // surface for ~1.5s, then slide back to idle so the user
@@ -300,6 +307,7 @@ struct MainRecorderView: View {
                 pinChromeToTitlebar: !windowIsFullScreen,
                 onClose: { noteTarget = nil }
             )
+            .id(noteWorkspaceIdentity(for: target))
         } else if viewModel.state == .signedOut {
             SignedOutHomeView(viewModel: viewModel)
         } else if viewModel.activeRecordingKind == .video {
@@ -366,6 +374,18 @@ struct MainRecorderView: View {
             return true
         default:
             return false
+        }
+    }
+
+    /// Force a fresh workspace state container for each concrete note. SwiftUI
+    /// otherwise reuses the same local @State when `.recording` becomes
+    /// `.reviewing` or when a later recording opens in the same window.
+    private func noteWorkspaceIdentity(for target: NoteWorkspaceTarget) -> String {
+        switch target {
+        case .recording:
+            return "recording-\(viewModel.activeAudioRecordingId ?? "starting")"
+        case .reviewing(let recording):
+            return "reviewing-\(recording.id)"
         }
     }
 

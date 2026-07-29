@@ -32,6 +32,8 @@ enum MeetingDetector {
     static func detect(applicationName: String, title: String) -> MeetingContext? {
         let haystack = "\(applicationName) \(title)".lowercased()
         let hint = "\(applicationName): \(title)"
+        let application = applicationName.lowercased()
+        let windowTitle = title.lowercased()
 
         if haystack.contains("meet.google.com") || haystack.contains("google meet") {
             return MeetingContext(
@@ -42,7 +44,11 @@ enum MeetingDetector {
                 bundleIdentifier: chromeBundleIdentifier(for: applicationName)
             )
         }
-        if haystack.contains("zoom") {
+        if application.contains("zoom") && (
+            windowTitle.contains("zoom meeting")
+                || windowTitle.contains("zoom webinar")
+                || windowTitle.contains("floating video")
+        ) {
             return MeetingContext(
                 detectedApp: "zoom",
                 sourceContextHint: hint,
@@ -51,7 +57,8 @@ enum MeetingDetector {
                 bundleIdentifier: "us.zoom.xos"
             )
         }
-        if haystack.contains("microsoft teams") || haystack.contains("teams meeting") {
+        if (application.contains("microsoft teams") || application == "teams")
+            && (windowTitle.contains("meeting") || windowTitle.contains("call")) {
             return MeetingContext(
                 detectedApp: "teams",
                 sourceContextHint: hint,
@@ -60,7 +67,8 @@ enum MeetingDetector {
                 bundleIdentifier: "com.microsoft.teams2"
             )
         }
-        if haystack.contains("webex") {
+        if application.contains("webex")
+            && (windowTitle.contains("meeting") || windowTitle.contains("call")) {
             return MeetingContext(
                 detectedApp: "webex",
                 sourceContextHint: hint,
@@ -69,7 +77,8 @@ enum MeetingDetector {
                 bundleIdentifier: "Cisco-Systems.Spark"
             )
         }
-        if haystack.contains("facetime") {
+        if application.contains("facetime")
+            && (windowTitle.contains("call") || windowTitle.contains("with ")) {
             return MeetingContext(
                 detectedApp: "facetime",
                 sourceContextHint: hint,

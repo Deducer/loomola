@@ -57,6 +57,53 @@ final class CalendarAttendeePickerTests: XCTestCase {
         )
     }
 
+    func testJoinableEventWithoutAttendeesStillMatchesForCalendarProvenance() {
+        let solo = event(
+            startOffsetMin: -10,
+            endOffsetMin: 20,
+            attendees: [person("Me", email: "ian@example.com", isSelf: true)]
+        )
+        let joinable = CalendarEventCandidate(
+            title: solo.title,
+            start: solo.start,
+            end: solo.end,
+            isAllDay: false,
+            attendees: solo.attendees,
+            joinURL: URL(string: "https://zoom.us/j/123")
+        )
+
+        XCTAssertEqual(
+            CalendarAttendeePicker.bestCurrentEvent(events: [joinable], now: now),
+            joinable
+        )
+        XCTAssertEqual(
+            CalendarAttendeePicker.attendeesForCurrentMeeting(events: [joinable], now: now),
+            []
+        )
+        XCTAssertNil(CalendarAttendeePicker.bestCurrentEvent(events: [solo], now: now))
+    }
+
+    func testCanceledAndDeclinedEventsDoNotMatch() {
+        let attendee = person("Jack", email: "jack@example.com")
+        let canceled = CalendarEventCandidate(
+            title: "Canceled",
+            start: now.addingTimeInterval(-60),
+            end: now.addingTimeInterval(600),
+            isAllDay: false,
+            attendees: [attendee],
+            isCanceled: true
+        )
+        let declined = CalendarEventCandidate(
+            title: "Declined",
+            start: now.addingTimeInterval(-60),
+            end: now.addingTimeInterval(600),
+            isAllDay: false,
+            attendees: [attendee],
+            isDeclined: true
+        )
+        XCTAssertNil(CalendarAttendeePicker.bestCurrentEvent(events: [canceled, declined], now: now))
+    }
+
     func testOverlappingEventsPreferLatestStart() {
         // A 1:1 inside a blocked-out afternoon: the 1:1 is the meeting.
         let events = [
@@ -65,6 +112,28 @@ final class CalendarAttendeePickerTests: XCTestCase {
         ]
         let out = CalendarAttendeePicker.attendeesForCurrentMeeting(events: events, now: now)
         XCTAssertEqual(out.map(\.displayName), ["Jack"])
+    }
+
+    func testOverlappingEventsPreferConferenceLinkOverLaterSoloBlock() {
+        let meeting = CalendarEventCandidate(
+            title: "Customer call",
+            start: now.addingTimeInterval(-10 * 60),
+            end: now.addingTimeInterval(20 * 60),
+            isAllDay: false,
+            attendees: [],
+            joinURL: URL(string: "https://zoom.us/j/123")
+        )
+        let focusBlock = CalendarEventCandidate(
+            title: "Focus",
+            start: now.addingTimeInterval(-5 * 60),
+            end: now.addingTimeInterval(30 * 60),
+            isAllDay: false,
+            attendees: []
+        )
+        XCTAssertEqual(
+            CalendarAttendeePicker.bestCurrentEvent(events: [meeting, focusBlock], now: now),
+            meeting
+        )
     }
 
     func testDedupesAttendeesByEmailThenName() {

@@ -74,6 +74,19 @@ final class NoteWorkspaceEnhancementTests: XCTestCase {
         )
     }
 
+    func testRecordingWorkspaceHydratesCalendarPillImmediately() throws {
+        let source = try noteWorkspaceSource()
+
+        XCTAssertTrue(
+            source.contains("linkedCalendarEventTitle = CalendarAttendeeService.shared"),
+            "An active note should show its EventKit match before the async backend attachment finishes."
+        )
+        XCTAssertTrue(
+            source.contains("todayEvents = CalendarAttendeeService.shared.eventsToday"),
+            "The Today popover should be populated before its first presentation."
+        )
+    }
+
     private func noteWorkspaceSource() throws -> String {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let file = root.appending(path: "Sources/LoomDesktopApp/UI/Notes/NoteWorkspaceView.swift")
