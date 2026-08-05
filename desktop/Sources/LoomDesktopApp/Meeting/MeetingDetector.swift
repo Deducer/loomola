@@ -14,6 +14,64 @@ struct MeetingContext: Equatable, Sendable {
     /// when no URL is available (e.g., Zoom desktop client). Activating
     /// the app brings its window forward.
     let bundleIdentifier: String?
+
+    /// Stable for the lifetime of one detected call even when Zoom changes
+    /// its window title or calendar enrichment replaces the suggested title.
+    /// Browser meetings keep their join URL so two tabs/calls stay distinct;
+    /// native meeting apps key on the app because their detected window has no
+    /// reliable meeting identifier and can flicker between several titles.
+    var meetingPromptIdentity: String {
+        if let bundleIdentifier,
+           !Self.browserBundleIdentifiers.contains(bundleIdentifier) {
+            return "app:\(bundleIdentifier.lowercased())"
+        }
+        if let joinURL {
+            return "url:\(Self.normalizedJoinURL(joinURL))"
+        }
+        if let bundleIdentifier {
+            return "app:\(bundleIdentifier.lowercased())"
+        }
+        return "detected:\(detectedApp.lowercased())"
+    }
+
+    private static let browserBundleIdentifiers: Set<String> = [
+        "com.apple.Safari",
+        "com.brave.Browser",
+        "com.google.Chrome",
+        "company.thebrowser.Browser",
+        "org.mozilla.firefox",
+    ]
+
+    private static func normalizedJoinURL(_ url: URL) -> String {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return url.absoluteString.lowercased()
+        }
+        components.scheme = components.scheme?.lowercased()
+        components.host = components.host?.lowercased()
+        components.fragment = nil
+        return components.string ?? url.absoluteString.lowercased()
+    }
+}
+
+enum MeetingPromptPolicy {
+    static let absenceResetInterval: TimeInterval = 60
+
+    static func shouldPresent(
+        context: MeetingContext,
+        suppressedIdentity: String?,
+        activeRecordingKind: DesktopRecordingKind?
+    ) -> Bool {
+        guard activeRecordingKind == nil else { return false }
+        return suppressedIdentity != context.meetingPromptIdentity
+    }
+
+    static func shouldClearSuppression(
+        absenceStartedAt: Date,
+        now: Date,
+        graceInterval: TimeInterval = absenceResetInterval
+    ) -> Bool {
+        now.timeIntervalSince(absenceStartedAt) >= graceInterval
+    }
 }
 
 enum MeetingDetector {

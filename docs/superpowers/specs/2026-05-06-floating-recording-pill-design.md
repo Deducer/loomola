@@ -2,7 +2,7 @@
 
 **Author:** Claude Opus 4.7
 **Date:** 2026-05-06
-**Status:** Built 2026-05-06 (`RecordingStatusOverlayController` + `RecordingStatusOverlayView` in `desktop/Sources/LoomDesktopApp/UI/RecordingStatusOverlay.swift`); pending install + dogfood. Stage-8 in-app `RecordingStatusPill.swift` retired in the same commit. The retired no-op `AudioRecordingWindowController.swift` was removed too.
+**Status:** Built 2026-05-06; hover live-transcript preview added 2026-08-04 (`RecordingStatusOverlayController` + `RecordingStatusOverlayView` in `desktop/Sources/LoomDesktopApp/UI/RecordingStatusOverlay.swift`).
 **Driving feedback:** Ian, 2026-05-06 (during the same live call as the live-transcription-drawer spec) — *"Granola has this cool very small and unobtrusive vertical pill overlay with the granola logo and a simple three vertical bar sound waveform (that responds to the audio), and it follows you whatever desktop window you're on so you're always reminded that it's recording (very helpful)…"*
 
 ---
@@ -301,4 +301,4 @@ Total v1 estimate: ~1 working day. Smaller than the live-transcription drawer; t
 
 ## Spec status
 
-Spec only. Not planned, not assigned. Filed in the ROADMAP under "Open follow-ups" so it surfaces during the next sprint planning pass. Pairs naturally with the live transcription drawer spec — both are Granola in-meeting moments and could ship in the same milestone.
+Built. The floating pill is the persistent recording signal; hovering it now reveals the latest confirmed and in-progress live transcript without bringing Loomola to the foreground.

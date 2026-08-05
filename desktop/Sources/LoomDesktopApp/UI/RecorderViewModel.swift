@@ -137,7 +137,8 @@ final class RecorderViewModel: ObservableObject {
     private var meetingWatchTask: Task<Void, Never>?
     private var audioInactivityMonitorTask: Task<Void, Never>?
     private var obsidianSyncInFlight = false
-    private var dismissedMeetingContext: MeetingContext?
+    private var suppressedMeetingPromptIdentity: String?
+    private var meetingContextMissingSince: Date?
     private var autoSuggestedAudioTitle: String?
     private var audioTitleAutosaveTask: Task<Void, Never>?
     private var liveTranscriptionCancellable: AnyCancellable?
@@ -443,7 +444,8 @@ final class RecorderViewModel: ObservableObject {
             obsidianSyncInFlight = false
             meetingContext = nil
             meetingPromptContext = nil
-            dismissedMeetingContext = nil
+            suppressedMeetingPromptIdentity = nil
+            meetingContextMissingSince = nil
             autoSuggestedAudioTitle = nil
             activeAudioRecordingSlug = nil
             activeAudioRecordingId = nil
@@ -524,7 +526,7 @@ final class RecorderViewModel: ObservableObject {
         } else {
             meetingWatchTask?.cancel()
             meetingWatchTask = nil
-            applyMeetingContext(nil)
+            applyMeetingContext(nil, clearSuppressionImmediately: true)
             statusMessage = "Meeting detection disabled."
         }
     }
@@ -551,7 +553,7 @@ final class RecorderViewModel: ObservableObject {
         } else {
             meetingWatchTask?.cancel()
             meetingWatchTask = nil
-            applyMeetingContext(nil)
+            applyMeetingContext(nil, clearSuppressionImmediately: true)
         }
 
         floatingRecordingIndicatorEnabled = preferences.floatingRecordingIndicatorEnabled
@@ -697,7 +699,8 @@ final class RecorderViewModel: ObservableObject {
     }
 
     func checkMeetingContext() {
-        dismissedMeetingContext = nil
+        suppressedMeetingPromptIdentity = nil
+        meetingContextMissingSince = nil
         if !refreshChromeMeetingContext(showStatus: true) {
             refreshCaptureSources(showStatus: true)
         }
@@ -894,7 +897,7 @@ final class RecorderViewModel: ObservableObject {
     }
 
     func dismissMeetingPrompt() {
-        dismissedMeetingContext = meetingPromptContext
+        suppressMeetingPrompt(for: meetingPromptContext)
         meetingPromptContext = nil
         statusMessage = "Meeting prompt dismissed. Manual audio notes still use detected context while the meeting remains visible."
     }
@@ -903,6 +906,7 @@ final class RecorderViewModel: ObservableObject {
         if let suggested = meetingPromptContext?.suggestedTitle ?? meetingContext?.suggestedTitle {
             autoSuggestedAudioTitle = suggested
         }
+        suppressMeetingPrompt(for: meetingPromptContext ?? meetingContext)
         meetingPromptContext = nil
         startAudioNoteRecording()
     }
@@ -950,7 +954,7 @@ final class RecorderViewModel: ObservableObject {
     /// ignored (and doesn't re-show on the next detection tick).
     func joinDetectedMeetingFromPrompt() {
         joinDetectedMeeting()
-        dismissedMeetingContext = meetingPromptContext
+        suppressMeetingPrompt(for: meetingPromptContext)
         meetingPromptContext = nil
     }
 
@@ -1451,6 +1455,10 @@ final class RecorderViewModel: ObservableObject {
         let microphoneDeviceID = selectedMicDeviceID
         let systemAudioCaptureMode = systemAudioCaptureMode
         let systemAudioDeviceID = selectedSystemAudioDeviceID
+        // Starting manually counts as handling the currently detected call.
+        // Otherwise the prompt returns as soon as recording stops while the
+        // same Zoom window is still visible.
+        suppressMeetingPrompt(for: meetingPromptContext ?? meetingContext)
         meetingPromptContext = nil
         if includeSystemAudio &&
             systemAudioCaptureMode == .screenCaptureKit &&
@@ -2393,11 +2401,27 @@ final class RecorderViewModel: ObservableObject {
         return true
     }
 
-    private func applyMeetingContext(_ context: MeetingContext?) {
+    private func applyMeetingContext(
+        _ context: MeetingContext?,
+        clearSuppressionImmediately: Bool = false
+    ) {
         meetingContext = context
         guard let context else {
             meetingPromptContext = nil
-            dismissedMeetingContext = nil
+            let now = Date()
+            if clearSuppressionImmediately {
+                suppressedMeetingPromptIdentity = nil
+                meetingContextMissingSince = nil
+            } else if let missingSince = meetingContextMissingSince {
+                if MeetingPromptPolicy.shouldClearSuppression(
+                    absenceStartedAt: missingSince,
+                    now: now
+                ) {
+                    suppressedMeetingPromptIdentity = nil
+                }
+            } else {
+                meetingContextMissingSince = now
+            }
             if audioTitle == autoSuggestedAudioTitle {
                 audioTitle = ""
             }
@@ -2405,6 +2429,7 @@ final class RecorderViewModel: ObservableObject {
             autoSuggestedAudioTitle = nil
             return
         }
+        meetingContextMissingSince = nil
 
         if audioTitle == autoSuggestedAudioTitle {
             audioTitle = ""
@@ -2412,9 +2437,24 @@ final class RecorderViewModel: ObservableObject {
         audioTitleManuallyEdited = isUserOwnedAudioTitle(audioTitle)
         autoSuggestedAudioTitle = context.suggestedTitle
 
-        if dismissedMeetingContext != context && activeRecordingKind == nil {
-            meetingPromptContext = context
+        if MeetingPromptPolicy.shouldPresent(
+            context: context,
+            suppressedIdentity: suppressedMeetingPromptIdentity,
+            activeRecordingKind: activeRecordingKind
+        ) {
+            // Avoid rebuilding and re-ordering the same top-right panel every
+            // time Zoom changes a source title during the call.
+            if meetingPromptContext?.meetingPromptIdentity != context.meetingPromptIdentity {
+                meetingPromptContext = context
+            }
+        } else {
+            meetingPromptContext = nil
         }
+    }
+
+    private func suppressMeetingPrompt(for context: MeetingContext?) {
+        guard let context else { return }
+        suppressedMeetingPromptIdentity = context.meetingPromptIdentity
     }
 
     private func currentAccessToken() async throws -> String? {

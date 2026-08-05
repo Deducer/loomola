@@ -1,6 +1,74 @@
 import AppKit
 import SwiftUI
 
+struct RecordingTranscriptPreviewEntry: Identifiable, Equatable {
+    let id: String
+    let source: LiveTranscriptAudioSource
+    let text: String
+    let isInterim: Bool
+    let startSec: Double
+    let endSec: Double
+}
+
+enum RecordingTranscriptPreviewBuilder {
+    static func entries(
+        segments: [LiveTranscriptSegment],
+        interimBySource: [LiveTranscriptAudioSource: String],
+        limit: Int = 6
+    ) -> [RecordingTranscriptPreviewEntry] {
+        guard limit > 0 else { return [] }
+        var result: [RecordingTranscriptPreviewEntry] = []
+
+        for segment in segments.sorted(by: { $0.startSec < $1.startSec }) {
+            let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+
+            if let last = result.last,
+               last.source == segment.source,
+               !last.isInterim,
+               segment.startSec - last.endSec < 2.5 {
+                result[result.count - 1] = RecordingTranscriptPreviewEntry(
+                    id: last.id,
+                    source: last.source,
+                    text: "\(last.text) \(text)",
+                    isInterim: false,
+                    startSec: last.startSec,
+                    endSec: segment.endSec
+                )
+            } else {
+                result.append(
+                    RecordingTranscriptPreviewEntry(
+                        id: segment.id.uuidString,
+                        source: segment.source,
+                        text: text,
+                        isInterim: false,
+                        startSec: segment.startSec,
+                        endSec: segment.endSec
+                    )
+                )
+            }
+        }
+
+        for source in LiveTranscriptAudioSource.allCases {
+            guard let interim = interimBySource[source]?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !interim.isEmpty
+            else { continue }
+            result.append(
+                RecordingTranscriptPreviewEntry(
+                    id: "interim-\(source.rawValue)",
+                    source: source,
+                    text: interim,
+                    isInterim: true,
+                    startSec: result.last?.endSec ?? 0,
+                    endSec: result.last?.endSec ?? 0
+                )
+            )
+        }
+
+        return Array(result.suffix(limit))
+    }
+}
+
 /// Granola-shape always-visible audio-recording reminder. A small
 /// vertical capsule (~36×88pt) shown for the duration of an audio
 /// note recording. Floats on top of every Space and every app
@@ -25,6 +93,7 @@ import SwiftUI
 @MainActor
 final class RecordingStatusOverlayController {
     private var panel: NSPanel?
+    private var transcriptPanel: NSPanel?
     private var positionStore: PositionStore = .userDefaults
 
     func show(
@@ -51,6 +120,13 @@ final class RecordingStatusOverlayController {
             },
             onDragEnded: { [weak self] in
                 self?.handleDragEnded()
+            },
+            onHoverChanged: { [weak self, weak viewModel] hovering in
+                guard let self, let viewModel else { return }
+                self.setTranscriptPreviewVisible(
+                    hovering,
+                    transcription: viewModel.liveTranscription
+                )
             }
         )
 
@@ -86,6 +162,7 @@ final class RecordingStatusOverlayController {
 
     func hide() {
         panel?.orderOut(nil)
+        transcriptPanel?.orderOut(nil)
     }
 
     var isVisible: Bool {
@@ -114,6 +191,7 @@ final class RecordingStatusOverlayController {
         )
         let clamped = Self.clamp(origin: proposed, size: size)
         panel.setFrameOrigin(clamped)
+        positionTranscriptPanel()
         dragOrigin = clamped
     }
 
@@ -122,6 +200,67 @@ final class RecordingStatusOverlayController {
         if let origin = dragOrigin {
             positionStore.write(origin)
         }
+    }
+
+    // MARK: - Live transcript preview
+
+    private func setTranscriptPreviewVisible(
+        _ visible: Bool,
+        transcription: LiveTranscriptionCoordinator
+    ) {
+        guard visible, panel?.isVisible == true else {
+            transcriptPanel?.orderOut(nil)
+            return
+        }
+
+        let size = NSSize(width: 322, height: 374)
+        let transcriptPanel = transcriptPanel ?? NSPanel(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        let view = RecordingTranscriptPreviewView(transcription: transcription)
+        if let host = transcriptPanel.contentView as? NSHostingView<RecordingTranscriptPreviewView> {
+            host.rootView = view
+        } else {
+            transcriptPanel.contentView = NSHostingView(rootView: view)
+        }
+        transcriptPanel.setContentSize(size)
+        transcriptPanel.isOpaque = false
+        transcriptPanel.backgroundColor = .clear
+        transcriptPanel.hasShadow = true
+        transcriptPanel.level = .floating
+        transcriptPanel.collectionBehavior = [
+            .canJoinAllSpaces,
+            .stationary,
+            .fullScreenAuxiliary,
+        ]
+        transcriptPanel.hidesOnDeactivate = false
+        transcriptPanel.ignoresMouseEvents = true
+        transcriptPanel.sharingType = .none
+        self.transcriptPanel = transcriptPanel
+        positionTranscriptPanel()
+        transcriptPanel.orderFrontRegardless()
+    }
+
+    private func positionTranscriptPanel() {
+        guard let panel, let transcriptPanel else { return }
+        let pillFrame = panel.frame
+        let previewSize = transcriptPanel.frame.size
+        let screen = NSScreen.screens.first { $0.frame.intersects(pillFrame) } ?? NSScreen.main
+        let visibleFrame = screen?.visibleFrame
+            ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let gap: CGFloat = 10
+        let preferredLeftX = pillFrame.minX - gap - previewSize.width
+        let x = preferredLeftX >= visibleFrame.minX
+            ? preferredLeftX
+            : min(pillFrame.maxX + gap, visibleFrame.maxX - previewSize.width)
+        let y = max(
+            visibleFrame.minY,
+            min(pillFrame.maxY - previewSize.height, visibleFrame.maxY - previewSize.height)
+        )
+        transcriptPanel.setFrameOrigin(NSPoint(x: x, y: y))
     }
 
     // MARK: - Geometry
@@ -176,6 +315,7 @@ private struct RecordingStatusOverlayView: View {
     let onTap: () -> Void
     let onDragChanged: (CGSize) -> Void
     let onDragEnded: () -> Void
+    let onHoverChanged: (Bool) -> Void
 
     @State private var hovering = false
     @State private var pressing = false
@@ -215,7 +355,10 @@ private struct RecordingStatusOverlayView: View {
         }
         .scaleEffect(pressing ? 0.97 : 1.0)
         .contentShape(Capsule())
-        .onHover { hovering = $0 }
+        .onHover {
+            hovering = $0
+            onHoverChanged($0)
+        }
         .gesture(
             // Press-down/up tracking + click in one gesture so we
             // can show the press visual feedback. SwiftUI's
@@ -247,6 +390,156 @@ private struct RecordingStatusOverlayView: View {
             return Color.white.opacity(0.18)
         } else {
             return Color.white.opacity(0.10)
+        }
+    }
+}
+
+private struct RecordingTranscriptPreviewView: View {
+    @ObservedObject var transcription: LiveTranscriptionCoordinator
+
+    private var entries: [RecordingTranscriptPreviewEntry] {
+        RecordingTranscriptPreviewBuilder.entries(
+            segments: transcription.segments,
+            interimBySource: transcription.interimBySource
+        )
+    }
+
+    private var fingerprint: String {
+        entries.map { "\($0.id):\($0.text)" }.joined(separator: "|")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 9) {
+                BrandLogoMark(size: 20)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Loomola live transcript")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(DSColor.Text.primary)
+                    Text(transcription.status.label)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(DSColor.Text.tertiary)
+                }
+                Spacer(minLength: 8)
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 7, height: 7)
+            }
+
+            Divider().overlay(DSColor.Border.subtle)
+
+            if entries.isEmpty {
+                emptyState
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView(showsIndicators: false) {
+                        LazyVStack(alignment: .leading, spacing: 8) {
+                            ForEach(entries) { entry in
+                                transcriptEntry(entry)
+                                    .id(entry.id)
+                            }
+                        }
+                    }
+                    .onAppear { scrollToLatest(proxy) }
+                    .onChange(of: fingerprint) { _, _ in scrollToLatest(proxy) }
+                }
+            }
+
+            Text("Click the Loomola pill to open the note")
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(DSColor.Text.tertiary.opacity(0.82))
+                .frame(maxWidth: .infinity, alignment: .center)
+        }
+        .padding(14)
+        .frame(width: 322, height: 374)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(DSColor.Bg.surface.opacity(0.98))
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
+        }
+    }
+
+    @ViewBuilder
+    private var emptyState: some View {
+        switch transcription.status {
+        case .disabled:
+            statusMessage("Live transcription is off. Turn it on in Settings.")
+        case .connecting:
+            VStack(spacing: 9) {
+                ProgressView().controlSize(.small)
+                statusMessage("Connecting live transcript…")
+            }
+        case .unavailable(let message):
+            statusMessage(
+                message.isEmpty
+                    ? "Live transcription is unavailable. The recording is still safe."
+                    : message
+            )
+        case .idle, .streaming:
+            statusMessage("Listening… Speech will appear here as it is transcribed.")
+        }
+    }
+
+    private func statusMessage(_ message: String) -> some View {
+        Text(message)
+            .font(.system(size: 12.5, weight: .regular))
+            .foregroundStyle(DSColor.Text.secondary)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: 240)
+    }
+
+    private func transcriptEntry(_ entry: RecordingTranscriptPreviewEntry) -> some View {
+        Text(entry.text)
+            .font(.system(size: 12.5, weight: .regular))
+            .lineSpacing(2.5)
+            .foregroundStyle(
+                entry.isInterim
+                    ? DSColor.Text.secondary.opacity(0.76)
+                    : DSColor.Text.primary.opacity(0.9)
+            )
+            .lineLimit(4)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(entryFill(entry))
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .strokeBorder(
+                        entry.source == .systemAudio
+                            ? DSColor.Border.subtle.opacity(0.7)
+                            : .clear,
+                        lineWidth: 1
+                    )
+            }
+    }
+
+    private func entryFill(_ entry: RecordingTranscriptPreviewEntry) -> Color {
+        let base = entry.source == .microphone
+            ? DSColor.Bg.subtle.opacity(0.78)
+            : DSColor.Bg.canvas.opacity(0.62)
+        return entry.isInterim ? base.opacity(0.66) : base
+    }
+
+    private var statusColor: Color {
+        switch transcription.status {
+        case .streaming: return DSColor.State.success
+        case .connecting: return DSColor.State.warning
+        case .disabled, .idle: return DSColor.Text.tertiary
+        case .unavailable: return DSColor.State.danger
+        }
+    }
+
+    private func scrollToLatest(_ proxy: ScrollViewProxy) {
+        guard let id = entries.last?.id else { return }
+        DispatchQueue.main.async {
+            proxy.scrollTo(id, anchor: .bottom)
         }
     }
 }

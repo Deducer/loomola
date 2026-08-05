@@ -445,7 +445,10 @@ struct MainRecorderView: View {
     }
 
     private func updateMeetingPromptWindow() {
-        guard let context = viewModel.meetingPromptContext else {
+        guard
+            viewModel.activeRecordingKind == nil,
+            let context = viewModel.meetingPromptContext
+        else {
             meetingPromptWindow.hide()
             return
         }

@@ -2,7 +2,7 @@
 
 **Author:** Claude Opus 4.7
 **Date:** 2026-05-06
-**Status:** Spec — not yet planned or built
+**Status:** Built — workspace drawer and streaming pipeline shipped; floating-pill hover preview added 2026-08-04
 **Driving feedback:** Ian, 2026-05-06 (during a live call recorded through Granola for reference) — *"They organize into paragraphs (presumably based on speaker timing) and they also differentiate with color the words that are kind of in progress or mid sentence per say, from the ones that are part of already completed sections… It's nice to be able to look up what someone just said sometimes on a call, and it gives you a visual check that the audio is indeed being correctly transcribed."*
 
 ---
@@ -221,4 +221,4 @@ Total v1 estimate: ~3.5 working days.
 
 ## Spec status
 
-Spec only. Not planned, not assigned. Filed in the ROADMAP under "Open follow-ups (next milestones to spec)" so it surfaces during the next sprint planning pass.
+Built. The workspace drawer uses the shipped Deepgram live stream, and the cross-Spaces recording pill exposes a read-only preview of the same confirmed and interim text on hover.
