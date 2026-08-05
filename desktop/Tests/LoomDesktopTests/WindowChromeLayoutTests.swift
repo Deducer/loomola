@@ -25,6 +25,42 @@ final class WindowChromeLayoutTests: XCTestCase {
         XCTAssertFalse(RecorderWindowGeometry.autosaveName.isEmpty)
     }
 
+    func testNoteWorkspaceUsesTheAvailableWindowWithoutBecomingFullWidth() {
+        XCTAssertGreaterThanOrEqual(NoteWorkspaceLayout.readableContentMaxWidth, 740)
+        XCTAssertLessThan(NoteWorkspaceLayout.readableContentMaxWidth, RecorderWindowGeometry.minimumContentSize.width)
+        XCTAssertLessThan(
+            NoteWorkspaceLayout.enhancedBodyMinimumHeight,
+            NoteWorkspaceLayout.editableBodyMinimumHeight
+        )
+    }
+
+    func testAttachmentsRemainInTheScrollableNoteFlow() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let source = try String(
+            contentsOf: root.appending(path: "Sources/LoomDesktopApp/UI/Notes/NoteWorkspaceView.swift")
+        )
+
+        guard let scrollStart = source.range(of: "ScrollView {")?.lowerBound,
+              let dropTarget = source.range(of: ".onDrop(of:")?.lowerBound
+        else {
+            return XCTFail("Could not locate the note ScrollView boundaries.")
+        }
+
+        let scrollSection = source[scrollStart..<dropTarget]
+        XCTAssertTrue(scrollSection.contains("attachmentsStrip"))
+    }
+
+    func testMarkdownEditorRemeasuresAfterAppKitLaysOutItsWidth() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let source = try String(
+            contentsOf: root.appending(path: "Sources/LoomDesktopApp/UI/Notes/MarkdownTextEditor.swift")
+        )
+
+        XCTAssertTrue(source.contains("final class MarkdownEditorScrollView: NSScrollView"))
+        XCTAssertTrue(source.contains("override func layout()"))
+        XCTAssertTrue(source.contains("onContentWidthChange?(width)"))
+    }
+
     func testTopChromeDoesNotUseGeometryDependentOffsets() throws {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let guardedFiles = [

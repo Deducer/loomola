@@ -77,6 +77,14 @@ private enum NoteWorkspaceMenuAction: Equatable {
     case obsidian
 }
 
+enum NoteWorkspaceLayout {
+    /// Wide enough for dense generated notes without pushing line lengths
+    /// into the hard-to-scan full-window range.
+    static let readableContentMaxWidth: CGFloat = 760
+    static let editableBodyMinimumHeight: CGFloat = 320
+    static let enhancedBodyMinimumHeight: CGFloat = 120
+}
+
 /// Granola-shape note workspace, embedded directly in the main
 /// window when `MainRecorderView.noteTarget != nil`.
 ///
@@ -321,13 +329,18 @@ struct NoteWorkspaceView: View {
                     if !isRecording && !reviewActionItems.isEmpty {
                         actionItemsPanel
                     }
+                    // Attachments belong to the note's document flow. Keeping
+                    // them outside this ScrollView pinned them near the bottom
+                    // controls and created a large false blank page after short
+                    // Enhanced notes.
+                    if !attachments.isEmpty || uploadingCount > 0 {
+                        attachmentsStrip
+                    }
                 }
-                // Cap the readable column at ~600pt and center
-                // horizontally so the editor doesn't sprawl across
-                // a 1080+pt wide main window. Granola pattern —
-                // narrow windows still fill, wide windows give a
-                // comfortable reading width with margin.
-                .frame(maxWidth: 600, alignment: .leading)
+                // Preserve a readable centered column while using more of the
+                // window than the old 600pt cap. This lands around 85–95
+                // characters per line for typical note text.
+                .frame(maxWidth: NoteWorkspaceLayout.readableContentMaxWidth, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.horizontal, DSSpacing.xl)
                 .padding(.top, WindowChromeLayout.noteContentTopPadding)
@@ -344,19 +357,6 @@ struct NoteWorkspaceView: View {
                     dropTargetOverlay
                         .transition(.opacity)
                 }
-            }
-
-            // Attachments strip pinned to the bottom of the
-            // workspace, above the recording control bar. Keeps
-            // images out of the title/body area so they never
-            // distract from the user's typing flow. Granola pattern.
-            if !attachments.isEmpty || uploadingCount > 0 {
-                attachmentsStrip
-                    .frame(maxWidth: 600, alignment: .leading)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.horizontal, DSSpacing.xl)
-                    .padding(.top, DSSpacing.sm)
-                    .padding(.bottom, isRecording ? DSSpacing.sm : DSSpacing.lg)
             }
 
             if isRecording {
@@ -1213,18 +1213,20 @@ struct NoteWorkspaceView: View {
                     measuredHeight: $enhancedEditorMeasuredHeight,
                     placeholder: "",
                     isFocused: $bodyFocused,
+                    minimumHeight: NoteWorkspaceLayout.enhancedBodyMinimumHeight,
                     isEditable: false
                 )
-                .frame(height: max(320, enhancedEditorMeasuredHeight))
+                .frame(height: max(NoteWorkspaceLayout.enhancedBodyMinimumHeight, enhancedEditorMeasuredHeight))
                 .padding(.leading, -5)
             } else {
                 MarkdownTextEditor(
                     text: bodyBinding,
                     measuredHeight: $bodyEditorMeasuredHeight,
                     placeholder: loadingBody ? "Loading…" : "Write notes",
-                    isFocused: $bodyFocused
+                    isFocused: $bodyFocused,
+                    minimumHeight: NoteWorkspaceLayout.editableBodyMinimumHeight
                 )
-                .frame(height: max(320, bodyEditorMeasuredHeight))
+                .frame(height: max(NoteWorkspaceLayout.editableBodyMinimumHeight, bodyEditorMeasuredHeight))
                 // Pull 5pt back to compensate for NSTextView's internal
                 // text container inset so the heading text origin lines
                 // up with the title row above.

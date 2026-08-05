@@ -26,12 +26,13 @@ struct MarkdownTextEditor: NSViewRepresentable {
     @Binding var measuredHeight: CGFloat
     let placeholder: String
     let isFocused: FocusState<Bool>.Binding
+    var minimumHeight: CGFloat = 320
     /// False renders the same tokenized markdown read-only — used by the
     /// Enhanced pane, where web remains the editor of record.
     var isEditable: Bool = true
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSScrollView()
+        let scrollView = MarkdownEditorScrollView()
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = false
         scrollView.borderType = .noBorder
@@ -67,6 +68,14 @@ struct MarkdownTextEditor: NSViewRepresentable {
         context.coordinator.reportHeight(for: textView)
 
         scrollView.documentView = textView
+        scrollView.onContentWidthChange = { [weak textView] width in
+            guard let textView else { return }
+            textView.textContainer?.containerSize = NSSize(
+                width: width,
+                height: CGFloat.greatestFiniteMagnitude
+            )
+            context.coordinator.reportHeight(for: textView)
+        }
         return scrollView
     }
 
@@ -170,7 +179,11 @@ struct MarkdownTextEditor: NSViewRepresentable {
             layoutManager.ensureLayout(for: textContainer)
             let usedHeight = layoutManager.usedRect(for: textContainer).height
             let insetHeight = textView.textContainerInset.height * 2
-            let nextHeight = ceil(max(320, usedHeight + insetHeight + 16))
+            let nextHeight = ceil(max(parent.minimumHeight, usedHeight + insetHeight + 16))
+            let nextWidth = max(1, textContainer.containerSize.width)
+            if abs(textView.frame.width - nextWidth) > 1 || abs(textView.frame.height - nextHeight) > 1 {
+                textView.setFrameSize(NSSize(width: nextWidth, height: nextHeight))
+            }
             guard abs(parent.measuredHeight - nextHeight) > 1 else { return }
             DispatchQueue.main.async {
                 self.parent.measuredHeight = nextHeight
@@ -334,6 +347,23 @@ struct MarkdownTextEditor: NSViewRepresentable {
                 range: range
             )
         }
+    }
+}
+
+/// Reports the editor's real laid-out width after SwiftUI/AppKit completes
+/// each resize. The initial `updateNSView` can run while the scroll view is
+/// still zero-width; without this callback the height remains stuck at its
+/// minimum and the long note becomes a small nested scrolling viewport.
+final class MarkdownEditorScrollView: NSScrollView {
+    var onContentWidthChange: ((CGFloat) -> Void)?
+    private var lastReportedContentWidth: CGFloat = 0
+
+    override func layout() {
+        super.layout()
+        let width = contentSize.width
+        guard width > 24, abs(width - lastReportedContentWidth) > 1 else { return }
+        lastReportedContentWidth = width
+        onContentWidthChange?(width)
     }
 }
 
