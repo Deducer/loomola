@@ -36,6 +36,11 @@ final class CalendarMeetingReminderPlannerTests: XCTestCase {
         XCTAssertEqual(reminder?.fireDate, now.addingTimeInterval(9 * 60))
         XCTAssertEqual(reminder?.context.detectedApp, "zoom")
         XCTAssertEqual(reminder?.context.suggestedTitle, "Weekly planning")
+        XCTAssertEqual(
+            reminder?.context.calendarEventOccurrenceIdentifier,
+            event().occurrenceIdentifier
+        )
+        XCTAssertEqual(reminder?.context.calendarEventEnd, event().end)
     }
 
     func testFinalMinuteSchedulesPromptlyButNeverAfterStart() {
@@ -76,6 +81,24 @@ final class CalendarMeetingReminderPlannerTests: XCTestCase {
         XCTAssertNotEqual(
             reminders[0].notificationIdentifier,
             reminders[1].notificationIdentifier
+        )
+        XCTAssertNotEqual(
+            reminders[0].context.meetingPromptIdentity,
+            reminders[1].context.meetingPromptIdentity
+        )
+    }
+
+    func testNotificationRoundTripPreservesCalendarOccurrence() {
+        let context = CalendarMeetingReminderPlanner.reminders(
+            from: [event()],
+            now: now
+        )[0].context
+
+        XCTAssertEqual(
+            CalendarReminderNotification.context(
+                from: CalendarReminderNotification.userInfo(for: context)
+            ),
+            context
         )
     }
 }

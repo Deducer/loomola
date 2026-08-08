@@ -19,6 +19,11 @@ struct CalendarEventCandidate: Equatable, Sendable {
     let isCanceled: Bool
     let isDeclined: Bool
 
+    var occurrenceIdentifier: String {
+        let stableIdentifier = identifier.isEmpty ? title : identifier
+        return "\(stableIdentifier)|\(Int(start.timeIntervalSince1970))"
+    }
+
     init(
         identifier: String = "",
         title: String,

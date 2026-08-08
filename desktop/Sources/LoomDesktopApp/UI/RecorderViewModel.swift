@@ -137,8 +137,7 @@ final class RecorderViewModel: ObservableObject {
     private var meetingWatchTask: Task<Void, Never>?
     private var audioInactivityMonitorTask: Task<Void, Never>?
     private var obsidianSyncInFlight = false
-    private var suppressedMeetingPromptIdentity: String?
-    private var meetingContextMissingSince: Date?
+    private var meetingPromptSuppression: MeetingPromptSuppression?
     private var autoSuggestedAudioTitle: String?
     private var audioTitleAutosaveTask: Task<Void, Never>?
     private var liveTranscriptionCancellable: AnyCancellable?
@@ -444,8 +443,7 @@ final class RecorderViewModel: ObservableObject {
             obsidianSyncInFlight = false
             meetingContext = nil
             meetingPromptContext = nil
-            suppressedMeetingPromptIdentity = nil
-            meetingContextMissingSince = nil
+            meetingPromptSuppression = nil
             autoSuggestedAudioTitle = nil
             activeAudioRecordingSlug = nil
             activeAudioRecordingId = nil
@@ -699,8 +697,7 @@ final class RecorderViewModel: ObservableObject {
     }
 
     func checkMeetingContext() {
-        suppressedMeetingPromptIdentity = nil
-        meetingContextMissingSince = nil
+        meetingPromptSuppression = nil
         if !refreshChromeMeetingContext(showStatus: true) {
             refreshCaptureSources(showStatus: true)
         }
@@ -2386,7 +2383,9 @@ final class RecorderViewModel: ObservableObject {
             sourceContextHint: context.sourceContextHint,
             suggestedTitle: title.isEmpty ? context.suggestedTitle : title,
             joinURL: context.joinURL ?? event.joinURL,
-            bundleIdentifier: context.bundleIdentifier
+            bundleIdentifier: context.bundleIdentifier,
+            calendarEventOccurrenceIdentifier: event.occurrenceIdentifier,
+            calendarEventEnd: event.end
         )
     }
 
@@ -2408,19 +2407,8 @@ final class RecorderViewModel: ObservableObject {
         meetingContext = context
         guard let context else {
             meetingPromptContext = nil
-            let now = Date()
             if clearSuppressionImmediately {
-                suppressedMeetingPromptIdentity = nil
-                meetingContextMissingSince = nil
-            } else if let missingSince = meetingContextMissingSince {
-                if MeetingPromptPolicy.shouldClearSuppression(
-                    absenceStartedAt: missingSince,
-                    now: now
-                ) {
-                    suppressedMeetingPromptIdentity = nil
-                }
-            } else {
-                meetingContextMissingSince = now
+                meetingPromptSuppression = nil
             }
             if audioTitle == autoSuggestedAudioTitle {
                 audioTitle = ""
@@ -2429,8 +2417,6 @@ final class RecorderViewModel: ObservableObject {
             autoSuggestedAudioTitle = nil
             return
         }
-        meetingContextMissingSince = nil
-
         if audioTitle == autoSuggestedAudioTitle {
             audioTitle = ""
         }
@@ -2439,7 +2425,7 @@ final class RecorderViewModel: ObservableObject {
 
         if MeetingPromptPolicy.shouldPresent(
             context: context,
-            suppressedIdentity: suppressedMeetingPromptIdentity,
+            suppression: meetingPromptSuppression,
             activeRecordingKind: activeRecordingKind
         ) {
             // Avoid rebuilding and re-ordering the same top-right panel every
@@ -2454,7 +2440,7 @@ final class RecorderViewModel: ObservableObject {
 
     private func suppressMeetingPrompt(for context: MeetingContext?) {
         guard let context else { return }
-        suppressedMeetingPromptIdentity = context.meetingPromptIdentity
+        meetingPromptSuppression = MeetingPromptPolicy.suppression(for: context)
     }
 
     private func currentAccessToken() async throws -> String? {

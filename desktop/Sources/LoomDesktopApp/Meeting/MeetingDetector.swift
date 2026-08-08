@@ -14,6 +14,29 @@ struct MeetingContext: Equatable, Sendable {
     /// when no URL is available (e.g., Zoom desktop client). Activating
     /// the app brings its window forward.
     let bundleIdentifier: String?
+    /// Stable EventKit occurrence key when detection can be matched to a
+    /// calendar event. This lets a dismissal follow one scheduled call while
+    /// still allowing a later call in the same native app to prompt normally.
+    let calendarEventOccurrenceIdentifier: String?
+    let calendarEventEnd: Date?
+
+    init(
+        detectedApp: String,
+        sourceContextHint: String,
+        suggestedTitle: String,
+        joinURL: URL?,
+        bundleIdentifier: String?,
+        calendarEventOccurrenceIdentifier: String? = nil,
+        calendarEventEnd: Date? = nil
+    ) {
+        self.detectedApp = detectedApp
+        self.sourceContextHint = sourceContextHint
+        self.suggestedTitle = suggestedTitle
+        self.joinURL = joinURL
+        self.bundleIdentifier = bundleIdentifier
+        self.calendarEventOccurrenceIdentifier = calendarEventOccurrenceIdentifier
+        self.calendarEventEnd = calendarEventEnd
+    }
 
     /// Stable for the lifetime of one detected call even when Zoom changes
     /// its window title or calendar enrichment replaces the suggested title.
@@ -21,6 +44,18 @@ struct MeetingContext: Equatable, Sendable {
     /// native meeting apps key on the app because their detected window has no
     /// reliable meeting identifier and can flicker between several titles.
     var meetingPromptIdentity: String {
+        if let calendarEventOccurrenceIdentifier,
+           !calendarEventOccurrenceIdentifier.isEmpty {
+            return "calendar:\(calendarEventOccurrenceIdentifier)"
+        }
+        return meetingProviderIdentity
+    }
+
+    /// Provider-level fallback used only while honoring a dismissal. Native
+    /// Zoom can temporarily lose calendar/window context during screen share;
+    /// this alias keeps that same call quiet without making every scheduled
+    /// Zoom call share one identity.
+    var meetingProviderIdentity: String {
         if let bundleIdentifier,
            !Self.browserBundleIdentifiers.contains(bundleIdentifier) {
             return "app:\(bundleIdentifier.lowercased())"
@@ -53,24 +88,48 @@ struct MeetingContext: Equatable, Sendable {
     }
 }
 
+struct MeetingPromptSuppression: Equatable, Sendable {
+    let primaryIdentity: String
+    let providerIdentity: String
+    let expiresAt: Date
+}
+
 enum MeetingPromptPolicy {
-    static let absenceResetInterval: TimeInterval = 60
+    /// Long enough to cover a long-running or overrun call. A distinct
+    /// scheduled occurrence still bypasses this suppression immediately.
+    static let fallbackSuppressionInterval: TimeInterval = 4 * 60 * 60
+    static let calendarOverrunGraceInterval: TimeInterval = 2 * 60 * 60
+
+    static func suppression(
+        for context: MeetingContext,
+        now: Date = Date()
+    ) -> MeetingPromptSuppression {
+        let fallbackExpiry = now.addingTimeInterval(fallbackSuppressionInterval)
+        let expiresAt = context.calendarEventEnd
+            .map { max(fallbackExpiry, $0.addingTimeInterval(calendarOverrunGraceInterval)) }
+            ?? fallbackExpiry
+        return MeetingPromptSuppression(
+            primaryIdentity: context.meetingPromptIdentity,
+            providerIdentity: context.meetingProviderIdentity,
+            expiresAt: expiresAt
+        )
+    }
 
     static func shouldPresent(
         context: MeetingContext,
-        suppressedIdentity: String?,
-        activeRecordingKind: DesktopRecordingKind?
+        suppression: MeetingPromptSuppression?,
+        activeRecordingKind: DesktopRecordingKind?,
+        now: Date = Date()
     ) -> Bool {
         guard activeRecordingKind == nil else { return false }
-        return suppressedIdentity != context.meetingPromptIdentity
-    }
+        guard let suppression, suppression.expiresAt > now else { return true }
 
-    static func shouldClearSuppression(
-        absenceStartedAt: Date,
-        now: Date,
-        graceInterval: TimeInterval = absenceResetInterval
-    ) -> Bool {
-        now.timeIntervalSince(absenceStartedAt) >= graceInterval
+        if context.calendarEventOccurrenceIdentifier != nil,
+           suppression.primaryIdentity.hasPrefix("calendar:") {
+            return suppression.primaryIdentity != context.meetingPromptIdentity
+        }
+        return suppression.primaryIdentity != context.meetingPromptIdentity
+            && suppression.providerIdentity != context.meetingProviderIdentity
     }
 }
 

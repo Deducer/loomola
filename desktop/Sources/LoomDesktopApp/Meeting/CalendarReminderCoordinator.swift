@@ -58,7 +58,9 @@ enum CalendarMeetingReminderPlanner {
             sourceContextHint: "Calendar · \(event.start.formatted(date: .omitted, time: .shortened))",
             suggestedTitle: title.isEmpty ? app.fallbackTitle : title,
             joinURL: joinURL,
-            bundleIdentifier: app.bundleIdentifier
+            bundleIdentifier: app.bundleIdentifier,
+            calendarEventOccurrenceIdentifier: event.occurrenceIdentifier,
+            calendarEventEnd: event.end
         )
     }
 
@@ -124,6 +126,8 @@ enum CalendarReminderNotification {
         static let suggestedTitle = "suggestedTitle"
         static let joinURL = "joinURL"
         static let bundleIdentifier = "bundleIdentifier"
+        static let calendarEventOccurrenceIdentifier = "calendarEventOccurrenceIdentifier"
+        static let calendarEventEnd = "calendarEventEnd"
     }
 
     static func userInfo(for context: MeetingContext) -> [AnyHashable: Any] {
@@ -134,6 +138,8 @@ enum CalendarReminderNotification {
         ]
         info[UserInfoKey.joinURL] = context.joinURL?.absoluteString
         info[UserInfoKey.bundleIdentifier] = context.bundleIdentifier
+        info[UserInfoKey.calendarEventOccurrenceIdentifier] = context.calendarEventOccurrenceIdentifier
+        info[UserInfoKey.calendarEventEnd] = context.calendarEventEnd?.timeIntervalSince1970
         return info
     }
 
@@ -147,7 +153,11 @@ enum CalendarReminderNotification {
             sourceContextHint: sourceContextHint,
             suggestedTitle: suggestedTitle,
             joinURL: (userInfo[UserInfoKey.joinURL] as? String).flatMap(URL.init(string:)),
-            bundleIdentifier: userInfo[UserInfoKey.bundleIdentifier] as? String
+            bundleIdentifier: userInfo[UserInfoKey.bundleIdentifier] as? String,
+            calendarEventOccurrenceIdentifier: userInfo[UserInfoKey.calendarEventOccurrenceIdentifier] as? String,
+            calendarEventEnd: (userInfo[UserInfoKey.calendarEventEnd] as? Double).map {
+                Date(timeIntervalSince1970: $0)
+            }
         )
     }
 }
