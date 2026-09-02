@@ -1,6 +1,17 @@
 @preconcurrency import AppKit
 @preconcurrency import AVFoundation
+import CoreGraphics
 import Foundation
+
+enum BubbleOverlayMousePolicy {
+    static func shouldReceiveMouseEvents(
+        cursorInsideBubble: Bool,
+        isDragging: Bool,
+        isLeftButtonDown: Bool
+    ) -> Bool {
+        cursorInsideBubble || (isDragging && isLeftButtonDown)
+    }
+}
 
 @MainActor
 final class BubbleOverlayWindowController {
@@ -184,12 +195,19 @@ final class BubbleOverlayWindowController {
     }
 
     private func handleScroll(event: NSEvent) {
-        guard let bubbleView, let screen = trackedScreen else { return }
         let raw = event.scrollingDeltaY != 0 ? event.scrollingDeltaY : event.scrollingDeltaX
         if raw == 0 { return }
         let modifier = event.modifierFlags
-        let speed: CGFloat = modifier.contains(.shift) || modifier.contains(.option) ? 0.4 : 1.4
-        let delta = raw * speed
+        resize(
+            by: raw,
+            fineAdjustment: modifier.contains(.shift) || modifier.contains(.option)
+        )
+    }
+
+    func resize(by scrollDelta: CGFloat, fineAdjustment: Bool = false) {
+        guard let bubbleView, let screen = trackedScreen else { return }
+        let speed: CGFloat = fineAdjustment ? 0.4 : 1.4
+        let delta = scrollDelta * speed
         let currentSize = currentBubbleFrameInScreen.size.width
         let newSide = max(90, min(360, currentSize + delta))
         if abs(newSide - currentSize) < 0.5 { return }
@@ -230,18 +248,31 @@ final class BubbleOverlayWindowController {
     }
 
     private func updateHoverState() {
-        guard let panel = hostPanel, let _ = bubbleView else { return }
-        // Don't special-case isDragging. The bubble visually tracks
-        // the cursor during drag, so isCursorInBubble keeps the panel
-        // hot. Special-casing isDragging used to pin ignoresMouseEvents
-        // to false; if mouseUp ever failed to fire (rare but possible
-        // when the panel is hidden mid-click), the entire screen would
-        // start swallowing clicks until the bubble was toggled off.
+        guard let panel = hostPanel, let bubbleView else { return }
         let cursor = NSEvent.mouseLocation
         let inHit = isCursorInBubble(cursor: cursor)
-        if inHit && panel.ignoresMouseEvents {
+        let isLeftButtonDown = CGEventSource.buttonState(
+            .combinedSessionState,
+            button: .left
+        )
+
+        // A fast pointer can move outside the bubble's old frame before
+        // mouseDragged repositions the view. Keep the fullscreen host hot
+        // for that brief gap, but only while the physical button is still
+        // down. If AppKit ever misses mouseUp, the next timer tick clears
+        // the transient drag instead of swallowing clicks indefinitely.
+        if bubbleView.isDragging && !isLeftButtonDown {
+            bubbleView.resetTransientInputState()
+        }
+
+        let shouldReceiveMouseEvents = BubbleOverlayMousePolicy.shouldReceiveMouseEvents(
+            cursorInsideBubble: inHit,
+            isDragging: bubbleView.isDragging,
+            isLeftButtonDown: isLeftButtonDown
+        )
+        if shouldReceiveMouseEvents && panel.ignoresMouseEvents {
             panel.ignoresMouseEvents = false
-        } else if !inHit && !panel.ignoresMouseEvents {
+        } else if !shouldReceiveMouseEvents && !panel.ignoresMouseEvents {
             panel.ignoresMouseEvents = true
         }
     }
@@ -367,6 +398,10 @@ private final class CameraBubbleView: NSView {
     }
 
     // MARK: - Mouse
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
 
     override func mouseDown(with event: NSEvent) {
         dragMouseDownInScreen = NSEvent.mouseLocation

@@ -44,4 +44,35 @@ final class BubbleOverlayWiringTests: XCTestCase {
         overlay.shape = .rectangle
         XCTAssertEqual(pc.current()?.shape, .rectangle)
     }
+
+    func testDragKeepsOverlayInteractiveWhenCursorOutrunsBubble() {
+        XCTAssertTrue(
+            BubbleOverlayMousePolicy.shouldReceiveMouseEvents(
+                cursorInsideBubble: false,
+                isDragging: true,
+                isLeftButtonDown: true
+            )
+        )
+    }
+
+    func testStaleDragCannotKeepOverlayInteractive() {
+        XCTAssertFalse(
+            BubbleOverlayMousePolicy.shouldReceiveMouseEvents(
+                cursorInsideBubble: false,
+                isDragging: true,
+                isLeftButtonDown: false
+            )
+        )
+    }
+
+    func testResizeUpdatesPublishedPlacement() {
+        let pc = BubblePositionController()
+        let overlay = BubbleOverlayWindowController(positionController: pc)
+        overlay.showPlaceholder()
+
+        overlay.resize(by: 20)
+
+        XCTAssertEqual(pc.current()?.frameInScreenPoints.size.width, 208)
+        XCTAssertEqual(pc.current()?.frameInScreenPoints.size.height, 208)
+    }
 }
