@@ -16,6 +16,7 @@ import { createHmac, randomBytes } from "node:crypto";
 
 const OWNER_ID = "612bc4b4-2a6c-4721-8820-f256e4eb0ef6";
 const COMPOSITE_KEY = "iMoZLHX7CF/composite.webm";
+const THUMBNAIL_KEY = "iMoZLHX7CF/thumbnail.jpg";
 const DURATION = 12.026;
 const APP_URL = process.env.APP_URL ?? "https://loom.dissonance.cloud";
 const TEST_PASSWORD = "m11-smoke-pass";
@@ -54,8 +55,26 @@ async function main() {
   await step("insert media_object", async () => {
     slug = newSlug();
     const [row] = await sql`
-      INSERT INTO media_objects (owner_id, type, slug, status, duration_seconds, r2_composite_key, upload_metadata)
-      VALUES (${OWNER_ID}, 'video', ${slug}, 'transcribing', ${DURATION}, ${COMPOSITE_KEY}, '{}'::jsonb)
+      INSERT INTO media_objects (
+        owner_id,
+        type,
+        slug,
+        status,
+        duration_seconds,
+        r2_composite_key,
+        composite_thumbnail_key,
+        upload_metadata
+      )
+      VALUES (
+        ${OWNER_ID},
+        'video',
+        ${slug},
+        'transcribing',
+        ${DURATION},
+        ${COMPOSITE_KEY},
+        ${THUMBNAIL_KEY},
+        '{}'::jsonb
+      )
       RETURNING id, slug
     `;
     mediaId = row.id;
@@ -72,13 +91,21 @@ async function main() {
     });
     const videoUrl = await getSignedUrl(
       r2,
-      new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: COMPOSITE_KEY }),
+      new GetObjectCommand({
+        Bucket: process.env.R2_BUCKET_NAME ?? process.env.R2_BUCKET,
+        Key: COMPOSITE_KEY,
+      }),
       { expiresIn: 3600 }
     );
+    const nonce = randomBytes(32).toString("hex");
+    await sql`
+      INSERT INTO webhook_nonces (nonce, recording_id, provider, expires_at)
+      VALUES (${nonce}, ${mediaId}, 'deepgram', now() + interval '1 hour')
+    `;
     const sig = createHmac("sha256", process.env.DEEPGRAM_CALLBACK_SIGNING_SECRET)
-      .update(mediaId)
+      .update(`${mediaId}:${nonce}`)
       .digest("hex");
-    const callbackUrl = `${APP_URL}/api/webhooks/deepgram/${mediaId}/${sig}`;
+    const callbackUrl = `${APP_URL}/api/webhooks/deepgram/${mediaId}/${nonce}/${sig}`;
     const dg = new DeepgramClient({ apiKey: process.env.DEEPGRAM_API_KEY });
     await dg.listen.v1.media.transcribeUrl({
       url: videoUrl,
