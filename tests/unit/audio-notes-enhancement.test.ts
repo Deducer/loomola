@@ -22,6 +22,35 @@ describe("buildAudioNotesEnhancementPrompt", () => {
     expect(prompt).toContain("No subtitles, dashes, or colon-separated second clauses");
   });
 
+  // Regression 2026-09-22: the recorder is excluded from the attendee
+  // list (is_self), so the model credited the host's "I'll book flights"
+  // commitments to an invitee (Javier) and Vayu HQ assigned them there.
+  it("names the recorder so first-person commitments are theirs", () => {
+    const prompt = buildAudioNotesEnhancementPrompt({
+      title: "VayuLabs Weekly",
+      attendeeNames: ["Bhaskar", "javier.sloninsky@gmail.com"],
+      recorderName: "Ian",
+      rawNotes: "",
+      transcript: "I'll book the LA flights this week.",
+    });
+
+    expect(prompt).toContain("Known attendees: Ian, Bhaskar, javier.sloninsky@gmail.com.");
+    expect(prompt).toMatch(/Ian recorded this meeting/);
+    expect(prompt).toMatch(/first-person/);
+  });
+
+  it("does not add a recorder line when the recorder is unknown", () => {
+    const prompt = buildAudioNotesEnhancementPrompt({
+      title: "Call",
+      attendeeNames: ["Bhaskar"],
+      rawNotes: "",
+      transcript: "Hello.",
+    });
+
+    expect(prompt).toContain("Known attendees: Bhaskar.");
+    expect(prompt).not.toMatch(/recorded this meeting/);
+  });
+
   it("anchors the prompt on raw notes and transcript context", () => {
     const prompt = buildAudioNotesEnhancementPrompt({
       title: "Customer call",

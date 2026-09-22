@@ -29,7 +29,7 @@ import {
 } from "@/lib/ai/note-templates";
 import { getUserPreferences } from "@/db/queries/user-preferences";
 import { resolveNoteTemplate } from "@/db/queries/note-templates";
-import { listAttendeeNamesForMedia } from "@/db/queries/people";
+import { getSelfDisplayName, listAttendeeNamesForMedia } from "@/db/queries/people";
 import { buildSummaryLanguageInstruction } from "@/lib/preferences/user-preferences";
 import { normalizeGeneratedNotesMarkdown } from "@/lib/ai/normalize-generated-notes";
 
@@ -110,13 +110,25 @@ export function buildAudioNotesEnhancementPrompt(params: {
   outputLanguageInstruction?: string;
   attachmentNames?: string[];
   attendeeNames?: string[];
+  /** The note owner's own name (their is_self Person). Attendee lists
+   * exclude the recorder, so without this the model credits the
+   * recorder's "I'll…" commitments to whichever invitee seems closest. */
+  recorderName?: string | null;
   rawNotes: string;
   transcript: string;
 }): string {
   const template = params.template ?? getNoteTemplate(DEFAULT_NOTE_TEMPLATE_ID);
   const transcriptCharCount = params.transcript.trim().length;
-  const attendeeLine = params.attendeeNames?.length
-    ? `Known attendees: ${params.attendeeNames.join(", ")}. Automatic transcription often misspells these names (a similar-sounding name in the transcript is almost certainly one of them) — always use these exact spellings in the notes.`
+  const recorderName = params.recorderName?.trim() || null;
+  const knownAttendees = [
+    ...(recorderName ? [recorderName] : []),
+    ...(params.attendeeNames ?? []).filter((name) => name !== recorderName),
+  ];
+  const attendeeLine = knownAttendees.length
+    ? `Known attendees: ${knownAttendees.join(", ")}. Automatic transcription often misspells these names (a similar-sounding name in the transcript is almost certainly one of them) — always use these exact spellings in the notes.`
+    : null;
+  const recorderLine = recorderName
+    ? `${recorderName} recorded this meeting and is the user whose notes these are. Commitments ${recorderName} makes in the first-person ("I'll…", "I will…", "let me…") belong to ${recorderName} — never attribute them to another attendee. If you cannot tell who committed to something, leave the owner out rather than guessing.`
     : null;
   return [
     "You are an AI meeting note-taker. The user hand-typed raw notes during a meeting, and you also have the transcript.",
@@ -144,6 +156,7 @@ export function buildAudioNotesEnhancementPrompt(params: {
     "- Return only the polished markdown notes. Do not wrap the notes in JSON or code fences.",
     "",
     ...(attendeeLine ? [attendeeLine, ""] : []),
+    ...(recorderLine ? [recorderLine, ""] : []),
     `Current title: ${params.title?.trim() || "Untitled note"}`,
     `Source context: ${params.sourceContextHint?.trim() || "Unknown"}`,
     `Selected template id: ${template.id}`,
@@ -279,6 +292,7 @@ async function runTitleSummaryJobInner(
       }),
       attachmentNames: attachments.map((attachment) => attachment.filename),
       attendeeNames,
+      recorderName: await getSelfDisplayName(media.ownerId),
       rawNotes: note?.body ?? "",
       transcript: text,
     });

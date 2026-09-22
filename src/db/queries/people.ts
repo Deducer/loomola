@@ -32,6 +32,21 @@ export async function listAttendeeNamesForMedia(
 }
 
 /**
+ * Display name of the owner's own Person (is_self), or null. Attendee
+ * lists exclude this person, so AI prompts add it explicitly to know
+ * who "I" is in the transcript.
+ */
+export async function getSelfDisplayName(ownerId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ displayName: people.displayName })
+    .from(people)
+    .where(and(eq(people.ownerId, ownerId), eq(people.isSelf, true)))
+    .limit(1);
+  const name = row?.displayName?.trim();
+  return name ? name : null;
+}
+
+/**
  * Find a person row that matches the given email — checking both
  * the canonical `email` column and the `email_aliases` jsonb array.
  * Returns the first hit, or null. Used by the Granola import endpoint
