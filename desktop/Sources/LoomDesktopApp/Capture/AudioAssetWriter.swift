@@ -1,6 +1,12 @@
 import AVFoundation
 import CoreMedia
 import Foundation
+import OSLog
+
+private let audioAssetWriterLog = Logger(
+    subsystem: "cloud.dissonance.loom.desktop",
+    category: "audio-asset-writer"
+)
 
 /// Writes microphone or system-audio capture to an AAC-in-M4A file.
 ///
@@ -23,28 +29,50 @@ final class AudioAssetWriter: @unchecked Sendable {
     private var converterOutputSignature: AudioFormatSignature?
     private var finished = false
     private let writeLock = NSLock()
+    private var health = WriteHealth()
+
+    /// What has actually reached the file. Capture callbacks call
+    /// `append` from real-time threads and cannot surface errors, so
+    /// the recorder polls this instead — a track whose appends keep
+    /// failing is losing audio even though buffers (and the level
+    /// meter) look healthy.
+    struct WriteHealth: Equatable, Sendable {
+        var framesWritten: Int64 = 0
+        var failedAppends = 0
+        var consecutiveFailures = 0
+        var lastError: String?
+
+        /// ~20 consecutive failed buffers is a few seconds of audio:
+        /// long enough to ignore a one-off hiccup, short enough to warn
+        /// before a meeting's worth is gone.
+        static let failingThreshold = 20
+
+        var isFailing: Bool { consecutiveFailures >= Self.failingThreshold }
+    }
+
+    var writeHealth: WriteHealth {
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        return health
+    }
+
+    /// The file is always encoded at 48 kHz, whatever rate the device
+    /// delivers. The AAC encoder rejects a 128 kbps bitrate at low
+    /// rates (a Bluetooth headset in call mode gives 24/16/8 kHz), and
+    /// that rejection surfaced only as per-buffer write errors — the
+    /// 2026-09-22 meeting lost its entire mic track this way. Input at
+    /// any other rate goes through `convertedBufferLocked`. The
+    /// `sampleRate` parameter is kept for call-site compatibility.
+    static let outputSampleRate: Double = 48_000
 
     init(outputURL: URL, sampleRate: Double = 48_000, channelCount: Int = 1) throws {
         self.outputURL = outputURL
         self.settings = [
             AVFormatIDKey: kAudioFormatMPEG4AAC,
-            AVSampleRateKey: Self.aacSafeSampleRate(sampleRate),
+            AVSampleRateKey: Self.outputSampleRate,
             AVNumberOfChannelsKey: Self.aacSafeChannelCount(channelCount),
             AVEncoderBitRateKey: 128_000
         ]
-    }
-
-    /// AAC accepts a fixed set of sample rates: 8000, 11025, 12000,
-    /// 16000, 22050, 24000, 32000, 44100, 48000, 64000, 88200, 96000.
-    /// Snap any caller-supplied rate to the nearest one in that set,
-    /// defaulting to 48000 if input is non-positive.
-    private static func aacSafeSampleRate(_ rate: Double) -> Double {
-        let supported: [Double] = [
-            8000, 11025, 12000, 16000, 22050, 24000,
-            32000, 44100, 48000, 64000, 88200, 96000
-        ]
-        guard rate.isFinite, rate > 0 else { return 48_000 }
-        return supported.min(by: { abs($0 - rate) < abs($1 - rate) }) ?? 48_000
     }
 
     /// AAC supports 1..8 channels. Anything ≤ 0 or > 8 falls back to 1.
@@ -91,11 +119,25 @@ final class AudioAssetWriter: @unchecked Sendable {
         writeLock.lock()
         defer { writeLock.unlock() }
         if finished { return }
-        let file = try ensureFileLocked(inputFormat: pcmBuffer.format)
-        let writableBuffer = Self.formatsMatch(pcmBuffer.format, file.processingFormat)
-            ? pcmBuffer
-            : try convertedBufferLocked(pcmBuffer, to: file.processingFormat)
-        try file.write(from: writableBuffer)
+        do {
+            let file = try ensureFileLocked(inputFormat: pcmBuffer.format)
+            let writableBuffer = Self.formatsMatch(pcmBuffer.format, file.processingFormat)
+                ? pcmBuffer
+                : try convertedBufferLocked(pcmBuffer, to: file.processingFormat)
+            try file.write(from: writableBuffer)
+            health.framesWritten += Int64(writableBuffer.frameLength)
+            health.consecutiveFailures = 0
+        } catch {
+            health.failedAppends += 1
+            health.consecutiveFailures += 1
+            health.lastError = String(describing: error)
+            if health.failedAppends == 1 || health.failedAppends % 1000 == 0 {
+                audioAssetWriterLog.error(
+                    "append failed (\(self.health.failedAppends, privacy: .public) total) file=\(self.outputURL.lastPathComponent, privacy: .public) input=\(pcmBuffer.format.sampleRate, privacy: .public)Hz/\(pcmBuffer.format.channelCount, privacy: .public)ch: \(String(describing: error), privacy: .public)"
+                )
+            }
+            throw error
+        }
     }
 
     private func ensureFileLocked(inputFormat: AVAudioFormat) throws -> AVAudioFile {

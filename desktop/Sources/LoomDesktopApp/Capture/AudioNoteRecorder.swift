@@ -175,6 +175,38 @@ final class AudioNoteRecorder {
         }
     }
 
+    /// Tracks whose file writes are currently failing. Polled by the
+    /// view model during recording so a track that is silently losing
+    /// audio (see AudioAssetWriter.WriteHealth) is flagged mid-call
+    /// instead of discovered as an empty file after the meeting.
+    func failingTracks() -> [(track: TrackKind, health: AudioAssetWriter.WriteHealth)] {
+        guard let session else { return [] }
+        var failing: [(track: TrackKind, health: AudioAssetWriter.WriteHealth)] = []
+        if session.tracks.contains(.mic),
+           let health = microphoneCapture?.writeHealth,
+           health.isFailing
+        {
+            failing.append((.mic, health))
+        }
+        if session.tracks.contains(.systemAudio) {
+            let health: AudioAssetWriter.WriteHealth?
+            switch activeSystemAudioCaptureMode {
+            case .audioDevice:
+                health = systemAudioDeviceCapture?.writeHealth
+            case .screenCaptureKit:
+                health = systemAudioCapture?.writeHealth
+            case .coreAudioTap:
+                health = coreAudioTapCapture?.writeHealth
+            case nil:
+                health = nil
+            }
+            if let health, health.isFailing {
+                failing.append((.systemAudio, health))
+            }
+        }
+        return failing
+    }
+
     func pause() {
         guard session != nil, !paused else { return }
         paused = true

@@ -27,6 +27,10 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
     private var engine: AVAudioEngine?
     private var captureSession: AVCaptureSession?
     private var writer: AudioAssetWriter?
+
+    /// Health of the file this capture is writing, or nil when there
+    /// is no file writer (composite flow / not recording).
+    var writeHealth: AudioAssetWriter.WriteHealth? { writer?.writeHealth }
     private var formatDescription: CMAudioFormatDescription?
     private var nextSampleTime: AVAudioFramePosition = 0
     private let sampleQueue = DispatchQueue(label: "cloud.dissonance.loom.desktop.mic-samples")

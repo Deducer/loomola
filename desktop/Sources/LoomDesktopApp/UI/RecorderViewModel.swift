@@ -3,6 +3,7 @@ import Combine
 import CoreGraphics
 import Foundation
 import OSLog
+import UserNotifications
 
 private let recorderLog = Logger(subsystem: "cloud.dissonance.loom.desktop", category: "recorder")
 
@@ -146,6 +147,9 @@ final class RecorderViewModel: ObservableObject {
     private var lastAudioLevelUpdate = Date.distantPast
     private var lastMeaningfulAudioAt: Date?
     private var audioInactivityHasSeenMeaningfulAudio = false
+    /// Tracks already flagged as failing to write this session, so the
+    /// 5-second tick raises one alert per track rather than one per tick.
+    private var warnedFailingAudioTracks: Set<TrackKind> = []
     private var lastAudioBufferAt: Date?
     private var audioBufferActivityHasStarted = false
     private var recorderReadinessMode: RecorderReadinessMode = .video
@@ -2250,6 +2254,7 @@ final class RecorderViewModel: ObservableObject {
         cancelAudioInactivityMonitor()
         lastMeaningfulAudioAt = nil
         audioInactivityHasSeenMeaningfulAudio = false
+        warnedFailingAudioTracks = []
         lastAudioBufferAt = Date()
         audioBufferActivityHasStarted = true
         audioInactivityMonitorTask = Task { [weak self] in
@@ -2279,6 +2284,8 @@ final class RecorderViewModel: ObservableObject {
               !isAudioNotePaused
         else { return }
 
+        checkAudioTrackWriteHealth()
+
         if audioBufferActivityHasStarted,
            let lastAudioBufferAt
         {
@@ -2301,6 +2308,43 @@ final class RecorderViewModel: ObservableObject {
         recorderLog.notice("audio inactivity auto-stop — no meaningful audio for \(quietSeconds, privacy: .public)s")
         statusMessage = "No audio detected for 15 minutes. Finalizing audio note..."
         stopAudioNoteRecordingAndUpload()
+    }
+
+    /// Buffers arriving is not the same as audio being saved: on
+    /// 2026-09-22 the mic tap delivered a whole meeting while every
+    /// file write failed, and the level meter looked normal throughout.
+    /// Alert as soon as a track's writes are failing so the user can
+    /// switch devices while the meeting is still going.
+    private func checkAudioTrackWriteHealth() {
+        guard let audioNoteRecorder else { return }
+        for (track, health) in audioNoteRecorder.failingTracks()
+        where !warnedFailingAudioTracks.contains(track) {
+            warnedFailingAudioTracks.insert(track)
+            let trackName = track == .mic ? "Microphone" : "System audio"
+            recorderLog.error(
+                "audio track write failing: \(track.rawValue, privacy: .public) failed=\(health.failedAppends, privacy: .public) written=\(health.framesWritten, privacy: .public) error=\(health.lastError ?? "-", privacy: .public)"
+            )
+            statusMessage = "\(trackName) audio is not being saved. Switch input device or restart the note."
+            postAudioTrackFailureNotification(trackName: trackName)
+        }
+    }
+
+    private func postAudioTrackFailureNotification(trackName: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "\(trackName) audio is not being saved"
+        content.body = "Loomola can't write this track. Switch input device, or stop and restart the note."
+        content.sound = .default
+        content.interruptionLevel = .timeSensitive
+        let request = UNNotificationRequest(
+            identifier: "loomola-track-write-failure-\(UUID().uuidString)",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error {
+                recorderLog.error("track failure notification failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
     }
 
     private func syncPendingObsidianNotesFromRealtime() {

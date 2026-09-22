@@ -10,6 +10,10 @@ final class SystemAudioCaptureCoordinator: NSObject, SCStreamOutput, SCStreamDel
 
     private var stream: SCStream?
     private var writer: AudioAssetWriter?
+
+    /// Health of the file this capture is writing, or nil when there
+    /// is no file writer (composite flow / not recording).
+    var writeHealth: AudioAssetWriter.WriteHealth? { writer?.writeHealth }
     private let sampleQueue = DispatchQueue(label: "cloud.dissonance.loom.desktop.system-audio-samples")
     /// When true, incoming system-audio sample buffers are discarded
     /// instead of being written or fed to the level meter. Stream stays

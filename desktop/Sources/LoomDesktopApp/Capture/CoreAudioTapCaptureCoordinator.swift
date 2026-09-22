@@ -14,6 +14,10 @@ final class CoreAudioTapCaptureCoordinator: @unchecked Sendable {
 
     private let sampleQueue = DispatchQueue(label: "cloud.dissonance.loom.desktop.core-audio-tap-samples")
     private var writer: AudioAssetWriter?
+
+    /// Health of the file this capture is writing, or nil when there
+    /// is no file writer (composite flow / not recording).
+    var writeHealth: AudioAssetWriter.WriteHealth? { writer?.writeHealth }
     private var tapID = AudioObjectID(kAudioObjectUnknown)
     private var aggregateDeviceID = AudioObjectID(kAudioObjectUnknown)
     private var ioProcID: AudioDeviceIOProcID?
