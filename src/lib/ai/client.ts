@@ -6,16 +6,23 @@ let cachedPrimary: LanguageModel | null = null;
 let cachedFallback: LanguageModel | null = null;
 let cachedClassifier: LanguageModel | null = null;
 
+/** Default primary model when LLM_MODEL / LLM_MODEL_ID are unset (Anthropic id). */
+export const DEFAULT_LLM_MODEL_ID = "claude-sonnet-5";
+
+/** The configured primary model id, also recorded on ai_outputs rows. */
+export function llmModelId(): string {
+  return process.env.LLM_MODEL ?? process.env.LLM_MODEL_ID ?? DEFAULT_LLM_MODEL_ID;
+}
+
 /**
  * Returns a cached LanguageModel configured from env. Defaults to
- * claude-sonnet-4-6 on the Anthropic provider. Swapping providers/models
+ * claude-sonnet-5 on the Anthropic provider. Swapping providers/models
  * is a config change — set LLM_PROVIDER + LLM_MODEL_ID in Doppler.
  */
 export function getLlm(): LanguageModel {
   if (cachedPrimary) return cachedPrimary;
   const provider = process.env.LLM_PROVIDER ?? "anthropic";
-  const modelId =
-    process.env.LLM_MODEL ?? process.env.LLM_MODEL_ID ?? "claude-sonnet-4-6";
+  const modelId = llmModelId();
 
   if (provider === "anthropic") {
     const apiKey = process.env.ANTHROPIC_API_KEY;

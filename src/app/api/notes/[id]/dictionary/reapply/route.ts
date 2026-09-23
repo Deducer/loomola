@@ -15,6 +15,7 @@ import { enableGranola } from "@/lib/feature-flags";
 import { enqueueTranscriptEmbedding } from "@/lib/queue/boss";
 import { enqueueAiJobs } from "@/lib/queue/enqueue-processing";
 import { requireAuth } from "@/lib/require-auth";
+import { llmModelId } from "@/lib/ai/client";
 
 function granolaNotFound() {
   return NextResponse.json({ error: "not_found" }, { status: 404 });
@@ -65,8 +66,7 @@ export async function POST(
     await upsertNoteTemplate(data.media.id, user.id, templateId);
   }
 
-  const llmModel =
-    process.env.LLM_MODEL ?? process.env.LLM_MODEL_ID ?? "claude-sonnet-4-6";
+  const llmModel = llmModelId();
   await resetAiOutputForEnhancement(data.media.id, llmModel, templateId);
 
   try {

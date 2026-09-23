@@ -9,6 +9,7 @@ import { enqueueAiJobs } from "@/lib/queue/enqueue-processing";
 import { db } from "@/db";
 import { mediaObjects } from "@/db/schema";
 import { and, eq, sql } from "drizzle-orm";
+import { llmModelId } from "@/lib/ai/client";
 
 /**
  * Owner-only: re-runs the pipeline for a failed recording from the
@@ -76,8 +77,7 @@ export const POST = withApiErrorHandling(async (
   // dependent jobs. flipToReadyIfComplete also requires a thumbnail, so
   // re-enqueue that too when it's missing (otherwise retry can never
   // reach 'ready').
-  const llmModel =
-    process.env.LLM_MODEL ?? process.env.LLM_MODEL_ID ?? "claude-sonnet-4-6";
+  const llmModel = llmModelId();
   if (!(await getAiOutputByMedia(rec.id))) {
     await insertBlankAiOutput(rec.id, llmModel);
   }

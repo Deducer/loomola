@@ -12,6 +12,7 @@ import {
   collapseDictionaryVariants,
 } from "@/lib/dictionary/transcript-rewrite";
 import type { NormalizedTranscript } from "./types";
+import { llmModelId } from "@/lib/ai/client";
 
 export type PersistTranscriptResult =
   | { kind: "not_found" }
@@ -81,8 +82,7 @@ export async function persistTranscriptAndFanOut(params: {
   }
 
   // Pre-create the ai_outputs row so the 3 UPDATE-based jobs have a target.
-  const llmModel =
-    process.env.LLM_MODEL ?? process.env.LLM_MODEL_ID ?? "claude-sonnet-4-6";
+  const llmModel = llmModelId();
   await insertBlankAiOutput(mediaObjectId, llmModel);
 
   // Flip to 'processing' and fan out the 3 transcript-dependent AI jobs.

@@ -16,6 +16,7 @@ import { requireAuth } from "@/lib/require-auth";
 import {
   DEFAULT_NOTE_TEMPLATE_ID,
 } from "@/lib/ai/note-templates";
+import { llmModelId } from "@/lib/ai/client";
 
 const enhanceRequestSchema = z.object({
   templateId: z.string().optional(),
@@ -136,8 +137,7 @@ export async function POST(
     await upsertNoteTemplate(data.mediaId, user.id, templateId);
   }
 
-  const llmModel =
-    process.env.LLM_MODEL ?? process.env.LLM_MODEL_ID ?? "claude-sonnet-4-6";
+  const llmModel = llmModelId();
   const aiOutput = await resetAiOutputForEnhancement(
     data.mediaId,
     llmModel,

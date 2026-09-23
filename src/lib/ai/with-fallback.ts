@@ -9,6 +9,18 @@ import type {
 import type { z } from "zod";
 import { getLlm, getFallbackLlm } from "./client";
 
+// Thinking is on by default on current Claude models and counts toward the
+// output cap, and the installed Anthropic provider caps model ids it does not
+// know (every 5.x model) at 4096 tokens, so object callers that do not size the
+// cap themselves get room for the reasoning as well as the JSON.
+const DEFAULT_OBJECT_MAX_OUTPUT_TOKENS = 16_000;
+
+// The Anthropic provider falls back to a forced-tool JSON mode for model ids
+// it does not know (Sonnet 5, Opus 5.5), which Opus 5.5 rejects outright, so
+// ask for native structured outputs explicitly. The OpenRouter provider
+// ignores this key and sends response_format instead.
+const OBJECT_PROVIDER_OPTIONS = { anthropic: { structuredOutputMode: "outputFormat" } } as const;
+
 type GenerateObjectWithFallbackArgs<T> = {
   schema: z.ZodType<T>;
   schemaName?: string;
@@ -42,10 +54,15 @@ type GenerateTextWithFallbackArgs = CallSettings &
 export async function generateObjectWithFallback<T>(
   args: GenerateObjectWithFallbackArgs<T>
 ): Promise<{ object: T; finishReason: FinishReason }> {
-  const { model: overrideModel, ...rest } = args;
+  const { model: overrideModel, maxOutputTokens, ...rest } = args;
   const primary = overrideModel ?? getLlm();
+  const settings = {
+    ...rest,
+    maxOutputTokens: maxOutputTokens ?? DEFAULT_OBJECT_MAX_OUTPUT_TOKENS,
+    providerOptions: OBJECT_PROVIDER_OPTIONS,
+  };
   try {
-    const result = await generateObject({ model: primary, ...rest });
+    const result = await generateObject({ model: primary, ...settings });
     return {
       object: result.object as T,
       finishReason: result.finishReason,
@@ -57,7 +74,7 @@ export async function generateObjectWithFallback<T>(
       "[ai-fallback] primary failed non-retryably, falling back to OpenRouter:",
       err instanceof Error ? err.message : String(err)
     );
-    const result = await generateObject({ model: fallback, ...rest });
+    const result = await generateObject({ model: fallback, ...settings });
     return {
       object: result.object as T,
       finishReason: result.finishReason,
