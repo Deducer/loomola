@@ -95,8 +95,9 @@ export const folders = pgTable(
     ownerId: uuid("owner_id").notNull(),
     parentId: uuid("parent_id"),
     name: text("name").notNull(),
-    // See media_objects.importSource above. Partial unique index in
-    // migration 0022.
+    // See media_objects.importSource above. Full unique index
+    // folders_import_source_unique (migration 0033; the 0022 partial index
+    // was not inferable by the import route's bare ON CONFLICT target).
     importSource: text("import_source"),
     importSourceId: text("import_source_id"),
     // Sidebar pinning + per-space emoji icon (Granola pattern, Stage 15).
@@ -440,8 +441,9 @@ export const people = pgTable(
     // the user's voice fingerprint baseline. At most one is_self=true per
     // owner, enforced by partial unique index people_owner_self_unique.
     isSelf: boolean("is_self").notNull().default(false),
-    // See media_objects.importSource above. Partial unique index in
-    // migration 0022.
+    // See media_objects.importSource above. Full unique index
+    // people_import_source_unique (migration 0033; the 0022 partial index
+    // was not inferable by the import route's bare ON CONFLICT target).
     importSource: text("import_source"),
     importSourceId: text("import_source_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
