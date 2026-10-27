@@ -14,6 +14,17 @@
 - Profile and reconcile run inside the `suggest_speakers` job, which is now enqueued from `persistTranscriptAndFanOut`, rather than inside the transcript-write transaction. Live → batch needs no old words (channel rule), and batch → batch user rows go to `needs_review` instead of a time-overlap remap.
 - The eval scorecard and the backfill are one script (`scripts/backfill-speaker-v2.ts`); its dry run is the scorecard.
 - Auto-apply shipped in Phase 1 (Q6 = yes), with a "Not <name>" undo on desktop and web.
+
+**Review fixes (Codex review, 2026-10-27):**
+- The reconcile and suggestion writes run in one locked transaction (`withSpeakerWriteLock`). It aborts if the transcript the job computed on has been replaced, and it reads speaker rows `FOR UPDATE` so an in-flight user decision wins.
+- Rejected remaps reserve their original index, so a chain of moves can't collide on the unique index.
+- Two mic-dominant voices become uncertain suggestions instead of two auto-applied "Me" rows.
+- Activity frames are produced in the mix ffmpeg pass, with timeout and cancellation. Unreadable tracks throw instead of falling back to talk time.
+- Job errors are rethrown to pg-boss so it retries.
+- The backfill is idempotent, with `--verify`, `--id` and `--limit`.
+- `needs_review` names render visibly uncertain on web and desktop.
+- `0034` runs with `SET LOCAL lock_timeout = '5s'`.
+- Desktop: stop and restart are serialized through `MicRestartGate`, and a restart never creates a writer. The gap tracker records the pause total with each buffer, so a pause that started before the restart isn't filled with silence.
 **Style:** TDD. Pure logic first, under `src/lib/speaker-profile/` and `src/lib/speaker-suggestion/`, then wiring, then UI. Each phase ships on its own and is scored with the same offline eval script.
 
 ## Phases at a glance (ordered by impact ÷ effort)

@@ -27,6 +27,7 @@ const store = vi.hoisted(() => ({
   note: null as null | Record<string, unknown>,
   rows: [] as Row[],
   currentTranscriptId: null as string | null,
+  activityError: null as Error | null,
   activity: null as ActivityFrames | null,
   profiles: [] as unknown[],
   nextId: 1,
@@ -87,7 +88,10 @@ vi.mock("@/db/queries/speaker-suggestion", () => ({
 }));
 
 vi.mock("@/lib/speaker-profile/track-activity", () => ({
-  loadActivity: vi.fn(async () => store.activity),
+  loadActivity: vi.fn(async () => {
+    if (store.activityError) throw store.activityError;
+    return store.activity;
+  }),
   computeActivityFromTrackKeys: vi.fn(async () => store.activity),
   uploadActivity: vi.fn(async () => {}),
 }));
@@ -128,6 +132,7 @@ const named = () =>
     .sort((a, b) => (a[0] as number) - (b[0] as number));
 
 beforeEach(() => {
+  store.activityError = null;
   store.rows = [];
   store.profiles = [];
   store.nextId = 1;
@@ -197,6 +202,16 @@ describe("suggest_speakers job (speaker v2)", () => {
     expect(store.profiles).toHaveLength(1);
     expect((store.profiles[0] as { status: string }).status).toBe("mic_unusable");
     expect(named()).toEqual([]);
+  });
+
+  it("fails (so pg-boss retries) instead of talk-time guessing when the tracks can't be read", async () => {
+    // A 1:1 where the other person talks far more — exactly where the old
+    // fallback would have labeled them as the recorder.
+    setTranscript("deepgram", batchAt, turns([[0, 200], [1, 20]]), [SARAH]);
+    store.activityError = new Error("activity.bin fetch failed: HTTP 503");
+    await expect(runSuggestSpeakersJob({ mediaObjectId: "m" })).rejects.toThrow(/503/);
+    expect(store.rows).toEqual([]);
+    expect(store.profiles).toEqual([]);
   });
 
   it("writes nothing when the transcript was replaced while the job was computing", async () => {
