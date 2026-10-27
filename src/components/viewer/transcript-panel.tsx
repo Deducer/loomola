@@ -277,6 +277,9 @@ export function TranscriptPanel({
           const assignment =
             speakerIdx !== null ? assignmentBySpeaker.get(speakerIdx) : undefined;
           const isSuggested = Boolean(assignment?.isSuggestion);
+          // A name the evidence couldn't vouch for must look uncertain in
+          // the transcript itself, not only on hover.
+          const needsReview = Boolean(assignment?.needsReview);
 
           return (
             <div key={i} className="relative">
@@ -291,11 +294,18 @@ export function TranscriptPanel({
                     className={cn(
                       "text-xs font-medium hover:text-text",
                       tone === "neutral" ? "text-text-muted" : "text-accent",
-                      isSuggested && "italic"
+                      isSuggested && "italic",
+                      needsReview && "text-amber-500 underline decoration-dashed underline-offset-2"
                     )}
                     title={speakerProvenance(assignment)}
+                    data-needs-review={needsReview || undefined}
                   >
                     {speakerLabel}
+                    {needsReview && (
+                      <span className="ml-1 text-[10px] uppercase tracking-wider">
+                        check?
+                      </span>
+                    )}
                     {isSuggested && (
                       <span className="ml-1 text-[10px] uppercase tracking-wider text-text-subtle">
                         suggested

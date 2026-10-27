@@ -8,20 +8,33 @@ import Foundation
 /// mix and the server's mic-vs-system speaker detection.
 ///
 /// Pure value type so the arithmetic is testable without audio hardware.
-/// Times are `ProcessInfo.systemUptime` seconds; paused time is excluded
-/// because pausing deliberately elides audio from BOTH tracks.
+/// Times are `ProcessInfo.systemUptime` seconds. Paused time is excluded
+/// from the gap because pausing deliberately elides audio from BOTH
+/// tracks — including a pause that began after the last buffer but
+/// before the restart, which is why the paused total is recorded with
+/// every buffer rather than read when the restart happens.
 struct MicRestartGapTracker {
+    private var lastBufferUptime: TimeInterval?
+    private var pausedTotalAtLastBuffer: TimeInterval = 0
     private(set) var gapStartUptime: TimeInterval?
     private var pausedTotalAtGapStart: TimeInterval = 0
 
     var isOpen: Bool { gapStartUptime != nil }
 
-    /// Called when the engine is torn down for a restart. Keeps the
-    /// earliest start if a restart fails and is retried.
-    mutating func open(lastBufferUptime: TimeInterval, pausedTotal: TimeInterval) {
-        guard gapStartUptime == nil else { return }
+    /// Every delivered (unpaused) buffer: when its audio ended, and the
+    /// paused total at that moment.
+    mutating func markBuffer(uptime: TimeInterval, pausedTotal: TimeInterval) {
+        lastBufferUptime = uptime
+        pausedTotalAtLastBuffer = pausedTotal
+    }
+
+    /// The engine is being torn down for a restart. The gap starts where
+    /// the last audio ended; a retried restart keeps the original start.
+    /// No-op before any audio (nothing to align yet).
+    mutating func open() {
+        guard gapStartUptime == nil, let lastBufferUptime else { return }
         gapStartUptime = lastBufferUptime
-        pausedTotalAtGapStart = pausedTotal
+        pausedTotalAtGapStart = pausedTotalAtLastBuffer
     }
 
     /// Called with the first buffer after the restart. Returns the
@@ -44,4 +57,43 @@ struct MicRestartGapTracker {
     /// Below this, scheduling jitter — not worth a silence write.
     static let minimumGap: TimeInterval = 0.05
     static let maximumGap: TimeInterval = 4 * 3600
+}
+
+/// Serializes mic-engine restarts against stop(). Every restart attempt
+/// carries the generation it was scheduled in; stop() bumps the
+/// generation, so an attempt that was already queued (or a retry after a
+/// failed restart) finds itself obsolete and does nothing — it can never
+/// start an engine, or touch a writer, after the note has stopped.
+/// Mutated only on the coordinator's recovery queue.
+struct MicRestartGate {
+    private(set) var generation = 0
+    private(set) var stopping = false
+    private(set) var restarting = false
+
+    /// Starts a restart attempt; nil if stopping or one is in flight.
+    mutating func begin() -> Int? {
+        guard !stopping, !restarting else { return nil }
+        restarting = true
+        return generation
+    }
+
+    func isCurrent(_ ticket: Int) -> Bool {
+        !stopping && ticket == generation
+    }
+
+    mutating func finishAttempt() {
+        restarting = false
+    }
+
+    mutating func stop() {
+        stopping = true
+        restarting = false
+        generation += 1
+    }
+
+    mutating func reset() {
+        stopping = false
+        restarting = false
+        generation += 1
+    }
 }

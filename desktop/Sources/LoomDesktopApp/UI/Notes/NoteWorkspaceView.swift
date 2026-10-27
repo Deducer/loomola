@@ -2050,16 +2050,26 @@ struct NoteWorkspaceView: View {
                                 }
                             }
                         } label: {
+                            let presentation = SpeakerLabelPresentation.make(
+                                name: speaker,
+                                assignment: activeAssignment(idx: idx)
+                            )
                             HStack(spacing: 3) {
-                                Text(speaker)
+                                if presentation.isUncertain {
+                                    Image(systemName: "questionmark.circle")
+                                        .font(.system(size: 9, weight: .semibold))
+                                }
+                                Text(presentation.text)
                                     .font(DSFont.Body.sm())
                                 Image(systemName: "chevron.down")
                                     .font(.system(size: 7, weight: .semibold))
                             }
                             .foregroundStyle(
-                                speaker.hasPrefix("Speaker ")
-                                    ? DSColor.Accent.primary.opacity(0.9)
-                                    : DSColor.Text.tertiary.opacity(0.9)
+                                presentation.isUncertain
+                                    ? DSColor.State.warning
+                                    : speaker.hasPrefix("Speaker ")
+                                        ? DSColor.Accent.primary.opacity(0.9)
+                                        : DSColor.Text.tertiary.opacity(0.9)
                             )
                             .padding(.horizontal, 4)
                         }
