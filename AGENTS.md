@@ -126,6 +126,13 @@ When adding a new public-facing endpoint that accepts user input, default to `ch
 
 `suggest_speakers` pg-boss job auto-suggests `speaker_idx → person` for audio notes using `media_objects.attendees` + `people.is_self`. ✓/✗ pill on the transcript card on `/notes/:id`. Pure logic in `src/lib/speaker-suggestion/`. Worker is audio-only for v1 because the labeling UI is audio-only.
 
+**Speaker recognition v2, Phase 1 (built 2026-10-27, on `feat/speaker-recognition-v2`; deploy pending) — read before touching `suggest_speakers`:** the old pipeline computed speaker rows on the LIVE transcript (indices = capture channels: 0 mic, 1 system audio) and kept them after the BATCH transcript re-numbered voices by diarization, so most "this is Ian" rows pointed at someone else (27 of 32 batch notes; 17 of 27 self rows wrong against the mic track; two accepted 1:1s had the names swapped). v2:
+- **Me comes from the mic track, not talk time.** `mix_audio` writes `activity.bin` (100 ms mic/system loudness, `media_objects.r2_activity_key`); `computeSpeakerProfile` (`src/lib/speaker-profile/`) marks the voice that is loud on the mic while system audio is quiet. Stored per transcript in `transcripts.speaker_profile` with a `status` (`capture`, `live_channels`, `mic_unusable`, `in_person`, `ambiguous`, `no_tracks`).
+- **Rows are tied to a transcript version** (`speaker_assignments.transcript_version` = `<provider>:<created_at>`). `suggest_speakers` now runs on every batch transcript (`persist.ts`) and reconciles older rows first (`reconcile.ts`): stale pending / auto rows recomputed; user decisions kept or moved only with capture evidence, otherwise `needs_review` — never silently rewritten.
+- **Evidence ladder** (`compose.ts`): Me from the mic and the sole remote voice on a 1:1 are **auto-applied** (`auto_applied`, undo = the dismiss endpoint / "Not <name>" in the transcript menus); the Stage-17 LLM pass stays a suggestion. Positional mapping is gone; talk-time self detection survives only when there are no capture tracks.
+- Scorecard + backfill: `doppler run --project dissonance-cloud --config prd_loom -- npx tsx scripts/backfill-speaker-v2.ts` (read-only by default; `--execute` uploads frames and enqueues the deployed worker).
+- Spec / plan: `docs/superpowers/specs/2026-10-27-speaker-recognition-v2-granola-parity-design.md`, `docs/superpowers/plans/2026-10-27-speaker-recognition-v2.md`.
+
 **v2 (Path C, deferred):** voice biometrics. Tech-stack (Pyannote / SpeechBrain / Resemblyzer / AssemblyAI) deliberately deferred.
 
 - Spec: `docs/superpowers/specs/2026-05-04-speaker-recognition-design.md`

@@ -2,7 +2,18 @@
 
 **Date:** 2026-10-27
 **Spec:** [`../specs/2026-10-27-speaker-recognition-v2-granola-parity-design.md`](../specs/2026-10-27-speaker-recognition-v2-granola-parity-design.md)
-**Status:** Awaiting Ian's approval. Phase 1 is ready to execute; Phases 2 to 5 get their own task-level breakdown once the open questions they depend on are answered.
+**Status:** Phase 1 and the mic-loss side track were approved and **built on 2026-10-27** (commits on `feat/speaker-recognition-v2`). They're awaiting migration, deploy and backfill approval. Phases 2 to 5 get their own task-level breakdown once the open questions they depend on are answered.
+
+**Ian's decisions (2026-10-27):**
+- Q6: auto-apply capture evidence (mic track, sole remote voice on a 1:1, later meeting-app names) with undo; AI-inferred names stay suggestions.
+- Q5: the wrong accepted rows go to a one-time review list (`needs_review`) and are never silently fixed.
+- Q2: meeting-app names via Accessibility, Zoom first, but only after Phases 1 to 3.
+- Q1: voice embeddings later.
+
+**As built (deviations from the task list below):**
+- Profile and reconcile run inside the `suggest_speakers` job, which is now enqueued from `persistTranscriptAndFanOut`, rather than inside the transcript-write transaction. Live → batch needs no old words (channel rule), and batch → batch user rows go to `needs_review` instead of a time-overlap remap.
+- The eval scorecard and the backfill are one script (`scripts/backfill-speaker-v2.ts`); its dry run is the scorecard.
+- Auto-apply shipped in Phase 1 (Q6 = yes), with a "Not <name>" undo on desktop and web.
 **Style:** TDD. Pure logic first, under `src/lib/speaker-profile/` and `src/lib/speaker-suggestion/`, then wiring, then UI. Each phase ships on its own and is scored with the same offline eval script.
 
 ## Phases at a glance (ordered by impact ÷ effort)
