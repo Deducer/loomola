@@ -102,6 +102,36 @@ final class AudioAssetWriter: @unchecked Sendable {
         try writePCM(pcmBuffer)
     }
 
+    /// Writes `seconds` of digital silence in the file's own format.
+    /// Used when the mic engine restarts mid-note (device change): the
+    /// gap is filled so the mic track stays time-aligned with the system
+    /// track — mix_audio and speaker detection both assume the two
+    /// tracks share a timeline. No-op before the first real buffer
+    /// (the file's format isn't known yet) or after finish.
+    func appendSilence(seconds: TimeInterval) throws {
+        guard seconds > 0 else { return }
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        guard !finished, let file = audioFile else { return }
+        let format = file.processingFormat
+        var remaining = AVAudioFrameCount(min(seconds, 4 * 3600) * format.sampleRate)
+        let chunkFrames = AVAudioFrameCount(max(1, format.sampleRate))
+        guard let chunk = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: chunkFrames) else {
+            throw AudioAssetWriterError.conversionUnavailable
+        }
+        // Freshly allocated PCM buffers are not guaranteed zeroed.
+        let abl = UnsafeMutableAudioBufferListPointer(chunk.mutableAudioBufferList)
+        for buffer in abl {
+            if let data = buffer.mData { memset(data, 0, Int(buffer.mDataByteSize)) }
+        }
+        while remaining > 0 {
+            chunk.frameLength = min(remaining, chunkFrames)
+            try file.write(from: chunk)
+            health.framesWritten += Int64(chunk.frameLength)
+            remaining -= chunk.frameLength
+        }
+    }
+
     func finish() async throws -> URL {
         closeFile()
         return outputURL
