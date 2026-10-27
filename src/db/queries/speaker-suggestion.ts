@@ -5,22 +5,29 @@ import {
   speakerAssignments,
   transcripts,
 } from "@/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, or } from "drizzle-orm";
 import type { WordTimestamp } from "@/db/queries/transcripts";
 import type { PersonCandidate } from "@/lib/speaker-suggestion/match-person";
 import type { SpeakerSuggestion } from "@/lib/speaker-suggestion/compose";
+import type { SpeakerProfile } from "@/lib/speaker-profile/profile";
+import type { ReconcilePlan, ReconcileRow } from "@/lib/speaker-profile/reconcile";
 
 export interface NoteForSpeakerSuggestion {
   ownerId: string;
   type: "video" | "audio";
   attendees: unknown;
-  sourceSeparated: boolean;
   words: WordTimestamp[];
+  transcriptId: string | null;
+  transcriptProvider: string | null;
+  transcriptCreatedAt: Date | null;
+  r2MicKey: string | null;
+  r2SystemaudioKey: string | null;
+  r2ActivityKey: string | null;
 }
 
-/** Loads what suggest_speakers needs to decide whether to run + what to
- *  feed the classifier. Returns null when the recording is missing or has
- *  no transcript yet. */
+/** Loads what suggest_speakers needs: the latest transcript (words +
+ *  which version it is) and the capture-track keys behind its speaker
+ *  profile. Returns null when the recording is missing. */
 export async function getNoteForSpeakerSuggestion(
   mediaObjectId: string
 ): Promise<NoteForSpeakerSuggestion | null> {
@@ -29,32 +36,44 @@ export async function getNoteForSpeakerSuggestion(
       ownerId: mediaObjects.ownerId,
       type: mediaObjects.type,
       attendees: mediaObjects.attendees,
-      r2MixedKey: mediaObjects.r2MixedKey,
+      r2MicKey: mediaObjects.r2MicKey,
+      r2SystemaudioKey: mediaObjects.r2SystemaudioKey,
+      r2ActivityKey: mediaObjects.r2ActivityKey,
+      transcriptId: transcripts.id,
       provider: transcripts.provider,
+      transcriptCreatedAt: transcripts.createdAt,
       words: transcripts.wordTimestamps,
     })
     .from(mediaObjects)
     .leftJoin(transcripts, eq(transcripts.mediaObjectId, mediaObjects.id))
     .where(eq(mediaObjects.id, mediaObjectId))
+    .orderBy(desc(transcripts.createdAt))
     .limit(1);
 
   if (!row) return null;
-
-  const words = Array.isArray(row.words)
-    ? (row.words as WordTimestamp[])
-    : [];
 
   return {
     ownerId: row.ownerId,
     type: row.type,
     attendees: row.attendees,
-    // Only live transcripts still carry channel-derived speaker labels
-    // (0=mic/self, 1=system). Batch transcripts moved to mono+diarize
-    // (2026-07-02), where indices are diarization order — the channel
-    // fast-path in compose.ts must not fire for them.
-    sourceSeparated: row.provider === "deepgram-live",
-    words,
+    words: Array.isArray(row.words) ? (row.words as WordTimestamp[]) : [],
+    transcriptId: row.transcriptId,
+    transcriptProvider: row.provider,
+    transcriptCreatedAt: row.transcriptCreatedAt,
+    r2MicKey: row.r2MicKey,
+    r2SystemaudioKey: row.r2SystemaudioKey,
+    r2ActivityKey: row.r2ActivityKey,
   };
+}
+
+export async function setActivityKey(mediaObjectId: string, key: string): Promise<void> {
+  await db.update(mediaObjects).set({ r2ActivityKey: key }).where(eq(mediaObjects.id, mediaObjectId));
+}
+
+/** Stores the profile on the exact transcript row it was computed from,
+ *  so a transcript replaced mid-job never inherits a stale profile. */
+export async function saveSpeakerProfile(transcriptId: string, profile: SpeakerProfile): Promise<void> {
+  await db.update(transcripts).set({ speakerProfile: profile }).where(eq(transcripts.id, transcriptId));
 }
 
 export interface PersonForSuggestion extends PersonCandidate {
@@ -82,19 +101,69 @@ export async function getPeopleForSuggestion(
   }));
 }
 
-/** Returns true when there's already at least one speaker_assignments row
- *  for this recording (auto-suggested OR manual). Used by the worker to
- *  short-circuit when a previous run has already placed suggestions or
- *  when the user has already labeled manually. */
-export async function hasExistingSpeakerAssignments(
+export async function listAssignmentsForReconcile(
   mediaObjectId: string
-): Promise<boolean> {
-  const [row] = await db
-    .select({ id: speakerAssignments.id })
+): Promise<Array<ReconcileRow & { suggestionConfidence: string | null }>> {
+  return db
+    .select({
+      id: speakerAssignments.id,
+      speakerIdx: speakerAssignments.speakerIdx,
+      personId: speakerAssignments.personId,
+      isSuggestion: speakerAssignments.isSuggestion,
+      autoApplied: speakerAssignments.autoApplied,
+      dismissedAt: speakerAssignments.dismissedAt,
+      needsReview: speakerAssignments.needsReview,
+      transcriptVersion: speakerAssignments.transcriptVersion,
+      createdAt: speakerAssignments.createdAt,
+      suggestedAt: speakerAssignments.suggestedAt,
+      suggestionConfidence: speakerAssignments.suggestionConfidence,
+    })
     .from(speakerAssignments)
-    .where(eq(speakerAssignments.mediaObjectId, mediaObjectId))
-    .limit(1);
-  return row !== undefined;
+    .where(eq(speakerAssignments.mediaObjectId, mediaObjectId));
+}
+
+/** Applies a reconcile plan atomically. Deletes first (they free
+ *  indices), then remaps through a temporary negative index because a
+ *  remap can swap two rows (the swapped-1:1 case) and the
+ *  (media_object_id, speaker_idx) index is unique. */
+export async function applyReconcilePlan(args: {
+  mediaObjectId: string;
+  version: string;
+  plan: ReconcilePlan;
+}): Promise<void> {
+  const { plan, version } = args;
+  const scoped = (id: string) =>
+    and(eq(speakerAssignments.id, id), eq(speakerAssignments.mediaObjectId, args.mediaObjectId));
+  await db.transaction(async (tx) => {
+    if (plan.deleteIds.length > 0) {
+      await tx
+        .delete(speakerAssignments)
+        .where(
+          and(
+            eq(speakerAssignments.mediaObjectId, args.mediaObjectId),
+            inArray(speakerAssignments.id, plan.deleteIds)
+          )
+        );
+    }
+    for (const [i, remap] of plan.remaps.entries()) {
+      await tx.update(speakerAssignments).set({ speakerIdx: -1 - i }).where(scoped(remap.id));
+    }
+    for (const remap of plan.remaps) {
+      await tx
+        .update(speakerAssignments)
+        .set({ speakerIdx: remap.newIdx, transcriptVersion: version })
+        .where(scoped(remap.id));
+    }
+    for (const id of plan.restampIds) {
+      await tx.update(speakerAssignments).set({ transcriptVersion: version }).where(scoped(id));
+    }
+    for (const id of plan.reviewIds) {
+      await tx
+        .update(speakerAssignments)
+        .set({ transcriptVersion: version, needsReview: true })
+        .where(scoped(id));
+    }
+  });
 }
 
 /** Persists a batch of speaker suggestions. Idempotent: ON CONFLICT on
@@ -102,6 +171,7 @@ export async function hasExistingSpeakerAssignments(
  *  re-runs of the worker. */
 export async function persistSpeakerSuggestions(args: {
   mediaObjectId: string;
+  transcriptVersion: string;
   suggestions: ReadonlyArray<SpeakerSuggestion>;
 }): Promise<void> {
   if (args.suggestions.length === 0) return;
@@ -112,7 +182,11 @@ export async function persistSpeakerSuggestions(args: {
     personId: s.personId,
     displayLabelOverride:
       s.suggestedNewPerson?.displayName ?? null,
-    isSuggestion: true,
+    // Capture evidence applies without a click (undoable via dismiss);
+    // everything inferred waits for the user.
+    isSuggestion: !s.autoApply,
+    autoApplied: s.autoApply,
+    transcriptVersion: args.transcriptVersion,
     suggestedAt: now,
     suggestedNewPersonPayload: s.suggestedNewPerson
       ? { displayName: s.suggestedNewPerson.displayName, email: s.suggestedNewPerson.email }
@@ -145,7 +219,16 @@ export async function clearPendingSpeakerSuggestions(
     .where(
       and(
         eq(speakerAssignments.mediaObjectId, mediaObjectId),
-        eq(speakerAssignments.isSuggestion, true)
+        or(
+          eq(speakerAssignments.isSuggestion, true),
+          // Auto-applied names that came FROM the attendee list are as
+          // stale as pending ones once it changes; mic-derived Me rows
+          // don't depend on attendees and stay.
+          and(
+            eq(speakerAssignments.autoApplied, true),
+            eq(speakerAssignments.suggestionConfidence, "remote_via_single_voice")
+          )
+        )
       )
     );
 }
@@ -166,6 +249,8 @@ export async function applySpeakerSuggestion(args: {
       personId: args.personId,
       displayLabelOverride: args.displayLabelOverride ?? null,
       isSuggestion: false,
+      autoApplied: false,
+      needsReview: false,
       suggestedNewPersonPayload: null,
     })
     .from(mediaObjects)
@@ -197,6 +282,8 @@ export async function dismissSpeakerSuggestion(args: {
       personId: null,
       displayLabelOverride: null,
       suggestedNewPersonPayload: null,
+      autoApplied: false,
+      needsReview: false,
       dismissedAt: new Date(),
     })
     .from(mediaObjects)
@@ -206,7 +293,13 @@ export async function dismissSpeakerSuggestion(args: {
         eq(speakerAssignments.speakerIdx, args.speakerIdx),
         eq(mediaObjects.id, speakerAssignments.mediaObjectId),
         eq(mediaObjects.ownerId, args.ownerId),
-        eq(speakerAssignments.isSuggestion, true)
+        // Pending suggestions, auto-applied names (the "undo" for capture
+        // evidence) and rows flagged for review can all be dismissed.
+        or(
+          eq(speakerAssignments.isSuggestion, true),
+          eq(speakerAssignments.autoApplied, true),
+          eq(speakerAssignments.needsReview, true)
+        )
       )
     )
     .returning({ id: speakerAssignments.id });

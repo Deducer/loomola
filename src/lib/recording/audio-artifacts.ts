@@ -16,3 +16,8 @@ export function sourceTranscriptAudioKeyForTrack(key: string): string {
 export function waveformKeyForTrack(key: string): string {
   return `${recordingPrefixFromTrackKey(key)}/waveform.png`;
 }
+
+/** Mic/system loudness frames (speaker recognition v2), next to mixed.m4a. */
+export function activityKeyForTrack(key: string): string {
+  return `${recordingPrefixFromTrackKey(key)}/activity.bin`;
+}

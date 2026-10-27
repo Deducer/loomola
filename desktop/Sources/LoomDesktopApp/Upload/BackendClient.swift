@@ -1036,6 +1036,12 @@ struct SpeakerAssignmentDTO: Decodable, Equatable, Sendable {
     /// LLM-attributed suggestion. Optional for older servers.
     var suggestionConfidence: String?
     var suggestionEvidence: String?
+    /// Speaker v2: named without a click from capture evidence (mic
+    /// track / sole remote voice on a 1:1) — dismissable as an undo.
+    var autoApplied: Bool?
+    /// Speaker v2: a confirmed name the new transcript's capture
+    /// evidence couldn't vouch for. Optional for older servers.
+    var needsReview: Bool?
 }
 
 private struct AssignSpeakerRequest: Encodable {

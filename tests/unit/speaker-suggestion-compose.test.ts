@@ -1,185 +1,186 @@
 import { describe, it, expect } from "vitest";
 import { composeSpeakerSuggestions } from "@/lib/speaker-suggestion/compose";
-import type { WordTimestamp } from "@/db/queries/transcripts";
+import { computeSpeakerProfile } from "@/lib/speaker-profile/profile";
 import type { PersonCandidate } from "@/lib/speaker-suggestion/match-person";
+import { framesForTurns, turns, wordsFor, type Turn } from "./fixtures/speaker-v2";
 
-const SELF: PersonCandidate = {
-  id: "ian",
-  displayName: "Ian Cross",
-  email: "ian@example.com",
-};
-const SARAH: PersonCandidate = {
-  id: "sarah",
-  displayName: "Sarah Chen",
-  email: "sarah@example.com",
-};
-const ALEX: PersonCandidate = {
-  id: "alex",
-  displayName: "Alex Park",
-  email: "alex@example.com",
-};
+const SELF: PersonCandidate = { id: "ian", displayName: "Ian Cross", email: "ian@example.com" };
+const SARAH: PersonCandidate = { id: "sarah", displayName: "Sarah Chen", email: "sarah@example.com" };
+const ALEX: PersonCandidate = { id: "alex", displayName: "Alex Park", email: "alex@example.com" };
 
-function w(speaker: number, durSec: number): WordTimestamp[] {
-  // Splits dur into 1-second words for realism.
-  const result: WordTimestamp[] = [];
-  for (let i = 0; i < Math.ceil(durSec); i++) {
-    result.push({
-      word: "x",
-      start: i,
-      end: Math.min(i + 1, durSec),
-      speaker,
-    });
-  }
-  return result;
+function batch(t: Turn[], micSpeakers: number[] | null) {
+  const words = wordsFor(t);
+  return {
+    words,
+    profile: computeSpeakerProfile({
+      words,
+      provider: "deepgram",
+      activity: micSpeakers ? framesForTurns(t, micSpeakers) : null,
+    }),
+  };
 }
 
-describe("composeSpeakerSuggestions", () => {
-  it("returns [] when there's no self-Person", () => {
+const sarah = [{ personId: SARAH.id, displayName: null, email: null }];
+
+describe("composeSpeakerSuggestions (v2 evidence ladder)", () => {
+  it("returns [] without a self-Person", () => {
     const r = composeSpeakerSuggestions({
-      words: [...w(0, 30), ...w(1, 5)],
-      attendees: [{ displayName: "Sarah Chen", email: "sarah@example.com" }],
+      ...batch(turns([[0, 30], [1, 30]]), [1]),
+      attendees: sarah,
       people: [SARAH],
       selfPersonId: null,
     });
     expect(r).toEqual([]);
   });
 
-  it("returns [] when attendees is empty", () => {
+  it("1:1: Me from the mic track and the sole remote voice named, both auto-applied", () => {
+    // The other person talks more and spoke first — v1 would have
+    // labeled them as the recorder.
     const r = composeSpeakerSuggestions({
-      words: [...w(0, 30), ...w(1, 5)],
-      attendees: [],
-      people: [SELF, SARAH],
-      selfPersonId: SELF.id,
-    });
-    expect(r).toEqual([]);
-  });
-
-  it("returns [] when fewer than 2 speakers detected", () => {
-    const r = composeSpeakerSuggestions({
-      words: w(0, 30),
-      attendees: [{ displayName: "Sarah Chen", email: "sarah@example.com" }],
-      people: [SELF, SARAH],
-      selfPersonId: SELF.id,
-    });
-    expect(r).toEqual([]);
-  });
-
-  it("happy 1:1 path: 2 speakers, 1 known attendee, 1 self-Person => 2 suggestions", () => {
-    const r = composeSpeakerSuggestions({
-      // Speaker 0: 30s (host). Speaker 1: 5s (guest).
-      words: [...w(0, 30), ...w(1, 5)],
-      attendees: [{ displayName: "Sarah Chen", email: "sarah@example.com" }],
-      people: [SELF, SARAH],
-      selfPersonId: SELF.id,
-    });
-    // Two suggestions: speaker 0 -> self, speaker 1 -> sarah.
-    expect(r).toHaveLength(2);
-    const bySpeaker = new Map(r.map((s) => [s.speakerIdx, s]));
-    expect(bySpeaker.get(0)?.personId).toBe(SELF.id);
-    expect(bySpeaker.get(0)?.confidence).toBe("high");
-    expect(bySpeaker.get(1)?.personId).toBe(SARAH.id);
-    expect(bySpeaker.get(1)?.confidence).toBe("high");
-  });
-
-  it("source-separated 1:1 path maps mic to self and system audio to attendee", () => {
-    const r = composeSpeakerSuggestions({
-      // Speaker 0 is the user's mic and speaker 1 is system/call audio.
-      // The remote attendee talks more, so duration-based self detection
-      // would pick the wrong speaker if we ignored the source channels.
-      words: [...w(0, 5), ...w(1, 30)],
-      attendees: [
-        {
-          personId: SARAH.id,
-          displayName: null,
-          email: null,
-        },
-      ],
-      people: [SELF, SARAH],
-      selfPersonId: SELF.id,
-      sourceSeparated: true,
-    });
-    expect(r).toHaveLength(2);
-    const bySpeaker = new Map(r.map((s) => [s.speakerIdx, s]));
-    expect(bySpeaker.get(0)?.personId).toBe(SELF.id);
-    expect(bySpeaker.get(0)?.reason).toBe("self_via_source_channel");
-    expect(bySpeaker.get(1)?.personId).toBe(SARAH.id);
-    expect(bySpeaker.get(1)?.reason).toBe("person_id_exact");
-  });
-
-  it("happy 3-person path: 3 speakers, 2 known attendees", () => {
-    const r = composeSpeakerSuggestions({
-      // Speaker 0: 30s (host). Speakers 1, 2: 10s each.
-      words: [...w(0, 30), ...w(1, 10), ...w(2, 10)],
-      attendees: [
-        { displayName: "Sarah Chen", email: "sarah@example.com" },
-        { displayName: "Alex Park", email: "alex@example.com" },
-      ],
-      people: [SELF, SARAH, ALEX],
-      selfPersonId: SELF.id,
-    });
-    expect(r).toHaveLength(3);
-    const bySpeaker = new Map(r.map((s) => [s.speakerIdx, s]));
-    expect(bySpeaker.get(0)?.personId).toBe(SELF.id);
-    // Two non-self speakers, two attendees in order.
-    expect(bySpeaker.get(1)?.personId).toBe(SARAH.id);
-    expect(bySpeaker.get(2)?.personId).toBe(ALEX.id);
-  });
-
-  it("attendee count mismatch (3 speakers, 1 attendee) => self-only suggestion", () => {
-    // Stage 16 relaxation: positional mapping would be a guess when
-    // counts don't line up, but self-detection is evidence-based —
-    // label just the user.
-    const r = composeSpeakerSuggestions({
-      words: [...w(0, 30), ...w(1, 10), ...w(2, 10)],
-      attendees: [{ displayName: "Sarah Chen", email: "sarah@example.com" }],
+      ...batch(turns([[0, 80], [1, 20], [0, 60], [1, 15]]), [1]),
+      attendees: sarah,
       people: [SELF, SARAH],
       selfPersonId: SELF.id,
     });
     expect(r).toEqual([
-      {
-        speakerIdx: 0,
-        personId: SELF.id,
-        confidence: "high",
-        reason: "self_via_dominant_speech",
-      },
+      { speakerIdx: 1, personId: SELF.id, confidence: "high", reason: "self_via_mic_capture", autoApply: true },
+      { speakerIdx: 0, personId: SARAH.id, confidence: "high", reason: "remote_via_single_voice", autoApply: true },
     ]);
   });
 
-  it("count mismatch with tied self-detection => no suggestions", () => {
+  it("identifies Me even when the note has no attendees", () => {
     const r = composeSpeakerSuggestions({
-      // Three voices, one attendee, and no dominant speaker.
-      words: [...w(0, 50), ...w(1, 49.5), ...w(2, 48)],
-      attendees: [{ displayName: "Sarah Chen", email: "sarah@example.com" }],
+      ...batch(turns([[0, 40], [1, 40], [2, 40]]), [2]),
+      attendees: [],
+      people: [SELF],
+      selfPersonId: SELF.id,
+    });
+    expect(r).toEqual([
+      { speakerIdx: 2, personId: SELF.id, confidence: "high", reason: "self_via_mic_capture", autoApply: true },
+    ]);
+  });
+
+  it("never maps group-call voices to attendees by position", () => {
+    const r = composeSpeakerSuggestions({
+      ...batch(turns([[0, 40], [1, 40], [2, 40]]), [0]),
+      attendees: [
+        { personId: SARAH.id, displayName: null, email: null },
+        { personId: ALEX.id, displayName: null, email: null },
+      ],
+      people: [SELF, SARAH, ALEX],
+      selfPersonId: SELF.id,
+    });
+    expect(r.map((s) => s.speakerIdx)).toEqual([0]);
+  });
+
+  it("labels both halves of a recorder diarization split as Me", () => {
+    const r = composeSpeakerSuggestions({
+      ...batch(turns([[0, 40], [1, 40], [3, 30], [1, 20]]), [0, 3]),
+      attendees: sarah,
       people: [SELF, SARAH],
       selfPersonId: SELF.id,
     });
-    expect(r).toEqual([]);
+    expect(r.map((s) => [s.speakerIdx, s.personId])).toEqual([
+      [0, SELF.id],
+      [3, SELF.id],
+      [1, SARAH.id],
+    ]);
   });
 
-  it("unknown attendee => suggestedNewPerson populated", () => {
+  it("ignores diarization fragments when deciding there is one remote voice", () => {
     const r = composeSpeakerSuggestions({
-      words: [...w(0, 30), ...w(1, 5)],
+      ...batch(turns([[0, 60], [1, 60], [2, 3]]), [0]),
+      attendees: sarah,
+      people: [SELF, SARAH],
+      selfPersonId: SELF.id,
+    });
+    expect(r.find((s) => s.speakerIdx === 1)?.personId).toBe(SARAH.id);
+    expect(r.find((s) => s.speakerIdx === 2)).toBeUndefined();
+  });
+
+  it("keeps an unknown attendee as a create-person suggestion, not auto-applied", () => {
+    const r = composeSpeakerSuggestions({
+      ...batch(turns([[0, 30], [1, 30]]), [0]),
       attendees: [{ displayName: "Marcus Bell", email: "marcus@x.com" }],
       people: [SELF],
       selfPersonId: SELF.id,
     });
-    expect(r).toHaveLength(2);
-    const guest = r.find((s) => s.speakerIdx === 1);
-    expect(guest?.personId).toBeNull();
-    expect(guest?.suggestedNewPerson).toEqual({
-      displayName: "Marcus Bell",
-      email: "marcus@x.com",
-    });
+    const guest = r.find((s) => s.speakerIdx === 1)!;
+    expect(guest.autoApply).toBe(false);
+    expect(guest.suggestedNewPerson).toEqual({ displayName: "Marcus Bell", email: "marcus@x.com" });
   });
 
-  it("returns [] when self-detection ties (balanced speech)", () => {
+  it("ignores the recorder if a legacy attendee list includes them", () => {
     const r = composeSpeakerSuggestions({
-      // 50.0 vs 49.5 — tie within 5%.
-      words: [...w(0, 50), ...w(1, 49.5)],
-      attendees: [{ displayName: "Sarah Chen", email: "sarah@example.com" }],
+      ...batch(turns([[0, 30], [1, 30]]), [0]),
+      attendees: [{ personId: SELF.id, displayName: null, email: null }, ...sarah],
+      people: [SELF, SARAH],
+      selfPersonId: SELF.id,
+    });
+    expect(r.find((s) => s.speakerIdx === 1)?.personId).toBe(SARAH.id);
+  });
+
+  it("names nobody when the mic is unusable — no talk-time guessing with tracks present", () => {
+    const t = turns([[0, 80], [1, 20]]);
+    const words = wordsFor(t);
+    const r = composeSpeakerSuggestions({
+      words,
+      profile: computeSpeakerProfile({ words, provider: "deepgram", activity: framesForTurns(t, [0], { silentMic: true }) }),
+      attendees: sarah,
       people: [SELF, SARAH],
       selfPersonId: SELF.id,
     });
     expect(r).toEqual([]);
+  });
+
+  it("skips voices that already carry a decision and people already assigned", () => {
+    const r = composeSpeakerSuggestions({
+      ...batch(turns([[0, 30], [1, 30]]), [0]),
+      attendees: sarah,
+      people: [SELF, SARAH],
+      selfPersonId: SELF.id,
+      skipIdxs: new Set([0]),
+      takenPersonIds: new Set([SARAH.id]),
+    });
+    expect(r).toEqual([]);
+  });
+
+  it("live transcript: channel 0 is Me; channel 1 is named only on a 1:1", () => {
+    const t = turns([[0, 10], [1, 60]]);
+    const words = wordsFor(t);
+    const profile = computeSpeakerProfile({ words, provider: "deepgram-live", activity: null });
+    const oneOnOne = composeSpeakerSuggestions({ words, profile, attendees: sarah, people: [SELF, SARAH], selfPersonId: SELF.id });
+    expect(oneOnOne.map((s) => [s.speakerIdx, s.personId, s.reason])).toEqual([
+      [0, SELF.id, "self_via_source_channel"],
+      [1, SARAH.id, "remote_via_single_voice"],
+    ]);
+    const group = composeSpeakerSuggestions({
+      words,
+      profile,
+      attendees: [...sarah, { personId: ALEX.id, displayName: null, email: null }],
+      people: [SELF, SARAH, ALEX],
+      selfPersonId: SELF.id,
+    });
+    // The system channel is everyone else — never the recorder, never one name.
+    expect(group.map((s) => s.speakerIdx)).toEqual([0]);
+  });
+
+  it("no tracks: talk-time fallback only for small calls with an overwhelming margin, as a suggestion", () => {
+    const dominant = composeSpeakerSuggestions({
+      ...batch(turns([[0, 90], [1, 20]]), null),
+      attendees: sarah,
+      people: [SELF, SARAH],
+      selfPersonId: SELF.id,
+    });
+    expect(dominant).toEqual([
+      { speakerIdx: 0, personId: SELF.id, confidence: "high", reason: "self_via_dominant_speech", autoApply: false },
+    ]);
+    const close = composeSpeakerSuggestions({
+      ...batch(turns([[0, 60], [1, 40]]), null),
+      attendees: sarah,
+      people: [SELF, SARAH],
+      selfPersonId: SELF.id,
+    });
+    expect(close).toEqual([]);
   });
 });

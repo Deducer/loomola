@@ -213,12 +213,21 @@ export async function updateAudioNoteAttendees(params: {
 
   if (!row) throw new AttendeeUpdateError("media_object_not_found");
 
+  // Same rule as clearPendingSpeakerSuggestions: pending rows and
+  // auto-applied names derived from the old attendee list go; mic-derived
+  // Me rows and user decisions stay.
   await db
     .delete(speakerAssignments)
     .where(
       and(
         eq(speakerAssignments.mediaObjectId, params.mediaObjectId),
-        eq(speakerAssignments.isSuggestion, true)
+        or(
+          eq(speakerAssignments.isSuggestion, true),
+          and(
+            eq(speakerAssignments.autoApplied, true),
+            eq(speakerAssignments.suggestionConfidence, "remote_via_single_voice")
+          )
+        )
       )
     );
 

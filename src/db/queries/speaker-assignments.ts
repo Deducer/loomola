@@ -1,6 +1,7 @@
 import { db } from "@/db";
-import { mediaObjects, people, speakerAssignments } from "@/db/schema";
-import { and, eq } from "drizzle-orm";
+import { mediaObjects, people, speakerAssignments, transcripts } from "@/db/schema";
+import { and, desc, eq } from "drizzle-orm";
+import { transcriptVersionOf } from "@/lib/speaker-profile/reconcile";
 
 export type SpeakerAssignment = typeof speakerAssignments.$inferSelect;
 
@@ -43,23 +44,40 @@ export async function upsertSpeakerAssignment(
   }
   await verifyPersonOwner(input.personId, input.ownerId);
 
+  // The user labeled THIS transcript's voice: stamp its version so a
+  // later transcript replacement reconciles the row instead of trusting
+  // an index that may mean someone else. A manual label over a pending
+  // or auto-applied row is a user decision from now on.
+  const [current] = await db
+    .select({ provider: transcripts.provider, createdAt: transcripts.createdAt })
+    .from(transcripts)
+    .where(eq(transcripts.mediaObjectId, input.mediaObjectId))
+    .orderBy(desc(transcripts.createdAt))
+    .limit(1);
+  const decision = {
+    personId: input.personId ?? null,
+    displayLabelOverride: label,
+    isSuggestion: false,
+    autoApplied: false,
+    needsReview: false,
+    dismissedAt: null,
+    suggestedNewPersonPayload: null,
+    transcriptVersion: current ? transcriptVersionOf(current.provider, current.createdAt) : null,
+  };
+
   const [row] = await db
     .insert(speakerAssignments)
     .values({
       mediaObjectId: input.mediaObjectId,
       speakerIdx: input.speakerIdx,
-      personId: input.personId ?? null,
-      displayLabelOverride: label,
+      ...decision,
     })
     .onConflictDoUpdate({
       target: [
         speakerAssignments.mediaObjectId,
         speakerAssignments.speakerIdx,
       ],
-      set: {
-        personId: input.personId ?? null,
-        displayLabelOverride: label,
-      },
+      set: decision,
     })
     .returning();
   return row;

@@ -8,12 +8,18 @@ const TIE_MARGIN = 0.05;
  *   - no words have speaker info
  *   - the top two speakers are within TIE_MARGIN of each other (5%)
  *
- * The 5% tie threshold avoids confidently picking a "host" in
+ * Speaker recognition v2 uses this only as a no-capture-tracks fallback,
+ * with a much larger margin: talk time is not evidence of who the
+ * recorder is on group calls (one 16-invitee call had the recorder at
+ * 31 s of ~20 min). Prefer the mic-track profile.
+ *
+ * The default 5% tie threshold avoids confidently picking a "host" in
  * meetings where speech is roughly balanced — better to say nothing
  * than auto-label the wrong person.
  */
 export function detectSelfSpeakerIdx(
-  words: ReadonlyArray<WordTimestamp>
+  words: ReadonlyArray<WordTimestamp>,
+  margin: number = TIE_MARGIN
 ): number | null {
   const totals = new Map<number, number>();
   for (const w of words) {
@@ -41,9 +47,9 @@ export function detectSelfSpeakerIdx(
   if (topIdx === null) return null;
   if (totals.size === 1) return topIdx;
 
-  // Tie threshold: top must beat second by > TIE_MARGIN of the top.
+  // Tie threshold: top must beat second by > margin of the top.
   if (topVal === 0) return null;
-  if ((topVal - secondVal) / topVal <= TIE_MARGIN) return null;
+  if ((topVal - secondVal) / topVal <= margin) return null;
 
   return topIdx;
 }

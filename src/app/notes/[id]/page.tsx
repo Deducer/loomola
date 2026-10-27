@@ -118,6 +118,9 @@ export default async function NotesPage({
         personId: assignment.personId,
         displayLabelOverride: assignment.displayLabelOverride,
         isSuggestion: assignment.isSuggestion,
+        autoApplied: assignment.autoApplied,
+        needsReview: assignment.needsReview,
+        suggestionConfidence: assignment.suggestionConfidence,
         suggestedNewPersonPayload:
           assignment.suggestedNewPersonPayload as
             | { displayName: string | null; email: string | null }

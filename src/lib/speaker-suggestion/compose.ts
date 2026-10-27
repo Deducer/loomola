@@ -6,12 +6,22 @@ import {
   type MatchConfidence,
   type PersonCandidate,
 } from "./match-person";
+import {
+  meSpeakerIdxs,
+  remoteSpeakerIdxs,
+  type SpeakerProfile,
+} from "@/lib/speaker-profile/profile";
 
 export interface SpeakerSuggestion {
   speakerIdx: number;
   personId: string | null;
   confidence: MatchConfidence;
+  /** Derivation, persisted as speaker_assignments.suggestion_confidence. */
   reason: string;
+  /** Capture evidence (mic track / sole remote voice on a 1:1) applies
+   *  without a click, Granola-style; everything inferred stays a
+   *  suggestion the user confirms. */
+  autoApply: boolean;
   /** Verbatim transcript quote justifying an LLM attribution (Stage 17). */
   evidence?: string;
   /** When set, the caller should create a new Person row from this data
@@ -22,105 +32,76 @@ export interface SpeakerSuggestion {
   };
 }
 
+/** Fallback-only talk-time margin: with no capture tracks, "the
+ *  recorder talked most" is trusted only when it's overwhelming. */
+const DOMINANT_FALLBACK_MARGIN = 0.5;
+
 /**
- * Composes the full set of speaker→person suggestions for a recording.
- * Pure function: feeds straight from worker queries into the
- * speaker_assignments insert. Returns [] in any case where Path B can't
- * confidently produce suggestions:
+ * Speaker recognition v2 evidence ladder (deterministic rungs; the
+ * worker runs the LLM evidence pass afterwards for what's left):
  *
- *   - no self-Person set
- *   - no attendees in the meeting context
- *   - fewer than 2 distinct speakers detected
- *   - attendee count != speaker count - 1 (Path B doesn't guess when
- *     numbers don't line up — voice biometrics in Path C will)
- *   - self-detection inconclusive (top two speakers within 5%), unless
- *     the transcript came from Loomola's source-separated mic/system
- *     channels and the meeting is a simple 1:1
+ *   1. Me = the voice(s) the capture evidence ties to the mic track
+ *      (live transcripts: channel 0). Auto-applied.
+ *   2. Exactly one remote voice and exactly one remote attendee (a
+ *      1:1) → that attendee. Auto-applied when the attendee is an
+ *      existing Person, otherwise a create-person suggestion.
+ *   3. No capture tracks at all: talk-time self detection, only for
+ *      1:1-or-smaller calls with an overwhelming margin. Suggestion.
  *
- * The caller persists each returned suggestion as a row in
- * speaker_assignments with is_suggestion = true.
+ * v1's positional mapping (attendee #1 = voice #1) is gone: for 3+
+ * people it was a guess, and the design law is never misattribute.
+ * `skipIdxs` are voices that already carry a decision; `takenPersonIds`
+ * are people already assigned to some voice.
  */
 export function composeSpeakerSuggestions(args: {
   words: ReadonlyArray<WordTimestamp>;
+  profile: SpeakerProfile;
   attendees: ReadonlyArray<ParsedAttendee>;
   people: ReadonlyArray<PersonCandidate>;
   selfPersonId: string | null;
-  sourceSeparated?: boolean;
+  skipIdxs?: ReadonlySet<number>;
+  takenPersonIds?: ReadonlySet<string>;
 }): SpeakerSuggestion[] {
-  const { words, attendees, people, selfPersonId, sourceSeparated } = args;
-
+  const { profile, people, selfPersonId } = args;
   if (!selfPersonId) return [];
-  if (attendees.length === 0) return [];
+  const skip = args.skipIdxs ?? new Set<number>();
+  const taken = args.takenPersonIds ?? new Set<string>();
+  const attendees = args.attendees.filter((a) => a.personId !== selfPersonId);
+  const result: SpeakerSuggestion[] = [];
 
-  // Distinct speaker_idx values that actually have speech.
-  const speakerSet = new Set<number>();
-  for (const w of words) {
-    if (typeof w.speaker === "number") speakerSet.add(w.speaker);
+  const me = meSpeakerIdxs(profile);
+  for (const idx of me) {
+    if (skip.has(idx)) continue;
+    result.push({
+      speakerIdx: idx,
+      personId: selfPersonId,
+      confidence: "high",
+      reason:
+        profile.status === "live_channels" ? "self_via_source_channel" : "self_via_mic_capture",
+      autoApply: true,
+    });
   }
-  const speakers = Array.from(speakerSet).sort((a, b) => a - b);
-  if (speakers.length < 2) return [];
 
-  // Path B's strict rule: attendees + 1 (you) must equal speaker count
-  // for FULL mapping. When numbers don't line up (a no-show, an extra
-  // voice), positional mapping would be a guess — but self-detection is
-  // still evidence-based (dominant speech share), so label just the
-  // user and leave the rest for manual assignment (Stage 16 relaxation).
-  if (attendees.length !== speakers.length - 1) {
-    const selfOnlyIdx = detectSelfSpeakerIdx(words);
-    if (selfOnlyIdx === null || !speakers.includes(selfOnlyIdx)) return [];
-    return [
-      {
-        speakerIdx: selfOnlyIdx,
+  const remote = remoteSpeakerIdxs(profile);
+  if (me.length > 0 && remote.length === 1 && attendees.length === 1 && !skip.has(remote[0])) {
+    const s = suggestionForAttendee({ speakerIdx: remote[0], attendee: attendees[0], people });
+    if (!s.personId || !taken.has(s.personId)) {
+      result.push({ ...s, reason: "remote_via_single_voice", autoApply: s.personId !== null });
+    }
+  }
+
+  if (profile.status === "no_tracks" && attendees.length <= 1 && !taken.has(selfPersonId)) {
+    const idx = detectSelfSpeakerIdx(args.words, DOMINANT_FALLBACK_MARGIN);
+    const entry = profile.entries.find((e) => e.speakerIdx === idx);
+    if (idx !== null && entry && !entry.fragment && !skip.has(idx) && profile.entries.length >= 2) {
+      result.push({
+        speakerIdx: idx,
         personId: selfPersonId,
         confidence: "high",
         reason: "self_via_dominant_speech",
-      },
-    ];
-  }
-
-  if (
-    sourceSeparated &&
-    attendees.length === 1 &&
-    speakers.length === 2 &&
-    speakers[0] === 0 &&
-    speakers[1] === 1
-  ) {
-    const attendeeSuggestion = suggestionForAttendee({
-      speakerIdx: 1,
-      attendee: attendees[0],
-      people,
-    });
-    return [
-      {
-        speakerIdx: 0,
-        personId: selfPersonId,
-        confidence: "high",
-        reason: "self_via_source_channel",
-      },
-      attendeeSuggestion,
-    ];
-  }
-
-  const selfIdx = detectSelfSpeakerIdx(words);
-  if (selfIdx === null) return [];
-  if (!speakers.includes(selfIdx)) return [];
-
-  const result: SpeakerSuggestion[] = [];
-
-  // Self speaker first.
-  result.push({
-    speakerIdx: selfIdx,
-    personId: selfPersonId,
-    confidence: "high",
-    reason: "self_via_dominant_speech",
-  });
-
-  // Map remaining speakers to attendees in attendee order.
-  const otherSpeakers = speakers.filter((s) => s !== selfIdx);
-  for (let i = 0; i < otherSpeakers.length; i++) {
-    const speakerIdx = otherSpeakers[i];
-    const attendee = attendees[i];
-    result.push(suggestionForAttendee({ speakerIdx, attendee, people }));
+        autoApply: false,
+      });
+    }
   }
 
   return result;
@@ -130,7 +111,7 @@ function suggestionForAttendee(args: {
   speakerIdx: number;
   attendee: ParsedAttendee;
   people: ReadonlyArray<PersonCandidate>;
-}): SpeakerSuggestion {
+}): Omit<SpeakerSuggestion, "autoApply"> {
   const matched = matchPerson({
     candidates: args.people,
     attendee: args.attendee,

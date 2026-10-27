@@ -458,7 +458,9 @@ const SUGGEST_SPEAKERS_JOB_OPTIONS = {
   retryLimit: 1,
   retryDelay: 30,
   retryBackoff: false,
-  expireInSeconds: 300,
+  // Speaker v2 may decode the mic/system tracks once (notes recorded
+  // before mix_audio wrote activity.bin); long calls need headroom.
+  expireInSeconds: 900,
 };
 
 export async function enqueueSpeakerSuggestion(

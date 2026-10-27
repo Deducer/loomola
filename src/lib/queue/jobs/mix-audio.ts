@@ -7,7 +7,14 @@ import { mediaObjects } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { presignGet } from "@/lib/r2/presigned-get";
 import { uploadFile } from "@/lib/r2/upload-bytes";
-import { mixedAudioKeyForTrack } from "@/lib/recording/audio-artifacts";
+import {
+  activityKeyForTrack,
+  mixedAudioKeyForTrack,
+} from "@/lib/recording/audio-artifacts";
+import {
+  computeActivityFromTrackKeys,
+  uploadActivity,
+} from "@/lib/speaker-profile/track-activity";
 
 export const MIX_AUDIO_JOB = "mix_audio";
 
@@ -44,9 +51,31 @@ export async function runMixAudioJob(data: MixAudioJobData): Promise<{
       .where(eq(mediaObjects.id, data.mediaObjectId));
 
     console.log(`[mix-audio] saved ${mixedKey} for ${data.mediaObjectId}`);
+    await saveActivityFrames(data);
     return { mixedKey };
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+}
+
+// Speaker recognition v2: mic/system loudness frames, the evidence that
+// identifies "Me" among the batch transcript's diarized voices. Written
+// before transcription is enqueued so suggest_speakers finds it. Never
+// fails the mix — without frames the worker just can't use the mic.
+async function saveActivityFrames(data: MixAudioJobData): Promise<void> {
+  try {
+    const frames = await computeActivityFromTrackKeys({
+      micKey: data.micKey,
+      systemAudioKey: data.systemAudioKey,
+    });
+    const activityKey = activityKeyForTrack(data.micKey);
+    await uploadActivity(activityKey, frames);
+    await db
+      .update(mediaObjects)
+      .set({ r2ActivityKey: activityKey })
+      .where(eq(mediaObjects.id, data.mediaObjectId));
+  } catch (err) {
+    console.error(`[mix-audio] activity frames failed for ${data.mediaObjectId}:`, err);
   }
 }
 

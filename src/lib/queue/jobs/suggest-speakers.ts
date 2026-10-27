@@ -1,8 +1,11 @@
 import {
+  applyReconcilePlan,
   getNoteForSpeakerSuggestion,
   getPeopleForSuggestion,
-  hasExistingSpeakerAssignments,
+  listAssignmentsForReconcile,
   persistSpeakerSuggestions,
+  saveSpeakerProfile,
+  setActivityKey,
 } from "@/db/queries/speaker-suggestion";
 import {
   composeSpeakerSuggestions,
@@ -25,23 +28,42 @@ import {
 } from "@/lib/speaker-suggestion/match-person";
 import { generateObjectWithFallback } from "@/lib/ai/with-fallback";
 import type { WordTimestamp } from "@/db/queries/transcripts";
+import {
+  computeSpeakerProfile,
+  meSpeakerIdxs,
+} from "@/lib/speaker-profile/profile";
+import type { ActivityFrames } from "@/lib/speaker-profile/activity";
+import {
+  reconcileAssignments,
+  transcriptVersionOf,
+} from "@/lib/speaker-profile/reconcile";
+import {
+  computeActivityFromTrackKeys,
+  loadActivity,
+  uploadActivity,
+} from "@/lib/speaker-profile/track-activity";
+import { activityKeyForTrack } from "@/lib/recording/audio-artifacts";
 
 export const SUGGEST_SPEAKERS_JOB = "suggest_speakers";
 
 export type SuggestSpeakersJobData = { mediaObjectId: string };
 
 /**
- * Auto-suggests speaker_idx → person mappings for a recording using the
- * meeting context's attendees + the user's existing people library. Only
- * runs when the schema is well-defined (Path B):
- *   - transcript exists with diarized words
- *   - user has marked one Person as is_self = true
- *   - meeting has attendees on the row
- *   - speaker count == attendee count + 1 (covers 1:1 and 3-person calls)
+ * Speaker recognition v2 (spec 2026-10-27). Runs whenever an audio
+ * note's transcript is written (live or batch), after note generation,
+ * and after the attendee list changes:
  *
- * On any other shape (3 speakers but only 1 attendee, no self-Person,
- * etc.), no-ops with a single log line. Path C will pick up the cases B
- * leaves on the floor by using voice biometrics.
+ *   1. Profile the current transcript's voices from the capture tracks
+ *      (mic vs system loudness) and store it on the transcript row.
+ *   2. Reconcile existing rows onto this transcript version — the live
+ *      transcript indexes voices by channel and the batch one by
+ *      diarization, so rows from an older transcript are deleted,
+ *      confirmed, moved, or flagged for review (user decisions are never
+ *      silently rewritten).
+ *   3. For voices without a decision: the evidence ladder (Me from the
+ *      mic; the sole remote voice on a 1:1), then the Stage-17 LLM
+ *      verbatim-evidence pass for named attendees. Capture evidence is
+ *      auto-applied; inferred names stay suggestions.
  */
 export async function runSuggestSpeakersJob(
   data: SuggestSpeakersJobData
@@ -50,114 +72,147 @@ export async function runSuggestSpeakersJob(
 
   const note = await getNoteForSpeakerSuggestion(mediaObjectId);
   if (!note) {
-    console.log(
-      `[suggest-speakers] ${mediaObjectId} not found, skipping`
-    );
+    console.log(`[suggest-speakers] ${mediaObjectId} not found, skipping`);
     return;
   }
-
-  // v1 (Path B) is audio-only because the speaker-assignment UI only
-  // exists for audio notes today. Video recordings get the same flow
-  // when video gets a creator-side transcript labeling surface.
+  // Audio-only: the speaker-labeling UI only exists for audio notes.
   if (note.type !== "audio") {
-    console.log(
-      `[suggest-speakers] ${mediaObjectId} is type=${note.type}; v1 is audio-only, skipping`
-    );
+    console.log(`[suggest-speakers] ${mediaObjectId} is type=${note.type}; audio-only, skipping`);
+    return;
+  }
+  if (note.words.length === 0 || !note.transcriptId || !note.transcriptCreatedAt || !note.transcriptProvider) {
+    console.log(`[suggest-speakers] ${mediaObjectId} no transcript yet, skipping`);
     return;
   }
 
-  if (note.words.length === 0) {
-    console.log(
-      `[suggest-speakers] ${mediaObjectId} no transcript yet, skipping`
-    );
-    return;
-  }
-
-  if (await hasExistingSpeakerAssignments(mediaObjectId)) {
-    console.log(
-      `[suggest-speakers] ${mediaObjectId} already has speaker_assignments rows; skipping`
-    );
-    return;
-  }
-
-  const attendees = parseAttendees(note.attendees);
-  if (attendees.length === 0) {
-    console.log(
-      `[suggest-speakers] ${mediaObjectId} no attendees, skipping`
-    );
-    return;
-  }
+  const version = transcriptVersionOf(note.transcriptProvider, note.transcriptCreatedAt);
+  const activity =
+    note.transcriptProvider === "deepgram-live" ? null : await activityFor(mediaObjectId, note);
+  const profile = computeSpeakerProfile({
+    words: note.words,
+    provider: note.transcriptProvider,
+    activity,
+  });
+  await saveSpeakerProfile(note.transcriptId, profile);
 
   const people = await getPeopleForSuggestion(note.ownerId);
-  const selfPerson = people.find((p) => p.isSelf);
-  if (!selfPerson) {
+  const selfPerson = people.find((p) => p.isSelf) ?? null;
+
+  const existing = await listAssignmentsForReconcile(mediaObjectId);
+  const plan = reconcileAssignments({
+    rows: existing,
+    currentVersion: version,
+    currentTranscriptCreatedAt: note.transcriptCreatedAt,
+    profile,
+    selfPersonId: selfPerson?.id ?? null,
+  });
+  if (plan.deleteIds.length + plan.remaps.length + plan.restampIds.length + plan.reviewIds.length > 0) {
+    await applyReconcilePlan({ mediaObjectId, version, plan });
     console.log(
-      `[suggest-speakers] ${mediaObjectId} owner has no self-Person, skipping`
+      `[suggest-speakers] ${mediaObjectId} reconciled onto ${version}: ` +
+        `deleted=${plan.deleteIds.length} moved=${plan.remaps.length} kept=${plan.restampIds.length} review=${plan.reviewIds.length}`
     );
+  }
+
+  if (!selfPerson) {
+    console.log(`[suggest-speakers] ${mediaObjectId} owner has no self-Person, skipping`);
     return;
   }
+
+  const current = await listAssignmentsForReconcile(mediaObjectId);
+  const decidedIdxs = new Set(current.map((r) => r.speakerIdx));
+  const takenPersonIds = new Set(
+    current.filter((r) => r.personId && r.dismissedAt === null).map((r) => r.personId as string)
+  );
+  const attendees = parseAttendees(note.attendees);
 
   let suggestions = composeSpeakerSuggestions({
     words: note.words,
+    profile,
     attendees,
     people,
     selfPersonId: selfPerson.id,
-    sourceSeparated: note.sourceSeparated,
+    skipIdxs: decidedIdxs,
+    takenPersonIds,
   });
 
-  // Stage 17: transcript-content attribution for whatever the
-  // deterministic paths left unlabeled. People address each other by
-  // name; an LLM pass can map voices with actual evidence, gated by
-  // verifyAttributions so an unverifiable mapping is dropped rather
-  // than guessed — those speakers fall back to the manual picker.
-  const speakerIdxs = distinctSpeakerIdxs(note.words);
-  const covered = new Set(suggestions.map((s) => s.speakerIdx));
-  const uncovered = speakerIdxs.filter((idx) => !covered.has(idx));
-  if (uncovered.length > 0 && speakerIdxs.length >= 2) {
+  // Stage 17 transcript-content attribution for participant voices the
+  // deterministic rungs left unlabeled. Never on a live transcript: its
+  // system channel is everyone else at once, so one name would be a lie.
+  const covered = new Set([...decidedIdxs, ...suggestions.map((s) => s.speakerIdx)]);
+  const uncovered = profile.entries
+    .filter((e) => !e.fragment && !covered.has(e.speakerIdx))
+    .map((e) => e.speakerIdx);
+  const meFound = meSpeakerIdxs(profile).length > 0;
+  if (
+    uncovered.length > 0 &&
+    profile.entries.length >= 2 &&
+    attendees.length > 0 &&
+    profile.status !== "live_channels"
+  ) {
     try {
       const llmSuggestions = await attributeViaTranscript({
         words: note.words,
         attendees,
         people,
         selfPerson,
+        // When the mic already found Me, the LLM may not also name the
+        // recorder — that would put the owner on a second voice.
+        allowSelf: !meFound && !takenPersonIds.has(selfPerson.id),
         uncoveredIdxs: uncovered,
       });
-      suggestions = [...suggestions, ...llmSuggestions];
+      const filtered = llmSuggestions.filter(
+        (s) => !s.personId || !takenPersonIds.has(s.personId)
+      );
+      suggestions = [...suggestions, ...filtered];
       console.log(
-        `[suggest-speakers] ${mediaObjectId} LLM attributed ${llmSuggestions.length}/${uncovered.length} unlabeled speaker(s)`
+        `[suggest-speakers] ${mediaObjectId} LLM attributed ${filtered.length}/${uncovered.length} unlabeled speaker(s)`
       );
     } catch (err) {
       // Best-effort: deterministic suggestions still persist.
-      console.error(
-        `[suggest-speakers] ${mediaObjectId} LLM attribution failed:`,
-        err
-      );
+      console.error(`[suggest-speakers] ${mediaObjectId} LLM attribution failed:`, err);
     }
   }
 
   if (suggestions.length === 0) {
     console.log(
-      `[suggest-speakers] ${mediaObjectId} no evidence-backed suggestions, skipping`
+      `[suggest-speakers] ${mediaObjectId} no new evidence-backed names (profile=${profile.status})`
     );
     return;
   }
 
-  await persistSpeakerSuggestions({
-    mediaObjectId,
-    suggestions,
-  });
-
+  await persistSpeakerSuggestions({ mediaObjectId, transcriptVersion: version, suggestions });
+  const auto = suggestions.filter((s) => s.autoApply).length;
   console.log(
-    `[suggest-speakers] ${mediaObjectId} persisted ${suggestions.length} suggestion(s)`
+    `[suggest-speakers] ${mediaObjectId} wrote ${auto} auto-applied name(s), ${suggestions.length - auto} suggestion(s) (profile=${profile.status})`
   );
 }
 
-function distinctSpeakerIdxs(words: ReadonlyArray<WordTimestamp>): number[] {
-  const set = new Set<number>();
-  for (const w of words) {
-    if (typeof w.speaker === "number") set.add(w.speaker);
+/** Loudness frames for the note: from activity.bin when mix_audio wrote
+ *  it, otherwise computed once from the raw tracks and stored. Missing
+ *  tracks or any failure → null (the profile degrades to no_tracks). */
+async function activityFor(
+  mediaObjectId: string,
+  note: { r2MicKey: string | null; r2SystemaudioKey: string | null; r2ActivityKey: string | null }
+): Promise<ActivityFrames | null> {
+  try {
+    if (note.r2ActivityKey) {
+      const frames = await loadActivity(note.r2ActivityKey);
+      if (frames) return frames;
+    }
+    if (!note.r2MicKey || !note.r2SystemaudioKey) return null;
+    const frames = await computeActivityFromTrackKeys({
+      micKey: note.r2MicKey,
+      systemAudioKey: note.r2SystemaudioKey,
+    });
+    const key = activityKeyForTrack(note.r2MicKey);
+    await uploadActivity(key, frames);
+    await setActivityKey(mediaObjectId, key);
+    return frames;
+  } catch (err) {
+    console.error(`[suggest-speakers] ${mediaObjectId} activity frames unavailable:`, err);
+    return null;
   }
-  return Array.from(set).sort((a, b) => a - b);
 }
 
 async function attributeViaTranscript(params: {
@@ -165,6 +220,7 @@ async function attributeViaTranscript(params: {
   attendees: ReadonlyArray<ParsedAttendee>;
   people: ReadonlyArray<PersonCandidate & { isSelf?: boolean }>;
   selfPerson: PersonCandidate;
+  allowSelf: boolean;
   uncoveredIdxs: ReadonlyArray<number>;
 }): Promise<SpeakerSuggestion[]> {
   const peopleById = new Map(params.people.map((p) => [p.id, p]));
@@ -172,6 +228,7 @@ async function attributeViaTranscript(params: {
   // UUIDs since Stage 11; legacy rows may carry names directly).
   const attendeesByName = new Map<string, ParsedAttendee>();
   for (const attendee of params.attendees) {
+    if (attendee.personId === params.selfPerson.id) continue;
     const name =
       attendee.displayName ??
       (attendee.personId ? peopleById.get(attendee.personId)?.displayName : null);
@@ -201,7 +258,9 @@ async function attributeViaTranscript(params: {
 
   const verified = verifyAttributions({
     raw: object.attributions,
-    attendeeNames: [...attendeeNames, params.selfPerson.displayName],
+    attendeeNames: params.allowSelf
+      ? [...attendeeNames, params.selfPerson.displayName]
+      : attendeeNames,
     speakerIdxs: params.uncoveredIdxs,
     transcriptText: utterances.map((u) => u.text).join("\n"),
   });
@@ -213,6 +272,7 @@ async function attributeViaTranscript(params: {
         personId: params.selfPerson.id,
         confidence: "high" as const,
         reason: "llm_transcript_evidence",
+        autoApply: false,
         evidence: attribution.evidence,
       };
     }
@@ -226,6 +286,7 @@ async function attributeViaTranscript(params: {
         personId: matched.personId,
         confidence: "high" as const,
         reason: "llm_transcript_evidence",
+        autoApply: false,
         evidence: attribution.evidence,
       };
     }
@@ -234,6 +295,7 @@ async function attributeViaTranscript(params: {
       personId: null,
       confidence: "medium" as const,
       reason: "llm_transcript_evidence_new_person",
+      autoApply: false,
       evidence: attribution.evidence,
       suggestedNewPerson: {
         displayName: attendee?.displayName ?? attribution.attendeeName,

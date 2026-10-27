@@ -61,6 +61,7 @@ function baseItem(type: "audio" | "video"): ExportBundleMediaData {
       meetingStartedAtLocal: null,
       attendees: null,
       r2MixedKey: null,
+      r2ActivityKey: null,
       obsidianSaveRequestedAt: null,
       obsidianSyncedAt: null,
       sourceContextHint: null,
@@ -99,6 +100,7 @@ function baseItem(type: "audio" | "video"): ExportBundleMediaData {
       searchTsv: null,
       provider: "deepgram",
       providerRequestId: null,
+      speakerProfile: null,
       createdAt: new Date("2026-05-01T20:08:00.000Z"),
     },
     aiOutput: {

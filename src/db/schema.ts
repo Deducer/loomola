@@ -233,6 +233,9 @@ export const mediaObjects = pgTable("media_objects", {
     withTimezone: true,
   }),
   r2MixedKey: text("r2_mixed_key"),
+  // 100 ms mic/system loudness frames (activity.bin) from mix_audio —
+  // the capture evidence behind "Me" detection. Speaker recognition v2.
+  r2ActivityKey: text("r2_activity_key"),
   obsidianSaveRequestedAt: timestamp("obsidian_save_requested_at", {
     withTimezone: true,
   }),
@@ -280,6 +283,9 @@ export const transcripts = pgTable("transcripts", {
   searchTsv: tsvector("search_tsv"),
   provider: text("provider").notNull().default("deepgram"),
   providerRequestId: text("provider_request_id"),
+  // Speaker recognition v2: per-voice capture evidence (mic vs system
+  // share) for THIS transcript's speaker indices. Replaced with the row.
+  speakerProfile: jsonb("speaker_profile"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -490,6 +496,17 @@ export const speakerAssignments = pgTable(
     // the user can judge before accepting.
     suggestionConfidence: text("suggestion_confidence"),
     suggestionEvidence: text("suggestion_evidence"),
+    // Speaker recognition v2: the "<provider>:<created_at>" transcript this
+    // row's speaker_idx refers to. A live transcript's indices are capture
+    // channels; a batch transcript's are diarization order — a row on an
+    // older version is reconciled, never trusted as-is.
+    transcriptVersion: text("transcript_version"),
+    // A user decision that couldn't be carried onto a new transcript with
+    // capture evidence. Shown for review; never silently rewritten.
+    needsReview: boolean("needs_review").notNull().default(false),
+    // Applied without a click from capture evidence (mic track, sole
+    // remote voice on a 1:1). Dismissable like a suggestion.
+    autoApplied: boolean("auto_applied").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

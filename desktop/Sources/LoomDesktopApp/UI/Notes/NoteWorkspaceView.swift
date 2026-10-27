@@ -2042,6 +2042,13 @@ struct NoteWorkspaceView: View {
                                     }
                                 }
                             }
+                            if isClearableName(idx: idx) {
+                                Section {
+                                    Button("Not \(speaker)") {
+                                        clearSpeakerName(idx: idx)
+                                    }
+                                }
+                            }
                         } label: {
                             HStack(spacing: 3) {
                                 Text(speaker)
@@ -2059,6 +2066,7 @@ struct NoteWorkspaceView: View {
                         .menuStyle(.borderlessButton)
                         .menuIndicator(.hidden)
                         .fixedSize()
+                        .help(speakerProvenanceHelp(idx: idx))
                     } else {
                         Text(speaker)
                             .font(DSFont.Body.sm())
@@ -2821,6 +2829,50 @@ struct NoteWorkspaceView: View {
                 speakerAssignments = list
             }
             showToast(message: applied > 0 ? "Speaker names applied" : "Names were already applied")
+        }
+    }
+
+    private func activeAssignment(idx: Int) -> SpeakerAssignmentDTO? {
+        speakerAssignments.first { $0.speakerIdx == idx && $0.dismissedAt == nil }
+    }
+
+    /// Auto-applied names (capture evidence) and names flagged for review
+    /// can be cleared in one click — the undo for applying without a
+    /// confirmation step.
+    private func isClearableName(idx: Int) -> Bool {
+        guard let assignment = activeAssignment(idx: idx), !assignment.isSuggestion else { return false }
+        return assignment.autoApplied == true || assignment.needsReview == true
+    }
+
+    private func speakerProvenanceHelp(idx: Int) -> String {
+        guard let assignment = activeAssignment(idx: idx) else { return "Say who this is" }
+        if assignment.needsReview == true {
+            return "Check this name — the final transcript re-numbered the voices"
+        }
+        guard assignment.autoApplied == true else { return "Change who this is" }
+        switch assignment.suggestionConfidence {
+        case "self_via_mic_capture", "self_via_source_channel":
+            return "Named from your microphone — click to change"
+        case "remote_via_single_voice":
+            return "Named from the calendar invite (the only other voice) — click to change"
+        default:
+            return "Named automatically — click to change"
+        }
+    }
+
+    private func clearSpeakerName(idx: Int) {
+        guard case .reviewing(let recording) = target,
+              let backend = viewModel.backendClient
+        else { return }
+        let previous = speakerAssignments
+        speakerAssignments = speakerAssignments.filter { $0.speakerIdx != idx }
+        Task { @MainActor in
+            do {
+                try await backend.dismissSpeakerSuggestion(recordingId: recording.id, speakerIdx: idx)
+            } catch {
+                speakerAssignments = previous
+                showToast(message: "Couldn't clear the name", tone: .error)
+            }
         }
     }
 

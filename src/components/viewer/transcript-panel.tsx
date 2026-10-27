@@ -22,6 +22,11 @@ export type TranscriptSpeakerAssignment = {
   personId: string | null;
   displayLabelOverride: string | null;
   isSuggestion?: boolean;
+  /** Speaker v2: named from capture evidence without a click; undoable. */
+  autoApplied?: boolean;
+  /** Speaker v2: a confirmed name the new transcript couldn't vouch for. */
+  needsReview?: boolean;
+  suggestionConfidence?: string | null;
   suggestedNewPersonPayload?: {
     displayName: string | null;
     email: string | null;
@@ -288,6 +293,7 @@ export function TranscriptPanel({
                       tone === "neutral" ? "text-text-muted" : "text-accent",
                       isSuggested && "italic"
                     )}
+                    title={speakerProvenance(assignment)}
                   >
                     {speakerLabel}
                     {isSuggested && (
@@ -328,9 +334,29 @@ export function TranscriptPanel({
                   )}
                   {openSpeaker === speakerIdx && speakerIdx !== null && (
                     <div className="mt-2 w-full rounded-lg border border-border bg-bg-elevated p-3 shadow-lg">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-text-subtle">
-                        Assign this speaker
-                      </p>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-text-subtle">
+                          Assign this speaker
+                        </p>
+                        {assignment && (assignment.autoApplied || assignment.needsReview) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenSpeaker(null);
+                              void dismissSuggestion(speakerIdx);
+                            }}
+                            disabled={busySpeaker === speakerIdx}
+                            className="text-xs text-text-subtle hover:text-red-400 disabled:opacity-50"
+                          >
+                            Not {speakerLabel}
+                          </button>
+                        )}
+                      </div>
+                      {assignment?.needsReview && (
+                        <p className="mt-1 text-xs text-text-subtle">
+                          The final transcript re-numbered the voices — check this name.
+                        </p>
+                      )}
                       {people.length > 0 && (
                         <div className="mt-2 max-h-36 overflow-y-auto">
                           {people.map((person) => (
@@ -411,4 +437,20 @@ function labelForSpeaker(
     return people.get(assignment.personId)?.displayName ?? `Speaker ${speakerIdx + 1}`;
   }
   return `Speaker ${speakerIdx + 1}`;
+}
+
+function speakerProvenance(assignment: TranscriptSpeakerAssignment | undefined): string | undefined {
+  if (!assignment) return undefined;
+  if (assignment.needsReview) return "Check this name — the final transcript re-numbered the voices";
+  if (!assignment.autoApplied) return undefined;
+  if (
+    assignment.suggestionConfidence === "self_via_mic_capture" ||
+    assignment.suggestionConfidence === "self_via_source_channel"
+  ) {
+    return "Named from your microphone — click to change";
+  }
+  if (assignment.suggestionConfidence === "remote_via_single_voice") {
+    return "Named from the calendar invite (the only other voice) — click to change";
+  }
+  return "Named automatically — click to change";
 }
