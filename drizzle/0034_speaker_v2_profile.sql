@@ -15,8 +15,16 @@
 -- speaker_assignments.auto_applied: written without a click from capture
 --   evidence (mic track, sole remote voice on a 1:1); undoable.
 --
--- Additive and idempotent.
+-- Additive and idempotent. ADD COLUMN with a constant default is a
+-- metadata-only change (no table rewrite), but each ALTER still needs a
+-- brief ACCESS EXCLUSIVE lock. The drizzle migrator runs all pending
+-- migrations in ONE transaction, so SET LOCAL bounds every wait below: if
+-- a long-running query holds one of these tables, the migration fails
+-- fast and rolls back (the boot command exits before the server starts;
+-- redeploy to retry) instead of queueing every app query behind the ALTER.
 
+SET LOCAL lock_timeout = '5s';
+--> statement-breakpoint
 ALTER TABLE "transcripts" ADD COLUMN IF NOT EXISTS "speaker_profile" jsonb;
 --> statement-breakpoint
 ALTER TABLE "media_objects" ADD COLUMN IF NOT EXISTS "r2_activity_key" text;

@@ -5,7 +5,7 @@ import {
   speakerAssignments,
   transcripts,
 } from "@/db/schema";
-import { and, desc, eq, inArray, or } from "drizzle-orm";
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import type { WordTimestamp } from "@/db/queries/transcripts";
 import type { PersonCandidate } from "@/lib/speaker-suggestion/match-person";
 import type { SpeakerSuggestion } from "@/lib/speaker-suggestion/compose";
@@ -101,10 +101,55 @@ export async function getPeopleForSuggestion(
   }));
 }
 
-export async function listAssignmentsForReconcile(
+export type SpeakerWriteTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+export type LockedAssignmentRow = ReconcileRow & { suggestionConfidence: string | null };
+
+/**
+ * Runs `fn` with the note's speaker rows locked and the transcript the
+ * job computed on still current — the only safe moment to reconcile or
+ * write names:
+ *
+ *  - the media_objects row is locked FOR UPDATE, serializing concurrent
+ *    suggest_speakers runs and attendee changes for this note;
+ *  - the latest transcript is read FOR SHARE: if it isn't `transcriptId`
+ *    the job computed against a transcript that has been replaced, so it
+ *    writes nothing (the newer transcript's own job will run) — and while
+ *    we hold the share lock a replacement can't delete it underneath us;
+ *  - speaker rows are read FOR UPDATE, so a user's accept/edit that is in
+ *    flight finishes first and the plan is computed from what they chose.
+ *
+ * Bounded lock wait: a stuck lock fails the job (pg-boss retries) rather
+ * than hanging the worker.
+ */
+export async function withSpeakerWriteLock<T>(
+  args: { mediaObjectId: string; transcriptId: string },
+  fn: (ctx: { tx: SpeakerWriteTx; rows: LockedAssignmentRow[] }) => Promise<T>
+): Promise<{ stale: true } | { stale: false; result: T }> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SET LOCAL lock_timeout = '10s'`);
+    await tx
+      .select({ id: mediaObjects.id })
+      .from(mediaObjects)
+      .where(eq(mediaObjects.id, args.mediaObjectId))
+      .for("update");
+    const [current] = await tx
+      .select({ id: transcripts.id })
+      .from(transcripts)
+      .where(eq(transcripts.mediaObjectId, args.mediaObjectId))
+      .orderBy(desc(transcripts.createdAt))
+      .limit(1)
+      .for("share");
+    if (!current || current.id !== args.transcriptId) return { stale: true as const };
+    const rows = await lockedAssignments(tx, args.mediaObjectId);
+    return { stale: false as const, result: await fn({ tx, rows }) };
+  });
+}
+
+export async function lockedAssignments(
+  tx: SpeakerWriteTx,
   mediaObjectId: string
-): Promise<Array<ReconcileRow & { suggestionConfidence: string | null }>> {
-  return db
+): Promise<LockedAssignmentRow[]> {
+  return tx
     .select({
       id: speakerAssignments.id,
       speakerIdx: speakerAssignments.speakerIdx,
@@ -119,61 +164,62 @@ export async function listAssignmentsForReconcile(
       suggestionConfidence: speakerAssignments.suggestionConfidence,
     })
     .from(speakerAssignments)
-    .where(eq(speakerAssignments.mediaObjectId, mediaObjectId));
+    .where(eq(speakerAssignments.mediaObjectId, mediaObjectId))
+    .for("update");
 }
 
-/** Applies a reconcile plan atomically. Deletes first (they free
- *  indices), then remaps through a temporary negative index because a
- *  remap can swap two rows (the swapped-1:1 case) and the
+/** Applies a reconcile plan inside `withSpeakerWriteLock`. Deletes first
+ *  (they free indices), then remaps through a temporary negative index
+ *  because a remap can swap two rows (the swapped-1:1 case) and the
  *  (media_object_id, speaker_idx) index is unique. */
-export async function applyReconcilePlan(args: {
-  mediaObjectId: string;
-  version: string;
-  plan: ReconcilePlan;
-}): Promise<void> {
+export async function applyReconcilePlan(
+  tx: SpeakerWriteTx,
+  args: { mediaObjectId: string; version: string; plan: ReconcilePlan }
+): Promise<void> {
   const { plan, version } = args;
   const scoped = (id: string) =>
     and(eq(speakerAssignments.id, id), eq(speakerAssignments.mediaObjectId, args.mediaObjectId));
-  await db.transaction(async (tx) => {
-    if (plan.deleteIds.length > 0) {
-      await tx
-        .delete(speakerAssignments)
-        .where(
-          and(
-            eq(speakerAssignments.mediaObjectId, args.mediaObjectId),
-            inArray(speakerAssignments.id, plan.deleteIds)
-          )
-        );
-    }
-    for (const [i, remap] of plan.remaps.entries()) {
-      await tx.update(speakerAssignments).set({ speakerIdx: -1 - i }).where(scoped(remap.id));
-    }
-    for (const remap of plan.remaps) {
-      await tx
-        .update(speakerAssignments)
-        .set({ speakerIdx: remap.newIdx, transcriptVersion: version })
-        .where(scoped(remap.id));
-    }
-    for (const id of plan.restampIds) {
-      await tx.update(speakerAssignments).set({ transcriptVersion: version }).where(scoped(id));
-    }
-    for (const id of plan.reviewIds) {
-      await tx
-        .update(speakerAssignments)
-        .set({ transcriptVersion: version, needsReview: true })
-        .where(scoped(id));
-    }
-  });
+  if (plan.deleteIds.length > 0) {
+    await tx
+      .delete(speakerAssignments)
+      .where(
+        and(
+          eq(speakerAssignments.mediaObjectId, args.mediaObjectId),
+          inArray(speakerAssignments.id, plan.deleteIds)
+        )
+      );
+  }
+  for (const [i, remap] of plan.remaps.entries()) {
+    await tx.update(speakerAssignments).set({ speakerIdx: -1 - i }).where(scoped(remap.id));
+  }
+  for (const remap of plan.remaps) {
+    await tx
+      .update(speakerAssignments)
+      .set({ speakerIdx: remap.newIdx, transcriptVersion: version })
+      .where(scoped(remap.id));
+  }
+  for (const id of plan.restampIds) {
+    await tx.update(speakerAssignments).set({ transcriptVersion: version }).where(scoped(id));
+  }
+  for (const id of plan.reviewIds) {
+    await tx
+      .update(speakerAssignments)
+      .set({ transcriptVersion: version, needsReview: true })
+      .where(scoped(id));
+  }
 }
 
-/** Persists a batch of speaker suggestions. Idempotent: ON CONFLICT on
- *  (media_object_id, speaker_idx) does nothing — protects against
- *  re-runs of the worker. */
-export async function persistSpeakerSuggestions(args: {
-  mediaObjectId: string;
-  transcriptVersion: string;
-  suggestions: ReadonlyArray<SpeakerSuggestion>;
-}): Promise<void> {
+/** Persists speaker suggestions inside `withSpeakerWriteLock`.
+ *  ON CONFLICT on (media_object_id, speaker_idx) does nothing, so a row
+ *  that appeared meanwhile (a user's label) always wins. */
+export async function persistSpeakerSuggestions(
+  tx: SpeakerWriteTx,
+  args: {
+    mediaObjectId: string;
+    transcriptVersion: string;
+    suggestions: ReadonlyArray<SpeakerSuggestion>;
+  }
+): Promise<void> {
   if (args.suggestions.length === 0) return;
   const now = new Date();
   const rows = args.suggestions.map((s) => ({
@@ -186,6 +232,7 @@ export async function persistSpeakerSuggestions(args: {
     // everything inferred waits for the user.
     isSuggestion: !s.autoApply,
     autoApplied: s.autoApply,
+    needsReview: s.needsReview ?? false,
     transcriptVersion: args.transcriptVersion,
     suggestedAt: now,
     suggestedNewPersonPayload: s.suggestedNewPerson
@@ -195,7 +242,7 @@ export async function persistSpeakerSuggestions(args: {
     suggestionEvidence: s.evidence ?? null,
   }));
 
-  await db
+  await tx
     .insert(speakerAssignments)
     .values(rows)
     .onConflictDoNothing({

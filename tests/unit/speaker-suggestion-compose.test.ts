@@ -73,18 +73,31 @@ describe("composeSpeakerSuggestions (v2 evidence ladder)", () => {
     expect(r.map((s) => s.speakerIdx)).toEqual([0]);
   });
 
-  it("labels both halves of a recorder diarization split as Me", () => {
+  it("two mic-dominant voices (split recorder OR shared mic) are uncertain suggestions, never two auto-applied Me", () => {
     const r = composeSpeakerSuggestions({
       ...batch(turns([[0, 40], [1, 40], [3, 30], [1, 20]]), [0, 3]),
       attendees: sarah,
       people: [SELF, SARAH],
       selfPersonId: SELF.id,
     });
-    expect(r.map((s) => [s.speakerIdx, s.personId])).toEqual([
-      [0, SELF.id],
-      [3, SELF.id],
-      [1, SARAH.id],
+    expect(r.map((s) => [s.speakerIdx, s.personId, s.autoApply, s.needsReview ?? false])).toEqual([
+      [0, SELF.id, false, true],
+      [3, SELF.id, false, true],
+      [1, SARAH.id, true, false],
     ]);
+    expect(r.filter((s) => s.personId === SELF.id && s.autoApply)).toHaveLength(0);
+  });
+
+  it("doesn't add Me when the user already put the owner on another voice", () => {
+    const r = composeSpeakerSuggestions({
+      ...batch(turns([[0, 40], [1, 40], [2, 40]]), [0]),
+      attendees: [],
+      people: [SELF],
+      selfPersonId: SELF.id,
+      skipIdxs: new Set([2]),
+      takenPersonIds: new Set([SELF.id]),
+    });
+    expect(r).toEqual([]);
   });
 
   it("ignores diarization fragments when deciding there is one remote voice", () => {

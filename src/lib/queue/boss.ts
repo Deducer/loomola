@@ -287,12 +287,16 @@ async function init(): Promise<PgBoss> {
   await boss.work<SuggestSpeakersJobData>(SUGGEST_SPEAKERS_JOB, WORKER_OPTIONS, async (jobs) => {
     for (const job of jobs) {
       try {
-        await runSuggestSpeakersJob(job.data);
+        await runSuggestSpeakersJob(job.data, { signal: job.signal });
       } catch (err) {
         console.error(
           `[suggest-speakers] job ${job.data.mediaObjectId} failed:`,
           err
         );
+        // Rethrow so pg-boss marks the job failed and applies the retry
+        // policy — a lock timeout or unreadable activity.bin must retry,
+        // not vanish as a "completed" job.
+        throw err;
       }
     }
   });

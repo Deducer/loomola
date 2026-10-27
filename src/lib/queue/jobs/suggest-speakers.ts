@@ -2,10 +2,11 @@ import {
   applyReconcilePlan,
   getNoteForSpeakerSuggestion,
   getPeopleForSuggestion,
-  listAssignmentsForReconcile,
+  lockedAssignments,
   persistSpeakerSuggestions,
   saveSpeakerProfile,
   setActivityKey,
+  withSpeakerWriteLock,
 } from "@/db/queries/speaker-suggestion";
 import {
   composeSpeakerSuggestions,
@@ -66,7 +67,8 @@ export type SuggestSpeakersJobData = { mediaObjectId: string };
  *      auto-applied; inferred names stay suggestions.
  */
 export async function runSuggestSpeakersJob(
-  data: SuggestSpeakersJobData
+  data: SuggestSpeakersJobData,
+  opts: { signal?: AbortSignal } = {}
 ): Promise<void> {
   const { mediaObjectId } = data;
 
@@ -80,140 +82,161 @@ export async function runSuggestSpeakersJob(
     console.log(`[suggest-speakers] ${mediaObjectId} is type=${note.type}; audio-only, skipping`);
     return;
   }
-  if (note.words.length === 0 || !note.transcriptId || !note.transcriptCreatedAt || !note.transcriptProvider) {
+  const { transcriptId, transcriptCreatedAt, transcriptProvider } = note;
+  if (note.words.length === 0 || !transcriptId || !transcriptCreatedAt || !transcriptProvider) {
     console.log(`[suggest-speakers] ${mediaObjectId} no transcript yet, skipping`);
     return;
   }
 
-  const version = transcriptVersionOf(note.transcriptProvider, note.transcriptCreatedAt);
+  const version = transcriptVersionOf(transcriptProvider, transcriptCreatedAt);
+  // Throws when the capture tracks exist but can't be read — pg-boss
+  // retries. Falling back to "no tracks" would re-enable talk-time
+  // guessing on exactly the notes where the mic would have answered.
   const activity =
-    note.transcriptProvider === "deepgram-live" ? null : await activityFor(mediaObjectId, note);
-  const profile = computeSpeakerProfile({
-    words: note.words,
-    provider: note.transcriptProvider,
-    activity,
-  });
-  await saveSpeakerProfile(note.transcriptId, profile);
+    transcriptProvider === "deepgram-live" ? null : await activityFor(mediaObjectId, note, opts.signal);
+  const profile = computeSpeakerProfile({ words: note.words, provider: transcriptProvider, activity });
+  await saveSpeakerProfile(transcriptId, profile);
 
   const people = await getPeopleForSuggestion(note.ownerId);
   const selfPerson = people.find((p) => p.isSelf) ?? null;
-
-  const existing = await listAssignmentsForReconcile(mediaObjectId);
-  const plan = reconcileAssignments({
-    rows: existing,
-    currentVersion: version,
-    currentTranscriptCreatedAt: note.transcriptCreatedAt,
-    profile,
-    selfPersonId: selfPerson?.id ?? null,
-  });
-  if (plan.deleteIds.length + plan.remaps.length + plan.restampIds.length + plan.reviewIds.length > 0) {
-    await applyReconcilePlan({ mediaObjectId, version, plan });
-    console.log(
-      `[suggest-speakers] ${mediaObjectId} reconciled onto ${version}: ` +
-        `deleted=${plan.deleteIds.length} moved=${plan.remaps.length} kept=${plan.restampIds.length} review=${plan.reviewIds.length}`
-    );
-  }
-
-  if (!selfPerson) {
-    console.log(`[suggest-speakers] ${mediaObjectId} owner has no self-Person, skipping`);
-    return;
-  }
-
-  const current = await listAssignmentsForReconcile(mediaObjectId);
-  const decidedIdxs = new Set(current.map((r) => r.speakerIdx));
-  const takenPersonIds = new Set(
-    current.filter((r) => r.personId && r.dismissedAt === null).map((r) => r.personId as string)
-  );
   const attendees = parseAttendees(note.attendees);
 
-  let suggestions = composeSpeakerSuggestions({
-    words: note.words,
-    profile,
-    attendees,
-    people,
-    selfPersonId: selfPerson.id,
-    skipIdxs: decidedIdxs,
-    takenPersonIds,
+  // Reconcile + deterministic names, in one locked transaction against
+  // the transcript this job profiled (see withSpeakerWriteLock).
+  const first = await withSpeakerWriteLock({ mediaObjectId, transcriptId }, async ({ tx, rows }) => {
+    const plan = reconcileAssignments({
+      rows,
+      currentVersion: version,
+      currentTranscriptCreatedAt: transcriptCreatedAt,
+      profile,
+      selfPersonId: selfPerson?.id ?? null,
+    });
+    if (plan.deleteIds.length + plan.remaps.length + plan.restampIds.length + plan.reviewIds.length > 0) {
+      await applyReconcilePlan(tx, { mediaObjectId, version, plan });
+      console.log(
+        `[suggest-speakers] ${mediaObjectId} reconciled onto ${version}: ` +
+          `deleted=${plan.deleteIds.length} moved=${plan.remaps.length} kept=${plan.restampIds.length} review=${plan.reviewIds.length}`
+      );
+    }
+    const decided = decidedState(await lockedAssignments(tx, mediaObjectId));
+    if (!selfPerson) return { suggestions: [] as SpeakerSuggestion[], decided };
+    const suggestions = composeSpeakerSuggestions({
+      words: note.words,
+      profile,
+      attendees,
+      people,
+      selfPersonId: selfPerson.id,
+      skipIdxs: decided.idxs,
+      takenPersonIds: decided.personIds,
+    });
+    await persistSpeakerSuggestions(tx, { mediaObjectId, transcriptVersion: version, suggestions });
+    return { suggestions, decided };
   });
+  if (first.stale) {
+    console.log(`[suggest-speakers] ${mediaObjectId} transcript replaced mid-job; writing nothing (its own job runs)`);
+    return;
+  }
+  if (!selfPerson) {
+    console.log(`[suggest-speakers] ${mediaObjectId} owner has no self-Person; reconciled only`);
+    return;
+  }
+  logWritten(mediaObjectId, first.result.suggestions, profile.status);
 
   // Stage 17 transcript-content attribution for participant voices the
-  // deterministic rungs left unlabeled. Never on a live transcript: its
-  // system channel is everyone else at once, so one name would be a lie.
-  const covered = new Set([...decidedIdxs, ...suggestions.map((s) => s.speakerIdx)]);
+  // deterministic rungs left unlabeled — outside the lock (it's an LLM
+  // call), then written under the lock again with decisions re-checked.
+  // Never on a live transcript: its system channel is everyone else at
+  // once, so one name would be a lie.
+  const covered = new Set([...first.result.decided.idxs, ...first.result.suggestions.map((s) => s.speakerIdx)]);
   const uncovered = profile.entries
     .filter((e) => !e.fragment && !covered.has(e.speakerIdx))
     .map((e) => e.speakerIdx);
-  const meFound = meSpeakerIdxs(profile).length > 0;
   if (
-    uncovered.length > 0 &&
-    profile.entries.length >= 2 &&
-    attendees.length > 0 &&
-    profile.status !== "live_channels"
+    uncovered.length === 0 ||
+    profile.entries.length < 2 ||
+    attendees.length === 0 ||
+    profile.status === "live_channels"
   ) {
-    try {
-      const llmSuggestions = await attributeViaTranscript({
-        words: note.words,
-        attendees,
-        people,
-        selfPerson,
-        // When the mic already found Me, the LLM may not also name the
-        // recorder — that would put the owner on a second voice.
-        allowSelf: !meFound && !takenPersonIds.has(selfPerson.id),
-        uncoveredIdxs: uncovered,
-      });
-      const filtered = llmSuggestions.filter(
-        (s) => !s.personId || !takenPersonIds.has(s.personId)
-      );
-      suggestions = [...suggestions, ...filtered];
-      console.log(
-        `[suggest-speakers] ${mediaObjectId} LLM attributed ${filtered.length}/${uncovered.length} unlabeled speaker(s)`
-      );
-    } catch (err) {
-      // Best-effort: deterministic suggestions still persist.
-      console.error(`[suggest-speakers] ${mediaObjectId} LLM attribution failed:`, err);
-    }
-  }
-
-  if (suggestions.length === 0) {
-    console.log(
-      `[suggest-speakers] ${mediaObjectId} no new evidence-backed names (profile=${profile.status})`
-    );
     return;
   }
-
-  await persistSpeakerSuggestions({ mediaObjectId, transcriptVersion: version, suggestions });
-  const auto = suggestions.filter((s) => s.autoApply).length;
+  let llmSuggestions: SpeakerSuggestion[];
+  try {
+    llmSuggestions = await attributeViaTranscript({
+      words: note.words,
+      attendees,
+      people,
+      selfPerson,
+      // When the mic already found Me (or the user placed the owner), the
+      // LLM may not also name the recorder on another voice.
+      allowSelf:
+        meSpeakerIdxs(profile).length === 0 && !first.result.decided.personIds.has(selfPerson.id),
+      uncoveredIdxs: uncovered,
+    });
+  } catch (err) {
+    // Best-effort: deterministic names are already written.
+    console.error(`[suggest-speakers] ${mediaObjectId} LLM attribution failed:`, err);
+    return;
+  }
+  if (llmSuggestions.length === 0) return;
+  const second = await withSpeakerWriteLock({ mediaObjectId, transcriptId }, async ({ tx, rows }) => {
+    const decided = decidedState(rows);
+    const fresh = llmSuggestions.filter(
+      (s) => !decided.idxs.has(s.speakerIdx) && (!s.personId || !decided.personIds.has(s.personId))
+    );
+    await persistSpeakerSuggestions(tx, { mediaObjectId, transcriptVersion: version, suggestions: fresh });
+    return fresh;
+  });
+  if (second.stale) return;
   console.log(
-    `[suggest-speakers] ${mediaObjectId} wrote ${auto} auto-applied name(s), ${suggestions.length - auto} suggestion(s) (profile=${profile.status})`
+    `[suggest-speakers] ${mediaObjectId} LLM attributed ${second.result.length}/${uncovered.length} unlabeled speaker(s)`
   );
 }
 
-/** Loudness frames for the note: from activity.bin when mix_audio wrote
- *  it, otherwise computed once from the raw tracks and stored. Missing
- *  tracks or any failure → null (the profile degrades to no_tracks). */
+function decidedState(rows: ReadonlyArray<{ speakerIdx: number; personId: string | null; dismissedAt: Date | null }>) {
+  return {
+    idxs: new Set(rows.map((r) => r.speakerIdx)),
+    personIds: new Set(
+      rows.filter((r) => r.personId && r.dismissedAt === null).map((r) => r.personId as string)
+    ),
+  };
+}
+
+function logWritten(mediaObjectId: string, suggestions: ReadonlyArray<SpeakerSuggestion>, status: string) {
+  const auto = suggestions.filter((s) => s.autoApply).length;
+  console.log(
+    `[suggest-speakers] ${mediaObjectId} wrote ${auto} auto-applied name(s), ${suggestions.length - auto} suggestion(s) (profile=${status})`
+  );
+}
+
+/** Loudness frames: from activity.bin when mix_audio wrote it, otherwise
+ *  decoded once from the raw tracks (notes recorded before v2) and
+ *  stored. Returns null only when the note has no capture tracks; any
+ *  failure to read existing tracks THROWS so the job retries. */
 async function activityFor(
   mediaObjectId: string,
-  note: { r2MicKey: string | null; r2SystemaudioKey: string | null; r2ActivityKey: string | null }
+  note: { r2MicKey: string | null; r2SystemaudioKey: string | null; r2ActivityKey: string | null },
+  signal: AbortSignal | undefined
 ): Promise<ActivityFrames | null> {
-  try {
-    if (note.r2ActivityKey) {
-      const frames = await loadActivity(note.r2ActivityKey);
-      if (frames) return frames;
-    }
-    if (!note.r2MicKey || !note.r2SystemaudioKey) return null;
-    const frames = await computeActivityFromTrackKeys({
-      micKey: note.r2MicKey,
-      systemAudioKey: note.r2SystemaudioKey,
-    });
-    const key = activityKeyForTrack(note.r2MicKey);
-    await uploadActivity(key, frames);
-    await setActivityKey(mediaObjectId, key);
-    return frames;
-  } catch (err) {
-    console.error(`[suggest-speakers] ${mediaObjectId} activity frames unavailable:`, err);
-    return null;
+  if (note.r2ActivityKey) {
+    const frames = await loadActivity(note.r2ActivityKey);
+    if (frames) return frames;
   }
+  if (!note.r2MicKey || !note.r2SystemaudioKey) return null;
+  const frames = await computeActivityFromTrackKeys({
+    micKey: note.r2MicKey,
+    systemAudioKey: note.r2SystemaudioKey,
+    signal,
+    timeoutMs: ACTIVITY_DECODE_TIMEOUT_MS,
+  });
+  const key = activityKeyForTrack(note.r2MicKey);
+  await uploadActivity(key, frames);
+  await setActivityKey(mediaObjectId, key);
+  return frames;
 }
+
+/** Hard cap on the fallback decode — well inside the job's 900 s expiry
+ *  so a hung ffmpeg is killed before pg-boss retries the job. */
+const ACTIVITY_DECODE_TIMEOUT_MS = 10 * 60 * 1000;
 
 async function attributeViaTranscript(params: {
   words: ReadonlyArray<WordTimestamp>;

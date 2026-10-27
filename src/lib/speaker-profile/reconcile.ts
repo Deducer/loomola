@@ -128,12 +128,26 @@ export function reconcileAssignments(args: {
   }
 
   // A move may not land on a voice that keeps another row, and two rows
-  // may not move onto the same voice — both become review items.
-  const targetCounts = new Map<number, number>();
-  for (const r of proposedRemaps) targetCounts.set(r.newIdx, (targetCounts.get(r.newIdx) ?? 0) + 1);
-  for (const r of proposedRemaps) {
-    if (keptIdxs.has(r.newIdx) || (targetCounts.get(r.newIdx) ?? 0) > 1) plan.reviewIds.push(r.id);
-    else plan.remaps.push(r);
+  // may not move onto the same voice — those become review items. A
+  // rejected move leaves its row where it was, which can block another
+  // move onto that index (A 0→1 is invalid once B 1→2 is rejected), so
+  // reject until nothing changes.
+  const originalIdx = new Map(args.rows.map((r) => [r.id, r.speakerIdx]));
+  const occupied = new Set(keptIdxs);
+  let candidates = proposedRemaps;
+  for (;;) {
+    const targetCounts = new Map<number, number>();
+    for (const r of candidates) targetCounts.set(r.newIdx, (targetCounts.get(r.newIdx) ?? 0) + 1);
+    const rejected = candidates.filter(
+      (r) => occupied.has(r.newIdx) || (targetCounts.get(r.newIdx) ?? 0) > 1
+    );
+    if (rejected.length === 0) break;
+    for (const r of rejected) {
+      plan.reviewIds.push(r.id);
+      occupied.add(originalIdx.get(r.id)!);
+    }
+    candidates = candidates.filter((r) => !rejected.includes(r));
   }
+  plan.remaps.push(...candidates);
   return plan;
 }

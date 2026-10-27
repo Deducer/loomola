@@ -137,6 +137,33 @@ describe("reconcileAssignments", () => {
     expect(p.reviewIds).toEqual(["me"]);
   });
 
+  it("rejects a move whose target is freed only by another rejected move (remap chain)", () => {
+    // Voice 0 is a splinter, 1 is the recorder, 2 the sole remote voice.
+    // A (live owner, idx 0) wants 0→1; B (live other, idx 1) wants 1→2,
+    // but idx 2 keeps a current-version row, so B stays on 1 — and A must
+    // not move onto 1 (unique-index collision).
+    const chain = turns([[0, 3], [1, 50], [2, 50]]);
+    const chainProfile = computeSpeakerProfile({
+      words: wordsFor(chain),
+      provider: "deepgram",
+      activity: framesForTurns(chain, [1]),
+    });
+    const rows = [
+      row({ id: "A", speakerIdx: 0, personId: SELF }),
+      row({ id: "B", speakerIdx: 1, personId: OTHER }),
+      row({ id: "C", speakerIdx: 2, personId: "third", transcriptVersion: BATCH }),
+    ];
+    const p = plan(rows, chainProfile);
+    // Applying the plan must leave every surviving row on a unique index.
+    const moved = new Map(p.remaps.map((r) => [r.id, r.newIdx]));
+    const finalIdxs = rows
+      .filter((r) => !p.deleteIds.includes(r.id))
+      .map((r) => moved.get(r.id) ?? r.speakerIdx);
+    expect(new Set(finalIdxs).size).toBe(finalIdxs.length);
+    expect(p.remaps).toEqual([]);
+    expect(p.reviewIds.sort()).toEqual(["A", "B"]);
+  });
+
   it("drops stale dismissals so the voice can be re-identified", () => {
     const p = plan([row({ id: "dis", dismissedAt: liveAt })]);
     expect(p.deleteIds).toEqual(["dis"]);

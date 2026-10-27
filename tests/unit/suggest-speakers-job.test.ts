@@ -26,6 +26,7 @@ const ALEX = "33333333-3333-4333-8333-333333333333";
 const store = vi.hoisted(() => ({
   note: null as null | Record<string, unknown>,
   rows: [] as Row[],
+  currentTranscriptId: null as string | null,
   activity: null as ActivityFrames | null,
   profiles: [] as unknown[],
   nextId: 1,
@@ -38,12 +39,18 @@ vi.mock("@/db/queries/speaker-suggestion", () => ({
     { id: SARAH, displayName: "Sarah Chen", email: null, isSelf: false },
     { id: ALEX, displayName: "Alex Park", email: null, isSelf: false },
   ]),
-  listAssignmentsForReconcile: vi.fn(async () => store.rows.map((r) => ({ ...r }))),
+  withSpeakerWriteLock: vi.fn(
+    async ({ transcriptId }: { transcriptId: string }, fn: (ctx: { tx: unknown; rows: Row[] }) => Promise<unknown>) => {
+      if (store.currentTranscriptId !== transcriptId) return { stale: true };
+      return { stale: false, result: await fn({ tx: {}, rows: store.rows.map((r) => ({ ...r })) }) };
+    }
+  ),
+  lockedAssignments: vi.fn(async () => store.rows.map((r) => ({ ...r }))),
   saveSpeakerProfile: vi.fn(async (_id: string, p: unknown) => {
     store.profiles.push(p);
   }),
   setActivityKey: vi.fn(async () => {}),
-  applyReconcilePlan: vi.fn(async ({ version, plan }: { version: string; plan: ReconcilePlan }) => {
+  applyReconcilePlan: vi.fn(async (_tx: unknown, { version, plan }: { version: string; plan: ReconcilePlan }) => {
     store.rows = store.rows.filter((r) => !plan.deleteIds.includes(r.id));
     for (const m of plan.remaps) {
       const r = store.rows.find((x) => x.id === m.id)!;
@@ -58,7 +65,7 @@ vi.mock("@/db/queries/speaker-suggestion", () => ({
     }
   }),
   persistSpeakerSuggestions: vi.fn(
-    async ({ transcriptVersion, suggestions }: { transcriptVersion: string; suggestions: Array<{ speakerIdx: number; personId: string | null; autoApply: boolean; reason: string }> }) => {
+    async (_tx: unknown, { transcriptVersion, suggestions }: { transcriptVersion: string; suggestions: Array<{ speakerIdx: number; personId: string | null; autoApply: boolean; reason: string }> }) => {
       for (const s of suggestions) {
         if (store.rows.some((r) => r.speakerIdx === s.speakerIdx)) continue;
         store.rows.push({
@@ -111,6 +118,7 @@ function setTranscript(provider: string, createdAt: Date, t: Turn[], attendees: 
     r2SystemaudioKey: "rec/raw/system.m4a",
     r2ActivityKey: "rec/activity.bin",
   };
+  store.currentTranscriptId = `${provider}-t`;
 }
 
 const named = () =>
@@ -189,6 +197,15 @@ describe("suggest_speakers job (speaker v2)", () => {
     expect(store.profiles).toHaveLength(1);
     expect((store.profiles[0] as { status: string }).status).toBe("mic_unusable");
     expect(named()).toEqual([]);
+  });
+
+  it("writes nothing when the transcript was replaced while the job was computing", async () => {
+    const batchTurns = turns([[0, 60], [1, 60]]);
+    setTranscript("deepgram", batchAt, batchTurns, [SARAH]);
+    store.activity = framesForTurns(batchTurns, [0]);
+    store.currentTranscriptId = "a-newer-transcript";
+    await runSuggestSpeakersJob({ mediaObjectId: "m" });
+    expect(store.rows).toEqual([]);
   });
 
   it("is idempotent: a second run on the same transcript changes nothing", async () => {

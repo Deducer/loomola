@@ -22,6 +22,10 @@ export interface SpeakerSuggestion {
    *  without a click, Granola-style; everything inferred stays a
    *  suggestion the user confirms. */
   autoApply: boolean;
+  /** Written as a visibly uncertain suggestion the user must check
+   *  (two mic-dominant voices: one person split by diarization, or two
+   *  people sharing a microphone — loudness can't tell which). */
+  needsReview?: boolean;
   /** Verbatim transcript quote justifying an LLM attribution (Stage 17). */
   evidence?: string;
   /** When set, the caller should create a new Person row from this data
@@ -69,16 +73,27 @@ export function composeSpeakerSuggestions(args: {
   const attendees = args.attendees.filter((a) => a.personId !== selfPersonId);
   const result: SpeakerSuggestion[] = [];
 
+  // One mic-dominant voice is the recorder. Two are either the recorder
+  // split by diarization or two people on one microphone; loudness can't
+  // tell which, so both become uncertain suggestions — never two "Me"
+  // names applied without a click.
   const me = meSpeakerIdxs(profile);
+  const sharedMic = me.length > 1;
   for (const idx of me) {
-    if (skip.has(idx)) continue;
+    // A user who already put the owner on some voice has decided.
+    if (skip.has(idx) || taken.has(selfPersonId)) continue;
     result.push({
       speakerIdx: idx,
       personId: selfPersonId,
-      confidence: "high",
+      confidence: sharedMic ? "medium" : "high",
       reason:
-        profile.status === "live_channels" ? "self_via_source_channel" : "self_via_mic_capture",
-      autoApply: true,
+        profile.status === "live_channels"
+          ? "self_via_source_channel"
+          : sharedMic
+            ? "self_via_mic_capture_shared"
+            : "self_via_mic_capture",
+      autoApply: !sharedMic,
+      ...(sharedMic ? { needsReview: true } : {}),
     });
   }
 
