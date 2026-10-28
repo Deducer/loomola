@@ -5,7 +5,7 @@ import {
   type ReconcileRow,
 } from "@/lib/speaker-profile/reconcile";
 import { computeSpeakerProfile } from "@/lib/speaker-profile/profile";
-import { framesForTurns, turns, wordsFor } from "./fixtures/speaker-v2";
+import { framesFor, framesForTurns, turns, wordsFor } from "./fixtures/speaker-v2";
 
 const SELF = "self";
 const OTHER = "other";
@@ -208,6 +208,22 @@ describe("reconcileAssignments", () => {
     });
     expect(p.restampIds).toEqual([]);
     expect(p.reviewIds).toEqual(["bob"]);
+  });
+
+  it("never moves or confirms an accepted name on low-gain mic evidence alone", () => {
+    // Batch 1:1; the recorder's mic is loud for only a fifth of their
+    // speech (voice 1) — enough to SUGGEST Me, not to move a user's name.
+    const t = turns([[0, 50], [1, 50]]);
+    const lowGainProfile = computeSpeakerProfile({
+      words: wordsFor(t),
+      provider: "deepgram",
+      activity: framesFor({ durationSec: 100, micOn: [[50, 60]], systemOn: [[0, 50]] }),
+    });
+    expect(lowGainProfile.entries.find((e) => e.speakerIdx === 1)?.lowGain).toBe(true);
+    const p = plan([row({ id: "me", speakerIdx: 0, personId: SELF })], lowGainProfile);
+    expect(p.remaps).toEqual([]);
+    expect(p.restampIds).toEqual([]);
+    expect(p.reviewIds).toEqual(["me"]);
   });
 
   it("doesn't confirm the owner on either of two mic-dominant voices (shared mic)", () => {

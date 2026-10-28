@@ -51,14 +51,20 @@ export async function withUserSpeakerLock<T>(
       // Same lock strength as the worker (see withSpeakerWriteLock).
       .for("no key update");
     if (!media) throw new Error("media_object_not_found");
-    const [t] = await tx
-      .select({ provider: transcripts.provider, createdAt: transcripts.createdAt })
-      .from(transcripts)
-      .where(eq(transcripts.mediaObjectId, args.mediaObjectId))
-      .orderBy(desc(transcripts.createdAt))
-      .limit(1)
-      .for("share");
+    const latest = () =>
+      tx
+        .select({ provider: transcripts.provider, createdAt: transcripts.createdAt })
+        .from(transcripts)
+        .where(eq(transcripts.mediaObjectId, args.mediaObjectId))
+        .orderBy(desc(transcripts.createdAt))
+        .limit(1);
+    // If a replacement is deleting the row we wait on, FOR SHARE returns
+    // nothing once it commits (READ COMMITTED skips the deleted row and
+    // can't see the new one); a fresh statement does see the new row.
+    const [locked] = await latest().for("share");
+    const [t] = locked ? [locked] : await latest();
     const current = t ? { version: transcriptVersionOf(t.provider, t.createdAt), createdAt: t.createdAt } : null;
+    if (!current && args.expectedTranscriptVersion) throw new Error("transcript_changed");
     // Required, not optional: a client that doesn't say which transcript
     // it was showing (an old desktop build) could be labeling a live
     // channel index against the batch transcript.

@@ -307,4 +307,27 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
       await applySpeakerSuggestion({ mediaObjectId: MEDIA, ownerId: OWNER, speakerIdx: 0, personId: SARAH, transcriptVersion: shown })
     ).toEqual({ ok: true });
   });
+
+  it("refuses a label when the transcript is replaced while the write waits on it (P1: empty FOR SHARE)", async () => {
+    const shown = await currentVersion();
+    // A replacement is mid-flight: it has deleted the row the label's
+    // FOR SHARE is about to wait on.
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const persist = user.begin(async (tx) => {
+      await tx`DELETE FROM transcripts WHERE media_object_id = ${MEDIA}`;
+      await tx`INSERT INTO transcripts (media_object_id, provider, word_timestamps, created_at)
+        VALUES (${MEDIA}, 'deepgram', ${tx.json(wordsFor(call))}, now() + interval '1 minute')`;
+      await held;
+    });
+    await new Promise((r) => setTimeout(r, 100));
+    const write = upsertSpeakerAssignment({
+      mediaObjectId: MEDIA, ownerId: OWNER, speakerIdx: 0, personId: SARAH, transcriptVersion: shown,
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    release();
+    await persist;
+    await expect(write).rejects.toThrow("transcript_changed");
+    expect(await rows()).toEqual([]);
+  });
 });

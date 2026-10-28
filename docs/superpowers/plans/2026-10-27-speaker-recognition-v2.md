@@ -58,6 +58,12 @@
 - Mic gaps are filled in full (capped only at 4 h).
 - Backfill enqueues dedupe through a pg-boss singleton slot.
 - Low-gain Me is a suggestion.
+
+**Sixth review pass (2026-10-27):**
+- User writes re-read the transcript when `FOR SHARE` returns nothing (replacement in flight), and refuse the write.
+- Exports only write confirmed or auto-applied names; names under review are marked "(unconfirmed)".
+- Low-gain mic evidence never proves or moves an accepted name.
+- The backfill reports deduplicated sends and uses a 60 s dedupe slot.
 **Style:** TDD. Pure logic first, under `src/lib/speaker-profile/` and `src/lib/speaker-suggestion/`, then wiring, then UI. Each phase ships on its own and is scored with the same offline eval script.
 
 ## Phases at a glance (ordered by impact ÷ effort)

@@ -381,16 +381,21 @@ async function main() {
         console.log(`pending already: ${o.id}`);
       } else {
         // singletonKey + singletonSeconds is enforced by pg-boss as a
-        // unique (key, time-slot) row, so two concurrent --execute runs
-        // can't both enqueue the same note (the pending check alone races).
-        await boss.send(JOB, { mediaObjectId: o.id }, {
+        // unique (key, time-slot) row, so two --execute runs racing past
+        // the pending check can't both enqueue the same note. The slot is
+        // short so re-running after a failure isn't blocked for long.
+        const jobId = await boss.send(JOB, { mediaObjectId: o.id }, {
           retryLimit: 1,
           retryDelay: 30,
           expireInSeconds: 900,
           singletonKey: `speaker-v2-backfill:${o.id}`,
-          singletonSeconds: 3600,
+          singletonSeconds: 60,
         });
-        console.log(`enqueued ${o.id}`);
+        if (jobId) {
+          console.log(`enqueued ${o.id}`);
+        } else {
+          console.log(`not enqueued (a job for this note was sent in the last minute): ${o.id}`);
+        }
       }
     }
     await boss.stop();

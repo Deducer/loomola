@@ -83,7 +83,10 @@ export function reconcileAssignments(args: {
 }): ReconcilePlan {
   const plan: ReconcilePlan = { deleteIds: [], restampIds: [], remaps: [], reviewIds: [] };
   const currentIsLive = args.currentVersion.startsWith(LIVE_PREFIX);
-  const me = meSpeakerIdxs(args.profile);
+  // Low-gain mic evidence only ever produces a suggestion when naming, so
+  // it may not prove — or move — an accepted name here either.
+  const lowGain = new Set(args.profile.entries.filter((e) => e.lowGain).map((e) => e.speakerIdx));
+  const me = meSpeakerIdxs(args.profile).filter((i) => !lowGain.has(i));
   const soleRemote = soleRemoteSpeakerIdx(args.profile);
   const remote = soleRemote === null ? [] : [soleRemote];
 
