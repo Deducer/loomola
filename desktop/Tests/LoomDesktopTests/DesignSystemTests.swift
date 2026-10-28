@@ -65,6 +65,14 @@ final class DesignSystemTests: XCTestCase {
         XCTAssertEqual(DSColor.hex(DSColor.Bg.canvas, dark: false), "#F2F2EC")
     }
 
+    func testNewsreaderRegisters() {
+        FontLoader.registerAll()
+        XCTAssertNotNil(NSFont(name: "Newsreader", size: 30), "Bundled Newsreader must register (parity rank 5)")
+        _ = DSFont.Serif.title()
+        _ = DSFont.Serif.display()
+        _ = DSFont.Serif.numeral()
+    }
+
     func testFontTokensReturnNonOptionalFonts() {
         // Fonts should always resolve, either from the bundled custom
         // family or the system fallback. We can't easily diff Font

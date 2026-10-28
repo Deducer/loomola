@@ -41,7 +41,32 @@ enum DSFont {
         }
     }
 
+    /// Newsreader serif — note titles and the "Coming up" display
+    /// heading. Regular weight: Granola's display face is light on its
+    /// feet, so no bold.
+    enum Serif {
+        /// Note title in the workspace: 30pt regular.
+        static func title() -> Font {
+            newsreader(size: 30)
+        }
+        /// Section display heading on home ("Coming up"): 26pt regular.
+        static func display() -> Font {
+            newsreader(size: 26)
+        }
+        /// Calendar day numeral in the Coming up card.
+        static func numeral() -> Font {
+            newsreader(size: 28)
+        }
+    }
+
     // MARK: - Builders
+
+    private static func newsreader(size: CGFloat) -> Font {
+        guard NSFont(name: FontLoader.newsreaderFamilyName, size: size) != nil else {
+            return Font.system(size: size, weight: .regular, design: .serif)
+        }
+        return Font.custom(FontLoader.newsreaderFamilyName, size: size)
+    }
 
     /// Inter, with system fallback. Tracking + leading are exposed for
     /// callsites that want explicit control; the public tokens use the

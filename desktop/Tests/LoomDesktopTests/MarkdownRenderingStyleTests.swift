@@ -47,6 +47,22 @@ final class MarkdownRenderingStyleTests: XCTestCase {
         )
     }
 
+    func testDesktopMarkdownRendererDrawsGranolaHeadingMarkers() throws {
+        // Parity rank 5: Granola shows a faint `#` in the left gutter of
+        // every heading and sets body copy in its grotesk, so the editor
+        // draws heading markers the way it draws bullets and asks for
+        // the bundled Inter face before falling back to the system font.
+        let source = try markdownTextEditorSource()
+
+        XCTAssertTrue(source.contains("RenderedHeadingMarker"), "Headings need a drawn gutter marker.")
+        XCTAssertTrue(source.contains("static let headingGutterMarker = \"#\""), "The gutter marker is a single #.")
+        XCTAssertTrue(source.contains("static let gutterWidth: CGFloat = 22"), "Body text keeps a 22pt gutter for markers.")
+        XCTAssertTrue(
+            source.contains("NSFont(name: FontLoader.interFamilyName, size: 16)"),
+            "Body copy should use the bundled Inter face."
+        )
+    }
+
     private func markdownTextEditorSource() throws -> String {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let file = root.appending(path: "Sources/LoomDesktopApp/UI/Notes/MarkdownTextEditor.swift")

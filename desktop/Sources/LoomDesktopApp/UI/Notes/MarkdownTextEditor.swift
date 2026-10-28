@@ -144,7 +144,7 @@ struct MarkdownTextEditor: NSViewRepresentable {
             )
 
             let plain = storage.string as NSString
-            applyHeadings(in: plain, storage: storage)
+            textView.renderedHeadingMarkers = applyHeadings(in: plain, storage: storage)
             textView.renderedBulletMarkers = applyUnorderedLists(in: plain, storage: storage)
             applyInlineRuns(
                 pattern: "(?<!\\*)\\*\\*([^*\\n]+)\\*\\*(?!\\*)",
@@ -180,32 +180,43 @@ struct MarkdownTextEditor: NSViewRepresentable {
             let usedHeight = layoutManager.usedRect(for: textContainer).height
             let insetHeight = textView.textContainerInset.height * 2
             let nextHeight = ceil(max(parent.minimumHeight, usedHeight + insetHeight + 16))
-            let nextWidth = max(1, textContainer.containerSize.width)
+            // The container is inset on both sides by the gutter; the
+            // frame has to include it or each pass narrows the view.
+            let nextWidth = max(1, textContainer.containerSize.width + textView.textContainerInset.width * 2)
             if abs(textView.frame.width - nextWidth) > 1 || abs(textView.frame.height - nextHeight) > 1 {
                 textView.setFrameSize(NSSize(width: nextWidth, height: nextHeight))
             }
+            textView.needsDisplay = true
             guard abs(parent.measuredHeight - nextHeight) > 1 else { return }
             DispatchQueue.main.async {
                 self.parent.measuredHeight = nextHeight
             }
         }
 
-        private func applyHeadings(in plain: NSString, storage: NSTextStorage) {
+        private func applyHeadings(in plain: NSString, storage: NSTextStorage) -> [RenderedHeadingMarker] {
             // Heading lines are `^#{1,3}\s.*$`. We render the whole
             // line at heading size, then collapse the `#…# ` prefix
             // to invisible so the source markers don't clutter the
             // rendered note. Markers stay in the underlying string
             // (still saves as markdown) — they just don't take
-            // visual space in the editor.
+            // visual space in the editor. A single faint `#` is
+            // drawn in the gutter instead (Granola pattern).
             guard let regex = try? NSRegularExpression(
                 pattern: "^(#{1,3})\\s.*$",
                 options: [.anchorsMatchLines]
-            ) else { return }
+            ) else { return [] }
             let full = NSRange(location: 0, length: plain.length)
+            var markers: [RenderedHeadingMarker] = []
             regex.enumerateMatches(in: plain as String, range: full) { match, _, _ in
                 guard let match = match else { return }
                 let levelRange = match.range(at: 1)
                 let level = max(1, min(3, levelRange.length))
+                markers.append(
+                    RenderedHeadingMarker(
+                        anchorLocation: min(match.range.location + level + 1, plain.length - 1),
+                        level: level
+                    )
+                )
                 let font = MarkdownStyle.heading(level: level)
                 storage.addAttribute(.font, value: font, range: match.range)
                 storage.addAttribute(.foregroundColor, value: MarkdownStyle.headingColor, range: match.range)
@@ -217,14 +228,23 @@ struct MarkdownTextEditor: NSViewRepresentable {
                     ),
                     range: plain.paragraphRange(for: match.range)
                 )
-                // Hide the `#…# ` prefix (level + 1 chars including
-                // the trailing space).
-                let prefix = NSRange(
-                    location: match.range.location,
-                    length: level + 1
+                // Granola keeps one faint `#` in the gutter: style the
+                // first marker small + grey and kern it out to the gutter
+                // width, then hide the remaining `#`s and the space.
+                storage.addAttributes(
+                    [
+                        .font: MarkdownStyle.headingMarkerFont,
+                        .foregroundColor: MarkdownStyle.bulletColor,
+                        .kern: MarkdownStyle.headingMarkerKern,
+                    ],
+                    range: NSRange(location: match.range.location, length: 1)
                 )
-                hideMarker(prefix, in: storage)
+                hideMarker(
+                    NSRange(location: match.range.location + 1, length: level),
+                    in: storage
+                )
             }
+            return markers
         }
 
         private func applyUnorderedLists(
@@ -249,8 +269,8 @@ struct MarkdownTextEditor: NSViewRepresentable {
                 let paragraphRange = plain.paragraphRange(for: match.range)
 
                 let paragraphStyle = NSMutableParagraphStyle()
-                paragraphStyle.firstLineHeadIndent = visualIndent + MarkdownStyle.listTextIndent
-                paragraphStyle.headIndent = visualIndent + MarkdownStyle.listTextIndent
+                paragraphStyle.firstLineHeadIndent = MarkdownStyle.gutterWidth + visualIndent + MarkdownStyle.listTextIndent
+                paragraphStyle.headIndent = MarkdownStyle.gutterWidth + visualIndent + MarkdownStyle.listTextIndent
                 paragraphStyle.paragraphSpacing = nestingLevel == 0 ? 7 : 6
                 paragraphStyle.lineSpacing = MarkdownStyle.bodyLineSpacing
                 storage.addAttribute(.paragraphStyle, value: paragraphStyle, range: paragraphRange)
@@ -378,21 +398,36 @@ fileprivate struct RenderedBulletMarker {
     let kind: RenderedBulletKind
 }
 
+/// A heading line whose `#` marker is drawn in the gutter.
+fileprivate struct RenderedHeadingMarker {
+    let anchorLocation: Int
+    let level: Int
+}
+
 /// NSTextView subclass that draws a placeholder string when empty
 /// and routes through coalesced text-storage edits to dodge the
 /// SwiftUI-update loop.
 final class MarkdownTextView: NSTextView {
     var placeholderString: String = ""
+    /// Width of the drawn-marker gutter; the hosting SwiftUI view
+    /// offsets by this so body text lines up with the title.
+    static let gutterWidth: CGFloat = MarkdownStyle.gutterWidth
     fileprivate var renderedBulletMarkers: [RenderedBulletMarker] = [] {
         didSet { needsDisplay = true }
     }
+    fileprivate var renderedHeadingMarkers: [RenderedHeadingMarker] = [] {
+        didSet { needsDisplay = true }
+    }
+    /// Test hooks: how many drawn markers the last tokenizer pass produced.
+    var renderedHeadingMarkerCount: Int { renderedHeadingMarkers.count }
+    var renderedBulletMarkerCount: Int { renderedBulletMarkers.count }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         drawRenderedBulletMarkers()
         if string.isEmpty {
             let insets = textContainerInset
-            let origin = NSPoint(x: 5 + insets.width, y: insets.height)
+            let origin = NSPoint(x: 5 + insets.width + MarkdownStyle.gutterWidth, y: insets.height)
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: MarkdownStyle.body,
                 .foregroundColor: MarkdownStyle.placeholderColor,
@@ -425,7 +460,7 @@ final class MarkdownTextView: NSTextView {
             )
             let bulletSize: CGFloat = marker.kind == .filled ? 4.8 : 4.4
             let bulletRect = NSRect(
-                x: containerOrigin.x + marker.indent + MarkdownStyle.listBulletX,
+                x: containerOrigin.x + MarkdownStyle.gutterWidth + marker.indent + MarkdownStyle.listBulletX,
                 y: containerOrigin.y + lineRect.midY - bulletSize / 2,
                 width: bulletSize,
                 height: bulletSize
@@ -445,9 +480,23 @@ final class MarkdownTextView: NSTextView {
 }
 
 private enum MarkdownStyle {
-    static let body = NSFont.systemFont(ofSize: 16, weight: .regular)
-    static let bold = NSFont.systemFont(ofSize: 16, weight: .semibold)
+    /// Body copy in the bundled Inter face (Granola sets notes in a
+    /// grotesk); system font when the bundle is missing.
+    static let body = NSFont(name: FontLoader.interFamilyName, size: 16)
+        ?? NSFont.systemFont(ofSize: 16, weight: .regular)
+    static let bold = interWeighted(size: 16, weight: .semibold)
     static let bodyLineSpacing: CGFloat = 5.5
+    /// Gutter to the left of the text column where `#` heading
+    /// markers and bullets are drawn.
+    static let gutterWidth: CGFloat = 22
+    static let headingGutterMarker = "#"
+    static let headingMarkerFont = interWeighted(size: 13, weight: .medium)
+    /// Kerning after the visible `#` so heading text starts at the
+    /// same x as body text (gutter width minus the glyph's advance).
+    static var headingMarkerKern: CGFloat {
+        let advance = (headingGutterMarker as NSString).size(withAttributes: [.font: headingMarkerFont]).width
+        return max(0, gutterWidth - advance)
+    }
     static let nestedListIndent: CGFloat = 24
     static let listTextIndent: CGFloat = 28
     static let listBulletX: CGFloat = 6
@@ -476,24 +525,43 @@ private enum MarkdownStyle {
     static let mono = NSFont.monospacedSystemFont(ofSize: 15, weight: .regular)
     static func heading(level: Int) -> NSFont {
         switch level {
-        case 1: return NSFont.systemFont(ofSize: 18, weight: .semibold)
-        case 2: return NSFont.systemFont(ofSize: 17, weight: .semibold)
-        case 3: return NSFont.systemFont(ofSize: 16, weight: .semibold)
-        default: return NSFont.systemFont(ofSize: 16, weight: .semibold)
+        case 1: return interWeighted(size: 18, weight: .semibold)
+        case 2: return interWeighted(size: 17, weight: .semibold)
+        default: return interWeighted(size: 16, weight: .semibold)
         }
+    }
+
+    /// Inter at a given weight via the variable font's weight axis;
+    /// falls back to the system font at the same weight.
+    static func interWeighted(size: CGFloat, weight: NSFont.Weight) -> NSFont {
+        let descriptor = NSFontDescriptor(fontAttributes: [
+            .family: FontLoader.interFamilyName,
+            .traits: [NSFontDescriptor.TraitKey.weight: weight.rawValue],
+        ])
+        if let font = NSFont(descriptor: descriptor, size: size),
+           font.familyName == FontLoader.interFamilyName {
+            return font
+        }
+        return NSFont.systemFont(ofSize: size, weight: weight)
     }
 
     static func bodyParagraphStyle() -> NSParagraphStyle {
         let style = NSMutableParagraphStyle()
         style.lineSpacing = bodyLineSpacing
         style.paragraphSpacing = 8
+        style.firstLineHeadIndent = gutterWidth
+        style.headIndent = gutterWidth
         return style
     }
 
     static func headingParagraphStyle(level: Int, isFirstBlock: Bool) -> NSParagraphStyle {
         let style = NSMutableParagraphStyle()
         style.lineSpacing = 3
-        style.paragraphSpacingBefore = isFirstBlock ? 0 : (level == 1 ? 28 : 26)
+        // The visible `#` occupies the gutter; wrapped heading lines
+        // align with body text.
+        style.firstLineHeadIndent = 0
+        style.headIndent = gutterWidth
+        style.paragraphSpacingBefore = isFirstBlock ? 0 : (level == 1 ? 22 : 20)
         style.paragraphSpacing = level == 1 ? 10 : 8
         return style
     }

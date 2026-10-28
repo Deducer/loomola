@@ -12,11 +12,16 @@ import Foundation
 enum FontLoader {
     static let interFamilyName = "Inter"
     static let jetBrainsMonoFamilyName = "JetBrains Mono"
+    /// Newsreader (OFL) — the note-title serif, the open look-alike for
+    /// Granola's display face (parity rank 5).
+    static let newsreaderFamilyName = "Newsreader"
 
     /// Register all bundled fonts. Logs a single line per font.
     static func registerAll() {
         register(filename: "Inter-VariableFont", ext: "ttf", label: "Inter")
         register(filename: "JetBrainsMono-VariableFont", ext: "ttf", label: "JetBrains Mono")
+        register(filename: "Newsreader-VariableFont", ext: "ttf", label: "Newsreader")
+        register(filename: "Newsreader-Italic-VariableFont", ext: "ttf", label: "Newsreader Italic")
     }
 
     private static func register(filename: String, ext: String, label: String) {
@@ -64,7 +69,11 @@ enum FontLoader {
         let searchRoots = [
             Bundle.main.resourceURL,
             Bundle.main.bundleURL,
-            URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
+            URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent(),
+            // The directory holding the code bundle — under `swift test`
+            // that is `.build/<config>/`, where SwiftPM drops the
+            // resource bundle next to the xctest bundle.
+            Bundle(for: MarkdownTextView.self).bundleURL.deletingLastPathComponent()
         ].compactMap { $0 }
 
         return bundleNames.flatMap { bundleName in

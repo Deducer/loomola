@@ -712,10 +712,11 @@ struct NoteWorkspaceView: View {
     private var titleEditor: some View {
         TextField(titlePlaceholder, text: titleBinding, axis: .vertical)
             .textFieldStyle(.plain)
-            .font(.system(size: 30, weight: .medium, design: .serif))
+            // Newsreader 30 regular — Granola's title register (parity rank 5).
+            .font(DSFont.Serif.title())
             .foregroundStyle(DSColor.Text.primary)
             .tint(DSColor.Accent.primary)
-            .lineSpacing(1.5)
+            .lineSpacing(3)
             .lineLimit(1...4)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1217,7 +1218,7 @@ struct NoteWorkspaceView: View {
                     isEditable: false
                 )
                 .frame(height: max(NoteWorkspaceLayout.enhancedBodyMinimumHeight, enhancedEditorMeasuredHeight))
-                .padding(.leading, -5)
+                .padding(.leading, -(5 + MarkdownTextView.gutterWidth))
             } else {
                 MarkdownTextEditor(
                     text: bodyBinding,
@@ -1230,7 +1231,7 @@ struct NoteWorkspaceView: View {
                 // Pull 5pt back to compensate for NSTextView's internal
                 // text container inset so the heading text origin lines
                 // up with the title row above.
-                .padding(.leading, -5)
+                .padding(.leading, -(5 + MarkdownTextView.gutterWidth))
             }
         }
     }
