@@ -37,6 +37,24 @@ final class LiveTranscriptEchoSuppressorTests: XCTestCase {
         )
     }
 
+    func testDropsShortMicFragmentsInsideRemoteSpeech() {
+        // Speaker playback leaking into the mic arrives as word fragments.
+        let segments = [
+            segment(source: .systemAudio, start: 0, text: "This is a parity audit test."),
+            segment(source: .microphone, start: 0.3, text: "This"),
+            segment(source: .systemAudio, start: 3, text: "We are comparing the live recording screen in both apps."),
+            segment(source: .microphone, start: 5.2, text: "both apps."),
+        ]
+
+        XCTAssertEqual(
+            TranscriptEchoSuppressor.filtered(segments).map(\.text),
+            [
+                "This is a parity audit test.",
+                "We are comparing the live recording screen in both apps.",
+            ]
+        )
+    }
+
     func testKeepsDistinctMicrophoneSpeechNearSystemAudio() {
         let segments = [
             segment(source: .systemAudio, start: 10, text: "Gotcha. Or we can turn our video off if that helps."),

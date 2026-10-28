@@ -341,6 +341,16 @@ struct TranscriptEchoSuppressor {
         let systemTokens = normalizedTokens(system.text)
         guard !micTokens.isEmpty, !systemTokens.isEmpty else { return false }
 
+        // A one-to-three-word mic fragment heard while the remote side
+        // is talking, made only of words the remote just said, is the
+        // speaker bleeding into the mic ("This", "both apps."), not a
+        // reply. Found in the 2026-10-28 parity audit.
+        if micTokens.count <= 3,
+           hasTightOverlap(mic: mic, system: system),
+           micTokens.allSatisfy({ systemTokens.contains($0) }) {
+            return true
+        }
+
         let shorterCount = min(micTokens.count, systemTokens.count)
         if shorterCount <= 2 {
             return micTokens == systemTokens

@@ -49,19 +49,6 @@ enum NoteWorkspaceTarget: Equatable {
     case reviewing(recording: RecentRecording)
 }
 
-private struct TranscriptDisplayBubble: Identifiable, Equatable {
-    let id: String
-    let source: LiveTranscriptAudioSource?
-    let speaker: String?
-    let text: String
-    let isInterim: Bool
-    let startSec: Double
-    let endSec: Double
-    /// Diarized index for batch transcripts — nil for live/full-text
-    /// bubbles. Drives the "who is this?" manual-identify fallback.
-    var speakerIdx: Int? = nil
-}
-
 private struct TranscriptSearchMatch: Identifiable, Equatable {
     let bubbleId: String
     let occurrenceIndex: Int
@@ -203,6 +190,7 @@ struct NoteWorkspaceView: View {
     @State private var transcriptUpdatedAfterGeneration = false
     @State private var lastGeneratedTranscriptFingerprint: String? = nil
     @State private var transcriptSearchVisible = false
+    @State private var showTranscriptSettings = false
     @State private var transcriptSearchQuery = ""
     @State private var activeTranscriptSearchIndex = 0
     @FocusState private var transcriptSearchFocused: Bool
@@ -212,7 +200,6 @@ struct NoteWorkspaceView: View {
         return false
     }
 
-    private var transcriptDrawerMaxWidth: CGFloat { 720 }
 
     private var shouldShowGenerateNotesBar: Bool {
         !isRecording || shouldShowGenerateNotesPill
@@ -308,6 +295,7 @@ struct NoteWorkspaceView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            ScrollViewReader { scrollProxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: DSSpacing.xl) {
                     titleEditor
@@ -325,16 +313,22 @@ struct NoteWorkspaceView: View {
                         speakerIdentifyNudge(nudgeText)
                     }
                     pillRow
-                    bodyEditor
-                    if !isRecording && !reviewActionItems.isEmpty {
-                        actionItemsPanel
-                    }
-                    // Attachments belong to the note's document flow. Keeping
-                    // them outside this ScrollView pinned them near the bottom
-                    // controls and created a large false blank page after short
-                    // Enhanced notes.
-                    if !attachments.isEmpty || uploadingCount > 0 {
-                        attachmentsStrip
+                    if transcriptDrawerOpen {
+                        // Granola: the transcript is a tab in place of
+                        // the notes, not a drawer over them.
+                        transcriptTab(proxy: scrollProxy)
+                    } else {
+                        bodyEditor
+                        if !isRecording && !reviewActionItems.isEmpty {
+                            actionItemsPanel
+                        }
+                        // Attachments belong to the note's document flow. Keeping
+                        // them outside this ScrollView pinned them near the bottom
+                        // controls and created a large false blank page after short
+                        // Enhanced notes.
+                        if !attachments.isEmpty || uploadingCount > 0 {
+                            attachmentsStrip
+                        }
                     }
                 }
                 // Preserve a readable centered column while using more of the
@@ -358,16 +352,9 @@ struct NoteWorkspaceView: View {
                         .transition(.opacity)
                 }
             }
+            }
 
             if isRecording {
-                if transcriptDrawerOpen {
-                    transcriptDrawer
-                        .frame(maxWidth: transcriptDrawerMaxWidth)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.horizontal, DSSpacing.xl)
-                        .padding(.bottom, DSSpacing.sm)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
                 if viewModel.isAudioNotePaused && shouldShowGenerateNotesBar {
                     generateNotesBar
                         .padding(.horizontal, DSSpacing.lg)
@@ -377,14 +364,6 @@ struct NoteWorkspaceView: View {
                 // Stop / Resume live in the header row (parity rank 3);
                 // nothing is pinned to the bottom while recording.
             } else {
-                if transcriptDrawerOpen {
-                    transcriptDrawer
-                        .frame(maxWidth: transcriptDrawerMaxWidth)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.horizontal, DSSpacing.xl)
-                        .padding(.bottom, DSSpacing.sm)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
                 // Reviewing mode: green ✦ Generate-notes pill anchored
                 // bottom-center. POSTs /api/notes/<id>/enhance and
                 // polls until status flips to complete.
@@ -502,6 +481,15 @@ struct NoteWorkspaceView: View {
 
     private var rowMenu: some View {
         VStack(alignment: .leading, spacing: 0) {
+            menuItem(
+                label: "Copy transcript",
+                icon: "text.bubble",
+                tint: DSColor.Text.primary,
+                isDisabled: transcriptTextForCopy.isEmpty
+            ) {
+                showRowMenu = false
+                copyTranscript()
+            }
             menuItem(label: "Copy text", icon: "doc.on.doc", tint: DSColor.Text.primary) {
                 showRowMenu = false
                 let pasteboard = NSPasteboard.general
@@ -887,7 +875,11 @@ struct NoteWorkspaceView: View {
             }
             stopResumePill
             Spacer(minLength: DSSpacing.md)
-            todayPill
+            if transcriptDrawerOpen {
+                transcriptHeaderControls
+            } else {
+                todayPill
+            }
         }
     }
 
@@ -1373,10 +1365,7 @@ struct NoteWorkspaceView: View {
                     .frame(maxWidth: 600)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             } else {
-                HStack(spacing: DSSpacing.sm) {
-                    transcriptTogglePill
-                    generateNotesPill
-                }
+                generateNotesPill
             }
             Spacer()
         }
@@ -1524,33 +1513,6 @@ struct NoteWorkspaceView: View {
         .help("Writing generated notes")
     }
 
-    private var transcriptTogglePill: some View {
-        Button {
-            transcriptDrawerOpen.toggle()
-            if transcriptDrawerOpen, !isRecording, transcript == nil, !loadingTranscript {
-                loadTranscript()
-            }
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "text.bubble")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(transcriptDrawerOpen ? DSColor.Accent.primary : DSColor.Text.secondary)
-                Text(isRecording ? "Live transcript" : "Transcript")
-                    .font(DSFont.Body.md())
-                    .foregroundStyle(DSColor.Text.primary)
-                Image(systemName: transcriptDrawerOpen ? "chevron.down" : "chevron.up")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(DSColor.Text.tertiary)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(Capsule().fill(DSColor.Bg.surface))
-            .overlay { Capsule().strokeBorder(DSColor.Border.subtle, lineWidth: 1) }
-        }
-        .buttonStyle(.plain)
-        .help(isRecording ? "Show live transcript" : "Show transcript")
-    }
-
     private var failedGenerateNotesPill: some View {
         HStack(spacing: 8) {
             Image(systemName: transcriptRetryAvailable ? "arrow.clockwise" : (enhanceFailureIsRetryable ? "exclamationmark.triangle.fill" : "clock"))
@@ -1565,134 +1527,6 @@ struct NoteWorkspaceView: View {
         .background(Capsule().fill(DSColor.Bg.surface))
         .overlay { Capsule().strokeBorder(DSColor.Border.subtle, lineWidth: 1) }
         .help(enhanceFailureMessage ?? "Try again")
-    }
-
-    private var transcriptDrawer: some View {
-        ScrollViewReader { proxy in
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: DSSpacing.sm) {
-                    TranscriptToolbarIconButton(
-                        icon: "magnifyingglass",
-                        help: "Find in transcript (⌘F)",
-                        isActive: transcriptSearchVisible,
-                        action: toggleTranscriptSearch
-                    )
-                    Image(systemName: "text.bubble")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(DSColor.Text.secondary)
-                    Text(isRecording ? "Live transcript" : "Transcript")
-                        .font(DSFont.Body.md().weight(.medium))
-                        .foregroundStyle(DSColor.Text.primary)
-                    let wordCount = isRecording ? liveTranscriptWordCount : (transcript?.wordCount ?? 0)
-                    if wordCount > 0 {
-                        Text("\(wordCount) words")
-                            .font(DSFont.Body.sm())
-                            .foregroundStyle(DSColor.Text.tertiary)
-                    }
-                    // Invited-vs-spoke visibility: diarized voices against
-                    // the attendee list (+ you). A mismatch explains why
-                    // full name suggestions may not have fired.
-                    if !isRecording, distinctSavedSpeakerCount > 1 {
-                        Text("· \(distinctSavedSpeakerCount) voices\(attendeeIds.isEmpty ? "" : " · \(attendeeIds.count + 1) expected")")
-                            .font(DSFont.Body.sm())
-                            .foregroundStyle(DSColor.Text.tertiary)
-                    }
-                    Spacer()
-                    Button {
-                        withAnimation(LoomolaMotion.medium) {
-                            proxy.scrollTo("transcript-bottom", anchor: .bottom)
-                        }
-                    } label: {
-                        // chevron, not arrow.down.to.line — the latter reads
-                        // as "download" next to the copy button.
-                        Image(systemName: "chevron.down.2")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(DSColor.Text.secondary)
-                            .frame(width: 28, height: 28)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(transcriptTextForCopy.isEmpty)
-                    .opacity(transcriptTextForCopy.isEmpty ? 0.45 : 1)
-                    .help("Jump to latest")
-                    Button {
-                        copyTranscript()
-                    } label: {
-                        Image(systemName: "doc.on.doc")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(DSColor.Text.secondary)
-                            .frame(width: 28, height: 28)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(transcriptTextForCopy.isEmpty)
-                    .opacity(transcriptTextForCopy.isEmpty ? 0.45 : 1)
-                    .help("Copy transcript")
-                    Button {
-                        transcriptDrawerOpen = false
-                    } label: {
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(DSColor.Text.secondary)
-                            .frame(width: 28, height: 28)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Hide transcript")
-                }
-                .padding(.horizontal, DSSpacing.lg)
-                .padding(.top, DSSpacing.md)
-                .padding(.bottom, DSSpacing.xs)
-
-                if transcriptSearchVisible {
-                    transcriptSearchBar(proxy: proxy)
-                        .padding(.horizontal, DSSpacing.lg)
-                        .padding(.bottom, DSSpacing.sm)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                }
-
-                if !isRecording, !pendingSpeakerSuggestions.isEmpty {
-                    speakerSuggestionBar
-                        .padding(.horizontal, DSSpacing.lg)
-                        .padding(.bottom, DSSpacing.sm)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                }
-
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Group {
-                            if isRecording {
-                                liveTranscriptContent
-                            } else {
-                                transcriptContent
-                            }
-                        }
-                        Color.clear
-                            .frame(height: 1)
-                            .id("transcript-bottom")
-                    }
-                    .padding(.horizontal, DSSpacing.lg)
-                    .padding(.top, DSSpacing.sm)
-                    .padding(.bottom, DSSpacing.lg)
-                }
-                .frame(maxHeight: 300)
-            }
-            .onChange(of: normalizedTranscriptSearchQuery) { _, _ in
-                activeTranscriptSearchIndex = 0
-                scrollToActiveTranscriptSearchMatch(proxy: proxy)
-            }
-            .onChange(of: transcriptSearchMatches.count) { _, count in
-                normalizeActiveTranscriptSearchIndex(matchCount: count)
-                scrollToActiveTranscriptSearchMatch(proxy: proxy)
-            }
-            .onChange(of: activeTranscriptSearchIndex) { _, _ in
-                scrollToActiveTranscriptSearchMatch(proxy: proxy)
-            }
-        }
-        .background(RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous).fill(DSColor.Bg.surfaceRaised))
-        .overlay {
-            RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous)
-                .strokeBorder(DSColor.Border.subtle, lineWidth: 1)
-        }
-        .dsShadow(.raised)
-        .animation(LoomolaMotion.quick, value: transcriptSearchVisible)
     }
 
     private func transcriptSearchBar(proxy: ScrollViewProxy) -> some View {
@@ -1779,11 +1613,7 @@ struct NoteWorkspaceView: View {
                 .foregroundStyle(DSColor.Text.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else if !savedTranscriptBubbles.isEmpty {
-            LazyVStack(alignment: .leading, spacing: DSSpacing.md) {
-                ForEach(savedTranscriptBubbles) { bubble in
-                    transcriptBubble(bubble)
-                }
-            }
+            transcriptRunsView(savedTranscriptBubbles)
         } else if transcript != nil {
             Text("No speech was saved in this transcript. Use Retry transcript if the recording should contain speech.")
                 .font(DSFont.Body.md())
@@ -1812,11 +1642,7 @@ struct NoteWorkspaceView: View {
         } else if segments.isEmpty && !hasInterim {
             liveTranscriptEmptyState
         } else {
-            LazyVStack(alignment: .leading, spacing: DSSpacing.md) {
-                ForEach(liveTranscriptBubbles) { bubble in
-                    transcriptBubble(bubble)
-                }
-            }
+            transcriptRunsView(liveTranscriptBubbles)
         }
     }
 
@@ -1904,7 +1730,7 @@ struct NoteWorkspaceView: View {
     private var savedTranscriptBubbles: [TranscriptDisplayBubble] {
         guard let transcript else { return [] }
         if !transcript.paragraphs.isEmpty {
-            return transcript.paragraphs.map { paragraph in
+            return TranscriptRunGrouper.expandingInlineSpeakerLines(transcript.paragraphs.map { paragraph in
                 let source = transcriptSource(forSpeaker: paragraph.speaker)
                 return TranscriptDisplayBubble(
                     id: paragraph.id,
@@ -1916,137 +1742,230 @@ struct NoteWorkspaceView: View {
                     endSec: paragraph.endSec,
                     speakerIdx: Self.speakerIdx(fromLabel: paragraph.speaker)
                 )
-            }
+            })
         }
 
         let fullText = transcript.fullText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !fullText.isEmpty else { return [] }
-        return [
-            TranscriptDisplayBubble(
-                id: "full-transcript",
-                source: nil,
-                speaker: nil,
-                text: fullText,
-                isInterim: false,
-                startSec: 0,
-                endSec: 0
-            )
-        ]
+        return TranscriptRunGrouper.bubbles(fromFullText: fullText)
     }
 
-    private func transcriptBubble(_ bubble: TranscriptDisplayBubble) -> some View {
-        let isMine = bubble.source == .microphone
-        let alignment: Alignment = isMine ? .trailing : .leading
-        let horizontalAlignment: HorizontalAlignment = isMine ? .trailing : .leading
-        let speaker = bubble.speaker?.trimmingCharacters(in: .whitespacesAndNewlines)
+    // MARK: - Transcript tab (Granola: a tab in the header, not a drawer)
+
+    @ViewBuilder
+    private func transcriptTab(proxy: ScrollViewProxy) -> some View {
+        VStack(alignment: .leading, spacing: DSSpacing.md) {
+            if transcriptSearchVisible {
+                transcriptSearchBar(proxy: proxy)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+            if !isRecording, !pendingSpeakerSuggestions.isEmpty {
+                speakerSuggestionBar
+            }
+            if isRecording {
+                liveTranscriptContent
+            } else {
+                transcriptContent
+            }
+            Color.clear
+                .frame(height: 1)
+                .id("transcript-bottom")
+        }
+        .onChange(of: normalizedTranscriptSearchQuery) { _, _ in
+            activeTranscriptSearchIndex = 0
+            scrollToActiveTranscriptSearchMatch(proxy: proxy)
+        }
+        .onChange(of: transcriptSearchMatches.count) { _, count in
+            normalizeActiveTranscriptSearchIndex(matchCount: count)
+            scrollToActiveTranscriptSearchMatch(proxy: proxy)
+        }
+        .onChange(of: activeTranscriptSearchIndex) { _, _ in
+            scrollToActiveTranscriptSearchMatch(proxy: proxy)
+        }
+        .onChange(of: viewModel.liveTranscription.segments.count) { _, _ in
+            guard isRecording else { return }
+            withAnimation(LoomolaMotion.medium) {
+                proxy.scrollTo("transcript-bottom", anchor: .bottom)
+            }
+        }
+        .animation(LoomolaMotion.quick, value: transcriptSearchVisible)
+    }
+
+    private var transcriptHeaderControls: some View {
+        HStack(spacing: DSSpacing.sm) {
+            TranscriptToolbarIconButton(
+                icon: "magnifyingglass",
+                help: "Find in transcript (⌘F)",
+                isActive: transcriptSearchVisible,
+                action: toggleTranscriptSearch
+            )
+            TranscriptToolbarIconButton(
+                icon: "slider.horizontal.3",
+                help: "Transcription settings",
+                isActive: showTranscriptSettings,
+                action: { showTranscriptSettings.toggle() }
+            )
+            .popover(isPresented: $showTranscriptSettings, arrowEdge: .bottom) {
+                transcriptSettingsPopover
+            }
+        }
+    }
+
+    /// Granola's transcription-settings popover: microphone + live
+    /// transcription. Language lives in Settings → Preferences.
+    private var transcriptSettingsPopover: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.md) {
+            FieldPicker(
+                label: "Microphone",
+                placeholder: "System default",
+                icon: "mic",
+                options: viewModel.captureSources.microphones.map {
+                    .init(id: $0.id, title: $0.name)
+                },
+                selection: Binding(
+                    get: { viewModel.selectedMicDeviceID },
+                    set: { viewModel.setSelectedMicDevice(id: $0) }
+                )
+            )
+            Toggle(
+                "Live transcription",
+                isOn: Binding(
+                    get: { viewModel.liveTranscriptionEnabled },
+                    set: { viewModel.setLiveTranscriptionEnabled($0) }
+                )
+            )
+            .toggleStyle(.switch)
+            .font(DSFont.Body.md())
+            .foregroundStyle(DSColor.Text.primary)
+        }
+        .padding(DSSpacing.lg)
+        .frame(width: 300)
+    }
+
+    private var transcriptRecordingStart: Date {
+        switch target {
+        case .recording: return viewModel.activeAudioRecordingStartedAt ?? Date()
+        case .reviewing(let recording): return recording.createdAt
+        }
+    }
+
+    private func transcriptRunsView(_ bubbles: [TranscriptDisplayBubble]) -> some View {
+        LazyVStack(alignment: .leading, spacing: DSSpacing.lg) {
+            ForEach(TranscriptRunGrouper.runs(from: bubbles)) { run in
+                transcriptRunRow(run)
+            }
+        }
+    }
+
+    /// One speaker run: timestamp in the gutter, speaker label, then
+    /// the run's paragraphs as left-aligned bubbles (Granola layout —
+    /// no right-aligned "me" side).
+    private func transcriptRunRow(_ run: TranscriptRun) -> some View {
+        let speaker = run.speaker?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return HStack(alignment: .top, spacing: DSSpacing.sm) {
+            Text(run.hasTiming ? TranscriptRunGrouper.gutterLabel(startSec: run.startSec, recordingStart: transcriptRecordingStart) : "")
+                .font(DSFont.Body.sm().weight(.regular))
+                .foregroundStyle(DSColor.Text.tertiary)
+                .monospacedDigit()
+                .frame(width: 40, alignment: .trailing)
+                .padding(.top, speaker.isEmpty ? 9 : 31)
+            VStack(alignment: .leading, spacing: 6) {
+                if !speaker.isEmpty {
+                    speakerLabel(speaker, idx: run.speakerIdx, slot: TranscriptRunGrouper.colorSlot(for: run))
+                }
+                ForEach(run.paragraphs) { bubble in
+                    transcriptParagraph(bubble)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private static let speakerPalette: [Color] = [
+        DSColor.Accent.ai,
+        Color(hex: 0x6EA8FE),
+        Color(hex: 0xF2A65A),
+        Color(hex: 0xE57BB2),
+        Color(hex: 0x7DD3C0),
+        Color(hex: 0xC4B5FD),
+    ]
+
+    @ViewBuilder
+    private func speakerLabel(_ speaker: String, idx: Int?, slot: Int) -> some View {
+        let isUnknown = speaker.hasPrefix("Speaker ") || speaker == "Unknown speaker"
+        let color = isUnknown ? DSColor.Text.tertiary : Self.speakerPalette[slot % Self.speakerPalette.count]
+        if !isRecording, let idx, !people.isEmpty {
+            // Never-misattribute fallback: any voice the pipeline
+            // couldn't identify with evidence stays "Speaker N" — click
+            // to say who it is (also works to fix an accepted name).
+            Menu {
+                Section(speaker.hasPrefix("Speaker ") ? "Who is this?" : "Reassign speaker") {
+                    ForEach(identifyCandidates) { person in
+                        Button(person.displayName) {
+                            assignSpeaker(idx: idx, personId: person.id)
+                        }
+                    }
+                }
+                if isClearableName(idx: idx) {
+                    Section {
+                        Button("Not \(speaker)") {
+                            clearSpeakerName(idx: idx)
+                        }
+                    }
+                }
+            } label: {
+                let presentation = SpeakerLabelPresentation.make(
+                    name: speaker,
+                    assignment: activeAssignment(idx: idx)
+                )
+                HStack(spacing: 3) {
+                    if presentation.isUncertain {
+                        Image(systemName: "questionmark.circle")
+                            .font(.system(size: 9, weight: .semibold))
+                    }
+                    Text(presentation.text)
+                        .font(DSFont.Body.md().weight(.medium))
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 7, weight: .semibold))
+                        .foregroundStyle(DSColor.Text.tertiary)
+                }
+                .foregroundStyle(presentation.isUncertain ? DSColor.State.warning : color)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help(speakerProvenanceHelp(idx: idx))
+        } else {
+            Text(speaker == "Me" ? "You" : speaker)
+                .font(DSFont.Body.md().weight(.medium))
+                .foregroundStyle(color)
+        }
+    }
+
+    private func transcriptParagraph(_ bubble: TranscriptDisplayBubble) -> some View {
         let isSearchMatch = transcriptBubbleMatchesSearch(bubble)
         let activeSearchMatch = activeTranscriptSearchMatch
         let isActiveSearchMatch = activeSearchMatch?.bubbleId == bubble.id
-
-        return HStack(alignment: .bottom, spacing: 0) {
-            if isMine { Spacer(minLength: 54) }
-            VStack(alignment: horizontalAlignment, spacing: 5) {
-                if let speaker, !speaker.isEmpty {
-                    if !isRecording, let idx = bubble.speakerIdx, !people.isEmpty {
-                        // Never-misattribute fallback: any voice the
-                        // pipeline couldn't identify with evidence stays
-                        // "Speaker N" — click to say who it is (also
-                        // works to fix an accepted name).
-                        Menu {
-                            Section(speaker.hasPrefix("Speaker ") ? "Who is this?" : "Reassign speaker") {
-                                ForEach(identifyCandidates) { person in
-                                    Button(person.displayName) {
-                                        assignSpeaker(idx: idx, personId: person.id)
-                                    }
-                                }
-                            }
-                            if isClearableName(idx: idx) {
-                                Section {
-                                    Button("Not \(speaker)") {
-                                        clearSpeakerName(idx: idx)
-                                    }
-                                }
-                            }
-                        } label: {
-                            let presentation = SpeakerLabelPresentation.make(
-                                name: speaker,
-                                assignment: activeAssignment(idx: idx)
-                            )
-                            HStack(spacing: 3) {
-                                if presentation.isUncertain {
-                                    Image(systemName: "questionmark.circle")
-                                        .font(.system(size: 9, weight: .semibold))
-                                }
-                                Text(presentation.text)
-                                    .font(DSFont.Body.sm())
-                                Image(systemName: "chevron.down")
-                                    .font(.system(size: 7, weight: .semibold))
-                            }
-                            .foregroundStyle(
-                                presentation.isUncertain
-                                    ? DSColor.State.warning
-                                    : speaker.hasPrefix("Speaker ")
-                                        ? DSColor.Accent.primary.opacity(0.9)
-                                        : DSColor.Text.tertiary.opacity(0.9)
-                            )
-                            .padding(.horizontal, 4)
-                        }
-                        .menuStyle(.borderlessButton)
-                        .menuIndicator(.hidden)
-                        .fixedSize()
-                        .help(speakerProvenanceHelp(idx: idx))
-                    } else {
-                        Text(speaker)
-                            .font(DSFont.Body.sm())
-                            .foregroundStyle(DSColor.Text.tertiary.opacity(0.9))
-                            .padding(.horizontal, 4)
-                    }
-                }
-                Text(attributedTranscriptText(for: bubble, activeMatch: activeSearchMatch))
-                    .font(.system(size: 13, weight: .regular))
-                    .lineSpacing(2.5)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 11, style: .continuous)
-                            .fill(transcriptBubbleFill(source: bubble.source, isInterim: bubble.isInterim))
+        return Text(attributedTranscriptText(for: bubble, activeMatch: activeSearchMatch))
+            .font(DSFont.Body.md())
+            .lineSpacing(4)
+            .textSelection(.enabled)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(DSColor.Bg.surface.opacity(bubble.isInterim ? 0.6 : 1))
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(
+                        isActiveSearchMatch ? Color.orange.opacity(0.86) : DSColor.Accent.primary.opacity(0.55),
+                        lineWidth: isActiveSearchMatch ? 1.6 : 1.3
                     )
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 11, style: .continuous)
-                            .strokeBorder(
-                                isActiveSearchMatch
-                                    ? Color.orange.opacity(0.86)
-                                    : isSearchMatch
-                                    ? DSColor.Accent.primary.opacity(0.55)
-                                    : transcriptBubbleStroke(source: bubble.source),
-                                lineWidth: isActiveSearchMatch ? 1.6 : (isSearchMatch ? 1.3 : 1)
-                            )
-                            .opacity(isSearchMatch || bubble.source == .systemAudio ? 0.75 : 0)
-                    }
+                    .opacity(isSearchMatch ? 1 : 0)
             }
-            .frame(maxWidth: 560, alignment: alignment)
-            if !isMine { Spacer(minLength: 54) }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .id(transcriptBubbleScrollId(for: bubble.id))
-    }
-
-    private func transcriptBubbleFill(source: LiveTranscriptAudioSource?, isInterim: Bool) -> Color {
-        let fill: Color
-        switch source {
-        case .microphone:
-            fill = DSColor.Bg.subtle.opacity(0.76)
-        case .systemAudio:
-            fill = DSColor.Bg.surface.opacity(0.82)
-        case .none:
-            fill = DSColor.Bg.subtle.opacity(0.74)
-        }
-        return isInterim ? fill.opacity(0.68) : fill
-    }
-
-    private func transcriptBubbleStroke(source: LiveTranscriptAudioSource?) -> Color {
-        source == .systemAudio ? DSColor.Border.subtle : .clear
+            .frame(maxWidth: 640, alignment: .leading)
+            .id(transcriptBubbleScrollId(for: bubble.id))
     }
 
     private func attributedTranscriptText(
