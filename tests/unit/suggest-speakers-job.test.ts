@@ -72,6 +72,8 @@ vi.mock("@/db/queries/speaker-suggestion", () => ({
       const r = store.rows.find((x) => x.id === id)!;
       r.transcriptVersion = version;
       r.needsReview = true;
+      r.isSuggestion = false;
+      r.autoApplied = false;
     }
   }),
   persistSpeakerSuggestions: vi.fn(

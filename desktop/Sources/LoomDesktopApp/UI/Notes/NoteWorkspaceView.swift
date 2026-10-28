@@ -2914,12 +2914,14 @@ struct NoteWorkspaceView: View {
         // "Not <name>" is said about the transcript on screen (a stale row is
         // shown over it as needs-review), so that is the version to name.
         let shownVersion = transcript?.transcriptVersion ?? activeAssignment(idx: idx)?.transcriptVersion
+        let shownPersonId = activeAssignment(idx: idx)?.personId
         speakerAssignments = speakerAssignments.filter { $0.speakerIdx != idx }
         Task { @MainActor in
             do {
                 try await backend.dismissSpeakerSuggestion(
                     recordingId: recording.id,
                     speakerIdx: idx,
+                    personId: shownPersonId,
                     transcriptVersion: shownVersion
                 )
             } catch {
@@ -2941,6 +2943,7 @@ struct NoteWorkspaceView: View {
                 try? await backend.dismissSpeakerSuggestion(
                     recordingId: recording.id,
                     speakerIdx: suggestion.speakerIdx,
+                    personId: suggestion.personId,
                     transcriptVersion: suggestion.transcriptVersion
                 )
             }

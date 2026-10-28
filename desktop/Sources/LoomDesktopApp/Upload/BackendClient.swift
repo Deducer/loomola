@@ -225,14 +225,21 @@ actor BackendClient {
         )
     }
 
+    /// `personId`: the person shown on that voice ("Not <name>") — the
+    /// server refuses if the voice now holds someone else.
     func dismissSpeakerSuggestion(
         recordingId: String,
         speakerIdx: Int,
+        personId: String?,
         transcriptVersion: String? = nil
     ) async throws {
         let _: EmptyResponse = try await post(
             path: "/api/recordings/\(recordingId)/speaker-suggestions/dismiss",
-            body: SpeakerSuggestionDismissRequest(speakerIdx: speakerIdx, transcriptVersion: transcriptVersion)
+            body: SpeakerSuggestionDismissRequest(
+                speakerIdx: speakerIdx,
+                transcriptVersion: transcriptVersion,
+                personId: personId
+            )
         )
     }
 
@@ -1096,6 +1103,18 @@ private struct SpeakerSuggestionAcceptRequest: Encodable {
 private struct SpeakerSuggestionDismissRequest: Encodable {
     let speakerIdx: Int
     let transcriptVersion: String?
+    /// The person shown on the voice; always encoded (null included) —
+    /// the server requires it.
+    let personId: String?
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(speakerIdx, forKey: .speakerIdx)
+        try c.encodeIfPresent(transcriptVersion, forKey: .transcriptVersion)
+        try c.encode(personId, forKey: .personId)
+    }
+
+    enum CodingKeys: String, CodingKey { case speakerIdx, transcriptVersion, personId }
 }
 
 struct RecentAttendeeDTO: Decodable, Equatable, Sendable, Identifiable {

@@ -257,10 +257,14 @@ export async function applyReconcilePlan(
   for (const id of plan.restampIds) {
     await tx.update(speakerAssignments).set({ transcriptVersion: version }).where(scoped(id));
   }
+  // A review item is treated as a USER decision from here on
+  // (is_suggestion false): a legacy row preserved because it may be a
+  // manual correction must not be deleted as a machine suggestion by the
+  // next transcript replacement or attendee edit.
   for (const id of plan.reviewIds) {
     await tx
       .update(speakerAssignments)
-      .set({ transcriptVersion: version, needsReview: true })
+      .set({ transcriptVersion: version, needsReview: true, isSuggestion: false, autoApplied: false })
       .where(scoped(id));
   }
 }
@@ -424,7 +428,10 @@ export async function dismissSpeakerSuggestion(args: {
   ownerId: string;
   speakerIdx: number;
   transcriptVersion?: string | null;
-}): Promise<{ ok: boolean; reason?: "transcript_changed" | "transcript_version_required" }> {
+  /** The person the client showed on this voice ("Not <name>"): the row
+   *  must still name them, so a stale click can't dismiss someone else. */
+  expectedPersonId: string | null;
+}): Promise<{ ok: boolean; reason?: "transcript_changed" | "transcript_version_required" | "suggestion_changed" }> {
   try {
     return await withUserSpeakerLock(
       { mediaObjectId: args.mediaObjectId, ownerId: args.ownerId, expectedTranscriptVersion: args.transcriptVersion },
@@ -432,6 +439,7 @@ export async function dismissSpeakerSuggestion(args: {
         const [row] = await tx
           .select({
             id: speakerAssignments.id,
+            personId: speakerAssignments.personId,
             isSuggestion: speakerAssignments.isSuggestion,
             autoApplied: speakerAssignments.autoApplied,
             needsReview: speakerAssignments.needsReview,
@@ -449,6 +457,7 @@ export async function dismissSpeakerSuggestion(args: {
           )
           .for("update");
         if (!row || row.dismissedAt !== null) return { ok: false };
+        if (row.personId !== args.expectedPersonId) return { ok: false, reason: "suggestion_changed" as const };
         // Pending suggestions, auto-applied names (the undo for capture
         // evidence), rows flagged for review — and names on an older
         // transcript, which clients show as needing review — can all be

@@ -46,6 +46,7 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
   let updateAudioNoteAttendees: typeof import("@/db/queries/notes").updateAudioNoteAttendees;
   let listSpeakerAssignments: typeof import("@/db/queries/speaker-assignments").listSpeakerAssignments;
   let applySpeakerSuggestion: typeof import("@/db/queries/speaker-suggestion").applySpeakerSuggestion;
+  let dismissSpeakerSuggestion: typeof import("@/db/queries/speaker-suggestion").dismissSpeakerSuggestion;
   let withSpeakerWriteLock: typeof import("@/db/queries/speaker-suggestion").withSpeakerWriteLock;
   let listNotesNeedingSpeakerRecovery: typeof import("@/db/queries/speaker-suggestion").listNotesNeedingSpeakerRecovery;
 
@@ -85,7 +86,7 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
     user = postgres(scoped, { onnotice: () => {} });
     ({ runSuggestSpeakersJob } = await import("@/lib/queue/jobs/suggest-speakers"));
     ({ upsertSpeakerAssignment, listSpeakerAssignments } = await import("@/db/queries/speaker-assignments"));
-    ({ applySpeakerSuggestion, withSpeakerWriteLock, listNotesNeedingSpeakerRecovery } = await import(
+    ({ applySpeakerSuggestion, dismissSpeakerSuggestion, withSpeakerWriteLock, listNotesNeedingSpeakerRecovery } = await import(
       "@/db/queries/speaker-suggestion"
     ));
     ({ updateAudioNoteAttendees } = await import("@/db/queries/notes"));
@@ -417,5 +418,37 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
     // Historical transcripts are the backfill's, never the watchdog's.
     await user`UPDATE transcripts SET speaker_profile = NULL, created_at = now() - interval '2 days' WHERE media_object_id = ${MEDIA}`;
     expect(await listNotesNeedingSpeakerRecovery()).toEqual([]);
+  });
+
+  it("a preserved legacy correction survives the NEXT transcript replacement and an attendee edit (P1: lifecycle)", async () => {
+    await user`INSERT INTO speaker_assignments (id, media_object_id, speaker_idx, person_id, is_suggestion,
+        suggestion_confidence, suggested_at, created_at)
+      VALUES (${ROW}, ${MEDIA}, 0, ${ALEX}, true, 'person_id_exact', now() - interval '2 hours', now() - interval '2 hours')`;
+    await runSuggestSpeakersJob({ mediaObjectId: MEDIA }); // backfill: preserved for review
+    // A later transcript replacement (e.g. a retry re-transcribes)…
+    await user`DELETE FROM transcripts WHERE media_object_id = ${MEDIA}`;
+    await user`INSERT INTO transcripts (media_object_id, provider, word_timestamps, created_at)
+      VALUES (${MEDIA}, 'deepgram', ${user.json(wordsFor(call))}, now() + interval '5 minutes')`;
+    await runSuggestSpeakersJob({ mediaObjectId: MEDIA });
+    // …and an attendee edit.
+    await updateAudioNoteAttendees({ mediaObjectId: MEDIA, ownerId: OWNER, personIds: [SARAH] });
+    const [kept] = await user<{ person_id: string; needs_review: boolean; is_suggestion: boolean }[]>`
+      SELECT person_id, needs_review, is_suggestion FROM speaker_assignments WHERE id = ${ROW}`;
+    expect(kept).toEqual({ person_id: ALEX, needs_review: true, is_suggestion: false });
+  });
+
+  it("'Not Alice' can't dismiss Bob after the suggestion on that voice changed (P2: dismiss binding)", async () => {
+    const shown = await currentVersion();
+    await user`INSERT INTO speaker_assignments (media_object_id, speaker_idx, person_id, is_suggestion, transcript_version)
+      VALUES (${MEDIA}, 0, ${SARAH}, true, ${shown})`;
+    const stale = await dismissSpeakerSuggestion({
+      mediaObjectId: MEDIA, ownerId: OWNER, speakerIdx: 0, transcriptVersion: shown, expectedPersonId: ALEX,
+    });
+    expect(stale).toEqual({ ok: false, reason: "suggestion_changed" });
+    expect((await rows())[0]).toMatchObject({ person_id: SARAH, is_suggestion: true });
+    const ok = await dismissSpeakerSuggestion({
+      mediaObjectId: MEDIA, ownerId: OWNER, speakerIdx: 0, transcriptVersion: shown, expectedPersonId: SARAH,
+    });
+    expect(ok).toEqual({ ok: true });
   });
 });

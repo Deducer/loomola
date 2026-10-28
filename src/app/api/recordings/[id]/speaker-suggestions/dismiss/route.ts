@@ -6,6 +6,9 @@ import { dismissSpeakerSuggestion } from "@/db/queries/speaker-suggestion";
 const bodySchema = z.object({
   speakerIdx: z.number().int().min(0),
   transcriptVersion: z.string().max(120).nullable().optional(),
+  // Required: the person shown on the voice being dismissed (null for an
+  // unnamed / one-off-label suggestion).
+  personId: z.string().uuid().nullable(),
 });
 
 export async function POST(
@@ -26,6 +29,7 @@ export async function POST(
     ownerId: user.id,
     speakerIdx: parsed.data.speakerIdx,
     transcriptVersion: parsed.data.transcriptVersion ?? null,
+    expectedPersonId: parsed.data.personId,
   });
 
   if (!result.ok && result.reason) {

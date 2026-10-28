@@ -243,6 +243,7 @@ export function TranscriptPanel({
   }
 
   async function dismissSuggestion(speakerIdx: number) {
+    const shownPersonId = assignmentBySpeaker.get(speakerIdx)?.personId ?? null;
     if (!mediaId) return;
     setBusySpeaker(speakerIdx);
     try {
@@ -251,7 +252,7 @@ export function TranscriptPanel({
         {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ speakerIdx, transcriptVersion: transcriptVersion ?? null }),
+          body: JSON.stringify({ speakerIdx, personId: shownPersonId, transcriptVersion: transcriptVersion ?? null }),
         }
       );
       if (response.status === 409) {

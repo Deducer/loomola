@@ -8,7 +8,9 @@ import Foundation
 /// mix and the server's mic-vs-system speaker detection.
 ///
 /// Pure value type so the arithmetic is testable without audio hardware.
-/// Times are `ProcessInfo.systemUptime` seconds. Paused time is excluded
+/// Times are seconds on the mach clock (`ProcessInfo.systemUptime`, and
+/// `AVAudioTime.seconds(forHostTime:)` of each buffer's capture time — the
+/// coordinator passes audio END times, not callback arrival times). Paused time is excluded
 /// from the gap because pausing deliberately elides audio from BOTH
 /// tracks — including a pause that began after the last buffer but
 /// before the restart, which is why the paused total is recorded with

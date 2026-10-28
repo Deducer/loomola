@@ -95,6 +95,11 @@
 - Recovery also covers failed or stranded LLM passes.
 
 **Twelfth review pass (2026-10-27):** only a self-derived legacy suggestion that still names the owner is "provably untouched"; new-person rows (indistinguishable from a one-off label edit) go to review too.
+
+**Thirteenth review pass (2026-10-27):**
+- A review item becomes a user decision (`is_suggestion` false), so later transcript replacements and attendee edits can't delete it.
+- "Not <name>" is bound to the person shown.
+- Mic gaps are sized from buffer host times, not callback arrival.
 **Style:** TDD. Pure logic first, under `src/lib/speaker-profile/` and `src/lib/speaker-suggestion/`, then wiring, then UI. Each phase ships on its own and is scored with the same offline eval script.
 
 ## Phases at a glance (ordered by impact ÷ effort)

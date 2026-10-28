@@ -342,14 +342,22 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
             return
         }
         let pausedNow = pausedTotalLocked(now: arrival)
+        // Size gaps from the audio's own capture time (the buffer's host
+        // time — the same mach clock as systemUptime), not from when this
+        // callback happened to run: scheduling delay or a device-latency
+        // change must not turn into silence in the file.
+        let duration = Double(buffer.frameLength) / max(buffer.format.sampleRate, 1)
+        let audioEnd = time.isHostTimeValid
+            ? AVAudioTime.seconds(forHostTime: time.hostTime) + duration
+            : arrival
         let silence = gapTracker.isOpen
             ? gapTracker.close(
-                arrivalUptime: arrival,
-                bufferDuration: Double(buffer.frameLength) / max(buffer.format.sampleRate, 1),
+                arrivalUptime: audioEnd,
+                bufferDuration: duration,
                 pausedTotal: pausedNow
             )
             : 0
-        gapTracker.markBuffer(uptime: arrival, pausedTotal: pausedNow)
+        gapTracker.markBuffer(uptime: audioEnd, pausedTotal: pausedNow)
         gapLock.unlock()
         if silence > 0, let writer {
             let written = writer.appendSilence(seconds: silence)
