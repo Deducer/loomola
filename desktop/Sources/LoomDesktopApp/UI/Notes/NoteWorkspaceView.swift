@@ -2809,15 +2809,16 @@ struct NoteWorkspaceView: View {
         guard case .reviewing(let recording) = target,
               let backend = viewModel.backendClient
         else { return }
+        // The transcript the user clicked on — captured now, before any
+        // refresh can swap it under this task.
+        let shownVersion = transcript?.transcriptVersion
         Task { @MainActor in
             do {
                 try await backend.assignSpeaker(
                     mediaId: recording.id,
                     speakerIdx: idx,
                     personId: personId,
-                    // The transcript the user is looking at (the label menu
-                    // only exists in the loaded transcript drawer).
-                    transcriptVersion: transcript?.transcriptVersion
+                    transcriptVersion: shownVersion
                 )
                 await reloadSpeakerAssignments(recordingId: recording.id, backend: backend)
                 showToast(message: "Speaker assigned")
@@ -2938,14 +2939,25 @@ struct NoteWorkspaceView: View {
         let pending = pendingSpeakerSuggestions
         // Optimistic: hide the bar immediately.
         speakerAssignments = speakerAssignments.filter { !$0.isSuggestion }
-        Task {
+        Task { @MainActor in
+            var notDismissed = 0
             for suggestion in pending {
-                try? await backend.dismissSpeakerSuggestion(
-                    recordingId: recording.id,
-                    speakerIdx: suggestion.speakerIdx,
-                    personId: suggestion.personId,
-                    transcriptVersion: suggestion.transcriptVersion
-                )
+                do {
+                    try await backend.dismissSpeakerSuggestion(
+                        recordingId: recording.id,
+                        speakerIdx: suggestion.speakerIdx,
+                        personId: suggestion.personId,
+                        transcriptVersion: suggestion.transcriptVersion
+                    )
+                } catch {
+                    notDismissed += 1
+                }
+            }
+            if notDismissed > 0 {
+                // A refusal (the suggestion changed) or a network failure:
+                // show what's really there instead of a false "dismissed".
+                await reloadSpeakerAssignments(recordingId: recording.id, backend: backend)
+                showToast(message: "Some suggestions couldn't be dismissed — showing the latest", tone: .warning)
             }
         }
     }

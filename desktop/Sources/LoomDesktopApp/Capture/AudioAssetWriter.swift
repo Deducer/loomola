@@ -142,7 +142,10 @@ final class AudioAssetWriter: @unchecked Sendable {
             guard let chunk = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: chunkFrames) else {
                 throw AudioAssetWriterError.conversionUnavailable
             }
-            // Freshly allocated PCM buffers are not guaranteed zeroed.
+            // Freshly allocated PCM buffers are not guaranteed zeroed, and
+            // mDataByteSize is 0 until frameLength is set — size it to the
+            // full capacity first, or the memset clears nothing.
+            chunk.frameLength = chunkFrames
             let abl = UnsafeMutableAudioBufferListPointer(chunk.mutableAudioBufferList)
             for buffer in abl {
                 if let data = buffer.mData { memset(data, 0, Int(buffer.mDataByteSize)) }

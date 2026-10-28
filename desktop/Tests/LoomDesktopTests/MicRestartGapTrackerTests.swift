@@ -176,6 +176,41 @@ final class MicRestartGapTrackerTests: XCTestCase {
         XCTAssertEqual(seconds, 3.0, accuracy: 0.1)
     }
 
+    /// Review finding (sixteenth pass): the fill zeroed the chunk before
+    /// sizing it (mDataByteSize was 0), so the "silence" could be garbage.
+    /// Decode the file and check the gap is actually silent.
+    func testDecodedGapIsActuallySilent() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appending(path: "mic-gap-decoded-\(UUID()).m4a")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let writer = try AudioAssetWriter(outputURL: url, sampleRate: 48_000, channelCount: 1)
+        let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1)!
+        let tone = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 24_000)!
+        tone.frameLength = 24_000
+        for i in 0..<Int(tone.frameLength) {
+            tone.floatChannelData![0][i] = 0.5 * sinf(Float(i) * 2 * .pi * 440 / 48_000)
+        }
+        try writer.append(tone)                       // 0.5 s tone
+        XCTAssertEqual(writer.appendSilence(seconds: 2), 2, accuracy: 0.001)
+        try writer.append(tone)                       // 0.5 s tone
+        _ = try await writer.finish()
+
+        let file = try AVAudioFile(forReading: url)
+        let read = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length))!
+        try file.read(into: read)
+        let sr = file.processingFormat.sampleRate
+        let samples = read.floatChannelData![0]
+        func rms(_ from: Double, _ to: Double) -> Float {
+            let a = Int(from * sr), b = min(Int(to * sr), Int(read.frameLength))
+            var sum: Float = 0
+            for i in a..<b { sum += samples[i] * samples[i] }
+            return sqrtf(sum / Float(max(1, b - a)))
+        }
+        XCTAssertGreaterThan(rms(0.1, 0.4), 0.1, "tone before the gap")
+        XCTAssertLessThan(rms(0.8, 2.2), 0.001, "the gap must decode as silence")
+        XCTAssertGreaterThan(rms(2.6, 2.9), 0.1, "tone after the gap")
+    }
+
     /// The gap fill runs on the tap thread, so it has to be cheap even
     /// for a long gap (a minute of silence must not stall capture).
     func testSilenceFillForAMinuteIsFast() throws {
