@@ -22,6 +22,10 @@ import { RecordingsGrid } from "@/components/dashboard/recordings-grid";
 import { DashboardTabs } from "@/components/dashboard/dashboard-tabs";
 import { NotesList } from "@/components/dashboard/notes-list";
 import { GranolaMigrateBanner } from "@/components/dashboard/granola-migrate-banner";
+import {
+  UploadVideoButton,
+  UploadVideoProvider,
+} from "@/components/dashboard/upload-video";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 
@@ -155,6 +159,10 @@ export default async function HomePage({
           currentFolderId={folderId}
           allLabel={allLabel}
         />
+        <UploadVideoProvider
+          folderId={activeTab === "recordings" ? folderId : undefined}
+          enabled={activeTab === "recordings"}
+        >
         <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 sm:py-8">
           {granolaEnabled && (
             <div className="mb-5">
@@ -196,12 +204,15 @@ export default async function HomePage({
                 </Button>
               </form>
             ) : (
-              <Link href="/record">
-                <Button>
-                  <Plus className="h-4 w-4" />
-                  New recording
-                </Button>
-              </Link>
+              <div className="flex shrink-0 items-center gap-2">
+                <UploadVideoButton className="hidden sm:inline-flex" />
+                <Link href="/record">
+                  <Button>
+                    <Plus className="h-4 w-4" />
+                    New recording
+                  </Button>
+                </Link>
+              </div>
             )}
           </div>
 
@@ -264,15 +275,18 @@ export default async function HomePage({
                     No recordings yet
                   </p>
                   <p className="mx-auto mt-1.5 max-w-[42ch] text-sm text-text-muted">
-                    Capture your screen, camera, and audio in a single click —
-                    your first recording lives here.
+                    Capture your screen, camera, and audio in a single click, or
+                    drop a video file anywhere on this page.
                   </p>
-                  <Link href="/record" className="mt-5 inline-block">
-                    <Button>
-                      <Plus className="h-4 w-4" />
-                      New recording
-                    </Button>
-                  </Link>
+                  <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+                    <Link href="/record">
+                      <Button>
+                        <Plus className="h-4 w-4" />
+                        New recording
+                      </Button>
+                    </Link>
+                    <UploadVideoButton />
+                  </div>
                 </div>
               )
             ) : (
@@ -293,6 +307,7 @@ export default async function HomePage({
             )}
           </div>
         </main>
+        </UploadVideoProvider>
       </div>
     </>
   );

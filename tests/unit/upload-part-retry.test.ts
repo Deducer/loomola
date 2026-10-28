@@ -27,3 +27,26 @@ describe("part upload retry policy", () => {
     }
   });
 });
+
+describe("createUploadCoordinator abort signal", () => {
+  it("stops retrying and rejects as soon as the signal is aborted", async () => {
+    const { createUploadCoordinator } = await import("@/lib/recording/upload-coordinator");
+    const controller = new AbortController();
+    let partUrlCalls = 0;
+    const coordinator = createUploadCoordinator(
+      [{ kind: "composite", key: "k", uploadId: "u" }],
+      async () => {
+        partUrlCalls += 1;
+        controller.abort();
+        throw new Error("part-url failed: aborted");
+      },
+      { signal: controller.signal }
+    );
+    coordinator.pushChunk("composite", new Blob([new Uint8Array(16)]));
+    const started = Date.now();
+    await expect(coordinator.finalize("composite")).rejects.toThrow(/aborted/);
+    // One attempt, no 1s/2s/4s backoff sleeps.
+    expect(partUrlCalls).toBe(1);
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+});
