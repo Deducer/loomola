@@ -135,6 +135,15 @@ When adding a new public-facing endpoint that accepts user input, default to `ch
 - Scorecard + backfill: `doppler run --project dissonance-cloud --config prd_loom -- npx tsx scripts/backfill-speaker-v2.ts` (read-only by default; `--execute` uploads frames and enqueues the deployed worker once per note not yet on v2, skipping pending jobs; `--verify` waits for the jobs and re-scores; stage with `--id` / `--limit`).
 - Spec / plan: `docs/superpowers/specs/2026-10-27-speaker-recognition-v2-granola-parity-design.md`, `docs/superpowers/plans/2026-10-27-speaker-recognition-v2.md`.
 
+**Stage 20 notes — speaker v2 known limitations (accepted at ship, 2026-10-27; P2/P3, not fixed on purpose):**
+- **Old desktop builds get a 409.** Every speaker edit must send `transcriptVersion`; a desktop build from before v2 sends none and gets `transcript_version_required` (a visible error, never a wrong write). A "one transcript only" fallback isn't possible: replacing a transcript deletes the old row, so the server can't tell how many there were. Install the desktop build right after the server deploy.
+- **Before reconcile runs, unversioned names written after the transcript display as current** (same as pre-v2). The backfill closes this for notes since 2026-07-02; older notes keep pre-v2 display until something re-runs `suggest_speakers` on them.
+- **A pre-v2 remote suggestion that differs from the sole invitee stays a plain suggestion** (with "?"), not hidden: attendee lists are often incomplete, so it isn't treated as a contradiction.
+- **Historical track alignment is assumed:** `profile.ts` compares transcript seconds directly with raw-track frames. Old recordings with compressed mic outages or offset track starts aren't corrected; the desktop gap-fill only fixes new recordings.
+- **Desktop mic gap-fill runs on the audio callback** and the restart path has no hardware-call timeout; verified by unit tests only. Check a real AirPods/device switch (`log show --predicate 'subsystem == "cloud.dissonance.loom.desktop"' --last 30m | grep "mic gap"`).
+- **An invitee with no person record blocks the 1:1 proof** (counted as a second guest), so such notes keep suggestions instead of confirmed names. Conservative by design.
+- Reconcile and the naming ladder (`compose.ts`) each hold their own copy of the evidence rules; keep them in step when changing either.
+
 **v2 (Path C, deferred):** voice biometrics. Tech-stack (Pyannote / SpeechBrain / Resemblyzer / AssemblyAI) deliberately deferred.
 
 - Spec: `docs/superpowers/specs/2026-05-04-speaker-recognition-design.md`

@@ -354,3 +354,8 @@ The existing ROADMAP follow-up: restart the engine into the same `AudioAssetWrit
 - User decisions win. Never delete or overwrite an accepted or dismissed row except through the remap rule.
 - No speaker guessing: every name traces to capture, meeting-app, verbatim-transcript or voice evidence.
 - Backfill writes only after Ian has read the dry-run report.
+
+## Ship-state notes (2026-10-27)
+
+- Pre-v2 *pending* rows are judged by the capture evidence, never deleted and never put in the owner's review list: confirmed ones become evidence-confirmed names (no "?", undoable, `legacy:` marker keeps user-decision protection later), contradicted ones are hidden (parked below `PARKED_IDX_CEILING`, dismissed, `superseded:` derivation), the rest stay plain suggestions. Review is only for accepted rows the evidence contradicts or can't verify.
+- Final dry run (54 notes since 2026-07-02): review list 7 (was 46). Known limitations: CLAUDE.md, "Stage 20 notes".
