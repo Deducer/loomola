@@ -5,71 +5,92 @@ import SwiftUI
 /// `Color(nsColor: .windowBackgroundColor)` and friends — system
 /// semantic colors don't carry brand identity.
 ///
-/// Each token resolves to an explicit light + dark RGB pair. All values
-/// come from the M3 design spec (`docs/superpowers/specs/2026-05-04-desktop-app-m3-visual-restructure-design.md`).
+/// Each token resolves to an explicit light + dark RGB pair. The dark
+/// values follow Granola's warm charcoal scale (parity audit,
+/// `docs/superpowers/specs/2026-10-28-granola-pixel-parity-audit.md`,
+/// rank 1); the light values come from the same family as Granola's
+/// docs palette (#F2F2EC background).
 enum DSColor {
     enum Bg {
-        /// Main window background. Warm off-white in light, near-black in dark.
+        /// Main window background. Warm off-white in light, warm charcoal in dark.
         static let canvas = Color.dynamic(
-            light: Color(red: 0.980, green: 0.980, blue: 0.969), // #FAFAF7
-            dark: Color(red: 0.055, green: 0.059, blue: 0.071)   // #0E0F12
+            light: Color(hex: 0xF2F2EC),
+            dark: Color(hex: 0x252525)
         )
-        /// Cards, sheets — the layer above canvas.
+        /// The sidebar rail. One step darker than the canvas.
+        static let sidebar = Color.dynamic(
+            light: Color(hex: 0xEAEAE3),
+            dark: Color(hex: 0x1E1E1E)
+        )
+        /// Cards, pills, transcript bubbles — the layer above canvas.
         static let surface = Color.dynamic(
             light: Color.white,
-            dark: Color(red: 0.094, green: 0.102, blue: 0.125)   // #181A20
+            dark: Color(hex: 0x2F2F2F)
         )
-        /// Hovered cards, popovers, settings sheet — the layer above surface.
+        /// Hovered cards, popovers, menus — the layer above surface.
         static let surfaceRaised = Color.dynamic(
             light: Color.white,
-            dark: Color(red: 0.122, green: 0.133, blue: 0.165)   // #1F222A
+            dark: Color(hex: 0x363635)
         )
         /// Inset wells, secondary chips, disabled-button background.
         static let subtle = Color.dynamic(
-            light: Color(red: 0.949, green: 0.945, blue: 0.925), // #F2F1EC
-            dark: Color(red: 0.133, green: 0.145, blue: 0.180)   // #22252E
+            light: Color(hex: 0xE6E6DF),
+            dark: Color(hex: 0x2A2A2A)
         )
     }
 
     enum Text {
         static let primary = Color.dynamic(
-            light: Color(red: 0.082, green: 0.086, blue: 0.102), // #15161A
-            dark: Color(red: 0.957, green: 0.957, blue: 0.945)   // #F4F4F1
+            light: Color(hex: 0x1F1F1D),
+            dark: Color(hex: 0xE8E8E6)
         )
         static let secondary = Color.dynamic(
-            light: Color(red: 0.361, green: 0.369, blue: 0.400), // #5C5E66
-            dark: Color(red: 0.616, green: 0.627, blue: 0.675)   // #9DA0AC
+            light: Color(hex: 0x4A4A47),
+            dark: Color(hex: 0xC8C8C6)
         )
         static let tertiary = Color.dynamic(
-            light: Color(red: 0.541, green: 0.549, blue: 0.584), // #8A8C95
-            dark: Color(red: 0.416, green: 0.427, blue: 0.471)   // #6A6D78
+            light: Color(hex: 0x7A7A76),
+            dark: Color(hex: 0x8E8E8C)
         )
     }
 
     enum Border {
         /// 1px hairlines, dividers.
         static let subtle = Color.dynamic(
-            light: Color(red: 0.922, green: 0.918, blue: 0.890), // #EBEAE3
-            dark: Color(red: 0.165, green: 0.176, blue: 0.216)   // #2A2D37
+            light: Color(hex: 0xE3E3DC),
+            dark: Color(hex: 0x3A3A3A)
         )
         /// Card outlines when used (rare — most cards use shadow only).
         static let strong = Color.dynamic(
-            light: Color(red: 0.835, green: 0.827, blue: 0.792), // #D5D3CA
-            dark: Color(red: 0.231, green: 0.247, blue: 0.298)   // #3B3F4C
+            light: Color(hex: 0xCFCFC6),
+            dark: Color(hex: 0x484848)
         )
     }
 
     enum Accent {
-        /// Brand blue. Used on primary CTAs and brand moments.
+        /// Brand blue. Primary CTAs on the video product and brand moments.
         static let primary = Color.dynamic(
-            light: Color(red: 0.231, green: 0.510, blue: 0.965),  // #3B82F6
-            dark: Color(red: 0.361, green: 0.608, blue: 1.000)    // #5C9BFF
+            light: Color(hex: 0x3B82F6),
+            dark: Color(hex: 0x5C9BFF)
         )
         /// Soft hover/selected fills derived from accent.
         static let muted = Color.dynamic(
-            light: Color(red: 0.231, green: 0.510, blue: 0.965).opacity(0.12),
-            dark: Color(red: 0.361, green: 0.608, blue: 1.000).opacity(0.18)
+            light: Color(hex: 0x3B82F6).opacity(0.12),
+            dark: Color(hex: 0x5C9BFF).opacity(0.18)
         )
+        /// Lime for AI actions: Generate notes, Enhanced, live-transcript
+        /// dots. Granola's "oats green".
+        static let ai = Color.dynamic(
+            light: Color(hex: 0x788C15),
+            dark: Color(hex: 0xB2C248)
+        )
+        /// Soft fill behind lime-accented chips.
+        static let aiMuted = Color.dynamic(
+            light: Color(hex: 0x788C15).opacity(0.14),
+            dark: Color(hex: 0xB2C248).opacity(0.16)
+        )
+        /// Calendar event bars in the Coming up card.
+        static let calendar = Color(hex: 0x8B5CF6)
     }
 
     enum State {
@@ -77,21 +98,49 @@ enum DSColor {
         static let recording = Color(red: 0.910, green: 0.294, blue: 0.271) // #E84B45
         /// Granted, uploaded, success.
         static let success = Color.dynamic(
-            light: Color(red: 0.122, green: 0.651, blue: 0.447), // #1FA672
-            dark: Color(red: 0.204, green: 0.831, blue: 0.600)   // #34D399
+            light: Color(hex: 0x1FA672),
+            dark: Color(hex: 0x34D399)
         )
         /// Permission pending, "ask later," soft warn.
         static let warning = Color.dynamic(
-            light: Color(red: 0.839, green: 0.620, blue: 0.180), // #D69E2E
-            dark: Color(red: 0.965, green: 0.678, blue: 0.333)   // #F6AD55
+            light: Color(hex: 0xD69E2E),
+            dark: Color(hex: 0xF6AD55)
         )
         /// Destructive actions — Delete, Discard, irreversible
         /// confirms. Distinct from `recording` (which is the live
         /// red HUD dot) so a refactor to either doesn't drag the
         /// other along.
         static let danger = Color.dynamic(
-            light: Color(red: 0.847, green: 0.220, blue: 0.220), // #D83838
-            dark: Color(red: 0.965, green: 0.404, blue: 0.404)   // #F66767
+            light: Color(hex: 0xD83838),
+            dark: Color(hex: 0xF66767)
+        )
+    }
+
+    /// Resolve a token under one appearance and return it as `#RRGGBB`
+    /// (sRGB, uppercase). Used by the design-system tests to pin the
+    /// Granola values; cheap enough for diagnostics too.
+    static func hex(_ color: Color, dark: Bool) -> String {
+        let appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        var resolved = NSColor(color)
+        appearance?.performAsCurrentDrawingAppearance {
+            resolved = NSColor(color).usingColorSpace(.sRGB) ?? NSColor(color)
+        }
+        let r = Int((resolved.redComponent * 255).rounded())
+        let g = Int((resolved.greenComponent * 255).rounded())
+        let b = Int((resolved.blueComponent * 255).rounded())
+        return String(format: "#%02X%02X%02X", r, g, b)
+    }
+}
+
+extension Color {
+    /// `Color(hex: 0x252525)` — sRGB, opaque.
+    init(hex: UInt32) {
+        self.init(
+            .sRGB,
+            red: Double((hex >> 16) & 0xFF) / 255,
+            green: Double((hex >> 8) & 0xFF) / 255,
+            blue: Double(hex & 0xFF) / 255,
+            opacity: 1
         )
     }
 }

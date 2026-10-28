@@ -451,21 +451,23 @@ private enum MarkdownStyle {
     static let nestedListIndent: CGFloat = 24
     static let listTextIndent: CGFloat = 28
     static let listBulletX: CGFloat = 6
+    // Granola body greys (parity rank 1): #C8C8C6 body, #E8E8E6
+    // headings, #8E8E8C placeholder + bullets on the #252525 canvas.
     static let bodyColor = dynamicColor(
         light: NSColor(red: 0.180, green: 0.184, blue: 0.208, alpha: 1),
-        dark: NSColor(red: 0.620, green: 0.612, blue: 0.578, alpha: 1)
+        dark: NSColor(red: 0.784, green: 0.784, blue: 0.776, alpha: 1)
     )
     static let headingColor = dynamicColor(
-        light: NSColor(red: 0.082, green: 0.086, blue: 0.102, alpha: 1),
-        dark: NSColor(red: 0.710, green: 0.698, blue: 0.655, alpha: 1)
+        light: NSColor(red: 0.122, green: 0.122, blue: 0.114, alpha: 1),
+        dark: NSColor(red: 0.910, green: 0.910, blue: 0.902, alpha: 1)
     )
     static let placeholderColor = dynamicColor(
-        light: NSColor(red: 0.541, green: 0.549, blue: 0.584, alpha: 1),
-        dark: NSColor(red: 0.416, green: 0.427, blue: 0.471, alpha: 1)
+        light: NSColor(red: 0.478, green: 0.478, blue: 0.463, alpha: 1),
+        dark: NSColor(red: 0.557, green: 0.557, blue: 0.549, alpha: 1)
     )
     static let bulletColor = dynamicColor(
-        light: NSColor(red: 0.430, green: 0.438, blue: 0.486, alpha: 1),
-        dark: NSColor(red: 0.500, green: 0.492, blue: 0.465, alpha: 1)
+        light: NSColor(red: 0.478, green: 0.478, blue: 0.463, alpha: 1),
+        dark: NSColor(red: 0.557, green: 0.557, blue: 0.549, alpha: 1)
     )
     static var italic: NSFont {
         let manager = NSFontManager.shared

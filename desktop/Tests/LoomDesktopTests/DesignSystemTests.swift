@@ -50,6 +50,21 @@ final class DesignSystemTests: XCTestCase {
         XCTAssertGreaterThan(DSRadius.pill, DSRadius.xl * 100)
     }
 
+    func testGranolaDarkNeutrals() {
+        // Parity rank 1: the dark scale is Granola's warm charcoal, the
+        // light scale its docs palette. Pinned so a "tidy-up" can't
+        // drift the app back to the cool near-black.
+        XCTAssertEqual(DSColor.hex(DSColor.Bg.canvas, dark: true), "#252525")
+        XCTAssertEqual(DSColor.hex(DSColor.Bg.sidebar, dark: true), "#1E1E1E")
+        XCTAssertEqual(DSColor.hex(DSColor.Bg.surface, dark: true), "#2F2F2F")
+        XCTAssertEqual(DSColor.hex(DSColor.Text.primary, dark: true), "#E8E8E6")
+        XCTAssertEqual(DSColor.hex(DSColor.Text.secondary, dark: true), "#C8C8C6")
+        XCTAssertEqual(DSColor.hex(DSColor.Text.tertiary, dark: true), "#8E8E8C")
+        XCTAssertEqual(DSColor.hex(DSColor.Accent.ai, dark: true), "#B2C248")
+        XCTAssertEqual(DSColor.hex(DSColor.Accent.ai, dark: false), "#788C15")
+        XCTAssertEqual(DSColor.hex(DSColor.Bg.canvas, dark: false), "#F2F2EC")
+    }
+
     func testFontTokensReturnNonOptionalFonts() {
         // Fonts should always resolve, either from the bundled custom
         // family or the system fallback. We can't easily diff Font

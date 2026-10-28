@@ -542,7 +542,7 @@ struct NoteWorkspaceView: View {
                 menuItem(
                     label: "Apply dictionary & regenerate",
                     icon: "arrow.triangle.2.circlepath",
-                    tint: DSColor.State.success,
+                    tint: DSColor.Text.primary,
                     isDisabled: menuActionInFlight != nil || !reviewHasTranscript || enhanceStatus == .running
                 ) {
                     if case .reviewing(let recording) = target {
@@ -552,7 +552,7 @@ struct NoteWorkspaceView: View {
                 menuItem(
                     label: "Save to Obsidian",
                     icon: "externaldrive.badge.arrow.down",
-                    tint: DSColor.State.success,
+                    tint: DSColor.Text.primary,
                     isDisabled: menuActionInFlight != nil
                 ) {
                     if case .reviewing(let recording) = target {
@@ -1490,7 +1490,7 @@ struct NoteWorkspaceView: View {
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(DSColor.State.success)
+                    .foregroundStyle(DSColor.Accent.ai)
                 Text("Notes updated")
                     .font(DSFont.Body.md())
                     .foregroundStyle(DSColor.Text.primary)
@@ -1529,11 +1529,12 @@ struct NoteWorkspaceView: View {
                 Text(label)
                     .font(DSFont.Body.md())
             }
-            .foregroundStyle(emphasized ? .white : DSColor.Text.primary)
+            // Granola's Generate pill: lime fill, dark text (parity rank 1).
+            .foregroundStyle(emphasized ? Color(hex: 0x1F1F1D) : DSColor.Text.primary)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
             .background(
-                Capsule().fill(emphasized ? DSColor.State.success : DSColor.Bg.surface)
+                Capsule().fill(emphasized ? DSColor.Accent.ai : DSColor.Bg.surface)
             )
             .overlay {
                 if !emphasized {
@@ -1586,10 +1587,10 @@ struct NoteWorkspaceView: View {
         HStack(spacing: DSSpacing.md) {
             ProgressView()
                 .controlSize(.small)
-                .tint(DSColor.State.success)
+                .tint(DSColor.Accent.ai)
             Text("Writing notes")
                 .font(DSFont.Body.md().weight(.semibold))
-                .foregroundStyle(DSColor.State.success)
+                .foregroundStyle(DSColor.Accent.ai)
             Spacer()
         }
         .frame(height: 52)
@@ -3957,10 +3958,10 @@ private struct NoteTemplatePickerPopover: View {
             } label: {
                 Text(selectedTemplateId == template.id ? "Selected" : "Use template")
                     .font(DSFont.Body.md())
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color(hex: 0x1F1F1D))
                     .padding(.horizontal, 16)
                     .padding(.vertical, 9)
-                    .background(Capsule().fill(DSColor.State.success))
+                    .background(Capsule().fill(DSColor.Accent.ai))
             }
             .buttonStyle(.plain)
             .disabled(selectedTemplateId == template.id)
