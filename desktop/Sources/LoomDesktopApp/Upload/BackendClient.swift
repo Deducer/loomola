@@ -171,8 +171,17 @@ actor BackendClient {
         return try await get(path: "/api/search?q=\(encoded)&limit=\(limit)")
     }
 
-    func speakerAssignments(mediaId: String) async throws -> [SpeakerAssignmentDTO] {
-        try await get(path: "/api/speaker-assignments/\(mediaId)")
+    /// `transcriptVersion`: the transcript on screen, so names come back
+    /// presented against it (rows from a newer/older transcript are marked
+    /// for review or hidden) rather than against whatever is latest.
+    func speakerAssignments(mediaId: String, transcriptVersion: String? = nil) async throws -> [SpeakerAssignmentDTO] {
+        guard let transcriptVersion else {
+            return try await get(path: "/api/speaker-assignments/\(mediaId)")
+        }
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "+&=:")
+        let encoded = transcriptVersion.addingPercentEncoding(withAllowedCharacters: allowed) ?? transcriptVersion
+        return try await get(path: "/api/speaker-assignments/\(mediaId)?transcriptVersion=\(encoded)")
     }
 
     /// Attendees + folder + calendar-event context for one recording.
@@ -182,24 +191,55 @@ actor BackendClient {
         try await get(path: "/api/recordings/\(recordingId)/attendees")
     }
 
-    func assignSpeaker(mediaId: String, speakerIdx: Int, personId: String) async throws {
+    func assignSpeaker(
+        mediaId: String,
+        speakerIdx: Int,
+        personId: String,
+        transcriptVersion: String? = nil
+    ) async throws {
         let _: EmptyResponse = try await put(
             path: "/api/speaker-assignments/\(mediaId)",
-            body: AssignSpeakerRequest(speakerIdx: speakerIdx, personId: personId)
+            body: AssignSpeakerRequest(
+                speakerIdx: speakerIdx,
+                personId: personId,
+                transcriptVersion: transcriptVersion
+            )
         )
     }
 
-    func acceptSpeakerSuggestion(recordingId: String, speakerIdx: Int, personId: String) async throws {
+    /// `transcriptVersion`: the transcript on screen (409 when the server
+    /// has replaced it since — voice indices may mean someone else).
+    func acceptSpeakerSuggestion(
+        recordingId: String,
+        speakerIdx: Int,
+        personId: String,
+        transcriptVersion: String? = nil
+    ) async throws {
         let _: EmptyResponse = try await post(
             path: "/api/recordings/\(recordingId)/speaker-suggestions/accept",
-            body: SpeakerSuggestionAcceptRequest(speakerIdx: speakerIdx, personId: personId)
+            body: SpeakerSuggestionAcceptRequest(
+                speakerIdx: speakerIdx,
+                personId: personId,
+                transcriptVersion: transcriptVersion
+            )
         )
     }
 
-    func dismissSpeakerSuggestion(recordingId: String, speakerIdx: Int) async throws {
+    /// `personId`: the person shown on that voice ("Not <name>") — the
+    /// server refuses if the voice now holds someone else.
+    func dismissSpeakerSuggestion(
+        recordingId: String,
+        speakerIdx: Int,
+        personId: String?,
+        transcriptVersion: String? = nil
+    ) async throws {
         let _: EmptyResponse = try await post(
             path: "/api/recordings/\(recordingId)/speaker-suggestions/dismiss",
-            body: SpeakerSuggestionDismissRequest(speakerIdx: speakerIdx)
+            body: SpeakerSuggestionDismissRequest(
+                speakerIdx: speakerIdx,
+                transcriptVersion: transcriptVersion,
+                personId: personId
+            )
         )
     }
 
@@ -1036,20 +1076,45 @@ struct SpeakerAssignmentDTO: Decodable, Equatable, Sendable {
     /// LLM-attributed suggestion. Optional for older servers.
     var suggestionConfidence: String?
     var suggestionEvidence: String?
+    /// Speaker v2: named without a click from capture evidence (mic
+    /// track / sole remote voice on a 1:1) — dismissable as an undo.
+    var autoApplied: Bool?
+    /// Speaker v2: a confirmed name the new transcript's capture
+    /// evidence couldn't vouch for. Optional for older servers.
+    var needsReview: Bool?
+    /// Speaker v2: the transcript this row's speaker index refers to —
+    /// sent back when accepting/dismissing it, so the server refuses the
+    /// write if that transcript has been replaced since.
+    var transcriptVersion: String?
 }
 
 private struct AssignSpeakerRequest: Encodable {
     let speakerIdx: Int
     let personId: String
+    let transcriptVersion: String?
 }
 
 private struct SpeakerSuggestionAcceptRequest: Encodable {
     let speakerIdx: Int
     let personId: String
+    let transcriptVersion: String?
 }
 
 private struct SpeakerSuggestionDismissRequest: Encodable {
     let speakerIdx: Int
+    let transcriptVersion: String?
+    /// The person shown on the voice; always encoded (null included) —
+    /// the server requires it.
+    let personId: String?
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(speakerIdx, forKey: .speakerIdx)
+        try c.encodeIfPresent(transcriptVersion, forKey: .transcriptVersion)
+        try c.encode(personId, forKey: .personId)
+    }
+
+    enum CodingKeys: String, CodingKey { case speakerIdx, transcriptVersion, personId }
 }
 
 struct RecentAttendeeDTO: Decodable, Equatable, Sendable, Identifiable {
@@ -1164,6 +1229,10 @@ struct NoteTranscriptResponse: Decodable, Sendable {
     let fullText: String
     let language: String?
     let provider: String?
+    /// Speaker v2: echoed on label writes so a label made on a transcript
+    /// the server has since replaced is refused (409). Optional for older
+    /// servers.
+    var transcriptVersion: String?
     let paragraphs: [Paragraph]
 
     var wordCount: Int {

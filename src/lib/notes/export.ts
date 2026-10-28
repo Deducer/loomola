@@ -200,7 +200,7 @@ export function noteExportFilenameFromParts(
   return `${date}-${title || media.slug}.${ext}`;
 }
 
-function buildTranscriptParagraphs(params: {
+export function buildTranscriptParagraphs(params: {
   words: Word[];
   fallbackText: string;
   people: Person[];
@@ -256,12 +256,18 @@ function speakerLabel(
   assignments: Map<number, SpeakerAssignment>,
   people: Map<string, Person>
 ) {
+  const fallback = `Speaker ${speakerIdx + 1}`;
   const assignment = assignments.get(speakerIdx);
-  if (assignment?.displayLabelOverride) return assignment.displayLabelOverride;
-  if (assignment?.personId) {
-    return people.get(assignment.personId)?.displayName ?? `Speaker ${speakerIdx + 1}`;
-  }
-  return `Speaker ${speakerIdx + 1}`;
+  // Exports (Obsidian, markdown) are read as the record: only names the
+  // user confirmed or capture evidence applied go out as names. Pending
+  // suggestions and dismissals don't, and a name flagged for review is
+  // marked so it can't become an authoritative attribution downstream.
+  if (!assignment || assignment.isSuggestion || assignment.dismissedAt) return fallback;
+  const name =
+    assignment.displayLabelOverride ??
+    (assignment.personId ? people.get(assignment.personId)?.displayName : null);
+  if (!name) return fallback;
+  return assignment.needsReview ? `${name} (unconfirmed)` : name;
 }
 
 function yamlString(value: string): string {

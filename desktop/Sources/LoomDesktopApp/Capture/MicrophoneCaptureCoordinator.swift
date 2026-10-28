@@ -41,9 +41,15 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
     private var configurationObserver: NSObjectProtocol?
     private var watchdogTimer: DispatchSourceTimer?
     private var lastBufferUptime: TimeInterval = 0
-    private var restarting = false
-    private var stopping = false
-    private var suppressedRestartLogged = false
+    /// Whether a restart may fall back to the system default input when the
+    /// selected device is gone. False when this coordinator captures a
+    /// SYSTEM-AUDIO loopback device: falling back would record the local
+    /// microphone into the system track.
+    var allowsDefaultInputFallback = true
+
+    /// Restart/stop serialization; mutated only on `recoveryQueue`.
+    private var gate = MicRestartGate()
+    private var stopping: Bool { gate.stopping }
     /// When true, the engine tap continues firing but every buffer is
     /// discarded — no file write, no level meter, no compositor
     /// callback. Pause = no audio data captured during this interval;
@@ -52,7 +58,34 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
     private var paused = false
     var isPaused: Bool {
         get { paused }
-        set { paused = newValue }
+        set {
+            gapLock.lock()
+            let now = ProcessInfo.processInfo.systemUptime
+            if newValue, !paused {
+                pausedSince = now
+            } else if !newValue, let since = pausedSince {
+                pausedTotal += now - since
+                pausedSince = nil
+            }
+            paused = newValue
+            gapLock.unlock()
+        }
+    }
+    /// Mid-note engine restarts (device change) leave a hole in the mic
+    /// file; the tracker sizes the silence that keeps the mic track on
+    /// the same timeline as the system track. Guarded by `gapLock`
+    /// (opened on the recovery queue, closed on the tap thread).
+    private var gapTracker = MicRestartGapTracker()
+    /// Bumped for every engine a restart starts; its tap only counts while
+    /// it is the tracker's active epoch. Recovery-queue owned.
+    private var engineEpoch = 0
+    private var pausedTotal: TimeInterval = 0
+    private var pausedSince: TimeInterval?
+    private let gapLock = NSLock()
+
+    /// Paused time so far, including an in-progress pause. Caller holds `gapLock`.
+    private func pausedTotalLocked(now: TimeInterval) -> TimeInterval {
+        pausedTotal + (pausedSince.map { now - $0 } ?? 0)
     }
 
     /// Starts capturing mic audio, optionally with AEC. Two write modes:
@@ -73,12 +106,25 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
         selectedDeviceID = deviceID
         selectedOutputURL = outputURL
         selectedVoiceProcessingEnabled = voiceProcessingEnabled
-        stopping = false
-        suppressedRestartLogged = false
+        recoveryQueue.sync {
+            gate.reset()
+            engineEpoch = 0
+        }
+        gapLock.lock()
+        gapTracker = MicRestartGapTracker()
+        // The recording's origin is the first "audio end": if the engine
+        // never delivers a buffer before a restart, the gap still runs from
+        // here — the system track has been recording since the start too.
+        gapTracker.markBuffer(uptime: ProcessInfo.processInfo.systemUptime, pausedTotal: 0)
+        pausedTotal = 0
+        pausedSince = nil
+        gapLock.unlock()
         try startEngine(
             deviceID: deviceID,
             outputURL: outputURL,
-            voiceProcessingEnabled: voiceProcessingEnabled
+            voiceProcessingEnabled: voiceProcessingEnabled,
+            createWriter: true,
+            epoch: 0
         )
         startWatchdog()
     }
@@ -86,7 +132,9 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
     private func startEngine(
         deviceID: String?,
         outputURL: URL?,
-        voiceProcessingEnabled: Bool
+        voiceProcessingEnabled: Bool,
+        createWriter: Bool,
+        epoch: Int
     ) throws {
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
@@ -116,8 +164,10 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
         let format = inputNode.outputFormat(forBus: 0)
 
         // Optional file writer. nil URL = skip the AudioAssetWriter
-        // construction entirely (composite recording flow).
-        if let outputURL, writer == nil {
+        // construction entirely (composite recording flow). Only start()
+        // creates one: a restart reuses the existing writer and must never
+        // open a second file over a note that has already been finalized.
+        if let outputURL, writer == nil, createWriter {
             let writer = try AudioAssetWriter(
                 outputURL: outputURL,
                 sampleRate: format.sampleRate,
@@ -135,7 +185,7 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: format) {
             [weak self] buffer, time in
             guard let self else { return }
-            self.handleTap(buffer: buffer, time: time)
+            self.handleTap(buffer: buffer, time: time, epoch: epoch)
         }
 
         try engine.start()
@@ -189,30 +239,38 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
             return nil
         }
 
-        stopping = true
-        watchdogTimer?.cancel()
-        watchdogTimer = nil
-        if let configurationObserver {
-            NotificationCenter.default.removeObserver(configurationObserver)
-            self.configurationObserver = nil
-        }
-        guard let engine else { throw MicrophoneCaptureCoordinatorError.notRecording }
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
-        self.engine = nil
-        self.formatDescription = nil
-        self.nextSampleTime = 0
-        self.restarting = false
-        self.suppressedRestartLogged = false
-
-        // If the writer was set up (audio-note flow), finalize and
-        // return the resulting URL. If not (composite flow), there
-        // was no file to finalize — return nil.
-        if let writer = self.writer {
+        // Tear down on the recovery queue, where restarts run, so a stop
+        // and a restart can never interleave: either the restart already
+        // finished (and its engine is torn down here) or it hasn't started
+        // and the gate makes it a no-op. The engine can also be nil while
+        // a failed restart is being retried — the file written so far is
+        // still finalized.
+        let (writerToFinish, hadEngine) = recoveryQueue.sync { () -> (AudioAssetWriter?, Bool) in
+            gate.stop()
+            watchdogTimer?.cancel()
+            watchdogTimer = nil
+            if let configurationObserver {
+                NotificationCenter.default.removeObserver(configurationObserver)
+                self.configurationObserver = nil
+            }
+            let hadEngine = engine != nil
+            if let engine {
+                engine.inputNode.removeTap(onBus: 0)
+                engine.stop()
+            }
+            engine = nil
+            formatDescription = nil
+            nextSampleTime = 0
+            let writer = self.writer
             self.writer = nil
-            return try await writer.finish()
+            return (writer, hadEngine)
         }
-        return nil
+        if !hadEngine, writerToFinish == nil {
+            throw MicrophoneCaptureCoordinatorError.notRecording
+        }
+        // Audio-note flow: finalize and return the file. Composite flow
+        // has no file — nil.
+        return try await writerToFinish?.finish()
     }
 
     func captureOutput(
@@ -270,14 +328,62 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
         throw MicrophoneCaptureCoordinatorError.noMicrophone
     }
 
-    private func handleTap(buffer: AVAudioPCMBuffer, time: AVAudioTime) {
+    private func handleTap(buffer: AVAudioPCMBuffer, time: AVAudioTime, epoch: Int) {
         guard let formatDescription else { return }
         // Drop incoming buffers while paused. We deliberately keep the
         // engine running so resume is instant and the input device
         // stays warm (re-acquiring a USB / Bluetooth mic on resume can
         // take 1-3 s and surfaces as a click in the recording).
         if paused { return }
-        lastBufferUptime = ProcessInfo.processInfo.systemUptime
+        let arrival = ProcessInfo.processInfo.systemUptime
+        lastBufferUptime = arrival
+
+        // First buffer after a mid-note restart: fill the hole so the
+        // mic file stays aligned with the system-audio file.
+        gapLock.lock()
+        // A late callback from the engine a restart just tore down: drop
+        // it so it can't close the gap meant for the new engine.
+        guard gapTracker.isCurrent(epoch: epoch) else {
+            gapLock.unlock()
+            return
+        }
+        let pausedNow = pausedTotalLocked(now: arrival)
+        // Size gaps from the audio's own capture time (the buffer's host
+        // time — the same mach clock as systemUptime), not from when this
+        // callback happened to run: scheduling delay or a device-latency
+        // change must not turn into silence in the file.
+        let duration = Double(buffer.frameLength) / max(buffer.format.sampleRate, 1)
+        let audioEnd = time.isHostTimeValid
+            ? AVAudioTime.seconds(forHostTime: time.hostTime) + duration
+            : arrival
+        let silence = gapTracker.isOpen
+            ? gapTracker.close(
+                arrivalUptime: audioEnd,
+                bufferDuration: duration,
+                pausedTotal: pausedNow
+            )
+            : 0
+        gapTracker.markBuffer(uptime: audioEnd, pausedTotal: pausedNow)
+        gapLock.unlock()
+        if silence > 0, let writer {
+            let written = writer.appendSilence(seconds: silence)
+            if written + 0.001 < silence {
+                // Keep the unwritten remainder open for the next buffer and
+                // drop this one: writing it now would shift the rest of the
+                // note against the system-audio track. The failure is in
+                // writeHealth, which drives the recorder's alert.
+                gapLock.lock()
+                gapTracker.reopenAfterPartialFill(written: written)
+                gapLock.unlock()
+                microphoneCaptureLog.error(
+                    "mic gap fill wrote \(String(format: "%.2f", written), privacy: .public)s of \(String(format: "%.2f", silence), privacy: .public)s; retrying on the next buffer"
+                )
+                return
+            }
+            microphoneCaptureLog.notice(
+                "filled \(String(format: "%.2f", silence), privacy: .public)s mic gap after engine restart"
+            )
+        }
 
         if let level = peakLevel(of: buffer) {
             onLevel?(level)
@@ -337,26 +443,24 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
     private func scheduleEngineRestart(reason: String) {
         recoveryQueue.async { [weak self] in
             guard let self else { return }
-            guard !self.stopping, !self.restarting else { return }
-            if self.selectedOutputURL != nil {
-                if !self.suppressedRestartLogged {
-                    microphoneCaptureLog.error(
-                        "microphone restart suppressed during file-backed recording: \(reason, privacy: .public)"
-                    )
-                    self.suppressedRestartLogged = true
-                }
-                return
-            }
-            self.restarting = true
+            guard let ticket = self.gate.begin() else { return }
+            // File-backed audio notes used to suppress this restart, which
+            // silenced the mic for the rest of the note after any input
+            // change (AirPods connecting, Zoom grabbing the mic) — the
+            // recorder then vanished from the transcript. The restart keeps
+            // the same AudioAssetWriter (it resamples any input rate to
+            // 48 kHz) and the gap tracker pads the hole with silence.
             self.recoveryQueue.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-                self?.restartEngine(reason: reason)
+                self?.restartEngine(reason: reason, ticket: ticket)
             }
         }
     }
 
-    private func restartEngine(reason: String) {
-        guard !stopping else {
-            restarting = false
+    /// Runs on `recoveryQueue`. `ticket` is the gate generation the
+    /// attempt was scheduled in; a stop() since then makes it obsolete.
+    private func restartEngine(reason: String, ticket: Int) {
+        guard gate.isCurrent(ticket) else {
+            gate.finishAttempt()
             return
         }
         microphoneCaptureLog.error("restarting microphone engine: \(reason, privacy: .public)")
@@ -364,6 +468,8 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
             NotificationCenter.default.removeObserver(configurationObserver)
             self.configurationObserver = nil
         }
+        // Quiesce the old tap FIRST, then open the gap for the next engine:
+        // anything the old tap still delivers is now from a stale epoch.
         if let engine {
             engine.inputNode.removeTap(onBus: 0)
             engine.stop()
@@ -371,18 +477,59 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
         engine = nil
         formatDescription = nil
         nextSampleTime = 0
+        engineEpoch += 1
+        gapLock.lock()
+        // The epoch must advance even without a file (composite flow);
+        // the silence fill itself only runs when there is a writer.
+        gapTracker.open(nextEpoch: engineEpoch)
+        gapLock.unlock()
 
         do {
-            try startEngine(
-                deviceID: selectedDeviceID,
-                outputURL: selectedOutputURL,
-                voiceProcessingEnabled: selectedVoiceProcessingEnabled
-            )
+            var lastError: Error?
+            var started = false
+            for device in MicRestartDevicePolicy.devicesToTry(
+                selected: selectedDeviceID,
+                allowDefaultFallback: allowsDefaultInputFallback
+            ) {
+                do {
+                    try startEngine(
+                        deviceID: device,
+                        outputURL: selectedOutputURL,
+                        voiceProcessingEnabled: selectedVoiceProcessingEnabled,
+                        createWriter: false,
+                        epoch: engineEpoch
+                    )
+                    started = true
+                    if device != selectedDeviceID {
+                        microphoneCaptureLog.error("selected microphone unavailable; recording from the system default input")
+                    }
+                    break
+                } catch {
+                    lastError = error
+                    // A half-built engine must not linger between attempts.
+                    if let engine {
+                        engine.inputNode.removeTap(onBus: 0)
+                        engine.stop()
+                    }
+                    engine = nil
+                }
+            }
+            if !started { throw lastError ?? MicrophoneCaptureCoordinatorError.noMicrophone }
             microphoneCaptureLog.notice("microphone engine restarted")
         } catch {
             microphoneCaptureLog.error("microphone engine restart failed: \(error.localizedDescription, privacy: .public)")
+            // With no engine the watchdog stays quiet (it only watches a
+            // running engine), so a failed restart would leave the mic dead
+            // for the rest of the note. Keep trying while recording; the
+            // gap tracker keeps the original gap start across attempts.
+            gate.finishAttempt()
+            recoveryQueue.asyncAfter(deadline: .now() + 2) { [weak self] in
+                guard let self, self.gate.isCurrent(ticket), self.engine == nil else { return }
+                self.scheduleEngineRestart(reason: "retry after failed restart: \(reason)")
+            }
+            return
         }
-        restarting = false
+        gate.finishAttempt()
     }
 
     private func resolvedSampleTime(

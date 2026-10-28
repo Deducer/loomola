@@ -22,6 +22,11 @@ export type TranscriptSpeakerAssignment = {
   personId: string | null;
   displayLabelOverride: string | null;
   isSuggestion?: boolean;
+  /** Speaker v2: named from capture evidence without a click; undoable. */
+  autoApplied?: boolean;
+  /** Speaker v2: a confirmed name the new transcript couldn't vouch for. */
+  needsReview?: boolean;
+  suggestionConfidence?: string | null;
   suggestedNewPersonPayload?: {
     displayName: string | null;
     email: string | null;
@@ -39,6 +44,7 @@ export function TranscriptPanel({
   speakerAssignments = [],
   onSpeakerAssignmentsChange,
   tone = "accent",
+  transcriptVersion,
 }: {
   mediaId?: string;
   words: Word[];
@@ -56,6 +62,9 @@ export function TranscriptPanel({
   speakerAssignments?: TranscriptSpeakerAssignment[];
   onSpeakerAssignmentsChange?: (assignments: TranscriptSpeakerAssignment[]) => void;
   tone?: "accent" | "neutral";
+  /** Version of the transcript being shown; sent with label writes so the
+   *  server refuses a label made against a transcript that was replaced. */
+  transcriptVersion?: string | null;
 }) {
   const [fetchedWords, setFetchedWords] = useState<Word[] | null>(null);
   const outerRef = useRef<HTMLDivElement | null>(null);
@@ -146,8 +155,12 @@ export function TranscriptPanel({
       const response = await fetch(`/api/speaker-assignments/${mediaId}`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ speakerIdx, ...input }),
+        body: JSON.stringify({ speakerIdx, ...input, transcriptVersion: transcriptVersion ?? null }),
       });
+      if (response.status === 409) {
+        toast.error("The transcript was just updated — reload the page to label speakers.");
+        return;
+      }
       if (!response.ok) throw new Error("speaker_assignment_failed");
       const row = (await response.json()) as TranscriptSpeakerAssignment;
       const next = [
@@ -186,11 +199,16 @@ export function TranscriptPanel({
         {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify(body),
+          body: JSON.stringify({ ...body, transcriptVersion: transcriptVersion ?? null }),
         }
       );
       if (!response.ok) {
         if (response.status === 409) {
+          const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+          if (payload?.error === "transcript_changed") {
+            toast.error("The transcript was just updated — reload the page to label speakers.");
+            return;
+          }
           // Already cleared by another tab — silent.
           onSpeakerAssignmentsChange?.(
             speakerAssignments.filter(
@@ -225,6 +243,7 @@ export function TranscriptPanel({
   }
 
   async function dismissSuggestion(speakerIdx: number) {
+    const shownPersonId = assignmentBySpeaker.get(speakerIdx)?.personId ?? null;
     if (!mediaId) return;
     setBusySpeaker(speakerIdx);
     try {
@@ -233,9 +252,13 @@ export function TranscriptPanel({
         {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ speakerIdx }),
+          body: JSON.stringify({ speakerIdx, personId: shownPersonId, transcriptVersion: transcriptVersion ?? null }),
         }
       );
+      if (response.status === 409) {
+        toast.error("The transcript was just updated — reload the page to label speakers.");
+        return;
+      }
       if (!response.ok) throw new Error(`dismiss_failed_${response.status}`);
       onSpeakerAssignmentsChange?.(
         speakerAssignments.filter((item) => item.speakerIdx !== speakerIdx)
@@ -272,6 +295,9 @@ export function TranscriptPanel({
           const assignment =
             speakerIdx !== null ? assignmentBySpeaker.get(speakerIdx) : undefined;
           const isSuggested = Boolean(assignment?.isSuggestion);
+          // A name the evidence couldn't vouch for must look uncertain in
+          // the transcript itself, not only on hover.
+          const needsReview = Boolean(assignment?.needsReview);
 
           return (
             <div key={i} className="relative">
@@ -286,10 +312,18 @@ export function TranscriptPanel({
                     className={cn(
                       "text-xs font-medium hover:text-text",
                       tone === "neutral" ? "text-text-muted" : "text-accent",
-                      isSuggested && "italic"
+                      isSuggested && "italic",
+                      needsReview && "text-amber-500 underline decoration-dashed underline-offset-2"
                     )}
+                    title={speakerProvenance(assignment)}
+                    data-needs-review={needsReview || undefined}
                   >
                     {speakerLabel}
+                    {needsReview && (
+                      <span className="ml-1 text-[10px] uppercase tracking-wider">
+                        check?
+                      </span>
+                    )}
                     {isSuggested && (
                       <span className="ml-1 text-[10px] uppercase tracking-wider text-text-subtle">
                         suggested
@@ -328,9 +362,29 @@ export function TranscriptPanel({
                   )}
                   {openSpeaker === speakerIdx && speakerIdx !== null && (
                     <div className="mt-2 w-full rounded-lg border border-border bg-bg-elevated p-3 shadow-lg">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-text-subtle">
-                        Assign this speaker
-                      </p>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-text-subtle">
+                          Assign this speaker
+                        </p>
+                        {assignment && (assignment.autoApplied || assignment.needsReview) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenSpeaker(null);
+                              void dismissSuggestion(speakerIdx);
+                            }}
+                            disabled={busySpeaker === speakerIdx}
+                            className="text-xs text-text-subtle hover:text-red-400 disabled:opacity-50"
+                          >
+                            Not {speakerLabel}
+                          </button>
+                        )}
+                      </div>
+                      {assignment?.needsReview && (
+                        <p className="mt-1 text-xs text-text-subtle">
+                          The final transcript re-numbered the voices — check this name.
+                        </p>
+                      )}
                       {people.length > 0 && (
                         <div className="mt-2 max-h-36 overflow-y-auto">
                           {people.map((person) => (
@@ -411,4 +465,20 @@ function labelForSpeaker(
     return people.get(assignment.personId)?.displayName ?? `Speaker ${speakerIdx + 1}`;
   }
   return `Speaker ${speakerIdx + 1}`;
+}
+
+function speakerProvenance(assignment: TranscriptSpeakerAssignment | undefined): string | undefined {
+  if (!assignment) return undefined;
+  if (assignment.needsReview) return "Check this name — the final transcript re-numbered the voices";
+  if (!assignment.autoApplied) return undefined;
+  if (
+    assignment.suggestionConfidence === "self_via_mic_capture" ||
+    assignment.suggestionConfidence === "self_via_source_channel"
+  ) {
+    return "Named from your microphone — click to change";
+  }
+  if (assignment.suggestionConfidence === "remote_via_single_voice") {
+    return "Named from the calendar invite (the only other voice) — click to change";
+  }
+  return "Named automatically — click to change";
 }

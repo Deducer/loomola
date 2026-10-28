@@ -102,6 +102,69 @@ final class AudioAssetWriter: @unchecked Sendable {
         try writePCM(pcmBuffer)
     }
 
+    /// Writes `seconds` of digital silence in the file's own format.
+    /// Used when the mic engine restarts mid-note (device change): the
+    /// gap is filled so the mic track stays time-aligned with the system
+    /// track — mix_audio and speaker detection both assume the two
+    /// tracks share a timeline. Before the first real buffer (a restart
+    /// before the mic ever delivered audio) the file is opened in a
+    /// standard 48 kHz float format so the leading gap is written too;
+    /// later real buffers are converted to it. No-op after finish.
+    ///
+    /// Returns the seconds actually written. A failure is recorded in
+    /// `writeHealth` (so the recorder's write-health alert sees it) and the
+    /// caller keeps the rest of the gap open to retry, rather than writing
+    /// later audio at the wrong time.
+    @discardableResult
+    func appendSilence(seconds: TimeInterval) -> TimeInterval {
+        guard seconds > 0 else { return 0 }
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        guard !finished else { return seconds }
+        let file: AVAudioFile
+        do {
+            let channels = AVAudioChannelCount((settings[AVNumberOfChannelsKey] as? Int) ?? 1)
+            guard let standard = AVAudioFormat(standardFormatWithSampleRate: Self.outputSampleRate, channels: channels) else {
+                return 0
+            }
+            file = try ensureFileLocked(inputFormat: audioFile?.processingFormat ?? standard)
+        } catch {
+            health.failedAppends += 1
+            health.consecutiveFailures += 1
+            health.lastError = "silence fill: \(error)"
+            return 0
+        }
+        let format = file.processingFormat
+        let total = AVAudioFrameCount(min(seconds, 4 * 3600) * format.sampleRate)
+        var remaining = total
+        let chunkFrames = AVAudioFrameCount(max(1, format.sampleRate))
+        do {
+            guard let chunk = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: chunkFrames) else {
+                throw AudioAssetWriterError.conversionUnavailable
+            }
+            // Freshly allocated PCM buffers are not guaranteed zeroed, and
+            // mDataByteSize is 0 until frameLength is set — size it to the
+            // full capacity first, or the memset clears nothing.
+            chunk.frameLength = chunkFrames
+            let abl = UnsafeMutableAudioBufferListPointer(chunk.mutableAudioBufferList)
+            for buffer in abl {
+                if let data = buffer.mData { memset(data, 0, Int(buffer.mDataByteSize)) }
+            }
+            while remaining > 0 {
+                chunk.frameLength = min(remaining, chunkFrames)
+                try file.write(from: chunk)
+                health.framesWritten += Int64(chunk.frameLength)
+                remaining -= chunk.frameLength
+            }
+            health.consecutiveFailures = 0
+        } catch {
+            health.failedAppends += 1
+            health.consecutiveFailures += 1
+            health.lastError = "silence fill: \(error)"
+        }
+        return Double(total - remaining) / format.sampleRate
+    }
+
     func finish() async throws -> URL {
         closeFile()
         return outputURL

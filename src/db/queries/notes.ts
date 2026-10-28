@@ -9,7 +9,7 @@ import {
   speakerAssignments,
   transcripts,
 } from "@/db/schema";
-import { and, desc, eq, getTableColumns, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { generateSlug } from "@/lib/slug";
 
 export type Note = typeof notes.$inferSelect;
@@ -195,32 +195,60 @@ export async function updateAudioNoteAttendees(params: {
     }
   }
 
-  const [row] = await db
-    .update(mediaObjects)
-    .set({
-      attendees: personIds,
-      updatedAt: sql`now()`,
-    })
-    .where(
-      and(
-        eq(mediaObjects.id, params.mediaObjectId),
-        eq(mediaObjects.ownerId, params.ownerId),
-        eq(mediaObjects.type, "audio"),
-        isNull(mediaObjects.deletedAt)
+  // One transaction: the UPDATE row-locks the note, which serializes this
+  // with a running suggest_speakers job (it locks the same row before it
+  // writes and reads the attendee list under that lock), so a job can't
+  // write a name from the old list after this commit.
+  const row = await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(mediaObjects)
+      .set({
+        attendees: personIds,
+        updatedAt: sql`now()`,
+      })
+      .where(
+        and(
+          eq(mediaObjects.id, params.mediaObjectId),
+          eq(mediaObjects.ownerId, params.ownerId),
+          eq(mediaObjects.type, "audio"),
+          isNull(mediaObjects.deletedAt)
+        )
       )
-    )
-    .returning({ attendees: mediaObjects.attendees });
+      .returning({ attendees: mediaObjects.attendees });
+    if (!updated) throw new AttendeeUpdateError("media_object_not_found");
 
-  if (!row) throw new AttendeeUpdateError("media_object_not_found");
-
-  await db
-    .delete(speakerAssignments)
-    .where(
-      and(
-        eq(speakerAssignments.mediaObjectId, params.mediaObjectId),
-        eq(speakerAssignments.isSuggestion, true)
-      )
-    );
+    // Pending rows and
+    // auto-applied names derived from the old attendee list go; mic-derived
+    // Me rows and user decisions stay.
+    await tx
+      .delete(speakerAssignments)
+      .where(
+        and(
+          eq(speakerAssignments.mediaObjectId, params.mediaObjectId),
+          // Only v2 (versioned) machine rows: an unversioned legacy
+          // "pending" row may hold a manual correction made through the
+          // pre-v2 writer, so it is left for reconcile to preserve or prove.
+          isNotNull(speakerAssignments.transcriptVersion),
+          // …and never a kept pre-v2 suggestion (tagged "legacy:").
+          sql`coalesce(${speakerAssignments.suggestionConfidence}, '') NOT LIKE 'legacy:%'`,
+          or(
+            eq(speakerAssignments.isSuggestion, true),
+            and(
+              eq(speakerAssignments.autoApplied, true),
+              eq(speakerAssignments.suggestionConfidence, "remote_via_single_voice")
+            )
+          )
+        )
+      );
+    // Attendee-derived names are gone, so this transcript's speaker work
+    // isn't done any more: drop its profile (the done-marker) so a backfill
+    // re-runs it even if the re-enqueue after this commit fails.
+    await tx
+      .update(transcripts)
+      .set({ speakerProfile: null })
+      .where(eq(transcripts.mediaObjectId, params.mediaObjectId));
+    return updated;
+  });
 
   return Array.isArray(row.attendees)
     ? row.attendees.filter((item): item is string => typeof item === "string")

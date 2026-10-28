@@ -175,7 +175,7 @@ describeDb("speaker_assignments queries", () => {
       speakerIdx: 0,
       displayLabelOverride: "X",
     });
-    const removed = await deleteSpeakerAssignment(media.id, OWNER_A, 0);
+    const removed = await deleteSpeakerAssignment(media.id, OWNER_A, 0, null);
     expect(removed).toBe(true);
     const list = await listSpeakerAssignments(media.id, OWNER_A);
     expect(list.length).toBe(0);

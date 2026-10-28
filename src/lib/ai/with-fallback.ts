@@ -33,6 +33,8 @@ type GenerateObjectWithFallbackArgs<T> = {
    * main pipeline). Used by classification-style callers that prefer
    * Haiku via `getClassifierLlm()`. */
   model?: LanguageModel;
+  /** Forwarded to AI SDK's `generateObject` (e.g. a pg-boss job signal). */
+  abortSignal?: AbortSignal;
 } & (
   | { prompt: string; messages?: never }
   | { messages: ModelMessage[]; prompt?: never }

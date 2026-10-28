@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAuth } from "@/lib/require-auth";
 import { applySpeakerSuggestion } from "@/db/queries/speaker-suggestion";
-import { createPerson, getPerson } from "@/db/queries/people";
+import { getPerson } from "@/db/queries/people";
 
 const bodySchema = z
   .object({
     speakerIdx: z.number().int().min(0),
     personId: z.string().uuid().optional(),
+    transcriptVersion: z.string().max(120).nullable().optional(),
     createPerson: z
       .object({
         displayName: z.string().min(1).max(120),
@@ -33,39 +34,47 @@ export async function POST(
     return NextResponse.json({ error: "invalid_body" }, { status: 400 });
   }
 
-  let personId = parsed.data.personId ?? null;
-  let displayLabelOverride: string | null = null;
-
-  if (parsed.data.createPerson) {
-    const created = await createPerson(user.id, {
-      displayName: parsed.data.createPerson.displayName,
-      email: parsed.data.createPerson.email ?? null,
-    });
-    personId = created.id;
-  } else if (personId) {
+  if (parsed.data.personId) {
     // Verify the supplied personId belongs to this user.
-    const person = await getPerson(personId, user.id);
+    const person = await getPerson(parsed.data.personId, user.id);
     if (!person) {
       return NextResponse.json(
         { error: "person_not_found" },
         { status: 404 }
       );
     }
-    displayLabelOverride = null;
   }
 
-  if (!personId) {
-    return NextResponse.json({ error: "missing_person" }, { status: 400 });
-  }
-
-  const result = await applySpeakerSuggestion({
+  // Validation and (for a new-person suggestion) the person insert happen
+  // in one locked transaction, so a refused accept creates nothing.
+  const common = {
     mediaObjectId: id,
     ownerId: user.id,
     speakerIdx: parsed.data.speakerIdx,
-    personId,
-    displayLabelOverride,
-  });
+    displayLabelOverride: null,
+    transcriptVersion: parsed.data.transcriptVersion ?? null,
+  };
+  const result = parsed.data.createPerson
+    ? await applySpeakerSuggestion({
+        ...common,
+        createPerson: {
+          displayName: parsed.data.createPerson.displayName,
+          email: parsed.data.createPerson.email ?? null,
+        },
+      })
+    : await applySpeakerSuggestion({ ...common, personId: parsed.data.personId! });
+  const personId = result.personId ?? null;
 
+  if (
+    !result.ok &&
+    (result.reason === "transcript_changed" ||
+      result.reason === "transcript_version_required" ||
+      result.reason === "suggestion_changed")
+  ) {
+    // The suggestion (or the screen) is for a transcript that has since
+    // been replaced; voice indices may mean someone else now.
+    return NextResponse.json({ error: result.reason }, { status: 409 });
+  }
   if (!result.ok) {
     // No pending is_suggestion row for that (recording, speakerIdx).
     return NextResponse.json(

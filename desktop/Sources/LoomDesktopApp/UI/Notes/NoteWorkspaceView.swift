@@ -2042,23 +2042,41 @@ struct NoteWorkspaceView: View {
                                     }
                                 }
                             }
+                            if isClearableName(idx: idx) {
+                                Section {
+                                    Button("Not \(speaker)") {
+                                        clearSpeakerName(idx: idx)
+                                    }
+                                }
+                            }
                         } label: {
+                            let presentation = SpeakerLabelPresentation.make(
+                                name: speaker,
+                                assignment: activeAssignment(idx: idx)
+                            )
                             HStack(spacing: 3) {
-                                Text(speaker)
+                                if presentation.isUncertain {
+                                    Image(systemName: "questionmark.circle")
+                                        .font(.system(size: 9, weight: .semibold))
+                                }
+                                Text(presentation.text)
                                     .font(DSFont.Body.sm())
                                 Image(systemName: "chevron.down")
                                     .font(.system(size: 7, weight: .semibold))
                             }
                             .foregroundStyle(
-                                speaker.hasPrefix("Speaker ")
-                                    ? DSColor.Accent.primary.opacity(0.9)
-                                    : DSColor.Text.tertiary.opacity(0.9)
+                                presentation.isUncertain
+                                    ? DSColor.State.warning
+                                    : speaker.hasPrefix("Speaker ")
+                                        ? DSColor.Accent.primary.opacity(0.9)
+                                        : DSColor.Text.tertiary.opacity(0.9)
                             )
                             .padding(.horizontal, 4)
                         }
                         .menuStyle(.borderlessButton)
                         .menuIndicator(.hidden)
                         .fixedSize()
+                        .help(speakerProvenanceHelp(idx: idx))
                     } else {
                         Text(speaker)
                             .font(DSFont.Body.sm())
@@ -2568,7 +2586,14 @@ struct NoteWorkspaceView: View {
         Task { @MainActor in
             do {
                 let response = try await backend.getNoteTranscript(mediaId: recording.id)
+                let versionChanged = response.transcriptVersion != transcript?.transcriptVersion
                 transcript = response
+                if versionChanged {
+                    // New voice numbering: the names on screen belong to the
+                    // old transcript. Drop them and fetch names for this one.
+                    speakerAssignments = []
+                    await reloadSpeakerAssignments(recordingId: recording.id, backend: backend)
+                }
                 clearTranscriptWaitingStateIfReady(response)
                 if notesGeneratedForCurrentTranscript {
                     rememberGeneratedTranscript(fingerprint: transcriptFingerprint(from: response))
@@ -2691,10 +2716,19 @@ struct NoteWorkspaceView: View {
         guard case .reviewing(let recording) = target else { return }
         guard let backend = viewModel.backendClient else { return }
         Task { @MainActor in
-            if let list = try? await backend.speakerAssignments(mediaId: recording.id) {
-                speakerAssignments = list
-            }
+            await reloadSpeakerAssignments(recordingId: recording.id, backend: backend)
         }
+    }
+
+    /// Names are always requested FOR the transcript on screen, and a
+    /// response that arrives after the transcript changed is discarded —
+    /// otherwise names computed for one transcript's voice numbering could
+    /// land on another's (the live → batch swap).
+    private func reloadSpeakerAssignments(recordingId: String, backend: BackendClient) async {
+        let requested = transcript?.transcriptVersion
+        guard let list = try? await backend.speakerAssignments(mediaId: recordingId, transcriptVersion: requested) else { return }
+        guard transcript?.transcriptVersion == requested else { return }
+        speakerAssignments = list
     }
 
     /// Notes opened from search arrive with a slim DTO (no attendees,
@@ -2775,17 +2809,25 @@ struct NoteWorkspaceView: View {
         guard case .reviewing(let recording) = target,
               let backend = viewModel.backendClient
         else { return }
+        // The transcript the user clicked on — captured now, before any
+        // refresh can swap it under this task.
+        let shownVersion = transcript?.transcriptVersion
         Task { @MainActor in
             do {
                 try await backend.assignSpeaker(
                     mediaId: recording.id,
                     speakerIdx: idx,
-                    personId: personId
+                    personId: personId,
+                    transcriptVersion: shownVersion
                 )
-                if let list = try? await backend.speakerAssignments(mediaId: recording.id) {
-                    speakerAssignments = list
-                }
+                await reloadSpeakerAssignments(recordingId: recording.id, backend: backend)
                 showToast(message: "Speaker assigned")
+            } catch BackendClientError.badStatus(let statusCode, _, _) where statusCode == 409 {
+                // The final transcript replaced the one on screen and the
+                // voices were re-numbered: reload instead of mislabeling.
+                loadTranscript()
+                loadSpeakerAssignments()
+                showToast(message: "Transcript updated — pick the speaker again", tone: .warning)
             } catch {
                 showToast(message: "Couldn't assign speaker", tone: .error)
             }
@@ -2803,24 +2845,90 @@ struct NoteWorkspaceView: View {
         Task { @MainActor in
             defer { applyingSpeakerSuggestions = false }
             var applied = 0
+            var refused = 0
+            var failed = 0
             for suggestion in pending {
                 guard let personId = suggestion.personId else { continue }
                 do {
                     try await backend.acceptSpeakerSuggestion(
                         recordingId: recording.id,
                         speakerIdx: suggestion.speakerIdx,
-                        personId: personId
+                        personId: personId,
+                        // Bound to the suggestion as shown: if the server
+                        // has replaced its transcript, it refuses.
+                        transcriptVersion: suggestion.transcriptVersion ?? transcript?.transcriptVersion
                     )
                     applied += 1
+                } catch BackendClientError.badStatus(let statusCode, _, _) where statusCode == 409 {
+                    // The suggestion changed (accepted elsewhere, recomputed,
+                    // or its transcript was replaced) — not applied.
+                    refused += 1
                 } catch {
-                    // Keep going — a 409 just means that idx was already
-                    // accepted or dismissed elsewhere (e.g., on web).
+                    failed += 1
                 }
             }
-            if let list = try? await backend.speakerAssignments(mediaId: recording.id) {
-                speakerAssignments = list
+            if refused > 0 { loadTranscript() }
+            await reloadSpeakerAssignments(recordingId: recording.id, backend: backend)
+            if failed > 0 {
+                showToast(message: "Couldn't apply \(failed) name\(failed == 1 ? "" : "s") — try again", tone: .error)
+            } else if refused > 0 {
+                showToast(message: "Some names changed since — check the updated suggestions", tone: .warning)
+            } else {
+                showToast(message: applied > 0 ? "Speaker names applied" : "Names were already applied")
             }
-            showToast(message: applied > 0 ? "Speaker names applied" : "Names were already applied")
+        }
+    }
+
+    private func activeAssignment(idx: Int) -> SpeakerAssignmentDTO? {
+        speakerAssignments.first { $0.speakerIdx == idx && $0.dismissedAt == nil }
+    }
+
+    /// Auto-applied names (capture evidence) and names flagged for review
+    /// can be cleared in one click — the undo for applying without a
+    /// confirmation step.
+    private func isClearableName(idx: Int) -> Bool {
+        guard let assignment = activeAssignment(idx: idx), !assignment.isSuggestion else { return false }
+        return assignment.autoApplied == true || assignment.needsReview == true
+    }
+
+    private func speakerProvenanceHelp(idx: Int) -> String {
+        guard let assignment = activeAssignment(idx: idx) else { return "Say who this is" }
+        if assignment.needsReview == true {
+            return "Check this name — the final transcript re-numbered the voices"
+        }
+        guard assignment.autoApplied == true else { return "Change who this is" }
+        switch assignment.suggestionConfidence {
+        case "self_via_mic_capture", "self_via_source_channel":
+            return "Named from your microphone — click to change"
+        case "remote_via_single_voice":
+            return "Named from the calendar invite (the only other voice) — click to change"
+        default:
+            return "Named automatically — click to change"
+        }
+    }
+
+    private func clearSpeakerName(idx: Int) {
+        guard case .reviewing(let recording) = target,
+              let backend = viewModel.backendClient
+        else { return }
+        let previous = speakerAssignments
+        // "Not <name>" is said about the transcript on screen (a stale row is
+        // shown over it as needs-review), so that is the version to name.
+        let shownVersion = transcript?.transcriptVersion ?? activeAssignment(idx: idx)?.transcriptVersion
+        let shownPersonId = activeAssignment(idx: idx)?.personId
+        speakerAssignments = speakerAssignments.filter { $0.speakerIdx != idx }
+        Task { @MainActor in
+            do {
+                try await backend.dismissSpeakerSuggestion(
+                    recordingId: recording.id,
+                    speakerIdx: idx,
+                    personId: shownPersonId,
+                    transcriptVersion: shownVersion
+                )
+            } catch {
+                speakerAssignments = previous
+                showToast(message: "Couldn't clear the name", tone: .error)
+            }
         }
     }
 
@@ -2831,12 +2939,25 @@ struct NoteWorkspaceView: View {
         let pending = pendingSpeakerSuggestions
         // Optimistic: hide the bar immediately.
         speakerAssignments = speakerAssignments.filter { !$0.isSuggestion }
-        Task {
+        Task { @MainActor in
+            var notDismissed = 0
             for suggestion in pending {
-                try? await backend.dismissSpeakerSuggestion(
-                    recordingId: recording.id,
-                    speakerIdx: suggestion.speakerIdx
-                )
+                do {
+                    try await backend.dismissSpeakerSuggestion(
+                        recordingId: recording.id,
+                        speakerIdx: suggestion.speakerIdx,
+                        personId: suggestion.personId,
+                        transcriptVersion: suggestion.transcriptVersion
+                    )
+                } catch {
+                    notDismissed += 1
+                }
+            }
+            if notDismissed > 0 {
+                // A refusal (the suggestion changed) or a network failure:
+                // show what's really there instead of a false "dismissed".
+                await reloadSpeakerAssignments(recordingId: recording.id, backend: backend)
+                showToast(message: "Some suggestions couldn't be dismissed — showing the latest", tone: .warning)
             }
         }
     }

@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   deleteSpeakerAssignment,
   listSpeakerAssignments,
+  transcriptFromVersion,
   upsertSpeakerAssignment,
 } from "@/db/queries/speaker-assignments";
 import { enableGranola } from "@/lib/feature-flags";
@@ -13,6 +14,7 @@ const upsertAssignmentSchema = z
     speakerIdx: z.number().int().min(0),
     personId: z.string().uuid().nullable().optional(),
     displayLabelOverride: z.string().trim().min(1).max(160).nullable().optional(),
+    transcriptVersion: z.string().max(120).nullable().optional(),
   })
   .refine(
     (value) => Boolean(value.personId || value.displayLabelOverride),
@@ -31,7 +33,14 @@ export async function GET(
   const user = await requireAuth(request);
   const { mediaId } = await params;
 
-  const list = await listSpeakerAssignments(mediaId, user.id);
+  // Clients pass the transcript they're showing, so the names they get
+  // back are presented against that transcript (not a newer one).
+  const shown = new URL(request.url).searchParams.get("transcriptVersion");
+  const list = await listSpeakerAssignments(
+    mediaId,
+    user.id,
+    shown ? transcriptFromVersion(shown) : undefined
+  );
   return NextResponse.json(list, { status: 200 });
 }
 
@@ -59,9 +68,16 @@ export async function PUT(
       speakerIdx: parsed.data.speakerIdx,
       personId: parsed.data.personId ?? null,
       displayLabelOverride: parsed.data.displayLabelOverride ?? null,
+      transcriptVersion: parsed.data.transcriptVersion ?? null,
     });
     return NextResponse.json(row, { status: 200 });
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && (err.message === "transcript_changed" || err.message === "transcript_version_required")) {
+      // The client labeled a voice on a transcript that has since been
+      // replaced (speaker indices re-numbered), or didn't say which
+      // transcript it was showing; it must reload first.
+      return NextResponse.json({ error: err.message }, { status: 409 });
+    }
     return NextResponse.json(
       { error: "speaker_assignment_invalid" },
       { status: 400 }
@@ -87,6 +103,18 @@ export async function DELETE(
     );
   }
 
-  const removed = await deleteSpeakerAssignment(mediaId, user.id, speakerIdx);
-  return NextResponse.json({ removed }, { status: 200 });
+  try {
+    const removed = await deleteSpeakerAssignment(
+      mediaId,
+      user.id,
+      speakerIdx,
+      url.searchParams.get("transcriptVersion")
+    );
+    return NextResponse.json({ removed }, { status: 200 });
+  } catch (err) {
+    if (err instanceof Error && (err.message === "transcript_changed" || err.message === "transcript_version_required")) {
+      return NextResponse.json({ error: err.message }, { status: 409 });
+    }
+    throw err;
+  }
 }

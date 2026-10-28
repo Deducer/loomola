@@ -4,7 +4,10 @@ import { eq, sql } from "drizzle-orm";
 import { insertTranscript } from "@/db/queries/transcripts";
 import { insertBlankAiOutput } from "@/db/queries/ai-outputs";
 import { enqueueAiJobs } from "@/lib/queue/enqueue-processing";
-import { enqueueTranscriptEmbedding } from "@/lib/queue/boss";
+import {
+  enqueueSpeakerSuggestion,
+  enqueueTranscriptEmbedding,
+} from "@/lib/queue/boss";
 import { enableGranola } from "@/lib/feature-flags";
 import { listDictionaryTerms } from "@/db/queries/dictionary-terms";
 import {
@@ -78,6 +81,21 @@ export async function persistTranscriptAndFanOut(params: {
       .update(mediaObjects)
       .set({ status: "ready", failureReason: null, updatedAt: sql`now()` })
       .where(eq(mediaObjects.id, mediaObjectId));
+    // Speaker v2: the batch transcript re-numbers voices (diarization
+    // order, not the live transcript's mic/system channels), so speaker
+    // rows must be reconciled and recomputed against it right away.
+    // Previously nothing re-ran here and live-index rows mislabeled the
+    // batch transcript's voices.
+    if (enableGranola()) {
+      try {
+        await enqueueSpeakerSuggestion({ mediaObjectId });
+      } catch (err) {
+        console.error(
+          `[transcript] failed to enqueue speaker suggestion for ${mediaObjectId}:`,
+          err
+        );
+      }
+    }
     return { kind: "audio_ready", wordCount: rewritten.words.length };
   }
 

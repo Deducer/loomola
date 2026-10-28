@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { transcriptVersionOf } from "@/lib/speaker-profile/reconcile";
 import { requireAuth } from "@/lib/require-auth";
 import { enableGranola } from "@/lib/feature-flags";
 import { presignGet } from "@/lib/r2/presigned-get";
@@ -48,7 +49,18 @@ export default async function NotesPage({
       ? presignGet(data.media.compositeThumbnailKey)
       : Promise.resolve(null),
     listPeople(user.id),
-    listSpeakerAssignments(data.media.id, user.id),
+    // Presented against the transcript this page renders, so text and
+    // names always come from the same transcript.
+    listSpeakerAssignments(
+      data.media.id,
+      user.id,
+      data.transcript
+        ? {
+            version: transcriptVersionOf(data.transcript.provider, data.transcript.createdAt),
+            createdAt: data.transcript.createdAt,
+          }
+        : null
+    ),
     listNoteAttachments(data.media.id, user.id),
     listFoldersForOwner(user.id),
   ]);
@@ -90,6 +102,9 @@ export default async function NotesPage({
       waveformUrl={waveformUrl}
       transcriptText={data.transcript?.fullText ?? ""}
       transcriptWords={normalizeWords(data.transcript?.wordTimestamps)}
+      transcriptVersion={
+        data.transcript ? transcriptVersionOf(data.transcript.provider, data.transcript.createdAt) : null
+      }
       initialAttachments={await Promise.all(
         attachments.map(async (attachment) => ({
           id: attachment.id,
@@ -118,6 +133,9 @@ export default async function NotesPage({
         personId: assignment.personId,
         displayLabelOverride: assignment.displayLabelOverride,
         isSuggestion: assignment.isSuggestion,
+        autoApplied: assignment.autoApplied,
+        needsReview: assignment.needsReview,
+        suggestionConfidence: assignment.suggestionConfidence,
         suggestedNewPersonPayload:
           assignment.suggestedNewPersonPayload as
             | { displayName: string | null; email: string | null }

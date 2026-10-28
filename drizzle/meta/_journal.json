@@ -239,6 +239,13 @@
       "when": 1792539045000,
       "tag": "0033_import_source_full_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1793145600000,
+      "tag": "0034_speaker_v2_profile",
+      "breakpoints": true
     }
   ]
 }

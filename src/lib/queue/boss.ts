@@ -1,4 +1,5 @@
 import { PgBoss } from "pg-boss";
+import { listNotesNeedingSpeakerRecovery } from "@/db/queries/speaker-suggestion";
 import { TRANSCRIBE_JOB, runTranscribeJob, type TranscribeJobData } from "./jobs/transcribe";
 import {
   VIDEO_INSIGHTS_JOB,
@@ -287,17 +288,22 @@ async function init(): Promise<PgBoss> {
   await boss.work<SuggestSpeakersJobData>(SUGGEST_SPEAKERS_JOB, WORKER_OPTIONS, async (jobs) => {
     for (const job of jobs) {
       try {
-        await runSuggestSpeakersJob(job.data);
+        await runSuggestSpeakersJob(job.data, { signal: job.signal });
       } catch (err) {
         console.error(
           `[suggest-speakers] job ${job.data.mediaObjectId} failed:`,
           err
         );
+        // Rethrow so pg-boss marks the job failed and applies the retry
+        // policy — a lock timeout or unreadable activity.bin must retry,
+        // not vanish as a "completed" job.
+        throw err;
       }
     }
   });
   await boss.work(WATCHDOG_JOB, WORKER_OPTIONS, async () => {
     await runWatchdogJob();
+    if (granolaEnabled) await recoverSpeakerReconciles(boss);
   });
   await boss.work(PURGE_JOB, WORKER_OPTIONS, async () => {
     await runPurgeJob();
@@ -309,7 +315,7 @@ async function init(): Promise<PgBoss> {
   if (granolaEnabled) {
     await boss.work<MixAudioJobData>(MIX_AUDIO_JOB, WORKER_OPTIONS, async (jobs) => {
       for (const job of jobs) {
-        const { mixedKey } = await runMixAudioJob(job.data);
+        const { mixedKey } = await runMixAudioJob(job.data, { signal: job.signal });
         // Mono mix + free diarization instead of the old stereo
         // (mic-L/system-R) multichannel submit, which Deepgram billed as
         // 2x minutes. Matches what the retry path already transcribes.
@@ -458,8 +464,29 @@ const SUGGEST_SPEAKERS_JOB_OPTIONS = {
   retryLimit: 1,
   retryDelay: 30,
   retryBackoff: false,
-  expireInSeconds: 300,
+  // Speaker v2 may decode the mic/system tracks once (notes recorded
+  // before mix_audio wrote activity.bin); long calls need headroom.
+  expireInSeconds: 900,
 };
+
+/** Watchdog tick: re-enqueue suggest_speakers for fresh notes whose
+ *  speaker work never completed (see listNotesNeedingSpeakerRecovery).
+ *  The singleton slot stops a slow job being enqueued again every tick. */
+async function recoverSpeakerReconciles(boss: PgBoss): Promise<void> {
+  try {
+    const ids = await listNotesNeedingSpeakerRecovery();
+    for (const id of ids) {
+      await boss.send(
+        SUGGEST_SPEAKERS_JOB,
+        { mediaObjectId: id },
+        { ...SUGGEST_SPEAKERS_JOB_OPTIONS, singletonKey: `speaker-recover:${id}`, singletonSeconds: 30 * 60 }
+      );
+    }
+    if (ids.length > 0) console.warn(`[watchdog] re-enqueued speaker suggestions for ${ids.length} note(s)`);
+  } catch (err) {
+    console.error("[watchdog] speaker recovery failed:", err);
+  }
+}
 
 export async function enqueueSpeakerSuggestion(
   data: SuggestSpeakersJobData
