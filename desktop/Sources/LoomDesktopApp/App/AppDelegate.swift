@@ -30,6 +30,9 @@ enum RecorderWindowGeometry {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    // The recorder and the native Settings scene must share one auth/capture session.
+    let recorderViewModel = RecorderViewModel()
+    let onboardingProgress = OnboardingProgressStore()
     private var statusItem: NSStatusItem?
     /// Bubble overlay wraps the shared camera + position-controller
     /// singletons (CameraCaptureCoordinator.shared,
@@ -210,7 +213,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return recorderWindow
         }
 
-        let rootView = MainRecorderView()
+        let rootView = MainRecorderView(
+            viewModel: recorderViewModel,
+            onboardingProgress: onboardingProgress
+        )
             .frame(
                 minWidth: RecorderWindowGeometry.minimumContentSize.width,
                 minHeight: RecorderWindowGeometry.minimumContentSize.height

@@ -10,7 +10,21 @@ struct LoomDesktopApp: App {
 
     var body: some Scene {
         Settings {
-            EmptyView()
+            NativeSettingsPanel()
+                .environmentObject(appDelegate.recorderViewModel)
+                .environmentObject(appDelegate.onboardingProgress)
         }
+    }
+}
+
+private struct NativeSettingsPanel: View {
+    @State private var window: NSWindow?
+
+    var body: some View {
+        SettingsSheet(onDismiss: { window?.close() })
+            .background(WindowAccessor { settingsWindow in
+                window = settingsWindow
+                settingsWindow.isRestorable = false
+            })
     }
 }

@@ -2,8 +2,8 @@ import AppKit
 import SwiftUI
 
 struct MainRecorderView: View {
-    @StateObject private var viewModel = RecorderViewModel()
-    @StateObject private var onboardingProgress = OnboardingProgressStore()
+    @ObservedObject var viewModel: RecorderViewModel
+    @ObservedObject var onboardingProgress: OnboardingProgressStore
     @State private var meetingPromptWindow = MeetingPromptWindowController()
     @State private var videoRecordingWindow = VideoRecordingWindowController()
     /// Granola-shape always-visible audio-recording reminder. Small

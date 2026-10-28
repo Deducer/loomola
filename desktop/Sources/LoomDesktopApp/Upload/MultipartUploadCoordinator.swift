@@ -38,13 +38,9 @@ actor MultipartUploadCoordinator {
             guard partData.count == range.count else {
                 throw MultipartUploadError.unexpectedEndOfFile
             }
-            let partURL = try await backend.partURL(
-                recordingId: recordingId,
-                request: PartURLRequest(track: track, partNumber: partNumber)
-            )
             let eTag = try await putPart(
                 data: partData,
-                to: partURL.url,
+                recordingId: recordingId,
                 track: track,
                 partNumber: partNumber,
                 totalParts: ranges.count
@@ -83,7 +79,7 @@ actor MultipartUploadCoordinator {
 
     private func putPart(
         data: Data,
-        to url: URL,
+        recordingId: String,
         track: TrackKind,
         partNumber: Int,
         totalParts: Int
@@ -91,11 +87,19 @@ actor MultipartUploadCoordinator {
         var lastError: Error?
         for attempt in 1...Self.maxPartUploadAttempts {
             do {
-                var request = URLRequest(url: url)
+                // A signed R2 URL can remain valid while the underlying
+                // connection has gone bad (for example after a VPN/DNS
+                // transition). Refresh the URL before each attempt so a
+                // retry gets a fresh edge route and signature.
+                let partURL = try await backend.partURL(
+                    recordingId: recordingId,
+                    request: PartURLRequest(track: track, partNumber: partNumber)
+                )
+                var request = URLRequest(url: partURL.url)
                 request.httpMethod = "PUT"
                 request.timeoutInterval = Self.putTimeoutSeconds
                 multipartUploadLog.notice(
-                    "part upload start track=\(track.rawValue, privacy: .public) part=\(partNumber, privacy: .public)/\(totalParts, privacy: .public) attempt=\(attempt, privacy: .public) bytes=\(data.count, privacy: .public) host=\(url.host ?? "unknown", privacy: .public)"
+                    "part upload start track=\(track.rawValue, privacy: .public) part=\(partNumber, privacy: .public)/\(totalParts, privacy: .public) attempt=\(attempt, privacy: .public) bytes=\(data.count, privacy: .public) host=\(partURL.url.host ?? "unknown", privacy: .public)"
                 )
                 let (_, response) = try await URLSession.shared.upload(for: request, from: data)
                 guard let http = response as? HTTPURLResponse else {
