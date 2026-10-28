@@ -38,6 +38,7 @@ import {
 } from "@/lib/speaker-profile/profile";
 import type { ActivityFrames } from "@/lib/speaker-profile/activity";
 import {
+  attendeeKeysForReconcile,
   reconcileAssignments,
   transcriptVersionOf,
 } from "@/lib/speaker-profile/reconcile";
@@ -119,9 +120,7 @@ export async function runSuggestSpeakersJob(
       currentTranscriptCreatedAt: transcriptCreatedAt,
       profile,
       selfPersonId: selfPerson?.id ?? null,
-      attendeePersonIds: attendees
-        .map((a) => a.personId)
-        .filter((id): id is string => Boolean(id) && id !== selfPerson?.id),
+      attendeePersonIds: attendeeKeysForReconcile(attendees, selfPerson?.id ?? null),
     });
     if (
       plan.deleteIds.length + plan.remaps.length + plan.restampIds.length + plan.reviewIds.length +

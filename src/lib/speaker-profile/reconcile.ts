@@ -78,6 +78,21 @@ export const SUPERSEDED_DERIVATION_PREFIX = "superseded:";
 /** Parked (superseded) rows live at or below this index. */
 export const PARKED_IDX_CEILING = -1_000_000;
 
+/**
+ * The note's invitees (owner excluded) as reconcile sees them. An invitee
+ * with no person record (a bare name) still counts — it never matches a
+ * row's person, so a sole-invitee proof can't ignore an unresolved second
+ * guest.
+ */
+export function attendeeKeysForReconcile(
+  attendees: ReadonlyArray<{ personId?: string | null }>,
+  selfPersonId: string | null
+): string[] {
+  return attendees
+    .filter((a) => !a.personId || a.personId !== selfPersonId)
+    .map((a, i) => a.personId ?? `unresolved:${i}`);
+}
+
 export function transcriptVersionOf(provider: string, createdAt: Date): string {
   return `${provider}:${createdAt.toISOString()}`;
 }

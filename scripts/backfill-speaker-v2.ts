@@ -25,7 +25,7 @@
 // flagged needs_review by the worker — never silently rewritten.
 import postgres from "postgres";
 import { computeSpeakerProfile, meSpeakerIdxs, type SpeakerProfile } from "../src/lib/speaker-profile/profile";
-import { reconcileAssignments, transcriptVersionOf, type ReconcileRow } from "../src/lib/speaker-profile/reconcile";
+import { attendeeKeysForReconcile, reconcileAssignments, transcriptVersionOf, type ReconcileRow } from "../src/lib/speaker-profile/reconcile";
 import { composeSpeakerSuggestions, dismissedDerivationsOf } from "../src/lib/speaker-suggestion/compose";
 import { parseAttendees } from "../src/lib/speaker-suggestion/parse-attendees";
 import type { ActivityFrames } from "../src/lib/speaker-profile/activity";
@@ -167,9 +167,7 @@ async function analyze(n: NoteRow, people: Map<string, Person[]>): Promise<Outco
       currentTranscriptCreatedAt: n.t_created_at,
       profile,
       selfPersonId: self?.id ?? null,
-      attendeePersonIds: parseAttendees(n.attendees)
-        .map((a) => a.personId)
-        .filter((id): id is string => Boolean(id) && id !== self?.id),
+      attendeePersonIds: attendeeKeysForReconcile(parseAttendees(n.attendees), self?.id ?? null),
     });
     const me = meSpeakerIdxs(profile);
 

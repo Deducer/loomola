@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  attendeeKeysForReconcile,
   PARKED_IDX_CEILING,
   reconcileAssignments,
   transcriptVersionOf,
@@ -152,6 +153,22 @@ describe("reconcileAssignments", () => {
     });
     expect(p.confirms).toEqual([]);
     expect(p.keepPendingIds).toEqual(["them"]);
+  });
+
+  it("an unresolved second invitee blocks the sole-invitee proof (Codex final re-run P1)", () => {
+    // Invitees: Sarah (a person) + "Bob Jones" (a bare name). Either could be the remote voice.
+    const keys = attendeeKeysForReconcile([{ personId: OTHER }, { personId: null }, { personId: SELF }], SELF);
+    expect(keys).toEqual([OTHER, "unresolved:1"]);
+    const p = reconcileAssignments({
+      rows: [row({ id: "sarah", speakerIdx: 0, transcriptVersion: null, isSuggestion: true, personId: OTHER })],
+      currentVersion: BATCH,
+      currentTranscriptCreatedAt: batchAt,
+      profile: profile1on1,
+      selfPersonId: SELF,
+      attendeePersonIds: keys,
+    });
+    expect(p.confirms).toEqual([]);
+    expect(p.keepPendingIds).toEqual(["sarah"]);
   });
 
   it("parked rows are ignored", () => {
