@@ -263,6 +263,18 @@ final class RecentRecordingsService: ObservableObject {
         }
     }
 
+    /// Undo a trash: restore on the server, then reload so the row
+    /// comes back where it was.
+    func restore(id: String) async {
+        do {
+            try await backend.restoreRecording(id: id)
+            log.notice("restored recording \(id, privacy: .public)")
+            refresh()
+        } catch {
+            log.error("restore failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     /// Optimistically update a recording's folder assignment in the
     /// local items array, then persist. The view's folder pill
     /// updates immediately; if the server call fails, we revert and

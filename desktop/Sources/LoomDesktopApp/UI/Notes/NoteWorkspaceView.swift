@@ -195,6 +195,7 @@ struct NoteWorkspaceView: View {
     @State private var transcriptSearchVisible = false
     @State private var showTranscriptSettings = false
     @State private var showFeedbackBar = false
+    @State private var showSharePopover = false
     /// A note that just stopped recording: its live transcript lands a
     /// beat after the workspace appears, so generation waits for the
     /// upload to finish instead of showing a dead "Waiting" pill.
@@ -510,6 +511,20 @@ struct NoteWorkspaceView: View {
                 .popover(isPresented: $showFolderPicker, arrowEdge: .top) {
                     folderPickerPopover
                 }
+                // Share + Copy link exist once the note has a slug
+                // (parity rank 9); Granola hides them mid-recording too.
+                if let share = sharePopoverModel {
+                    ShareChromeButton { showSharePopover.toggle() }
+                        .popover(isPresented: $showSharePopover, arrowEdge: .top) {
+                            SharePopover(model: share) {
+                                showSharePopover = false
+                                copyShareLink(share)
+                            }
+                        }
+                    ChromeIconButton(icon: "link", help: "Copy link", isActive: false) {
+                        copyShareLink(share)
+                    }
+                }
             }
         }
         .padding(.leading, WindowChromeLayout.noteLeadingPadding)
@@ -517,6 +532,22 @@ struct NoteWorkspaceView: View {
         .padding(.top, WindowChromeLayout.topPadding)
         .frame(height: WindowChromeLayout.barHeight + WindowChromeLayout.topPadding, alignment: .top)
         .frame(maxWidth: .infinity, alignment: .top)
+    }
+
+    private var sharePopoverModel: SharePopoverModel? {
+        guard case .reviewing(let recording) = target else { return nil }
+        return SharePopoverModel(
+            apiBase: viewModel.configuration?.apiBaseURL ?? URL(string: "https://loom.dissonance.cloud")!,
+            slug: recording.slug,
+            ownerEmail: viewModel.email
+        )
+    }
+
+    private func copyShareLink(_ share: SharePopoverModel) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(share.link.absoluteString, forType: .string)
+        showToast(message: "Link copied")
     }
 
     private var rowMenu: some View {
@@ -620,9 +651,13 @@ struct NoteWorkspaceView: View {
                 menuItem(label: "Move to trash", icon: "trash", tint: DSColor.State.danger) {
                     showRowMenu = false
                     if case .reviewing(let recording) = target {
+                        let recent = viewModel.recentRecordings
                         Task {
-                            await viewModel.recentRecordings.bulkDelete(ids: [recording.id])
+                            await recent.bulkDelete(ids: [recording.id])
                             onClose()
+                            ToastCenter.shared.show("Note moved to trash") {
+                                await recent.restore(id: recording.id)
+                            }
                         }
                     }
                 }

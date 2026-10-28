@@ -71,6 +71,11 @@ struct MainRecorderView: View {
                     .loomolaTitlebarPinned(!windowIsFullScreen)
             }
         }
+        .overlay(alignment: .bottomTrailing) {
+            ShellToastView(center: ToastCenter.shared)
+                .padding(DSSpacing.lg)
+                .animation(LoomolaMotion.medium, value: ToastCenter.shared.current)
+        }
         .background(
             WindowAccessor { window in
                 hostWindow = window

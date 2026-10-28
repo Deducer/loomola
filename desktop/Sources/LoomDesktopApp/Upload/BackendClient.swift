@@ -316,6 +316,15 @@ actor BackendClient {
         )
     }
 
+    /// Undo for Move to trash: clears `deleted_at` on a trashed
+    /// recording (parity rank 9 toast).
+    func restoreRecording(id: String) async throws {
+        let _: EmptyResponse = try await post(
+            path: "/api/recordings/\(id)/restore",
+            body: EmptyRequest()
+        )
+    }
+
     /// Persist the user's live-typed notes body for an audio
     /// recording. Called from the desktop's NotesSidePanel via a
     /// debounced autosave pipeline. Body is plain markdown; the
