@@ -1,9 +1,11 @@
 import AppKit
 import SwiftUI
 
-/// Granola-shape row for the Recent notes list (parity rank 2).
+/// Granola-shape row for the Recent list (parity rank 2). Notes and
+/// videos share it: a note shows the doc icon and its attendees, a
+/// video shows its thumbnail and "Video · 3:28".
 ///
-/// Layout: `[checkbox] [icon] [title / attendees] [suggestion or folder] [time] [⋯]`
+/// Layout: `[checkbox] [icon] [title / subtitle] [suggestion or folder] [time] [⋯]`
 ///
 /// Visibility rules:
 ///   • icon, title, attendee subtitle, time → always
@@ -44,10 +46,18 @@ struct RecentNoteRow: View {
     }
 
     /// "Me" alone, or "Me, Neely, Bhaskar" — Granola lists the people
-    /// under the title.
-    private var attendeeLine: String {
-        let names = recording.attendees.map(\.name).filter { !$0.isEmpty }
-        return (["Me"] + names).joined(separator: ", ")
+    /// under the title. A video says what it is and how long it runs.
+    private var subtitle: String {
+        switch recording.kind {
+        case .audio:
+            let names = recording.attendees.map(\.name).filter { !$0.isEmpty }
+            return (["Me"] + names).joined(separator: ", ")
+        case .video:
+            if let duration = RecentHomeList.durationLabel(seconds: recording.durationSeconds) {
+                return "Video · \(duration)"
+            }
+            return "Video"
+        }
     }
 
     var body: some View {
@@ -59,14 +69,14 @@ struct RecentNoteRow: View {
             // Click target for "open the note" — icon + title region.
             HStack(spacing: DSSpacing.md) {
                 iconView
-                    .frame(width: 32, height: 32)
+                    .frame(width: recording.kind == .video ? 44 : 32, height: recording.kind == .video ? 28 : 32)
                     .clipShape(RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(recording.title)
                         .font(DSFont.Body.md())
                         .foregroundStyle(DSColor.Text.primary)
                         .lineLimit(1)
-                    Text(attendeeLine)
+                    Text(subtitle)
                         .font(DSFont.Body.sm().weight(.regular))
                         .foregroundStyle(DSColor.Text.tertiary)
                         .lineLimit(1)
@@ -115,22 +125,24 @@ struct RecentNoteRow: View {
             AsyncImage(url: url) { phase in
                 switch phase {
                 case .success(let image): image.resizable().scaledToFill()
-                default: paperIcon
+                default: glyphIcon
                 }
             }
         } else {
-            paperIcon
+            glyphIcon
         }
     }
 
-    private var paperIcon: some View {
+    /// Type icon: doc for a note, a small video glyph for a recording
+    /// without a thumbnail yet.
+    private var glyphIcon: some View {
         ZStack {
             RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous)
                 .fill(DSColor.Bg.surface)
             RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous)
                 .strokeBorder(DSColor.Border.subtle, lineWidth: 1)
-            Image(systemName: "doc")
-                .font(.system(size: 13, weight: .regular))
+            Image(systemName: recording.kind == .video ? "video" : "doc")
+                .font(.system(size: recording.kind == .video ? 11 : 13, weight: .regular))
                 .foregroundStyle(DSColor.Text.secondary)
         }
     }

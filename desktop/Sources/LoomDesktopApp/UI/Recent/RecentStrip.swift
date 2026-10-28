@@ -3,10 +3,11 @@ import SwiftUI
 
 /// Recent strip on the idle home view. Renders type-appropriately:
 ///
-/// - Video selected → 3 thumbnail-prominent cards (visual scan).
-/// - Audio note selected → all of the user's notes, Granola-style
-///   vertical rows grouped by date (Today / Yesterday / Mon, May 4 /
-///   Apr 28 / Dec 12, 2025). Compact and scannable by title.
+/// - Home (audio mode) → every note *and* video in one Granola-style
+///   list of rows grouped by date (Today / Yesterday / Mon, May 4 /
+///   Apr 28 / Dec 12, 2025); a video row carries its thumbnail as
+///   the type icon. Loomola is both products, so the home is too.
+/// - Videos → the same items filtered to videos, as thumbnail cards.
 ///
 /// Audio rows support per-row hover ⋯ menu (Move to folder /
 /// Delete) and bulk-select via a hover-revealed checkbox; ticking
@@ -40,12 +41,7 @@ struct RecentStrip: View {
     @State private var showDeleteConfirm = false
 
     private var filteredItems: [RecentRecording] {
-        let target: RecentRecording.Kind = (captureMode == .video) ? .video : .audio
-        let kindFiltered = service.items.filter { $0.kind == target }
-        if let folderFilterId {
-            return kindFiltered.filter { $0.folderId == folderFilterId }
-        }
-        return kindFiltered
+        RecentHomeList.visibleItems(service.items, captureMode: captureMode, folderFilterId: folderFilterId)
     }
 
     private var selectedRecordings: [RecentRecording] {
@@ -223,7 +219,7 @@ struct RecentStrip: View {
             // Full history: older pages auto-load as the marker renders,
             // chaining until the server runs dry (pages of 50) — web/
             // desktop parity without a click-per-page.
-            if service.hasMoreAudio, folderFilterId == nil {
+            if service.hasMoreAudio || service.hasMoreVideo, folderFilterId == nil {
                 HStack {
                     Spacer()
                     ProgressView()
@@ -231,7 +227,10 @@ struct RecentStrip: View {
                     Spacer()
                 }
                 .padding(.top, DSSpacing.xs)
-                .onAppear { service.loadMore(kind: .audio) }
+                .onAppear {
+                    if service.hasMoreAudio { service.loadMore(kind: .audio) }
+                    if service.hasMoreVideo { service.loadMore(kind: .video) }
+                }
                 .id("load-more-\(filteredItems.count)")
             }
         }
@@ -428,21 +427,21 @@ struct RecentStrip: View {
     private var emptyTitle: String {
         switch captureMode {
         case .video: return "No recordings yet."
-        case .audio: return "No notes yet."
+        case .audio: return "No notes or recordings yet."
         }
     }
 
     private var emptySubtitle: String {
         switch captureMode {
         case .video: return "Hit Start recording or press ⌥⇧R to begin."
-        case .audio: return "Hit Start audio note to capture a meeting."
+        case .audio: return "Press + New note to capture a meeting, or open Videos to record your screen."
         }
     }
 
     private var selectedKindName: String {
         switch captureMode {
         case .video: return "recording"
-        case .audio: return "note"
+        case .audio: return "item"
         }
     }
 
