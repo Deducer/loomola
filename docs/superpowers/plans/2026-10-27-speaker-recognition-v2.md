@@ -83,6 +83,11 @@
 - A restart before the first mic buffer pads from the recording origin; the writer can open the file from silence.
 - The redundant unlocked attendee cleanup is removed.
 - The after-backfill scorecard keeps measuring finished notes.
+
+**Tenth review pass (2026-10-27):**
+- Legacy pending rows are deleted only when provably untouched worker output; the pre-v2 writer could rename a pending row without clearing `is_suggestion`, so others go to review (and review items don't block Me).
+- Desktop "Apply names" reports refusals and failures.
+- The watchdog re-enqueues fresh notes (transcript written 10 min to 6 h ago) whose speaker work never completed.
 **Style:** TDD. Pure logic first, under `src/lib/speaker-profile/` and `src/lib/speaker-suggestion/`, then wiring, then UI. Each phase ships on its own and is scored with the same offline eval script.
 
 ## Phases at a glance (ordered by impact ÷ effort)

@@ -70,11 +70,28 @@ describe("reconcileAssignments", () => {
     expect(p.deleteIds.sort()).toEqual(["auto", "pending"]);
   });
 
-  it("always deletes legacy (unversioned) pending rows — they came from the retired v1 rules", () => {
+  it("deletes a legacy pending row only when it's provably the worker's untouched output", () => {
     const p = plan([
-      row({ id: "legacy", transcriptVersion: null, isSuggestion: true, suggestedAt: new Date("2026-08-06T00:00:00Z") }),
+      row({ id: "legacy", transcriptVersion: null, isSuggestion: true, personId: SELF, suggestionConfidence: "self_via_dominant_speech", suggestedAt: new Date("2026-08-06T00:00:00Z") }),
     ]);
     expect(p.deleteIds).toEqual(["legacy"]);
+  });
+
+  it("keeps a legacy pending row the old writer may have renamed — a manual correction goes to review (P1)", () => {
+    // The pre-v2 label writer changed person_id on a pending row without
+    // clearing is_suggestion: a self-derived row now naming someone else
+    // is the user's correction, not disposable output.
+    const renamed = plan([
+      row({ id: "renamed", transcriptVersion: null, isSuggestion: true, personId: OTHER, suggestionConfidence: "self_via_dominant_speech", speakerIdx: 0 }),
+    ]);
+    expect(renamed.deleteIds).toEqual([]);
+    expect(renamed.reviewIds).toEqual(["renamed"]);
+    // No derivation at all (pre-provenance rows): can't prove untouched.
+    const unknown = plan([
+      row({ id: "unknown", transcriptVersion: null, isSuggestion: true, personId: SELF, suggestionConfidence: null }),
+    ]);
+    expect(unknown.deleteIds).toEqual([]);
+    expect(unknown.reviewIds).toEqual(["unknown"]);
   });
 
   it("keeps a legacy accepted row the mic evidence confirms, restamping it", () => {

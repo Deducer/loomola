@@ -228,11 +228,19 @@ function throwIfAborted(signal: AbortSignal | undefined) {
   if (signal?.aborted) throw new Error("suggest_speakers aborted (job expired); its retry takes over");
 }
 
-function decidedState(rows: ReadonlyArray<{ speakerIdx: number; personId: string | null; dismissedAt: Date | null }>) {
+function decidedState(
+  rows: ReadonlyArray<{ speakerIdx: number; personId: string | null; dismissedAt: Date | null; needsReview: boolean }>
+) {
   return {
+    // Every row — including review items — holds its voice.
     idxs: new Set(rows.map((r) => r.speakerIdx)),
+    // A name under review doesn't "take" its person: the evidence may put
+    // that person on another voice (e.g. a possibly-misplaced legacy "Ian"
+    // must not stop Me being applied to the mic voice).
     personIds: new Set(
-      rows.filter((r) => r.personId && r.dismissedAt === null).map((r) => r.personId as string)
+      rows
+        .filter((r) => r.personId && r.dismissedAt === null && !r.needsReview)
+        .map((r) => r.personId as string)
     ),
   };
 }

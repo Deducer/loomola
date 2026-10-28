@@ -137,6 +137,7 @@ async function analyze(n: NoteRow, people: Map<string, Person[]>): Promise<Outco
       createdAt: r.created_at as Date,
       suggestedAt: (r.suggested_at as Date | null) ?? null,
       derivation: (r.suggestion_confidence as string | null) ?? null,
+      suggestionConfidence: (r.suggestion_confidence as string | null) ?? null,
     }));
     // The worker stores the profile in the same transaction as the names,
     // after them — so it is the completion marker for this transcript.
@@ -183,7 +184,11 @@ async function analyze(n: NoteRow, people: Map<string, Person[]>): Promise<Outco
           people: ownerPeople,
           selfPersonId: self.id,
           skipIdxs: new Set(surviving.map((r) => r.speakerIdx)),
-          takenPersonIds: new Set(surviving.filter((r) => r.personId && !r.dismissedAt).map((r) => r.personId as string)),
+          takenPersonIds: new Set(
+            surviving
+              .filter((r) => r.personId && !r.dismissedAt && !r.needsReview && !plan.reviewIds.includes(r.id))
+              .map((r) => r.personId as string)
+          ),
           dismissedDerivations: dismissedDerivationsOf(
             surviving.map((r) => ({ dismissedAt: r.dismissedAt, suggestionConfidence: r.derivation }))
           ),

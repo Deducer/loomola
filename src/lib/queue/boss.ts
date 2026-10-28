@@ -1,4 +1,5 @@
 import { PgBoss } from "pg-boss";
+import { listNotesNeedingSpeakerRecovery } from "@/db/queries/speaker-suggestion";
 import { TRANSCRIBE_JOB, runTranscribeJob, type TranscribeJobData } from "./jobs/transcribe";
 import {
   VIDEO_INSIGHTS_JOB,
@@ -302,6 +303,7 @@ async function init(): Promise<PgBoss> {
   });
   await boss.work(WATCHDOG_JOB, WORKER_OPTIONS, async () => {
     await runWatchdogJob();
+    if (granolaEnabled) await recoverSpeakerReconciles(boss);
   });
   await boss.work(PURGE_JOB, WORKER_OPTIONS, async () => {
     await runPurgeJob();
@@ -466,6 +468,25 @@ const SUGGEST_SPEAKERS_JOB_OPTIONS = {
   // before mix_audio wrote activity.bin); long calls need headroom.
   expireInSeconds: 900,
 };
+
+/** Watchdog tick: re-enqueue suggest_speakers for fresh notes whose
+ *  speaker work never completed (see listNotesNeedingSpeakerRecovery).
+ *  The singleton slot stops a slow job being enqueued again every tick. */
+async function recoverSpeakerReconciles(boss: PgBoss): Promise<void> {
+  try {
+    const ids = await listNotesNeedingSpeakerRecovery();
+    for (const id of ids) {
+      await boss.send(
+        SUGGEST_SPEAKERS_JOB,
+        { mediaObjectId: id },
+        { ...SUGGEST_SPEAKERS_JOB_OPTIONS, singletonKey: `speaker-recover:${id}`, singletonSeconds: 30 * 60 }
+      );
+    }
+    if (ids.length > 0) console.warn(`[watchdog] re-enqueued speaker suggestions for ${ids.length} note(s)`);
+  } catch (err) {
+    console.error("[watchdog] speaker recovery failed:", err);
+  }
+}
 
 export async function enqueueSpeakerSuggestion(
   data: SuggestSpeakersJobData

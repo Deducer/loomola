@@ -47,6 +47,7 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
   let listSpeakerAssignments: typeof import("@/db/queries/speaker-assignments").listSpeakerAssignments;
   let applySpeakerSuggestion: typeof import("@/db/queries/speaker-suggestion").applySpeakerSuggestion;
   let withSpeakerWriteLock: typeof import("@/db/queries/speaker-suggestion").withSpeakerWriteLock;
+  let listNotesNeedingSpeakerRecovery: typeof import("@/db/queries/speaker-suggestion").listNotesNeedingSpeakerRecovery;
 
   // Sarah talks first and most; Ian (mic) is diarized as voice 1.
   const call = turns([[0, 60], [1, 30], [0, 50], [1, 20]]);
@@ -84,7 +85,9 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
     user = postgres(scoped, { onnotice: () => {} });
     ({ runSuggestSpeakersJob } = await import("@/lib/queue/jobs/suggest-speakers"));
     ({ upsertSpeakerAssignment, listSpeakerAssignments } = await import("@/db/queries/speaker-assignments"));
-    ({ applySpeakerSuggestion, withSpeakerWriteLock } = await import("@/db/queries/speaker-suggestion"));
+    ({ applySpeakerSuggestion, withSpeakerWriteLock, listNotesNeedingSpeakerRecovery } = await import(
+      "@/db/queries/speaker-suggestion"
+    ));
     ({ updateAudioNoteAttendees } = await import("@/db/queries/notes"));
   });
 
@@ -381,5 +384,33 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
     await updateAudioNoteAttendees({ mediaObjectId: MEDIA, ownerId: OWNER, personIds: [ALEX] });
     const [t] = await user`SELECT speaker_profile FROM transcripts WHERE media_object_id = ${MEDIA}`;
     expect(t.speaker_profile).toBeNull();
+  });
+
+  it("keeps a manual rename the pre-v2 writer left flagged as a suggestion (P1: backfill data loss)", async () => {
+    // v1 suggested "voice 0 is Ian"; the user renamed it to Sarah with the
+    // OLD label writer, which changed person_id but left is_suggestion.
+    await user`INSERT INTO speaker_assignments (id, media_object_id, speaker_idx, person_id, is_suggestion,
+        suggestion_confidence, suggested_at, created_at)
+      VALUES (${ROW}, ${MEDIA}, 0, ${IAN}, true, 'self_via_dominant_speech', now() - interval '2 hours', now() - interval '2 hours')`;
+    await user`UPDATE speaker_assignments SET person_id = ${SARAH} WHERE id = ${ROW}`; // baseline upsert's SET
+    await runSuggestSpeakersJob({ mediaObjectId: MEDIA });
+    const after = await user<{ id: string; person_id: string; needs_review: boolean }[]>`
+      SELECT id, person_id, needs_review FROM speaker_assignments WHERE id = ${ROW}`;
+    expect(after).toEqual([{ id: ROW, person_id: SARAH, needs_review: true }]);
+    // …and the mic still names Ian on his own voice.
+    expect((await rows()).find((r) => r.speaker_idx === 1)?.person_id).toBe(IAN);
+  });
+
+  it("the watchdog recovers fresh notes whose speaker work never completed — and only fresh ones (P2)", async () => {
+    // The seeded transcript was just written: too fresh (its own job may still run).
+    expect(await listNotesNeedingSpeakerRecovery()).toEqual([]);
+    await user`UPDATE transcripts SET created_at = now() - interval '1 hour' WHERE media_object_id = ${MEDIA}`;
+    expect(await listNotesNeedingSpeakerRecovery()).toEqual([MEDIA]);
+    // Done-marker present → nothing to recover.
+    await user`UPDATE transcripts SET speaker_profile = ${user.json({ version: 1 })} WHERE media_object_id = ${MEDIA}`;
+    expect(await listNotesNeedingSpeakerRecovery()).toEqual([]);
+    // Historical transcripts are the backfill's, never the watchdog's.
+    await user`UPDATE transcripts SET speaker_profile = NULL, created_at = now() - interval '2 days' WHERE media_object_id = ${MEDIA}`;
+    expect(await listNotesNeedingSpeakerRecovery()).toEqual([]);
   });
 });

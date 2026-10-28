@@ -67,6 +67,30 @@ export async function getNoteForSpeakerSuggestion(
   };
 }
 
+/**
+ * Recent audio notes whose current batch transcript has no speaker profile
+ * yet — its suggest_speakers job was never enqueued (an enqueue failure
+ * after the transcript was saved) or never finished. The watchdog
+ * re-enqueues them. Bounded to transcripts written 10 min – 6 h ago so it
+ * recovers fresh notes only and never sweeps the historical backlog
+ * (that is the backfill's job, run deliberately).
+ */
+export async function listNotesNeedingSpeakerRecovery(limit = 10): Promise<string[]> {
+  const rows = await db.execute<{ id: string }>(sql`
+    SELECT DISTINCT ON (t.media_object_id) t.media_object_id::text AS id
+    FROM ${transcripts} t
+    JOIN ${mediaObjects} m ON m.id = t.media_object_id
+    WHERE m.type = 'audio' AND m.deleted_at IS NULL
+      AND t.provider <> 'deepgram-live'
+      AND t.speaker_profile IS NULL
+      AND t.created_at < now() - interval '10 minutes'
+      AND t.created_at > now() - interval '6 hours'
+      AND t.created_at = (SELECT max(t2.created_at) FROM ${transcripts} t2 WHERE t2.media_object_id = t.media_object_id)
+    ORDER BY t.media_object_id
+    LIMIT ${limit}`);
+  return rows.map((r) => r.id);
+}
+
 /** Records the outcome of the LLM pass on the transcript's profile —
  *  only if the profile is still the one this run wrote (`runId`). A newer
  *  run, an attendee edit (which clears the profile) or a replaced

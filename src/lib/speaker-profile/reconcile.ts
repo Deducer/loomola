@@ -21,8 +21,11 @@ import { meSpeakerIdxs, soleRemoteSpeakerIdx, type SpeakerProfile } from "./prof
  *  - Stale dismissals ("Not <name>"): kept, moved by the capture-channel
  *    rule when unambiguous. The worker won't auto-apply a kind of name
  *    the user dismissed on this note.
- *  - Legacy pending rows are always deleted: they came from the v1
- *    positional / talk-time rules, which this version retires.
+ *  - Legacy pending rows are deleted only when they're provably the
+ *    worker's untouched output (the person still matches the row's own
+ *    derivation). The pre-v2 label writer changed the person on a pending
+ *    row WITHOUT clearing is_suggestion, so a legacy "pending" row may be
+ *    a manual correction: anything not provably untouched goes to review.
  *  - Stale USER decisions are never deleted or rewritten without
  *    capture evidence. Kept (restamped) when the evidence confirms them,
  *    moved when the old row was a live capture channel and the new
@@ -45,7 +48,34 @@ export type ReconcileRow = {
   transcriptVersion: string | null;
   createdAt: Date;
   suggestedAt: Date | null;
+  /** The row's derivation (speaker_assignments.suggestion_confidence). */
+  suggestionConfidence?: string | null;
 };
+
+const SELF_DERIVATIONS = new Set(["self_via_dominant_speech", "self_via_source_channel", "self_via_mic_capture"]);
+const ATTENDEE_DERIVATIONS = new Set([
+  "person_id_exact",
+  "email_exact",
+  "name_token_match",
+  "llm_transcript_evidence",
+  "remote_via_single_voice",
+]);
+
+/** Is this legacy pending row exactly what the worker wrote? Its person
+ *  must still be the one its derivation implies; a renamed row (or one
+ *  with no derivation) isn't provably untouched. */
+function isUntouchedSuggestion(
+  row: ReconcileRow,
+  selfPersonId: string | null,
+  attendeeIds: ReadonlyArray<string>
+): boolean {
+  const d = row.suggestionConfidence ?? null;
+  if (!d) return false;
+  if (SELF_DERIVATIONS.has(d)) return selfPersonId !== null && row.personId === selfPersonId;
+  if (ATTENDEE_DERIVATIONS.has(d)) return row.personId !== null && attendeeIds.includes(row.personId);
+  if (d === "new_person_from_attendee" || d === "llm_transcript_evidence_new_person") return row.personId === null;
+  return false;
+}
 
 export type ReconcilePlan = {
   deleteIds: string[];
@@ -107,7 +137,13 @@ export function reconcileAssignments(args: {
     const userDecision = !row.isSuggestion && !row.autoApplied && row.dismissedAt === null;
 
     if (legacy && row.isSuggestion) {
-      plan.deleteIds.push(row.id);
+      if (isUntouchedSuggestion(row, args.selfPersonId, args.attendeePersonIds ?? [])) {
+        plan.deleteIds.push(row.id);
+      } else {
+        // Possibly a manual correction made through the old writer.
+        plan.reviewIds.push(row.id);
+        keptIdxs.add(row.speakerIdx);
+      }
       continue;
     }
     if (legacy && wrote >= args.currentTranscriptCreatedAt) {

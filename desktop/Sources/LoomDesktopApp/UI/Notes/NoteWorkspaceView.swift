@@ -2830,6 +2830,8 @@ struct NoteWorkspaceView: View {
         Task { @MainActor in
             defer { applyingSpeakerSuggestions = false }
             var applied = 0
+            var refused = 0
+            var failed = 0
             for suggestion in pending {
                 guard let personId = suggestion.personId else { continue }
                 do {
@@ -2842,15 +2844,25 @@ struct NoteWorkspaceView: View {
                         transcriptVersion: suggestion.transcriptVersion ?? transcript?.transcriptVersion
                     )
                     applied += 1
+                } catch BackendClientError.badStatus(let statusCode, _, _) where statusCode == 409 {
+                    // The suggestion changed (accepted elsewhere, recomputed,
+                    // or its transcript was replaced) — not applied.
+                    refused += 1
                 } catch {
-                    // Keep going — a 409 just means that idx was already
-                    // accepted or dismissed elsewhere (e.g., on web).
+                    failed += 1
                 }
             }
+            if refused > 0 { loadTranscript() }
             if let list = try? await backend.speakerAssignments(mediaId: recording.id, transcriptVersion: transcript?.transcriptVersion) {
                 speakerAssignments = list
             }
-            showToast(message: applied > 0 ? "Speaker names applied" : "Names were already applied")
+            if failed > 0 {
+                showToast(message: "Couldn't apply \(failed) name\(failed == 1 ? "" : "s") — try again", tone: .error)
+            } else if refused > 0 {
+                showToast(message: "Some names changed since — check the updated suggestions", tone: .warning)
+            } else {
+                showToast(message: applied > 0 ? "Speaker names applied" : "Names were already applied")
+            }
         }
     }
 
