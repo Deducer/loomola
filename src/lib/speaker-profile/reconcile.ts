@@ -53,21 +53,17 @@ export type ReconcileRow = {
 };
 
 const SELF_DERIVATIONS = new Set(["self_via_dominant_speech", "self_via_source_channel", "self_via_mic_capture"]);
-const NEW_PERSON_DERIVATIONS = new Set(["new_person_from_attendee", "llm_transcript_evidence_new_person"]);
 
 /** Is this legacy pending row PROVABLY exactly what the worker wrote?
- *  Only where the derivation fixes the person: a self-derivation was
- *  written naming the owner (a rename can only change it to someone
- *  else), a new-person suggestion was written with no person (a rename
- *  sets one). An attendee-derived row can't be proven — the user may have
- *  changed one attendee to another — so it, and anything without a
- *  derivation, is preserved for review. */
+ *  Only for a self-derivation that still names the owner: the worker
+ *  wrote it naming the owner, and any edit (another person, or a one-off
+ *  label, which clears the person) changes that. Every other legacy
+ *  pending row — attendee-derived (one attendee may have been changed to
+ *  another), new-person (a one-off label looks the same), or no
+ *  derivation — is preserved for review. */
 function isUntouchedSuggestion(row: ReconcileRow, selfPersonId: string | null): boolean {
   const d = row.suggestionConfidence ?? null;
-  if (!d) return false;
-  if (SELF_DERIVATIONS.has(d)) return selfPersonId !== null && row.personId === selfPersonId;
-  if (NEW_PERSON_DERIVATIONS.has(d)) return row.personId === null;
-  return false;
+  return d !== null && SELF_DERIVATIONS.has(d) && selfPersonId !== null && row.personId === selfPersonId;
 }
 
 export type ReconcilePlan = {

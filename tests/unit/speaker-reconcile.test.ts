@@ -100,6 +100,13 @@ describe("reconcileAssignments", () => {
     });
     expect(alice.deleteIds).toEqual([]);
     expect(alice.reviewIds).toEqual(["aliceToBob"]);
+    // A new-person suggestion given a one-off label ("Bob") through the
+    // old writer: person still null, so it looks untouched — it isn't.
+    const labeled = plan([
+      row({ id: "oneOff", transcriptVersion: null, isSuggestion: true, personId: null, suggestionConfidence: "new_person_from_attendee", speakerIdx: 1 }),
+    ]);
+    expect(labeled.deleteIds).toEqual([]);
+    expect(labeled.reviewIds).toEqual(["oneOff"]);
     // No derivation at all (pre-provenance rows): can't prove untouched.
     const unknown = plan([
       row({ id: "unknown", transcriptVersion: null, isSuggestion: true, personId: SELF, suggestionConfidence: null }),
