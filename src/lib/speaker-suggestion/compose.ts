@@ -194,6 +194,7 @@ export function dismissedDerivationsOf(
   return new Set(
     rows
       .filter((r) => r.dismissedAt !== null && r.suggestionConfidence)
-      .map((r) => r.suggestionConfidence as string)
+      // "Not Ian" on an evidence-confirmed pre-v2 row blocks that kind of name too.
+      .map((r) => (r.suggestionConfidence as string).replace(/^legacy:/, ""))
   );
 }

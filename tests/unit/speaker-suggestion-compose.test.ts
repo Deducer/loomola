@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { composeSpeakerSuggestions } from "@/lib/speaker-suggestion/compose";
+import { composeSpeakerSuggestions, dismissedDerivationsOf } from "@/lib/speaker-suggestion/compose";
 import { computeSpeakerProfile } from "@/lib/speaker-profile/profile";
 import type { PersonCandidate } from "@/lib/speaker-suggestion/match-person";
 import { framesFor, framesForTurns, turns, wordsFor, type Turn } from "./fixtures/speaker-v2";
@@ -302,5 +302,17 @@ describe("composeSpeakerSuggestions (v2 evidence ladder)", () => {
       selfPersonId: SELF.id,
     });
     expect(close).toEqual([]);
+  });
+});
+
+describe("dismissedDerivationsOf", () => {
+  it("'Not Ian' on an evidence-confirmed pre-v2 row blocks that kind of name (marker stripped)", () => {
+    const d = dismissedDerivationsOf([
+      { dismissedAt: new Date(), suggestionConfidence: "legacy:self_via_mic_capture" },
+      { dismissedAt: new Date(), suggestionConfidence: "superseded:self_via_dominant_speech" },
+      { dismissedAt: null, suggestionConfidence: "remote_via_single_voice" },
+    ]);
+    expect(d.has("self_via_mic_capture")).toBe(true);
+    expect(d.has("remote_via_single_voice")).toBe(false);
   });
 });

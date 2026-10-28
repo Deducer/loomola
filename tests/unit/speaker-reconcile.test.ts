@@ -125,6 +125,35 @@ describe("reconcileAssignments", () => {
     expect(p.keepPendingIds).toEqual(["kept"]);
   });
 
+  it("a pre-v2 row the evidence confirmed keeps user-decision protection on later transcripts (Codex final P1)", () => {
+    const confirmed = row({
+      id: "c", speakerIdx: 0, personId: OTHER, autoApplied: true, transcriptVersion: LIVE,
+      suggestionConfidence: "legacy:remote_via_single_voice",
+    });
+    // Without the proof (no invitee list now): review, never a silent delete.
+    const noProof = plan([confirmed]);
+    expect(noProof.deleteIds).toEqual([]);
+    expect(noProof.reviewIds).toEqual(["c"]);
+    // A plain v2 auto row in the same spot is recomputed as before.
+    expect(plan([{ ...confirmed, suggestionConfidence: "remote_via_single_voice" }]).deleteIds).toEqual(["c"]);
+  });
+
+  it("never confirms a pre-v2 remote name from a LIVE call-audio channel (it can hold several people)", () => {
+    const live = turns([[0, 60], [1, 40], [0, 50], [1, 30]]);
+    const liveProfile = computeSpeakerProfile({ words: wordsFor(live), provider: "deepgram-live", activity: null });
+    expect(liveProfile.status).toBe("live_channels");
+    const p = reconcileAssignments({
+      rows: [row({ id: "them", speakerIdx: 1, transcriptVersion: null, isSuggestion: true, personId: OTHER })],
+      currentVersion: LIVE,
+      currentTranscriptCreatedAt: liveAt,
+      profile: liveProfile,
+      selfPersonId: SELF,
+      attendeePersonIds: [OTHER],
+    });
+    expect(p.confirms).toEqual([]);
+    expect(p.keepPendingIds).toEqual(["them"]);
+  });
+
   it("parked rows are ignored", () => {
     const p = plan([row({ id: "parked", speakerIdx: PARKED_IDX_CEILING - 1, dismissedAt: liveAt, personId: SELF })]);
     expect(p).toEqual({ deleteIds: [], restampIds: [], remaps: [], reviewIds: [], confirms: [], supersedes: [], keepPendingIds: [] });

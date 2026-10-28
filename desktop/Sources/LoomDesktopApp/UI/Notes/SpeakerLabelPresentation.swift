@@ -9,7 +9,8 @@ struct SpeakerLabelPresentation: Equatable {
     let isUncertain: Bool
 
     static func make(name: String, assignment: SpeakerAssignmentDTO?) -> SpeakerLabelPresentation {
-        if assignment?.needsReview == true, assignment?.dismissedAt == nil {
+        // Suggestions (pending, LLM, low-gain, pre-v2) are guesses too.
+        if let a = assignment, a.dismissedAt == nil, a.needsReview == true || a.isSuggestion {
             return SpeakerLabelPresentation(text: "\(name)?", isUncertain: true)
         }
         return SpeakerLabelPresentation(text: name, isUncertain: false)

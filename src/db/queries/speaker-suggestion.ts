@@ -273,7 +273,8 @@ export async function applyReconcilePlan(
         isSuggestion: false,
         autoApplied: true,
         needsReview: false,
-        suggestionConfidence: c.derivation,
+        // The legacy: marker keeps it out of auto-row recompute/cleanup.
+        suggestionConfidence: `${LEGACY_DERIVATION_PREFIX}${c.derivation}`,
       })
       .where(scoped(c.id));
   }

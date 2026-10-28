@@ -402,6 +402,19 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
     expect(after).toEqual([{ id: ROW, person_id: SARAH, needs_review: false, auto_applied: true, is_suggestion: false }]);
     // …and the mic still names Ian on his own voice.
     expect((await rows()).find((r) => r.speaker_idx === 1)?.person_id).toBe(IAN);
+    // Clients see the plain derivation (provenance text), not the marker.
+    const shown = await listSpeakerAssignments(MEDIA, OWNER);
+    expect(shown.find((r) => r.id === ROW)?.suggestionConfidence).toBe("remote_via_single_voice");
+    // An attendee edit (Sarah removed) and a later transcript replacement
+    // never delete the confirmed correction: with the proof gone it's review.
+    await updateAudioNoteAttendees({ mediaObjectId: MEDIA, ownerId: OWNER, personIds: [] });
+    await user`DELETE FROM transcripts WHERE media_object_id = ${MEDIA}`;
+    await user`INSERT INTO transcripts (media_object_id, provider, word_timestamps, created_at)
+      VALUES (${MEDIA}, 'deepgram', ${user.json(wordsFor(call))}, now() + interval '5 minutes')`;
+    await runSuggestSpeakersJob({ mediaObjectId: MEDIA });
+    const [later] = await user<{ person_id: string; needs_review: boolean }[]>`
+      SELECT person_id, needs_review FROM speaker_assignments WHERE id = ${ROW}`;
+    expect(later).toEqual({ person_id: SARAH, needs_review: true });
   });
 
   it("the watchdog recovers fresh notes whose speaker work never completed — and only fresh ones (P2)", async () => {
@@ -492,6 +505,6 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
       VALUES (${ROW}, ${MEDIA}, 1, ${IAN}, true, 'self_via_dominant_speech', now() - interval '2 hours', now() - interval '2 hours')`;
     await runSuggestSpeakersJob({ mediaObjectId: MEDIA });
     const [r] = await user`SELECT speaker_idx, is_suggestion, auto_applied, needs_review, suggestion_confidence FROM speaker_assignments WHERE id = ${ROW}`;
-    expect(r).toMatchObject({ speaker_idx: 1, is_suggestion: false, auto_applied: true, needs_review: false, suggestion_confidence: "self_via_mic_capture" });
+    expect(r).toMatchObject({ speaker_idx: 1, is_suggestion: false, auto_applied: true, needs_review: false, suggestion_confidence: "legacy:self_via_mic_capture" });
   });
 });

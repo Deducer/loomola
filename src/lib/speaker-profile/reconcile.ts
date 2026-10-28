@@ -134,7 +134,13 @@ export function reconcileAssignments(args: {
 
     const legacy = row.transcriptVersion === null;
     const wrote = row.suggestedAt ?? row.createdAt;
-    const userDecision = !row.isSuggestion && !row.autoApplied && row.dismissedAt === null;
+    // A pre-v2 row the evidence once confirmed is still possibly a user's
+    // choice: it keeps user-decision protection (proof or review, never a
+    // silent delete) on every later transcript.
+    const confirmedLegacy =
+      row.autoApplied && (row.suggestionConfidence ?? "").startsWith(LEGACY_DERIVATION_PREFIX);
+    const userDecision =
+      !row.isSuggestion && (!row.autoApplied || confirmedLegacy) && row.dismissedAt === null;
 
     // A pre-v2 "pending" row (or one kept from that era): never deleted —
     // the old label writer left is_suggestion set when the user picked or
@@ -150,7 +156,10 @@ export function reconcileAssignments(args: {
       const isSelf = args.selfPersonId !== null && row.personId === args.selfPersonId;
       const confirms = isSelf
         ? me.length === 1 && me[0] === row.speakerIdx
-        : row.personId !== null &&
+        : // A live call-audio channel can hold several people: like the
+          // naming ladder, never treat it as one confirmed person.
+          args.profile.status !== "live_channels" &&
+          row.personId !== null &&
           remote.length === 1 &&
           remote[0] === row.speakerIdx &&
           attendeeIdsAll.length === 1 &&

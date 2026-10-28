@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { mediaObjects, people, speakerAssignments, transcripts } from "@/db/schema";
 import { and, desc, eq, sql } from "drizzle-orm";
-import { isRowOnTranscript, PARKED_IDX_CEILING, transcriptVersionOf } from "@/lib/speaker-profile/reconcile";
+import { isRowOnTranscript, LEGACY_DERIVATION_PREFIX, PARKED_IDX_CEILING, transcriptVersionOf } from "@/lib/speaker-profile/reconcile";
 
 export type SpeakerAssignment = typeof speakerAssignments.$inferSelect;
 
@@ -147,7 +147,14 @@ export function presentAssignments(
   current: CurrentTranscript
 ): SpeakerAssignment[] {
   // Parked (superseded pre-v2) rows are retained data, never shown.
-  const visible = rows.filter((row) => row.speakerIdx > PARKED_IDX_CEILING);
+  // The legacy: marker is internal provenance; clients see the derivation.
+  const visible = rows
+    .filter((row) => row.speakerIdx > PARKED_IDX_CEILING)
+    .map((row) =>
+      row.suggestionConfidence?.startsWith(LEGACY_DERIVATION_PREFIX)
+        ? { ...row, suggestionConfidence: row.suggestionConfidence.slice(LEGACY_DERIVATION_PREFIX.length) }
+        : row
+    );
   if (!current) return visible;
   return visible.flatMap((row) => {
     if (row.dismissedAt !== null) return [row];

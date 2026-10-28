@@ -2,12 +2,12 @@ import XCTest
 @testable import LoomDesktopApp
 
 final class SpeakerLabelPresentationTests: XCTestCase {
-    private func assignment(needsReview: Bool?, dismissed: Bool = false) -> SpeakerAssignmentDTO {
+    private func assignment(needsReview: Bool?, dismissed: Bool = false, suggestion: Bool = false) -> SpeakerAssignmentDTO {
         SpeakerAssignmentDTO(
             speakerIdx: 0,
             personId: "p",
             displayLabelOverride: nil,
-            isSuggestion: false,
+            isSuggestion: suggestion,
             dismissedAt: dismissed ? "2026-10-27T00:00:00Z" : nil,
             suggestionConfidence: nil,
             suggestionEvidence: nil,
@@ -32,6 +32,14 @@ final class SpeakerLabelPresentationTests: XCTestCase {
         )
         XCTAssertFalse(
             SpeakerLabelPresentation.make(name: "X", assignment: assignment(needsReview: nil)).isUncertain
+        )
+    }
+
+    func testPendingSuggestionNameIsVisiblyUncertain() {
+        let p = SpeakerLabelPresentation.make(name: "Sarah", assignment: assignment(needsReview: false, suggestion: true))
+        XCTAssertEqual(p, SpeakerLabelPresentation(text: "Sarah?", isUncertain: true))
+        XCTAssertFalse(
+            SpeakerLabelPresentation.make(name: "Sarah", assignment: assignment(needsReview: nil, dismissed: true, suggestion: true)).isUncertain
         )
     }
 
