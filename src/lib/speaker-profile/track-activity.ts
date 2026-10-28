@@ -97,7 +97,13 @@ export async function computeActivityFromTrackKeys(args: {
   return runFfmpegWithActivity({
     // One decode thread: this fallback runs inside the web container
     // next to mixing/transcoding; loudness doesn't need more.
-    args: ["-hide_banner", "-loglevel", "error", "-threads", "1", "-i", micUrl, "-i", systemUrl, ...ACTIVITY_OUTPUT_ARGS],
+    // -threads is per input (and per output), so it's given for both.
+    args: [
+      "-hide_banner", "-loglevel", "error",
+      "-threads", "1", "-i", micUrl,
+      "-threads", "1", "-i", systemUrl,
+      ...ACTIVITY_OUTPUT_ARGS,
+    ],
     timeoutMs: args.timeoutMs,
     signal: args.signal,
     label: "activity decode",

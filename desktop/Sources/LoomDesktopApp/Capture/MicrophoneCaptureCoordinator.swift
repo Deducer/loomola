@@ -106,6 +106,10 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
         }
         gapLock.lock()
         gapTracker = MicRestartGapTracker()
+        // The recording's origin is the first "audio end": if the engine
+        // never delivers a buffer before a restart, the gap still runs from
+        // here — the system track has been recording since the start too.
+        gapTracker.markBuffer(uptime: ProcessInfo.processInfo.systemUptime, pausedTotal: 0)
         pausedTotal = 0
         pausedSince = nil
         gapLock.unlock()

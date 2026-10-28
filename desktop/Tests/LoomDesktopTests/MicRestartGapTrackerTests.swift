@@ -194,12 +194,31 @@ final class MicRestartGapTrackerTests: XCTestCase {
         XCTAssertLessThan(elapsed, 1.5)
     }
 
-    func testAppendSilenceBeforeAnyAudioIsANoOp() throws {
+    /// Review finding (ninth pass): the engine started but delivered
+    /// nothing until a restart. The system track recorded from the start,
+    /// so the mic file must too — the leading gap is written even though
+    /// no real buffer has fixed the file's format yet.
+    func testLeadingGapIsWrittenBeforeTheFirstRealBuffer() async throws {
         let url = FileManager.default.temporaryDirectory
             .appending(path: "mic-gap-fill-\(UUID()).m4a")
         defer { try? FileManager.default.removeItem(at: url) }
         let writer = try AudioAssetWriter(outputURL: url, sampleRate: 48_000, channelCount: 1)
-        _ = writer.appendSilence(seconds: 1)
-        XCTAssertEqual(writer.writeHealth.framesWritten, 0)
+        XCTAssertEqual(writer.appendSilence(seconds: 2), 2, accuracy: 0.001)
+        // The first real buffer arrives from a 44.1 kHz device: converted.
+        let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 22_050)!
+        buffer.frameLength = 22_050
+        try writer.append(buffer)
+        _ = try await writer.finish()
+        let file = try AVAudioFile(forReading: url)
+        XCTAssertEqual(Double(file.length) / file.fileFormat.sampleRate, 2.5, accuracy: 0.1)
+    }
+
+    func testRestartBeforeAnyBufferGapsFromTheRecordingOrigin() {
+        var tracker = MicRestartGapTracker()
+        tracker.markBuffer(uptime: 50, pausedTotal: 0) // start() marks the origin
+        tracker.open(nextEpoch: 1)                     // watchdog restart, no buffer yet
+        let silence = tracker.close(arrivalUptime: 58.1, bufferDuration: 0.1, pausedTotal: 0)
+        XCTAssertEqual(silence, 8, accuracy: 0.0001)
     }
 }

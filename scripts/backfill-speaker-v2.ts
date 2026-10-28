@@ -147,15 +147,9 @@ async function analyze(n: NoteRow, people: Map<string, Person[]>): Promise<Outco
       n.profile_version === PROFILE_VERSION &&
       (n.llm_status === "done" || n.llm_status === "skipped") &&
       reconcileRows.every((r) => r.transcriptVersion === version);
-    if (alreadyCurrent) {
-      // Done by the worker already: no download or decode.
-      return {
-        ...base,
-        status: (n.profile_status as SpeakerProfile["status"] | null) ?? "error",
-        alreadyCurrent: true,
-        pendingReview: reconcileRows.filter((r) => r.needsReview && !r.dismissedAt).length,
-      };
-    }
+    // Finished notes are still scored (the after-backfill scorecard must
+    // measure accuracy, not just completion). Their activity.bin exists by
+    // then, so this reads a small file instead of decoding audio.
     const { frames: activity, decoded } =
       n.provider === "deepgram-live" ? { frames: null, decoded: false } : await activityFor(n);
     const tracks = n.r2_mic_key && n.r2_systemaudio_key ? "both" : n.r2_mic_key || n.r2_systemaudio_key ? "partial" : "none";

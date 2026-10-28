@@ -76,7 +76,13 @@
 - The note page, the export and the GET API present names against the transcript the caller shows (no split read).
 - An attendee edit clears the done-marker in the same transaction.
 - The LLM status is run-scoped (`runId`), so an obsolete run can't mark a newer one complete.
-- The fallback decode runs single-threaded.
+- The fallback decode runs single-threaded (fixed per input in the ninth pass).
+
+**Ninth review pass (2026-10-27):**
+- The sole remote voice needs positive call-audio evidence (`source = system`).
+- A restart before the first mic buffer pads from the recording origin; the writer can open the file from silence.
+- The redundant unlocked attendee cleanup is removed.
+- The after-backfill scorecard keeps measuring finished notes.
 **Style:** TDD. Pure logic first, under `src/lib/speaker-profile/` and `src/lib/speaker-suggestion/`, then wiring, then UI. Each phase ships on its own and is scored with the same offline eval script.
 
 ## Phases at a glance (ordered by impact ÷ effort)

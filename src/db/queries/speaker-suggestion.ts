@@ -5,7 +5,7 @@ import {
   speakerAssignments,
   transcripts,
 } from "@/db/schema";
-import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { WordTimestamp } from "@/db/queries/transcripts";
 import type { PersonCandidate } from "@/lib/speaker-suggestion/match-person";
 import type { SpeakerSuggestion } from "@/lib/speaker-suggestion/compose";
@@ -282,33 +282,6 @@ export async function persistSpeakerSuggestions(
         speakerAssignments.speakerIdx,
       ],
     });
-}
-
-/** Deletes suggestion rows that are still pending (never accepted, never
- *  dismissed) so a re-run of the worker can recompute them. Used when the
- *  attendee list changes — stale pending suggestions from a wrong event
- *  would otherwise block the worker's existing-assignments gate forever.
- *  Accepted and dismissed rows are user decisions and stay untouched. */
-export async function clearPendingSpeakerSuggestions(
-  mediaObjectId: string
-): Promise<void> {
-  await db
-    .delete(speakerAssignments)
-    .where(
-      and(
-        eq(speakerAssignments.mediaObjectId, mediaObjectId),
-        or(
-          eq(speakerAssignments.isSuggestion, true),
-          // Auto-applied names that came FROM the attendee list are as
-          // stale as pending ones once it changes; mic-derived Me rows
-          // don't depend on attendees and stay.
-          and(
-            eq(speakerAssignments.autoApplied, true),
-            eq(speakerAssignments.suggestionConfidence, "remote_via_single_voice")
-          )
-        )
-      )
-    );
 }
 
 /** Used by the API to apply an accepted suggestion: flip is_suggestion

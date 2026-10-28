@@ -217,7 +217,7 @@ export async function updateAudioNoteAttendees(params: {
       .returning({ attendees: mediaObjects.attendees });
     if (!updated) throw new AttendeeUpdateError("media_object_not_found");
 
-    // Same rule as clearPendingSpeakerSuggestions: pending rows and
+    // Pending rows and
     // auto-applied names derived from the old attendee list go; mic-derived
     // Me rows and user decisions stay.
     await tx

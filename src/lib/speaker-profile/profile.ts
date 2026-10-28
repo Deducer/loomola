@@ -278,6 +278,10 @@ export function soleRemoteSpeakerIdx(profile: SpeakerProfile): number | null {
   const remote = remoteSpeakerIdxs(profile);
   if (remote.length !== 1) return null;
   if (profile.status === "live_channels") return remote[0];
+  // Positive evidence it's call audio, not just "not the recorder": a
+  // "mixed" voice (little system activity) could be a second person at
+  // the recorder's microphone, who must not inherit the invitee's name.
+  if (profile.entries.find((e) => e.speakerIdx === remote[0])?.source !== "system") return null;
   const me = new Set(meSpeakerIdxs(profile));
   const total = profile.entries.reduce((a, e) => a + e.speechSec, 0) || 1;
   const others = profile.entries.filter((e) => !me.has(e.speakerIdx) && e.speakerIdx !== remote[0]);

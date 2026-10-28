@@ -124,6 +124,17 @@ describe("composeSpeakerSuggestions (v2 evidence ladder)", () => {
     expect(r.map((s) => s.speakerIdx)).toEqual([0]);
   });
 
+  it("needs positive call-audio evidence for the 1:1 name — a 'mixed' voice could be someone at the mic", () => {
+    // Voice 1 is barely on system audio (20%): maybe a second person next
+    // to the recorder, not the invitee on the call.
+    const words = wordsFor(turns([[0, 50], [1, 50]]));
+    const activity = framesFor({ durationSec: 100, micOn: [[0, 50], [60, 70]], systemOn: [[50, 60]] });
+    const profile = computeSpeakerProfile({ words, provider: "deepgram", activity });
+    expect(profile.entries.find((e) => e.speakerIdx === 1)?.source).toBe("mixed");
+    const r = composeSpeakerSuggestions({ words, profile, attendees: sarah, people: [SELF, SARAH], selfPersonId: SELF.id });
+    expect(r.find((x) => x.personId === SARAH.id)).toBeUndefined();
+  });
+
   it("keeps an unknown attendee as a create-person suggestion, not auto-applied", () => {
     const r = composeSpeakerSuggestions({
       ...batch(turns([[0, 30], [1, 30]]), [0]),
