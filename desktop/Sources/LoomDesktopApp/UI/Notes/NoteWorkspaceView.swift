@@ -1,6 +1,9 @@
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
+import os
+
+private let workspaceLog = Logger(subsystem: "cloud.dissonance.loom.desktop", category: "workspace")
 
 /// AI-enhance state machine for the Generate-notes pill in the
 /// workspace's review mode. Mirrors the server's
@@ -191,6 +194,11 @@ struct NoteWorkspaceView: View {
     @State private var lastGeneratedTranscriptFingerprint: String? = nil
     @State private var transcriptSearchVisible = false
     @State private var showTranscriptSettings = false
+    @State private var showFeedbackBar = false
+    /// A note that just stopped recording: its live transcript lands a
+    /// beat after the workspace appears, so generation waits for the
+    /// upload to finish instead of showing a dead "Waiting" pill.
+    @State private var awaitingStopTranscript = false
     @State private var transcriptSearchQuery = ""
     @State private var activeTranscriptSearchIndex = 0
     @FocusState private var transcriptSearchFocused: Bool
@@ -318,6 +326,10 @@ struct NoteWorkspaceView: View {
                         // the notes, not a drawer over them.
                         transcriptTab(proxy: scrollProxy)
                     } else {
+                        if enhanceStatus == .running || awaitingStopTranscript {
+                            analyzingCard
+                                .transition(.opacity)
+                        }
                         bodyEditor
                         if !isRecording && !reviewActionItems.isEmpty {
                             actionItemsPanel
@@ -364,7 +376,13 @@ struct NoteWorkspaceView: View {
                 // Stop / Resume live in the header row (parity rank 3);
                 // nothing is pinned to the bottom while recording.
             } else {
-                // Reviewing mode: green ✦ Generate-notes pill anchored
+                if showFeedbackBar {
+                    feedbackBar
+                        .padding(.horizontal, DSSpacing.lg)
+                        .padding(.bottom, DSSpacing.sm)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+                // Reviewing mode: lime ✦ Generate-notes pill anchored
                 // bottom-center. POSTs /api/notes/<id>/enhance and
                 // polls until status flips to complete.
                 generateNotesBar
@@ -418,6 +436,13 @@ struct NoteWorkspaceView: View {
         .onChange(of: reviewBody) { _, newValue in
             scheduleReviewAutosave(newValue)
         }
+        .onChange(of: viewModel.state) { _, newState in
+            // The stop path persists the live transcript before the
+            // upload; once the upload completes the transcript is there.
+            if case .complete = newState { kickOffEnhancementAfterStopIfNeeded() }
+        }
+        .animation(LoomolaMotion.medium, value: showFeedbackBar)
+        .animation(LoomolaMotion.quick, value: awaitingStopTranscript)
         .onChange(of: viewModel.liveTranscription.segments) { _, _ in
             markTranscriptUpdatedAfterGenerationIfNeeded()
         }
@@ -1360,11 +1385,7 @@ struct NoteWorkspaceView: View {
     private var generateNotesBar: some View {
         HStack {
             Spacer()
-            if enhanceStatus == .running {
-                writingNotesBar
-                    .frame(maxWidth: 600)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-            } else {
+            if enhanceStatus != .running, !awaitingStopTranscript {
                 generateNotesPill
             }
             Spacer()
@@ -1487,30 +1508,6 @@ struct NoteWorkspaceView: View {
                 .strokeBorder(DSColor.Border.subtle, lineWidth: 1)
         }
         .help("Transcript changed since the last AI note generation")
-    }
-
-    private var writingNotesBar: some View {
-        HStack(spacing: DSSpacing.md) {
-            ProgressView()
-                .controlSize(.small)
-                .tint(DSColor.Accent.ai)
-            Text("Writing notes")
-                .font(DSFont.Body.md().weight(.semibold))
-                .foregroundStyle(DSColor.Accent.ai)
-            Spacer()
-        }
-        .frame(height: 52)
-        .padding(.horizontal, 18)
-        .background(
-            RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous)
-                .fill(DSColor.Bg.surfaceRaised)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous)
-                .strokeBorder(DSColor.Border.strong.opacity(0.72), lineWidth: 1)
-        }
-        .dsShadow(.raised)
-        .help("Writing generated notes")
     }
 
     private var failedGenerateNotesPill: some View {
@@ -2813,6 +2810,14 @@ struct NoteWorkspaceView: View {
         transcriptUpdatedAfterGeneration = false
         lastGeneratedTranscriptFingerprint = nil
         reviewActionItems = []
+        showFeedbackBar = false
+        // A note that just stopped shows the progress card at once;
+        // the status fetch below decides whether to generate.
+        if case .reviewing(let recording) = target, recording.status == "uploading" {
+            awaitingStopTranscript = true
+        } else {
+            awaitingStopTranscript = false
+        }
 
         // Auto-focus the body editor so the user can start typing
         // immediately — Granola does this. Slight delay so the
@@ -2901,20 +2906,14 @@ struct NoteWorkspaceView: View {
                                 selectedTemplateId = templateId
                             }
                             if let enhancement {
-                                applyEnhancementReadiness(enhancement)
                                 reviewActionItems = enhancement.actionItems ?? []
                                 if enhancement.generationStatus == "complete" {
                                     notesGeneratedForCurrentTranscript = true
                                     if let transcript {
                                         rememberGeneratedTranscript(fingerprint: transcriptFingerprint(from: transcript))
                                     }
-                                } else if enhancement.generationStatus == "pending" ||
-                                            enhancement.generationStatus == "streaming" {
-                                    beginPollingEnhancement(
-                                        mediaId: recording.id,
-                                        isActiveRecording: false
-                                    )
                                 }
+                                applyEnhanceDecision(enhancement, recording: recording)
                             }
                             loadingBody = false
                         }
@@ -3143,6 +3142,7 @@ struct NoteWorkspaceView: View {
                 }
                 rememberGeneratedTranscript()
                 enhanceStatus = .complete
+                showFeedbackBar = true
                 showToast(message: "Notes updated")
                 try? await Task.sleep(nanoseconds: 2_500_000_000)
                 if !Task.isCancelled { enhanceStatus = .idle }
@@ -3154,8 +3154,170 @@ struct NoteWorkspaceView: View {
                 showToast(message: "AI run failed", tone: .error)
                 return
             default:
+                // Granola shows the title the moment it exists; apply it
+                // as soon as a tick carries one.
+                if !isActiveRecording,
+                   let title = status.titleSuggested?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !title.isEmpty, EnhanceTrigger.titleIsPlaceholder(reviewTitle) {
+                    reviewTitle = title
+                }
                 continue
             }
+        }
+    }
+
+    /// Parity rank 6: decide what to do about AI notes from the server
+    /// status. A just-stopped note with a live transcript generates at
+    /// once (Granola); otherwise the pill waits for a click.
+    private func applyEnhanceDecision(_ status: EnhanceStatusResponse, recording: RecentRecording) {
+        let justStopped = recording.status == "uploading"
+        let decision = EnhanceTrigger.decision(
+            transcriptReady: status.transcriptReady ?? false,
+            transcriptTextLength: status.transcriptTextLength,
+            mediaStatus: status.mediaStatus,
+            generationStatus: status.generationStatus,
+            justStopped: justStopped
+        )
+        switch decision {
+        case .generateNow:
+            awaitingStopTranscript = false
+            guard !notesGeneratedForCurrentTranscript else {
+                applyEnhancementReadiness(status)
+                return
+            }
+            startEnhance()
+        case .inProgress:
+            awaitingStopTranscript = false
+            beginPollingEnhancement(mediaId: recording.id, isActiveRecording: false)
+        case .showGenerate:
+            awaitingStopTranscript = false
+            applyEnhancementReadiness(status)
+        case .waitForTranscript:
+            if justStopped {
+                awaitingStopTranscript = true
+                scheduleStopTranscriptRetry(recordingId: recording.id)
+            } else {
+                applyEnhancementReadiness(status)
+            }
+        case .noTranscript:
+            awaitingStopTranscript = false
+            applyEnhancementReadiness(status)
+        }
+    }
+
+    private func kickOffEnhancementAfterStopIfNeeded() {
+        guard case .reviewing(let recording) = target,
+              recording.status == "uploading",
+              enhanceStatus != .running,
+              !notesGeneratedForCurrentTranscript,
+              let backend = viewModel.backendClient
+        else { return }
+        Task { @MainActor in
+            guard let status = try? await backend.getEnhancementStatus(mediaId: recording.id) else { return }
+            applyEnhanceDecision(status, recording: recording)
+        }
+    }
+
+    /// Fallback for the upload-complete signal being missed: re-check
+    /// a few times, then settle on the plain Generate pill.
+    private func scheduleStopTranscriptRetry(recordingId: String, attempt: Int = 0) {
+        guard attempt < 6 else {
+            awaitingStopTranscript = false
+            return
+        }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard awaitingStopTranscript,
+                  case .reviewing(let recording) = target,
+                  recording.id == recordingId,
+                  let backend = viewModel.backendClient
+            else { return }
+            guard let status = try? await backend.getEnhancementStatus(mediaId: recordingId) else {
+                scheduleStopTranscriptRetry(recordingId: recordingId, attempt: attempt + 1)
+                return
+            }
+            if status.transcriptReady == true {
+                applyEnhanceDecision(status, recording: recording)
+            } else {
+                scheduleStopTranscriptRetry(recordingId: recordingId, attempt: attempt + 1)
+            }
+        }
+    }
+
+    /// Granola's progress card: sits where the notes will appear.
+    private var analyzingCard: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+                .controlSize(.small)
+            Text(awaitingStopTranscript && enhanceStatus != .running ? "Preparing notes" : "Analyzing transcript")
+                .font(DSFont.Body.md().weight(.medium))
+                .foregroundStyle(DSColor.Text.secondary)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 40)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(DSColor.Bg.surface)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(DSColor.Border.subtle, lineWidth: 1)
+        }
+    }
+
+    /// "How do these notes feel?" — Granola asks right after generation.
+    /// No backend yet: the answer is logged and the bar goes away.
+    private var feedbackBar: some View {
+        HStack(spacing: DSSpacing.sm) {
+            Text("How do these notes feel?")
+                .font(DSFont.Body.md())
+                .foregroundStyle(DSColor.Text.primary)
+            Spacer()
+            feedbackButton(icon: "hand.thumbsup", label: "Good", answer: "good")
+            feedbackButton(icon: "hand.thumbsdown", label: "Not good", answer: "not_good")
+            Image(systemName: "xmark")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(DSColor.Text.tertiary)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+                .overlay { ActionHitArea { showFeedbackBar = false } }
+        }
+        .padding(.leading, DSSpacing.lg)
+        .padding(.trailing, DSSpacing.sm)
+        .padding(.vertical, DSSpacing.sm)
+        .frame(maxWidth: NoteWorkspaceLayout.readableContentMaxWidth)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(DSColor.Bg.surfaceRaised)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(DSColor.Border.subtle, lineWidth: 1)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    private func feedbackButton(icon: String, label: String, answer: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .medium))
+            Text(label)
+                .font(DSFont.Body.sm().weight(.medium))
+        }
+        .foregroundStyle(DSColor.Text.primary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(Capsule().fill(DSColor.Bg.subtle))
+        .contentShape(Capsule())
+        .overlay {
+            ActionHitArea {
+                workspaceLog.notice("notes feedback: \(answer, privacy: .public) note=\(noteId ?? "-", privacy: .public)")
+                showFeedbackBar = false
+                showToast(message: "Thanks for the feedback")
+            }
+            .clipShape(Capsule())
         }
     }
 
@@ -3284,7 +3446,7 @@ struct NoteWorkspaceView: View {
             )
         } else if let suggested = status.titleSuggested,
                   !suggested.isEmpty,
-                  reviewTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                  EnhanceTrigger.titleIsPlaceholder(reviewTitle) {
             reviewTitle = suggested
         }
 
