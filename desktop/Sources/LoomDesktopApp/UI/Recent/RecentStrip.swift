@@ -39,6 +39,9 @@ struct RecentStrip: View {
     @State private var selectedIds: Set<String> = []
     @State private var showBulkPicker = false
     @State private var showDeleteConfirm = false
+    /// Date groups, computed once per items/filter change instead of
+    /// on every body evaluation (hover, selection, paging flags).
+    @State private var groups: [RecentDateGrouping.Group] = []
 
     private var filteredItems: [RecentRecording] {
         RecentHomeList.visibleItems(service.items, captureMode: captureMode, folderFilterId: folderFilterId)
@@ -96,7 +99,15 @@ struct RecentStrip: View {
             // Switching modes drops any in-progress selection — the
             // checkboxes belong to one mode at a time.
             selectedIds.removeAll()
+            regroup()
         }
+        .onChange(of: service.items) { _, _ in regroup() }
+        .onChange(of: folderFilterId) { _, _ in regroup() }
+        .onAppear { regroup() }
+    }
+
+    private func regroup() {
+        groups = RecentDateGrouping.grouped(filteredItems)
     }
 
     @ViewBuilder
@@ -161,17 +172,20 @@ struct RecentStrip: View {
         }
     }
 
+    /// Lazy: with full history loaded (hundreds of rows, each with a
+    /// hover state and popovers) a plain VStack materialised every
+    /// row at once and re-laid them all out on each page append.
     private var noteList: some View {
-        VStack(alignment: .leading, spacing: DSSpacing.lg) {
-            ForEach(RecentDateGrouping.grouped(filteredItems), id: \.label) { group in
-                VStack(alignment: .leading, spacing: DSSpacing.xs) {
+        LazyVStack(alignment: .leading, spacing: DSSpacing.lg) {
+            ForEach(groups, id: \.label) { group in
+                LazyVStack(alignment: .leading, spacing: DSSpacing.xs) {
                     Text(group.label)
                         .font(DSFont.Body.sm())
                         .foregroundStyle(DSColor.Text.tertiary)
                         // Align with the row icon: row padding (12) +
                         // checkbox slot (16) + gap (8).
                         .padding(.leading, DSSpacing.md + 16 + DSSpacing.sm)
-                    VStack(spacing: 0) {
+                    LazyVStack(spacing: 0) {
                         ForEach(group.items) { recording in
                             RecentNoteRow(
                                 recording: recording,

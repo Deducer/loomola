@@ -86,14 +86,9 @@ struct RecentCard: View {
 
     @ViewBuilder
     private var thumbnail: some View {
-        if let url = recording.thumbnailURL {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .empty: placeholder
-                case .success(let image): image.resizable().scaledToFill()
-                case .failure: placeholder
-                @unknown default: placeholder
-                }
+        if recording.thumbnailURL != nil {
+            ThumbnailImage(key: "card-\(recording.id)", url: recording.thumbnailURL, maxPixel: 640) {
+                placeholder
             }
         } else {
             placeholder

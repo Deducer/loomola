@@ -95,9 +95,15 @@ struct RecentNoteRow: View {
             timeLabel
                 .frame(width: 64, alignment: .trailing)
 
-            rowMenuButton
-                .frame(width: 20)
-                .opacity(rowMenuVisible ? 1 : 0)
+            // Mount the ⋯ (and its popover host) only while it can be
+            // seen: hundreds of always-mounted popovers made the list
+            // heavy to scroll.
+            if rowMenuVisible {
+                rowMenuButton
+                    .frame(width: 20)
+            } else {
+                Color.clear.frame(width: 20, height: 20)
+            }
         }
         .padding(.horizontal, DSSpacing.md)
         .padding(.vertical, 6)
@@ -121,12 +127,9 @@ struct RecentNoteRow: View {
 
     @ViewBuilder
     private var iconView: some View {
-        if let url = recording.thumbnailURL {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image): image.resizable().scaledToFill()
-                default: glyphIcon
-                }
+        if recording.thumbnailURL != nil {
+            ThumbnailImage(key: recording.id, url: recording.thumbnailURL, maxPixel: 128) {
+                glyphIcon
             }
         } else {
             glyphIcon
