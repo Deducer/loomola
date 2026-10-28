@@ -1,7 +1,7 @@
 # Granola pixel-parity audit: Loomola desktop meeting-recording surfaces
 
 **Date:** 2026-10-28
-**Status:** Phase 1 audit. No product code changed. Waiting for Ian's OK on the ranked list before Phase 2.
+**Status:** Phase 2 built 2026-10-28 on `feat/granola-pixel-parity` (all ten ranks, one commit each; see ROADMAP.md Stage 21). Awaiting Ian's merge.
 **Compared builds:** Granola 7.700.0 (Electron 44, dark appearance) vs Loomola desktop built from `main` at `4026c12` (installed via `desktop/scripts/install-local-app.sh`), same Mac, same dark system appearance, windows sized 1200×769 (Granola) and 1190×763 (Loomola).
 **Evidence:** `docs/Granola UI Screenshots/2026-10-28-parity/` — 35 raw captures (`granola-*.jpg`, `loomola-*.jpg`) plus 8 side-by-side composites (`pair-*.jpg`, Granola left, Loomola right). The May 2026 settings/templates captures in the parent folder are reused for settings.
 **Source inventory of the current Loomola implementation** (fonts, tokens, paddings, copy per surface): shared notes folder, `loomola-desktop-visual-inventory.md`. Read it before Phase 2; it corrects two stale CLAUDE.md claims (window default is 1240×820 / min 1100×700, and the title bar is a SwiftUI overlay, not `ToolbarItem`s).

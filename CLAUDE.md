@@ -287,6 +287,18 @@ A near-miss on a 72-min audio recording (Coolify HTML brownout mid-multipart upl
 
 Tests: 4 new `OrphanedRecordingStoreTests` cover capture / round-trip / mark-rescued / discard. All 96 desktop tests + 247 server unit tests pass.
 
+## Stage 21 — Granola pixel parity on desktop (🔨 built 2026-10-28 on `feat/granola-pixel-parity`, unpushed)
+
+Ten ranked visual gaps against Granola's macOS app, one commit per rank (audit: `docs/superpowers/specs/2026-10-28-granola-pixel-parity-audit.md`; plan: `docs/superpowers/plans/2026-10-28-granola-pixel-parity.md`; details in ROADMAP.md). Things to know when touching the desktop after this:
+
+- **Palette and type are Granola's.** `DSColor` holds the measured neutrals and the lime `Accent.ai` for AI actions; `DSFont.Serif` is Newsreader (bundled, OFL) for titles and calendar numerals. Don't reintroduce the old blue for AI surfaces.
+- **Home shell:** `SidebarPanel` is a 208pt rail with Home / Videos, Favorites, Spaces and a gear + avatar footer; `+ New note` lives in the title row; `ComingUpSection` lists meeting-like calendar events for the next 14 days; `RecentNoteRow` shows attendees and folder-suggestion pills. Capture mode and sidebar state persist in UserDefaults (`loomola.captureMode`, `loomola.sidebarOpen`).
+- **Note workspace:** `NoteHeaderBar` (segmented My notes / Enhanced pill, Stop / Resume pill), `DatePillModel`, the transcript *tab* (`TranscriptRunGrouper` groups bubbles into speaker runs), `EnhanceTrigger` (auto-generate right after Stop; a reopened note waits for the pill), `NoteBottomBar` (working chips only), `SharePopover`, `ToastCenter` (bottom-right toasts with Undo, used by Move to trash → `POST /api/recordings/:id/restore`), `FolderPickerRows` (counts from `recordingCount` on `GET /api/folders`). Settings render in-window (`SettingsSheet` with a tab rail, swapped in by `MainRecorderView.showSettings`).
+- **No in-window timer.** While a note records the home title row shows `RecordingInProgressPill` and the menu bar item counts mm:ss (`AppDelegate.observeAudioRecordingForMenuBar`). The elapsed maths lives in `RecordingElapsedFormatter`.
+- **Window geometry** is 1240×820 default / 1100×700 minimum (`RecorderWindowGeometry`) with the unified ~52pt title bar; the Stage 8 figures earlier in this file are historical.
+- **Perf fix worth remembering:** `RecentDateGrouping` caches `DateFormatter`s per calendar/locale/zone. Building one per row per render stalled the home for seconds with a few hundred notes.
+- Not built on purpose: Ask-anything field, per-person sharing, persisted notes feedback (logged only).
+
 ## Open design queue (specs filed, not yet built)
 
 Most-recently-spec'd milestones — see ROADMAP.md → "Open follow-ups" for the full list. These are the candidates a fresh agent is most likely to be asked to plan / implement next:

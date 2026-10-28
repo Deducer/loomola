@@ -453,6 +453,27 @@ Diagnosed from prod: speaker rows were computed on the live transcript (indices 
 
 Next: Phase 2 (Me/Them layout on saved transcripts, speaker-labelled AI notes), Phase 3 (relabel UX), Phase 4 (Zoom-first meeting-app names via Accessibility), Phase 5 (voice memory).
 
+## Stage 21 — Granola pixel parity, desktop (🔨 built 2026-10-28 on `feat/granola-pixel-parity`; unpushed, awaiting Ian's merge)
+
+Ten ranked gaps from a side-by-side audit of Granola's macOS app, implemented in rank order as one small commit each. Audit: [`2026-10-28-granola-pixel-parity-audit.md`](docs/superpowers/specs/2026-10-28-granola-pixel-parity-audit.md). Plan: [`2026-10-28-granola-pixel-parity.md`](docs/superpowers/plans/2026-10-28-granola-pixel-parity.md). Before/after captures live in `docs/Granola UI Screenshots/2026-10-28-parity/` (gitignored, local only).
+
+| Rank | What changed |
+|---|---|
+| 1 Palette | `DSColor` carries Granola's measured neutrals (canvas `#252525`, sidebar `#1E1E1E`, surface `#2F2F2F`, text `#E8E8E6`/`#C8C8C6`/`#8E8E8C`) with matching light values; AI actions use the lime `Accent.ai` (`#B2C248` dark / `#788C15` light). |
+| 5 Typography | Newsreader (OFL, bundled) for note titles and calendar numerals; Inter 16 body; markdown headings render a small grey `#` in a 22pt gutter instead of hiding the marker. |
+| 2 Home shell | 208pt sidebar rail (Home / Videos, Favorites, Spaces, gear + avatar footer), `+ New note` in the title row, a Coming up calendar card (next 14 days, meeting-like events only), 48pt recent rows with attendee lines and folder-suggestion pills, persisted capture mode and sidebar state. |
+| 3 Note header | One segmented pill (My notes / Enhanced with the template menu, transcript toggle), Stop / Resume pill beside it, Today date pill with the linked event and attendees. |
+| 4 Transcript tab | Transcript replaces the body (not a drawer): speaker runs with wall-clock gutter stamps, per-speaker colours, Find and a settings popover (mic, live transcription toggle). |
+| 6 Generate moment | A just-stopped note generates from the live transcript without a click: "Preparing notes" → "Analyzing transcript" card in the body, title revealed first, then a "How do these notes feel?" bar. `EnhanceTrigger.decision` pins the rules. |
+| 7 Recording chrome | No elapsed clock in the window: the home title row shows "••• New note ✕" while recording, the menu bar item counts mm:ss. |
+| 8 Bottom bar | Granola-shape capsule with working chips only (Copy text, Open on web, Save to Obsidian). No Ask field yet. |
+| 9 Actions + Share | Always-visible ⋯ / folder / Share / Copy link; Share popover with the owner row and the public link; bottom-right toasts with Undo (trash → `POST /api/recordings/:id/restore`). |
+| 10 Popovers + settings | Folder popover with note counts (`recordingCount` on `GET /api/folders`), favourites collapsed behind "Show N more", lime New folder; Settings render in the window with a 180pt tab rail. |
+
+Side fixes found on the way: `RecentDateGrouping` caches its `DateFormatter`s (building one per row per render froze the home with a few hundred notes); `TranscriptEchoSuppressor` drops short mic fragments that sit inside remote speech; the stale "Today" pill reads the note's own date. Window geometry today is 1240×820 default, 1100×700 minimum (`RecorderWindowGeometry`), with the unified ~52pt title bar — the Stage 8 figures above are historical.
+
+Not built on purpose: the Ask-anything field (single-note Q&A is its own milestone), per-person sharing (Share shows the owner and the link), notes feedback persists nowhere yet (logged under `cloud.dissonance.loom.desktop` / `workspace`).
+
 ## Open follow-ups (next milestones to spec)
 
 | Topic | Why | Rough effort |
