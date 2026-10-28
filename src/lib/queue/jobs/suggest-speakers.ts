@@ -123,11 +123,15 @@ export async function runSuggestSpeakersJob(
         .map((a) => a.personId)
         .filter((id): id is string => Boolean(id) && id !== selfPerson?.id),
     });
-    if (plan.deleteIds.length + plan.remaps.length + plan.restampIds.length + plan.reviewIds.length > 0) {
+    if (
+      plan.deleteIds.length + plan.remaps.length + plan.restampIds.length + plan.reviewIds.length +
+        plan.confirms.length + plan.supersedes.length + plan.keepPendingIds.length > 0
+    ) {
       await applyReconcilePlan(tx, { mediaObjectId, version, plan });
       console.log(
         `[suggest-speakers] ${mediaObjectId} reconciled onto ${version}: ` +
-          `deleted=${plan.deleteIds.length} moved=${plan.remaps.length} kept=${plan.restampIds.length} review=${plan.reviewIds.length}`
+          `deleted=${plan.deleteIds.length} moved=${plan.remaps.length} kept=${plan.restampIds.length} review=${plan.reviewIds.length} ` +
+          `confirmed=${plan.confirms.length} superseded=${plan.supersedes.length} keptSuggestions=${plan.keepPendingIds.length}`
       );
     }
     const locked = await lockedAssignments(tx, mediaObjectId);

@@ -78,6 +78,9 @@ type Outcome = {
   deletes: number;
   restamps: number;
   remaps: Array<{ id: string; from: number; to: number }>;
+  confirms: number;
+  supersedes: number;
+  keptSuggestions: number;
   review: Array<{ rowId: string; speakerIdx: number; isSelf: boolean; derivation: string | null; micSaysMe: number[] }>;
   pendingReview: number;
   newAuto: number;
@@ -109,7 +112,7 @@ async function activityFor(n: NoteRow): Promise<{ frames: ActivityFrames | null;
 async function analyze(n: NoteRow, people: Map<string, Person[]>): Promise<Outcome> {
   const base: Outcome = {
     id: n.id, date: n.created_at.toISOString().slice(0, 10), status: "error", alreadyCurrent: false,
-    micCoverage: null, voices: 0, meIdxs: [], deletes: 0, restamps: 0, remaps: [], review: [], pendingReview: 0,
+    micCoverage: null, voices: 0, meIdxs: [], deletes: 0, restamps: 0, remaps: [], confirms: 0, supersedes: 0, keptSuggestions: 0, review: [], pendingReview: 0,
     newAuto: 0, newSuggestions: 0, llmCandidates: 0, acceptedSelfRows: 0, acceptedSelfWrong: 0, framesToUpload: null,
   };
   try {
@@ -172,10 +175,18 @@ async function analyze(n: NoteRow, people: Map<string, Person[]>): Promise<Outco
 
     // What survives the plan, then what the ladder would add.
     const deleted = new Set(plan.deleteIds);
-    const remapTo = new Map(plan.remaps.map((r) => [r.id, r.newIdx]));
+    const remapTo = new Map([
+      ...plan.remaps.map((r) => [r.id, r.newIdx] as const),
+      ...plan.supersedes.map((r) => [r.id, r.parkIdx] as const),
+    ]);
+    const supersededIds = new Set(plan.supersedes.map((r) => r.id));
     const surviving = reconcileRows
       .filter((r) => !deleted.has(r.id))
-      .map((r) => ({ ...r, speakerIdx: remapTo.get(r.id) ?? r.speakerIdx }));
+      .map((r) => ({
+        ...r,
+        speakerIdx: remapTo.get(r.id) ?? r.speakerIdx,
+        dismissedAt: supersededIds.has(r.id) ? new Date() : r.dismissedAt,
+      }));
     const suggestions = self
       ? composeSpeakerSuggestions({
           words: n.words,
@@ -212,6 +223,9 @@ async function analyze(n: NoteRow, people: Map<string, Person[]>): Promise<Outco
       deletes: plan.deleteIds.length,
       restamps: plan.restampIds.length,
       remaps: plan.remaps.map((r) => ({ id: r.id, from: reconcileRows.find((x) => x.id === r.id)!.speakerIdx, to: r.newIdx })),
+      confirms: plan.confirms.length,
+      supersedes: plan.supersedes.length,
+      keptSuggestions: plan.keepPendingIds.length,
       review: plan.reviewIds.map((id) => {
         const r = reconcileRows.find((x) => x.id === id)!;
         return { rowId: id, speakerIdx: r.speakerIdx, isSelf: !!self && r.personId === self.id, derivation: r.derivation, micSaysMe: me };
@@ -262,7 +276,7 @@ async function score(notes: NoteRow[], people: Map<string, Person[]>, title: str
       outcomes.push(o);
       console.log(
         `${o.date} ${o.id.slice(0, 8)} ${o.status.padEnd(13)}${o.alreadyCurrent ? " [v2]" : "     "} cov=${o.micCoverage ?? "-"} voices=${o.voices} me=[${o.meIdxs.join(",")}]` +
-          ` del=${o.deletes} keep=${o.restamps} move=${o.remaps.length} review=${o.review.length} +auto=${o.newAuto} +sugg=${o.newSuggestions} llm=${o.llmCandidates}` +
+          ` del=${o.deletes} keep=${o.restamps} move=${o.remaps.length} confirm=${o.confirms} hide=${o.supersedes} sugg=${o.keptSuggestions} review=${o.review.length} +auto=${o.newAuto} +sugg=${o.newSuggestions} llm=${o.llmCandidates}` +
           (o.error ? ` ERROR ${o.error}` : "")
       );
     }
@@ -270,7 +284,9 @@ async function score(notes: NoteRow[], people: Map<string, Person[]>, title: str
   const sum = (f: (o: Outcome) => number) => outcomes.reduce((a, o) => a + f(o), 0);
   const byStatus: Record<string, number> = {};
   for (const o of outcomes) byStatus[o.status] = (byStatus[o.status] ?? 0) + 1;
-  const changed = outcomes.filter((o) => o.deletes + o.remaps.length + o.review.length + o.newAuto + o.newSuggestions > 0);
+  const changed = outcomes.filter(
+    (o) => o.deletes + o.remaps.length + o.confirms + o.supersedes + o.review.length + o.newAuto + o.newSuggestions > 0
+  );
   console.log(JSON.stringify({
     notes: outcomes.length,
     alreadyOnV2: outcomes.filter((o) => o.alreadyCurrent).length,
@@ -281,6 +297,9 @@ async function score(notes: NoteRow[], people: Map<string, Person[]>, title: str
     rowsDeletedForRecompute: sum((o) => o.deletes),
     rowsKeptConfirmed: sum((o) => o.restamps),
     rowsMoved: sum((o) => o.remaps.length),
+    legacySuggestionsConfirmedByEvidence: sum((o) => o.confirms),
+    legacySuggestionsHiddenAsContradicted: sum((o) => o.supersedes),
+    legacySuggestionsKeptAsIs: sum((o) => o.keptSuggestions),
     rowsFlaggedForReview: sum((o) => o.review.length),
     rowsAlreadyNeedingReview: sum((o) => o.pendingReview),
     newAutoAppliedNames: sum((o) => o.newAuto),

@@ -21,10 +21,12 @@ import { meSpeakerIdxs, soleRemoteSpeakerIdx, type SpeakerProfile } from "./prof
  *  - Stale dismissals ("Not <name>"): kept, moved by the capture-channel
  *    rule when unambiguous. The worker won't auto-apply a kind of name
  *    the user dismissed on this note.
- *  - Legacy (unversioned) pending rows are never deleted: the pre-v2
- *    label writer changed or confirmed the person on a pending row
- *    WITHOUT clearing is_suggestion, so any of them may be a user's
- *    choice. They go to review.
+ *  - Legacy (pre-v2) pending rows are never deleted — the old label
+ *    writer changed or confirmed a person WITHOUT clearing is_suggestion,
+ *    so any of them may be a user's choice. Capture evidence confirms
+ *    them (kept as an evidence-confirmed name), contradicts them
+ *    (retained hidden, parked off the voice indices), or neither (kept
+ *    as a suggestion). None of them needs the owner's review.
  *  - Stale USER decisions are never deleted or rewritten without
  *    capture evidence. Kept (restamped) when the evidence confirms them,
  *    moved when the old row was a live capture channel and the new
@@ -56,7 +58,25 @@ export type ReconcilePlan = {
   restampIds: string[];
   remaps: Array<{ id: string; newIdx: number }>;
   reviewIds: string[];
+  /** Pre-v2 pending rows the capture evidence CONFIRMS: kept as the same
+   *  name, now an evidence-confirmed name (no "?", still undoable). */
+  confirms: Array<{ id: string; derivation: string }>;
+  /** Pre-v2 pending rows the capture evidence CONTRADICTS (mostly the old
+   *  "owner on the call-audio channel" mislabel): never deleted — retained
+   *  hidden, parked off the voice indices so they block nothing. */
+  supersedes: Array<{ id: string; parkIdx: number }>;
+  /** Pre-v2 pending rows the evidence neither confirms nor contradicts:
+   *  kept as ordinary suggestions, tagged so they're never treated as
+   *  disposable v2 machine output. */
+  keepPendingIds: string[];
 };
+
+/** Prefix marking a kept pre-v2 suggestion's derivation. */
+export const LEGACY_DERIVATION_PREFIX = "legacy:";
+/** Prefix marking a retained-but-hidden (superseded) pre-v2 suggestion. */
+export const SUPERSEDED_DERIVATION_PREFIX = "superseded:";
+/** Parked (superseded) rows live at or below this index. */
+export const PARKED_IDX_CEILING = -1_000_000;
 
 export function transcriptVersionOf(provider: string, createdAt: Date): string {
   return `${provider}:${createdAt.toISOString()}`;
@@ -85,7 +105,10 @@ export function reconcileAssignments(args: {
   /** The note's attendee person ids (owner excluded), read under lock. */
   attendeePersonIds?: ReadonlyArray<string>;
 }): ReconcilePlan {
-  const plan: ReconcilePlan = { deleteIds: [], restampIds: [], remaps: [], reviewIds: [] };
+  const plan: ReconcilePlan = {
+    deleteIds: [], restampIds: [], remaps: [], reviewIds: [], confirms: [], supersedes: [], keepPendingIds: [],
+  };
+  let nextPark = Math.min(PARKED_IDX_CEILING, ...args.rows.map((r) => r.speakerIdx)) - 1;
   const currentIsLive = args.currentVersion.startsWith(LIVE_PREFIX);
   // Low-gain mic evidence only ever produces a suggestion when naming, so
   // it may not prove — or move — an accepted name here either.
@@ -100,7 +123,10 @@ export function reconcileAssignments(args: {
   const keptIdxs = new Set<number>();
   const dismissalIds = new Set<string>();
 
+  const attendeeIdsAll = args.attendeePersonIds ?? [];
   for (const row of args.rows) {
+    // Parked (superseded) rows are retained data, not voices.
+    if (row.speakerIdx <= PARKED_IDX_CEILING) continue;
     if (row.transcriptVersion === args.currentVersion) {
       keptIdxs.add(row.speakerIdx);
       continue;
@@ -110,14 +136,44 @@ export function reconcileAssignments(args: {
     const wrote = row.suggestedAt ?? row.createdAt;
     const userDecision = !row.isSuggestion && !row.autoApplied && row.dismissedAt === null;
 
-    if (legacy && row.isSuggestion) {
-      // Never deleted: the pre-v2 label writer left is_suggestion set when
-      // the user picked or renamed a person, so an unversioned "pending"
-      // row may be a user's choice — even one identical to what the
-      // worker wrote. Preserved for review (it doesn't block the evidence
-      // naming that person on another voice).
-      plan.reviewIds.push(row.id);
-      keptIdxs.add(row.speakerIdx);
+    // A pre-v2 "pending" row (or one kept from that era): never deleted —
+    // the old label writer left is_suggestion set when the user picked or
+    // renamed a person, so it may be a user's choice. The capture evidence
+    // decides how it's shown; it never needs the owner's supervision:
+    //  - confirms it → the same name, now evidence-confirmed (no "?");
+    //  - contradicts it → retained but hidden (parked), blocking nothing;
+    //  - neither → stays an ordinary suggestion.
+    const legacyPending =
+      row.isSuggestion &&
+      (legacy || (row.suggestionConfidence ?? "").startsWith(LEGACY_DERIVATION_PREFIX));
+    if (legacyPending) {
+      const isSelf = args.selfPersonId !== null && row.personId === args.selfPersonId;
+      const confirms = isSelf
+        ? me.length === 1 && me[0] === row.speakerIdx
+        : row.personId !== null &&
+          remote.length === 1 &&
+          remote[0] === row.speakerIdx &&
+          attendeeIdsAll.length === 1 &&
+          attendeeIdsAll[0] === row.personId;
+      const contradicts = isSelf
+        ? me.length === 1 && me[0] !== row.speakerIdx
+        : row.personId !== null && me.includes(row.speakerIdx);
+      if (confirms) {
+        plan.confirms.push({
+          id: row.id,
+          derivation: isSelf
+            ? args.profile.status === "live_channels"
+              ? "self_via_source_channel"
+              : "self_via_mic_capture"
+            : "remote_via_single_voice",
+        });
+        keptIdxs.add(row.speakerIdx);
+      } else if (contradicts) {
+        plan.supersedes.push({ id: row.id, parkIdx: nextPark-- });
+      } else {
+        plan.keepPendingIds.push(row.id);
+        keptIdxs.add(row.speakerIdx);
+      }
       continue;
     }
     // A legacy row written AFTER this transcript is very likely about it —

@@ -229,6 +229,8 @@ export async function updateAudioNoteAttendees(params: {
           // "pending" row may hold a manual correction made through the
           // pre-v2 writer, so it is left for reconcile to preserve or prove.
           isNotNull(speakerAssignments.transcriptVersion),
+          // …and never a kept pre-v2 suggestion (tagged "legacy:").
+          sql`coalesce(${speakerAssignments.suggestionConfidence}, '') NOT LIKE 'legacy:%'`,
           or(
             eq(speakerAssignments.isSuggestion, true),
             and(

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  PARKED_IDX_CEILING,
   reconcileAssignments,
   transcriptVersionOf,
   type ReconcileRow,
@@ -70,28 +71,39 @@ describe("reconcileAssignments", () => {
     expect(p.deleteIds.sort()).toEqual(["auto", "pending"]);
   });
 
-  it("never deletes a legacy pending row — the old picker could confirm Ian without clearing is_suggestion (P1)", () => {
-    // Identical to the worker's own output, but possibly the user choosing
-    // Ian through the pre-v2 label picker.
-    const p = plan([
-      row({ id: "legacy", transcriptVersion: null, isSuggestion: true, personId: SELF, suggestionConfidence: "self_via_dominant_speech", suggestedAt: new Date("2026-08-06T00:00:00Z") }),
-    ]);
+  it("pre-v2 pending rows are never deleted: evidence confirms, supersedes (hidden) or keeps them — none go to review", () => {
+    // 1:1 where the mic says the owner is voice 1.
+    const p = reconcileAssignments({
+      rows: [
+        // Owner on the mic voice (today's-call shape): confirmed.
+        row({ id: "agree", speakerIdx: 1, transcriptVersion: null, isSuggestion: true, personId: SELF, suggestionConfidence: "self_via_dominant_speech" }),
+        // Owner on the call-audio voice (the old live-channel bug): contradicted.
+        row({ id: "wrongMe", speakerIdx: 0, transcriptVersion: null, isSuggestion: true, personId: SELF, suggestionConfidence: "self_via_dominant_speech" }),
+      ],
+      currentVersion: BATCH,
+      currentTranscriptCreatedAt: batchAt,
+      profile: profile1on1,
+      selfPersonId: SELF,
+      attendeePersonIds: [OTHER],
+    });
     expect(p.deleteIds).toEqual([]);
-    expect(p.reviewIds).toEqual(["legacy"]);
+    expect(p.reviewIds).toEqual([]);
+    expect(p.confirms).toEqual([{ id: "agree", derivation: "self_via_mic_capture" }]);
+    expect(p.supersedes.map((x) => x.id)).toEqual(["wrongMe"]);
+    expect(p.supersedes[0].parkIdx).toBeLessThanOrEqual(PARKED_IDX_CEILING);
   });
 
-  it("keeps a legacy pending row the old writer may have renamed — a manual correction goes to review (P1)", () => {
-    // The pre-v2 label writer changed person_id on a pending row without
-    // clearing is_suggestion: a self-derived row now naming someone else
-    // is the user's correction, not disposable output.
+  it("a pre-v2 pending row the evidence can't judge stays an ordinary suggestion (never review, never deleted)", () => {
+    // OTHER on the remote voice, but the invitee list doesn't say who it is.
     const renamed = plan([
       row({ id: "renamed", transcriptVersion: null, isSuggestion: true, personId: OTHER, suggestionConfidence: "self_via_dominant_speech", speakerIdx: 0 }),
+      row({ id: "oneOff", transcriptVersion: null, isSuggestion: true, personId: null, suggestionConfidence: "new_person_from_attendee", speakerIdx: 2 }),
     ]);
+    expect(renamed.keepPendingIds.sort()).toEqual(["oneOff", "renamed"]);
     expect(renamed.deleteIds).toEqual([]);
-    expect(renamed.reviewIds).toEqual(["renamed"]);
-    // An attendee-derived row renamed to ANOTHER attendee (Alice → Bob,
-    // both invited) looks plausible but isn't provably untouched.
-    const alice = reconcileAssignments({
+    expect(renamed.reviewIds).toEqual([]);
+    // Someone else on the OWNER's voice is contradicted → hidden, not reviewed.
+    const onMyVoice = reconcileAssignments({
       rows: [
         row({ id: "aliceToBob", transcriptVersion: null, isSuggestion: true, personId: "bob", suggestionConfidence: "person_id_exact", speakerIdx: 1 }),
       ],
@@ -101,21 +113,21 @@ describe("reconcileAssignments", () => {
       selfPersonId: SELF,
       attendeePersonIds: ["alice", "bob"],
     });
-    expect(alice.deleteIds).toEqual([]);
-    expect(alice.reviewIds).toEqual(["aliceToBob"]);
-    // A new-person suggestion given a one-off label ("Bob") through the
-    // old writer: person still null, so it looks untouched — it isn't.
-    const labeled = plan([
-      row({ id: "oneOff", transcriptVersion: null, isSuggestion: true, personId: null, suggestionConfidence: "new_person_from_attendee", speakerIdx: 1 }),
+    expect(onMyVoice.supersedes.map((x) => x.id)).toEqual(["aliceToBob"]);
+    expect(onMyVoice.reviewIds).toEqual([]);
+  });
+
+  it("a kept pre-v2 suggestion survives later transcript replacements (still judged, never deleted)", () => {
+    const p = plan([
+      row({ id: "kept", transcriptVersion: LIVE, isSuggestion: true, personId: OTHER, suggestionConfidence: "legacy:person_id_exact", speakerIdx: 0 }),
     ]);
-    expect(labeled.deleteIds).toEqual([]);
-    expect(labeled.reviewIds).toEqual(["oneOff"]);
-    // No derivation at all (pre-provenance rows): can't prove untouched.
-    const unknown = plan([
-      row({ id: "unknown", transcriptVersion: null, isSuggestion: true, personId: SELF, suggestionConfidence: null }),
-    ]);
-    expect(unknown.deleteIds).toEqual([]);
-    expect(unknown.reviewIds).toEqual(["unknown"]);
+    expect(p.deleteIds).toEqual([]);
+    expect(p.keepPendingIds).toEqual(["kept"]);
+  });
+
+  it("parked rows are ignored", () => {
+    const p = plan([row({ id: "parked", speakerIdx: PARKED_IDX_CEILING - 1, dismissedAt: liveAt, personId: SELF })]);
+    expect(p).toEqual({ deleteIds: [], restampIds: [], remaps: [], reviewIds: [], confirms: [], supersedes: [], keepPendingIds: [] });
   });
 
   it("keeps a legacy accepted row the mic evidence confirms, restamping it", () => {
@@ -151,7 +163,7 @@ describe("reconcileAssignments", () => {
 
   it("leaves rows already on the current version alone", () => {
     const p = plan([row({ id: "cur", transcriptVersion: BATCH, personId: SELF, speakerIdx: 0 })]);
-    expect(p).toEqual({ deleteIds: [], restampIds: [], remaps: [], reviewIds: [] });
+    expect(p).toEqual({ deleteIds: [], restampIds: [], remaps: [], reviewIds: [], confirms: [], supersedes: [], keepPendingIds: [] });
   });
 
   it("restamps everything across live → live snapshot re-saves", () => {

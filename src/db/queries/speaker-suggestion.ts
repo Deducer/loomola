@@ -10,7 +10,13 @@ import type { WordTimestamp } from "@/db/queries/transcripts";
 import type { PersonCandidate } from "@/lib/speaker-suggestion/match-person";
 import type { SpeakerSuggestion } from "@/lib/speaker-suggestion/compose";
 import type { SpeakerProfile } from "@/lib/speaker-profile/profile";
-import { isRowOnTranscript, type ReconcilePlan, type ReconcileRow } from "@/lib/speaker-profile/reconcile";
+import {
+  isRowOnTranscript,
+  LEGACY_DERIVATION_PREFIX,
+  SUPERSEDED_DERIVATION_PREFIX,
+  type ReconcilePlan,
+  type ReconcileRow,
+} from "@/lib/speaker-profile/reconcile";
 import { withUserSpeakerLock } from "@/db/queries/speaker-assignments";
 
 export interface NoteForSpeakerSuggestion {
@@ -256,6 +262,51 @@ export async function applyReconcilePlan(
   }
   for (const id of plan.restampIds) {
     await tx.update(speakerAssignments).set({ transcriptVersion: version }).where(scoped(id));
+  }
+  // Pre-v2 suggestions the capture evidence confirms: same name, now an
+  // evidence-confirmed (auto-applied, undoable) name.
+  for (const c of plan.confirms) {
+    await tx
+      .update(speakerAssignments)
+      .set({
+        transcriptVersion: version,
+        isSuggestion: false,
+        autoApplied: true,
+        needsReview: false,
+        suggestionConfidence: c.derivation,
+      })
+      .where(scoped(c.id));
+  }
+  // Pre-v2 suggestions the evidence contradicts: kept (person and all),
+  // but dismissed and parked at a negative index so they're hidden and
+  // free the voice for the right name.
+  for (const p of plan.supersedes) {
+    await tx
+      .update(speakerAssignments)
+      .set({
+        transcriptVersion: version,
+        speakerIdx: p.parkIdx,
+        isSuggestion: false,
+        autoApplied: false,
+        needsReview: false,
+        dismissedAt: new Date(),
+        suggestionConfidence: sql`${SUPERSEDED_DERIVATION_PREFIX} || coalesce(${speakerAssignments.suggestionConfidence}, 'none')`,
+      })
+      .where(scoped(p.id));
+  }
+  // Pre-v2 suggestions the evidence neither confirms nor contradicts:
+  // ordinary suggestions on this transcript, tagged as pre-v2 so they are
+  // never deleted as disposable v2 output.
+  for (const id of plan.keepPendingIds) {
+    await tx
+      .update(speakerAssignments)
+      .set({
+        transcriptVersion: version,
+        suggestionConfidence: sql`CASE WHEN coalesce(${speakerAssignments.suggestionConfidence}, '') LIKE ${LEGACY_DERIVATION_PREFIX + "%"}
+          THEN ${speakerAssignments.suggestionConfidence}
+          ELSE ${LEGACY_DERIVATION_PREFIX} || coalesce(${speakerAssignments.suggestionConfidence}, 'none') END`,
+      })
+      .where(scoped(id));
   }
   // A review item is treated as a USER decision from here on
   // (is_suggestion false): a legacy row preserved because it may be a

@@ -68,6 +68,19 @@ vi.mock("@/db/queries/speaker-suggestion", () => ({
       r.transcriptVersion = version;
     }
     for (const id of plan.restampIds) store.rows.find((x) => x.id === id)!.transcriptVersion = version;
+    for (const c of plan.confirms) {
+      const r = store.rows.find((x) => x.id === c.id)!;
+      Object.assign(r, { transcriptVersion: version, isSuggestion: false, autoApplied: true, needsReview: false, suggestionConfidence: c.derivation });
+    }
+    for (const p of plan.supersedes) {
+      const r = store.rows.find((x) => x.id === p.id)!;
+      Object.assign(r, { transcriptVersion: version, speakerIdx: p.parkIdx, isSuggestion: false, dismissedAt: new Date() });
+    }
+    for (const id of plan.keepPendingIds) {
+      const r = store.rows.find((x) => x.id === id)!;
+      r.transcriptVersion = version;
+      if (!(r.suggestionConfidence ?? "").startsWith("legacy:")) r.suggestionConfidence = `legacy:${r.suggestionConfidence ?? "none"}`;
+    }
     for (const id of plan.reviewIds) {
       const r = store.rows.find((x) => x.id === id)!;
       r.transcriptVersion = version;

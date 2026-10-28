@@ -395,9 +395,11 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
       VALUES (${ROW}, ${MEDIA}, 0, ${IAN}, true, 'self_via_dominant_speech', now() - interval '2 hours', now() - interval '2 hours')`;
     await user`UPDATE speaker_assignments SET person_id = ${SARAH} WHERE id = ${ROW}`; // baseline upsert's SET
     await runSuggestSpeakersJob({ mediaObjectId: MEDIA });
-    const after = await user<{ id: string; person_id: string; needs_review: boolean }[]>`
-      SELECT id, person_id, needs_review FROM speaker_assignments WHERE id = ${ROW}`;
-    expect(after).toEqual([{ id: ROW, person_id: SARAH, needs_review: true }]);
+    // Sarah is the sole remote voice AND the sole invitee: the evidence
+    // confirms the user's correction — kept, no review, still undoable.
+    const after = await user<{ id: string; person_id: string; needs_review: boolean; auto_applied: boolean; is_suggestion: boolean }[]>`
+      SELECT id, person_id, needs_review, auto_applied, is_suggestion FROM speaker_assignments WHERE id = ${ROW}`;
+    expect(after).toEqual([{ id: ROW, person_id: SARAH, needs_review: false, auto_applied: true, is_suggestion: false }]);
     // …and the mic still names Ian on his own voice.
     expect((await rows()).find((r) => r.speaker_idx === 1)?.person_id).toBe(IAN);
   });
@@ -434,7 +436,8 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
     await updateAudioNoteAttendees({ mediaObjectId: MEDIA, ownerId: OWNER, personIds: [SARAH] });
     const [kept] = await user<{ person_id: string; needs_review: boolean; is_suggestion: boolean }[]>`
       SELECT person_id, needs_review, is_suggestion FROM speaker_assignments WHERE id = ${ROW}`;
-    expect(kept).toEqual({ person_id: ALEX, needs_review: true, is_suggestion: false });
+    // Neither confirmed nor contradicted: still a plain suggestion, never deleted.
+    expect(kept).toEqual({ person_id: ALEX, needs_review: false, is_suggestion: true });
   });
 
   it("'Not Alice' can't dismiss Bob after the suggestion on that voice changed (P2: dismiss binding)", async () => {
@@ -462,5 +465,33 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
     await updateAudioNoteAttendees({ mediaObjectId: MEDIA, ownerId: OWNER, personIds: [ALEX] });
     const left = await rows();
     expect(left.map((r) => [r.speaker_idx, r.person_id])).toEqual([[0, ALEX]]);
+  });
+
+  it("hides a contradicted pre-v2 suggestion without deleting it, and the right name lands (no review)", async () => {
+    // Old live-channel bug: "Ian" on voice 0 (the call audio). Mic says Ian is voice 1.
+    await user`INSERT INTO speaker_assignments (id, media_object_id, speaker_idx, person_id, is_suggestion,
+        suggestion_confidence, suggested_at, created_at)
+      VALUES (${ROW}, ${MEDIA}, 0, ${IAN}, true, 'self_via_dominant_speech', now() - interval '2 hours', now() - interval '2 hours')`;
+    await runSuggestSpeakersJob({ mediaObjectId: MEDIA });
+    const [parked] = await user<{ speaker_idx: number; person_id: string; dismissed_at: Date | null; suggestion_confidence: string }[]>`
+      SELECT speaker_idx, person_id, dismissed_at, suggestion_confidence FROM speaker_assignments WHERE id = ${ROW}`;
+    expect(parked.person_id).toBe(IAN);
+    expect(parked.speaker_idx).toBeLessThan(-999_999);
+    expect(parked.dismissed_at).not.toBeNull();
+    expect(parked.suggestion_confidence).toBe("superseded:self_via_dominant_speech");
+    const shown = await listSpeakerAssignments(MEDIA, OWNER);
+    expect(shown.map((r) => [r.speakerIdx, r.personId, r.needsReview]).sort()).toEqual([
+      [0, SARAH, false],
+      [1, IAN, false],
+    ]);
+  });
+
+  it("confirms a pre-v2 'Ian' the mic agrees with — no '?' (today's-call shape)", async () => {
+    await user`INSERT INTO speaker_assignments (id, media_object_id, speaker_idx, person_id, is_suggestion,
+        suggestion_confidence, suggested_at, created_at)
+      VALUES (${ROW}, ${MEDIA}, 1, ${IAN}, true, 'self_via_dominant_speech', now() - interval '2 hours', now() - interval '2 hours')`;
+    await runSuggestSpeakersJob({ mediaObjectId: MEDIA });
+    const [r] = await user`SELECT speaker_idx, is_suggestion, auto_applied, needs_review, suggestion_confidence FROM speaker_assignments WHERE id = ${ROW}`;
+    expect(r).toMatchObject({ speaker_idx: 1, is_suggestion: false, auto_applied: true, needs_review: false, suggestion_confidence: "self_via_mic_capture" });
   });
 });
