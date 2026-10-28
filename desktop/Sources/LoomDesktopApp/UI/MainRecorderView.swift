@@ -102,11 +102,13 @@ struct MainRecorderView: View {
             viewModel.refreshRecorderReadiness()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { notification in
-            guard notification.object as? NSWindow === hostWindow else { return }
+            guard let window = notification.object as? NSWindow, window === hostWindow else { return }
+            WindowChrome.updateForFullScreen(window)
             updateWindowLayoutState()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { notification in
-            guard notification.object as? NSWindow === hostWindow else { return }
+            guard let window = notification.object as? NSWindow, window === hostWindow else { return }
+            WindowChrome.updateForFullScreen(window)
             updateWindowLayoutState()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResizeNotification)) { notification in
@@ -286,11 +288,12 @@ struct MainRecorderView: View {
             Text(captureMode == .audio ? "New note" : "New recording")
                 .font(DSFont.Body.md().weight(.medium))
         }
-        .foregroundStyle(DSColor.Text.primary)
+        // Filled Loomola blue: the one brand-coloured CTA on the home,
+        // where Granola's is a neutral outline.
+        .foregroundStyle(DSColor.Accent.onAccent)
         .padding(.horizontal, DSSpacing.md)
         .padding(.vertical, 6)
-        .background(Capsule().fill(DSColor.Bg.surface))
-        .overlay { Capsule().strokeBorder(DSColor.Border.strong, lineWidth: 1) }
+        .background(Capsule().fill(DSColor.Accent.primary))
         .contentShape(Capsule())
         .overlay {
             ActionHitArea {

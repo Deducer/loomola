@@ -1508,8 +1508,8 @@ struct NoteWorkspaceView: View {
                 Text(label)
                     .font(DSFont.Body.md())
             }
-            // Granola's Generate pill: lime fill, dark text (parity rank 1).
-            .foregroundStyle(emphasized ? Color(hex: 0x1F1F1D) : DSColor.Text.primary)
+            // Granola's Generate pill shape; Loomola blue fill, white text.
+            .foregroundStyle(emphasized ? DSColor.Accent.onAccent : DSColor.Text.primary)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
             .background(
@@ -4008,7 +4008,7 @@ private struct NoteTemplatePickerPopover: View {
             } label: {
                 Text(selectedTemplateId == template.id ? "Selected" : "Use template")
                     .font(DSFont.Body.md())
-                    .foregroundStyle(Color(hex: 0x1F1F1D))
+                    .foregroundStyle(DSColor.Accent.onAccent)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 9)
                     .background(Capsule().fill(DSColor.Accent.ai))

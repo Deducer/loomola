@@ -44,6 +44,19 @@ enum WindowChrome {
         }
         window.toolbarStyle = .unified
     }
+
+    /// In full screen a unified toolbar is what macOS reveals with the
+    /// menu bar, and the title bar that carries the traffic lights
+    /// stays hidden. Drop the (empty, height-only) toolbar while full
+    /// screen so the revealed strip is the title bar with its close /
+    /// minimise / zoom buttons; put it back on exit.
+    static func updateForFullScreen(_ window: NSWindow) {
+        if window.styleMask.contains(.fullScreen) {
+            window.toolbar = nil
+        } else {
+            applyTallTitleBar(to: window)
+        }
+    }
 }
 
 enum WindowChromeLayout {

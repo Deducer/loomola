@@ -60,8 +60,8 @@ final class DesignSystemTests: XCTestCase {
         XCTAssertEqual(DSColor.hex(DSColor.Text.primary, dark: true), "#E8E8E6")
         XCTAssertEqual(DSColor.hex(DSColor.Text.secondary, dark: true), "#C8C8C6")
         XCTAssertEqual(DSColor.hex(DSColor.Text.tertiary, dark: true), "#8E8E8C")
-        XCTAssertEqual(DSColor.hex(DSColor.Accent.ai, dark: true), "#B2C248")
-        XCTAssertEqual(DSColor.hex(DSColor.Accent.ai, dark: false), "#788C15")
+        XCTAssertEqual(DSColor.hex(DSColor.Accent.ai, dark: true), "#5C9BFF")
+        XCTAssertEqual(DSColor.hex(DSColor.Accent.ai, dark: false), "#3B82F6")
         XCTAssertEqual(DSColor.hex(DSColor.Bg.canvas, dark: false), "#F2F2EC")
     }
 

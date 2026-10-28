@@ -78,17 +78,21 @@ enum DSColor {
             light: Color(hex: 0x3B82F6).opacity(0.12),
             dark: Color(hex: 0x5C9BFF).opacity(0.18)
         )
-        /// Lime for AI actions: Generate notes, Enhanced, live-transcript
-        /// dots. Granola's "oats green".
+        /// CTA and AI accent: Generate notes, Enhanced, live-transcript
+        /// dots, New folder, + New note. Granola uses its lime here;
+        /// Loomola keeps its own blue so the two apps never read as
+        /// the same thing side by side (Ian, 2026-10-28).
         static let ai = Color.dynamic(
-            light: Color(hex: 0x788C15),
-            dark: Color(hex: 0xB2C248)
+            light: Color(hex: 0x3B82F6),
+            dark: Color(hex: 0x5C9BFF)
         )
-        /// Soft fill behind lime-accented chips.
+        /// Soft fill behind accent-tinted chips.
         static let aiMuted = Color.dynamic(
-            light: Color(hex: 0x788C15).opacity(0.14),
-            dark: Color(hex: 0xB2C248).opacity(0.16)
+            light: Color(hex: 0x3B82F6).opacity(0.14),
+            dark: Color(hex: 0x5C9BFF).opacity(0.16)
         )
+        /// Text and glyphs on a filled accent surface.
+        static let onAccent = Color.white
         /// Calendar event bars in the Coming up card.
         static let calendar = Color(hex: 0x8B5CF6)
     }

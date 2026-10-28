@@ -58,9 +58,22 @@ struct SidebarPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // Brand row: the rail is the one place Loomola looks like
+            // Loomola rather than Granola (the title row only shows the
+            // wordmark while the rail is closed).
+            HStack(spacing: DSSpacing.sm) {
+                BrandLogoMark(size: 20)
+                Text("Loomola")
+                    .font(DSFont.Body.lg().weight(.medium))
+                    .foregroundStyle(DSColor.Text.primary)
+                Spacer()
+            }
+            .padding(.horizontal, DSSpacing.md)
+            .padding(.top, topPadding)
+            .padding(.bottom, DSSpacing.md)
+
             searchField
                 .padding(.horizontal, DSSpacing.md)
-                .padding(.top, topPadding)
                 .padding(.bottom, DSSpacing.sm)
 
             navList
