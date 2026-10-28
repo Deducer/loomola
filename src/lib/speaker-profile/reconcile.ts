@@ -120,7 +120,11 @@ export function reconcileAssignments(args: {
       keptIdxs.add(row.speakerIdx);
       continue;
     }
-    if (legacy && wrote >= args.currentTranscriptCreatedAt) {
+    // A legacy row written AFTER this transcript is very likely about it —
+    // but the old client could label a stale (live) screen after the batch
+    // transcript landed, so only dismissals are kept on timing alone; a
+    // name still needs the identity proof below.
+    if (legacy && wrote >= args.currentTranscriptCreatedAt && row.dismissedAt !== null) {
       plan.restampIds.push(row.id);
       keptIdxs.add(row.speakerIdx);
       continue;

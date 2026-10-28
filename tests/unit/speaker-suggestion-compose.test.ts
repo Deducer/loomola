@@ -275,6 +275,16 @@ describe("composeSpeakerSuggestions (v2 evidence ladder)", () => {
     ]);
   });
 
+  it("no tracks: no talk-time guess on a call with three or more voices", () => {
+    const r = composeSpeakerSuggestions({
+      ...batch(turns([[0, 200], [1, 30], [2, 30]]), null),
+      attendees: [],
+      people: [SELF],
+      selfPersonId: SELF.id,
+    });
+    expect(r).toEqual([]);
+  });
+
   it("no tracks: talk-time fallback only for small calls with an overwhelming margin, as a suggestion", () => {
     const dominant = composeSpeakerSuggestions({
       ...batch(turns([[0, 90], [1, 20]]), null),

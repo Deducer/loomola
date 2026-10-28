@@ -105,6 +105,11 @@
 - Legacy pending rows are never deleted (the old picker could confirm a person without clearing `is_suggestion`); all of them go to review.
 - An LLM failure is recorded, then rethrown so pg-boss retries.
 
+**Seventeenth review pass (2026-10-27):**
+- Legacy names need identity proof even when written after the transcript.
+- A system-audio loopback capture never falls back to the default input.
+- The no-tracks talk-time fallback needs exactly two voices.
+
 **Sixteenth review pass (2026-10-27):**
 - The silence chunk is sized before it is zeroed.
 - A desktop label captures the transcript version at click time.

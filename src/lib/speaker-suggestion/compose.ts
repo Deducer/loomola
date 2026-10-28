@@ -136,7 +136,9 @@ export function composeSpeakerSuggestions(args: {
     }
   }
 
-  if (profile.status === "no_tracks" && attendees.length <= 1 && !taken.has(selfPersonId)) {
+  // Talk time only means anything on a genuine two-voice call.
+  const participantVoices = profile.entries.filter((e) => !e.fragment).length;
+  if (profile.status === "no_tracks" && attendees.length <= 1 && participantVoices === 2 && !taken.has(selfPersonId)) {
     const idx = detectSelfSpeakerIdx(args.words, DOMINANT_FALLBACK_MARGIN);
     const entry = profile.entries.find((e) => e.speakerIdx === idx);
     if (idx !== null && entry && !entry.fragment && !skip.has(idx) && profile.entries.length >= 2) {

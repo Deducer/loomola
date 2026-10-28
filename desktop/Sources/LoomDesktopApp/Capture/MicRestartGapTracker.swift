@@ -101,8 +101,11 @@ struct MicRestartGapTracker {
 /// retrying a device that is gone. The selection itself is kept, so a
 /// later restart returns to it once it's back.
 enum MicRestartDevicePolicy {
-    static func devicesToTry(selected: String?) -> [String?] {
-        selected == nil ? [nil] : [selected, nil]
+    static func devicesToTry(selected: String?, allowDefaultFallback: Bool = true) -> [String?] {
+        guard let selected else { return [nil] }
+        // A system-audio loopback device must never fall back to the
+        // default INPUT (that's the local mic, in the system track).
+        return allowDefaultFallback ? [selected, nil] : [selected]
     }
 }
 

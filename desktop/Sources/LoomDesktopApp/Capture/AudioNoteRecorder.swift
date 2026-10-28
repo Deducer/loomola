@@ -403,6 +403,8 @@ final class AudioNoteRecorder {
                 { buffer in sink(.systemAudio, buffer) }
             }
         )
+        // A loopback device carrying call audio: never substitute the mic.
+        capture.allowsDefaultInputFallback = false
         try await capture.startWithTimeout(
             deviceID: deviceID,
             outputURL: primaryURL,

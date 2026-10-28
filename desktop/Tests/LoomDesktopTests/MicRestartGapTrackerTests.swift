@@ -91,6 +91,16 @@ final class MicRestartGapTrackerTests: XCTestCase {
         XCTAssertEqual(MicRestartDevicePolicy.devicesToTry(selected: nil), [nil])
     }
 
+    /// Review finding (seventeenth pass): the same coordinator captures
+    /// system-audio loopback devices; falling back to the default input
+    /// there would record the local mic into the system track.
+    func testSystemAudioLoopbackNeverFallsBackToTheMic() {
+        XCTAssertEqual(
+            MicRestartDevicePolicy.devicesToTry(selected: "blackhole-uid", allowDefaultFallback: false),
+            ["blackhole-uid"]
+        )
+    }
+
     /// Review finding P2 (fifth pass): a 10-minute cap shifted everything
     /// after a 15-minute outage five minutes early. Long gaps are filled
     /// in full; only an absurd clock delta is capped.

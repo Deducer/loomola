@@ -41,6 +41,12 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
     private var configurationObserver: NSObjectProtocol?
     private var watchdogTimer: DispatchSourceTimer?
     private var lastBufferUptime: TimeInterval = 0
+    /// Whether a restart may fall back to the system default input when the
+    /// selected device is gone. False when this coordinator captures a
+    /// SYSTEM-AUDIO loopback device: falling back would record the local
+    /// microphone into the system track.
+    var allowsDefaultInputFallback = true
+
     /// Restart/stop serialization; mutated only on `recoveryQueue`.
     private var gate = MicRestartGate()
     private var stopping: Bool { gate.stopping }
@@ -481,7 +487,10 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
         do {
             var lastError: Error?
             var started = false
-            for device in MicRestartDevicePolicy.devicesToTry(selected: selectedDeviceID) {
+            for device in MicRestartDevicePolicy.devicesToTry(
+                selected: selectedDeviceID,
+                allowDefaultFallback: allowsDefaultInputFallback
+            ) {
                 do {
                     try startEngine(
                         deviceID: device,

@@ -134,11 +134,19 @@ describe("reconcileAssignments", () => {
     expect(p.remaps).toEqual([]);
   });
 
-  it("treats a legacy row written after the current transcript as current", () => {
-    const p = plan([
-      row({ id: "fresh", speakerIdx: 0, personId: OTHER, transcriptVersion: null, createdAt: new Date("2026-08-06T09:00:00Z"), suggestedAt: null }),
+  it("needs identity proof even for a legacy name written after the current transcript (stale-screen label)", () => {
+    // Owner labeled onto the SYSTEM voice (0) after the batch landed — the
+    // old client may have been showing the live transcript.
+    const stale = plan([
+      row({ id: "late", speakerIdx: 0, personId: SELF, transcriptVersion: null, createdAt: new Date("2026-08-06T09:00:00Z"), suggestedAt: null }),
     ]);
-    expect(p.restampIds).toEqual(["fresh"]);
+    expect(stale.restampIds).toEqual([]);
+    expect(stale.reviewIds).toEqual(["late"]);
+    // With proof (the mic says the owner IS voice 1) it's kept.
+    const proven = plan([
+      row({ id: "ok", speakerIdx: 1, personId: SELF, transcriptVersion: null, createdAt: new Date("2026-08-06T09:00:00Z"), suggestedAt: null }),
+    ]);
+    expect(proven.restampIds).toEqual(["ok"]);
   });
 
   it("leaves rows already on the current version alone", () => {
