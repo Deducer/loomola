@@ -71,6 +71,12 @@
 - A partly failed silence fill reopens the remainder and drops the buffer instead of shifting the note.
 - The backfill checks completion before decoding.
 - The LLM call and later writes honour the job's abort signal.
+
+**Eighth review pass (2026-10-27):**
+- The note page, the export and the GET API present names against the transcript the caller shows (no split read).
+- An attendee edit clears the done-marker in the same transaction.
+- The LLM status is run-scoped (`runId`), so an obsolete run can't mark a newer one complete.
+- The fallback decode runs single-threaded.
 **Style:** TDD. Pure logic first, under `src/lib/speaker-profile/` and `src/lib/speaker-suggestion/`, then wiring, then UI. Each phase ships on its own and is scored with the same offline eval script.
 
 ## Phases at a glance (ordered by impact ÷ effort)

@@ -49,7 +49,18 @@ export default async function NotesPage({
       ? presignGet(data.media.compositeThumbnailKey)
       : Promise.resolve(null),
     listPeople(user.id),
-    listSpeakerAssignments(data.media.id, user.id),
+    // Presented against the transcript this page renders, so text and
+    // names always come from the same transcript.
+    listSpeakerAssignments(
+      data.media.id,
+      user.id,
+      data.transcript
+        ? {
+            version: transcriptVersionOf(data.transcript.provider, data.transcript.createdAt),
+            createdAt: data.transcript.createdAt,
+          }
+        : null
+    ),
     listNoteAttachments(data.media.id, user.id),
     listFoldersForOwner(user.id),
   ]);

@@ -64,6 +64,9 @@ export type SpeakerProfile = {
    *  while it runs (so a crash leaves the note unfinished for the
    *  backfill), then "done" / "failed" / "skipped" (nothing to ask). */
   llm?: "pending" | "skipped" | "done" | "failed";
+  /** Which worker run wrote this profile; only that run may record its
+   *  LLM outcome (an obsolete run must not mark a newer one complete). */
+  runId?: string;
 };
 
 export const FRAGMENT_MIN_SEC = 10;

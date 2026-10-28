@@ -2709,7 +2709,7 @@ struct NoteWorkspaceView: View {
         guard case .reviewing(let recording) = target else { return }
         guard let backend = viewModel.backendClient else { return }
         Task { @MainActor in
-            if let list = try? await backend.speakerAssignments(mediaId: recording.id) {
+            if let list = try? await backend.speakerAssignments(mediaId: recording.id, transcriptVersion: transcript?.transcriptVersion) {
                 speakerAssignments = list
             }
         }
@@ -2803,7 +2803,7 @@ struct NoteWorkspaceView: View {
                     // only exists in the loaded transcript drawer).
                     transcriptVersion: transcript?.transcriptVersion
                 )
-                if let list = try? await backend.speakerAssignments(mediaId: recording.id) {
+                if let list = try? await backend.speakerAssignments(mediaId: recording.id, transcriptVersion: transcript?.transcriptVersion) {
                     speakerAssignments = list
                 }
                 showToast(message: "Speaker assigned")
@@ -2847,7 +2847,7 @@ struct NoteWorkspaceView: View {
                     // accepted or dismissed elsewhere (e.g., on web).
                 }
             }
-            if let list = try? await backend.speakerAssignments(mediaId: recording.id) {
+            if let list = try? await backend.speakerAssignments(mediaId: recording.id, transcriptVersion: transcript?.transcriptVersion) {
                 speakerAssignments = list
             }
             showToast(message: applied > 0 ? "Speaker names applied" : "Names were already applied")

@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   deleteSpeakerAssignment,
   listSpeakerAssignments,
+  transcriptFromVersion,
   upsertSpeakerAssignment,
 } from "@/db/queries/speaker-assignments";
 import { enableGranola } from "@/lib/feature-flags";
@@ -32,7 +33,14 @@ export async function GET(
   const user = await requireAuth(request);
   const { mediaId } = await params;
 
-  const list = await listSpeakerAssignments(mediaId, user.id);
+  // Clients pass the transcript they're showing, so the names they get
+  // back are presented against that transcript (not a newer one).
+  const shown = new URL(request.url).searchParams.get("transcriptVersion");
+  const list = await listSpeakerAssignments(
+    mediaId,
+    user.id,
+    shown ? transcriptFromVersion(shown) : undefined
+  );
   return NextResponse.json(list, { status: 200 });
 }
 

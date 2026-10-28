@@ -57,7 +57,7 @@ vi.mock("@/db/queries/speaker-suggestion", () => ({
     store.profiles.push(p);
   }),
   setActivityKey: vi.fn(async () => {}),
-  setSpeakerLlmStatus: vi.fn(async (_id: string, status: string) => {
+  setSpeakerLlmStatus: vi.fn(async (_id: string, _runId: string, status: string) => {
     store.llmStatus = status;
   }),
   applyReconcilePlan: vi.fn(async (_tx: unknown, { version, plan }: { version: string; plan: ReconcilePlan }) => {
@@ -105,12 +105,18 @@ vi.mock("@/lib/speaker-profile/track-activity", () => ({
   uploadActivity: vi.fn(async () => {}),
 }));
 
-const llm = vi.hoisted(() => ({ calls: 0, error: null as Error | null }));
+const llm = vi.hoisted(() => ({
+  calls: 0,
+  error: null as Error | null,
+  attributions: [] as unknown[],
+  during: null as null | (() => void),
+}));
 vi.mock("@/lib/ai/with-fallback", () => ({
   generateObjectWithFallback: vi.fn(async () => {
     llm.calls++;
+    llm.during?.();
     if (llm.error) throw llm.error;
-    return { object: { attributions: [] } };
+    return { object: { attributions: llm.attributions } };
   }),
 }));
 
@@ -150,6 +156,8 @@ beforeEach(() => {
   store.nextId = 1;
   llm.calls = 0;
   llm.error = null;
+  llm.attributions = [];
+  llm.during = null;
 });
 
 describe("suggest_speakers job (speaker v2)", () => {
@@ -241,6 +249,27 @@ describe("suggest_speakers job (speaker v2)", () => {
     expect((store.profiles[0] as { llm: string }).llm).toBe("pending");
     expect(store.llmStatus).toBe("failed");
     expect(named()).toEqual([[0, IAN, "auto", false]]);
+  });
+
+  it("an LLM run made obsolete by an attendee edit writes no names and no 'done' (P2: false completion)", async () => {
+    // Group call with words that let the LLM attribute voice 1 to Sarah.
+    const t = turns([[0, 40], [1, 40], [2, 40]]);
+    setTranscript("deepgram", batchAt, t, [SARAH, ALEX]);
+    store.note!.words = (store.note!.words as Array<{ word: string; speaker: number }>).map((w, i) =>
+      i === 0 ? { ...w, word: "thanks sarah for joining today" } : w
+    );
+    store.activity = framesForTurns(t, [0]);
+    llm.attributions = [
+      { speakerIdx: 1, attendeeName: "Sarah Chen", confidence: "high", evidence: "thanks sarah for joining today" },
+    ];
+    // While the LLM runs, the user links a different event.
+    llm.during = () => {
+      store.note!.attendees = [ALEX];
+    };
+    await runSuggestSpeakersJob({ mediaObjectId: "m" });
+    expect(llm.calls).toBe(1);
+    expect(store.llmStatus).toBeNull();
+    expect(named().some((r) => r[1] === SARAH)).toBe(false);
   });
 
   it("stores the profile (the backfill's done-marker) only when the names commit", async () => {

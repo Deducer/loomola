@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   applyReconcilePlan,
   getNoteForSpeakerSuggestion,
@@ -91,6 +92,7 @@ export async function runSuggestSpeakersJob(
   }
 
   const version = transcriptVersionOf(transcriptProvider, transcriptCreatedAt);
+  const runId = randomUUID();
   // Throws when the capture tracks exist but can't be read — pg-boss
   // retries. Falling back to "no tracks" would re-enable talk-time
   // guessing on exactly the notes where the mic would have answered.
@@ -159,7 +161,7 @@ export async function runSuggestSpeakersJob(
       profile.status !== "live_channels";
     // Last, so a stored profile means this transcript's rows are done —
     // except the LLM pass, whose status is "pending" until it finishes.
-    await saveSpeakerProfile(tx, transcriptId, { ...profile, llm: runLlm ? "pending" : "skipped" });
+    await saveSpeakerProfile(tx, transcriptId, { ...profile, llm: runLlm ? "pending" : "skipped", runId });
     return { suggestions, decided, attendees, uncovered, runLlm, attendeesRaw: JSON.stringify(lockedAttendees ?? null) };
   });
   if (first.stale) {
@@ -195,18 +197,19 @@ export async function runSuggestSpeakersJob(
     // Best-effort: deterministic names are already written. Recorded so
     // the backfill treats the note as unfinished and re-runs it.
     console.error(`[suggest-speakers] ${mediaObjectId} LLM attribution failed:`, err);
-    await setSpeakerLlmStatus(transcriptId, "failed");
+    await setSpeakerLlmStatus(transcriptId, runId, "failed");
     return;
   }
   throwIfAborted(opts.signal);
   if (llmSuggestions.length === 0) {
-    await setSpeakerLlmStatus(transcriptId, "done");
+    await setSpeakerLlmStatus(transcriptId, runId, "done");
     return;
   }
   const second = await withSpeakerWriteLock({ mediaObjectId, transcriptId }, async ({ tx, rows, attendees: nowAttendees }) => {
     // The LLM named people from the attendee list read under the first
-    // lock; if the list changed since, its names may be the old ones.
-    if (JSON.stringify(nowAttendees ?? null) !== first.result.attendeesRaw) return [] as SpeakerSuggestion[];
+    // lock; if the list changed since, its names may be the old ones —
+    // and the run that the change enqueued owns the LLM status now.
+    if (JSON.stringify(nowAttendees ?? null) !== first.result.attendeesRaw) return null;
     const decided = decidedState(rows);
     const fresh = llmSuggestions.filter(
       (s) => !decided.idxs.has(s.speakerIdx) && (!s.personId || !decided.personIds.has(s.personId))
@@ -214,8 +217,8 @@ export async function runSuggestSpeakersJob(
     await persistSpeakerSuggestions(tx, { mediaObjectId, transcriptVersion: version, suggestions: fresh });
     return fresh;
   });
-  if (second.stale) return;
-  await setSpeakerLlmStatus(transcriptId, "done");
+  if (second.stale || second.result === null) return;
+  await setSpeakerLlmStatus(transcriptId, runId, "done");
   console.log(
     `[suggest-speakers] ${mediaObjectId} LLM attributed ${second.result.length}/${uncovered.length} unlabeled speaker(s)`
   );

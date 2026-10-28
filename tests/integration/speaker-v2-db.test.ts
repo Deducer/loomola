@@ -354,4 +354,32 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
     const [bob] = await user`SELECT id FROM people WHERE display_name = 'Bob'`;
     expect((await rows())[0]).toMatchObject({ person_id: bob.id, is_suggestion: false });
   });
+
+  it("presents names against the transcript the caller shows, not a newer one (P1: split read)", async () => {
+    const shownVersion = await currentVersion();
+    const [t] = await user<{ created_at: Date }[]>`SELECT created_at FROM transcripts WHERE media_object_id = ${MEDIA}`;
+    // The page loaded the transcript; a replacement then landed and the
+    // worker wrote names for the NEW transcript before the page read them.
+    await user`DELETE FROM transcripts WHERE media_object_id = ${MEDIA}`;
+    const [fresh] = await user<{ provider: string; created_at: Date }[]>`
+      INSERT INTO transcripts (media_object_id, provider, word_timestamps, created_at)
+      VALUES (${MEDIA}, 'deepgram', ${user.json(wordsFor(call))}, now() + interval '1 minute')
+      RETURNING provider, created_at`;
+    const newVersion = `${fresh.provider}:${fresh.created_at.toISOString()}`;
+    await user`INSERT INTO speaker_assignments (media_object_id, speaker_idx, person_id, transcript_version, auto_applied)
+      VALUES (${MEDIA}, 1, ${IAN}, ${newVersion}, true),
+             (${MEDIA}, 0, ${SARAH}, ${shownVersion}, false)`;
+    const forShown = await listSpeakerAssignments(MEDIA, OWNER, { version: shownVersion, createdAt: t.created_at });
+    expect(forShown.map((r) => [r.speakerIdx, r.personId, r.needsReview]).sort()).toEqual([
+      [0, SARAH, false],
+      [1, IAN, true],
+    ]);
+  });
+
+  it("an attendee edit clears the transcript's done-marker (P2: backfill would skip it)", async () => {
+    await user`UPDATE transcripts SET speaker_profile = ${user.json({ version: 1, llm: "done" })} WHERE media_object_id = ${MEDIA}`;
+    await updateAudioNoteAttendees({ mediaObjectId: MEDIA, ownerId: OWNER, personIds: [ALEX] });
+    const [t] = await user`SELECT speaker_profile FROM transcripts WHERE media_object_id = ${MEDIA}`;
+    expect(t.speaker_profile).toBeNull();
+  });
 });

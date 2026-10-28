@@ -234,6 +234,13 @@ export async function updateAudioNoteAttendees(params: {
           )
         )
       );
+    // Attendee-derived names are gone, so this transcript's speaker work
+    // isn't done any more: drop its profile (the done-marker) so a backfill
+    // re-runs it even if the re-enqueue after this commit fails.
+    await tx
+      .update(transcripts)
+      .set({ speakerProfile: null })
+      .where(eq(transcripts.mediaObjectId, params.mediaObjectId));
     return updated;
   });
 

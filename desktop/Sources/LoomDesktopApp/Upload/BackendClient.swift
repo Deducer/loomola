@@ -171,8 +171,17 @@ actor BackendClient {
         return try await get(path: "/api/search?q=\(encoded)&limit=\(limit)")
     }
 
-    func speakerAssignments(mediaId: String) async throws -> [SpeakerAssignmentDTO] {
-        try await get(path: "/api/speaker-assignments/\(mediaId)")
+    /// `transcriptVersion`: the transcript on screen, so names come back
+    /// presented against it (rows from a newer/older transcript are marked
+    /// for review or hidden) rather than against whatever is latest.
+    func speakerAssignments(mediaId: String, transcriptVersion: String? = nil) async throws -> [SpeakerAssignmentDTO] {
+        guard let transcriptVersion else {
+            return try await get(path: "/api/speaker-assignments/\(mediaId)")
+        }
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "+&=:")
+        let encoded = transcriptVersion.addingPercentEncoding(withAllowedCharacters: allowed) ?? transcriptVersion
+        return try await get(path: "/api/speaker-assignments/\(mediaId)?transcriptVersion=\(encoded)")
     }
 
     /// Attendees + folder + calendar-event context for one recording.

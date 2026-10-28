@@ -2,6 +2,7 @@ import { getAudioNotePageData } from "@/db/queries/notes";
 import { getMcpOwnerId } from "@/app/api/mcp/tools/owner";
 import { listPeople } from "@/db/queries/people";
 import { listSpeakerAssignments } from "@/db/queries/speaker-assignments";
+import { transcriptVersionOf } from "@/lib/speaker-profile/reconcile";
 import { hasIntegrationToken } from "@/lib/integration-auth";
 import { requireAuth } from "@/lib/require-auth";
 import { presignGet } from "@/lib/r2/presigned-get";
@@ -26,7 +27,17 @@ export async function loadNoteExportPayload(params: {
   const [audioUrl, people, speakerAssignments] = await Promise.all([
     audioKey ? presignGet(audioKey) : Promise.resolve(null),
     listPeople(params.ownerId),
-    listSpeakerAssignments(data.media.id, params.ownerId),
+    // Against the transcript being exported (see listSpeakerAssignments).
+    listSpeakerAssignments(
+      data.media.id,
+      params.ownerId,
+      data.transcript
+        ? {
+            version: transcriptVersionOf(data.transcript.provider, data.transcript.createdAt),
+            createdAt: data.transcript.createdAt,
+          }
+        : null
+    ),
   ]);
   const appBaseUrl =
     process.env.NEXT_PUBLIC_APP_URL ?? new URL(params.requestUrl).origin;

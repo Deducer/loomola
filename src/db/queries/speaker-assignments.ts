@@ -155,9 +155,25 @@ export function presentAssignments(
   });
 }
 
+/** "<provider>:<ISO created_at>" back into the transcript it names. */
+export function transcriptFromVersion(version: string): CurrentTranscript {
+  // The ISO timestamp itself contains colons; the provider never does.
+  const sep = version.indexOf(":");
+  if (sep <= 0) return null;
+  const createdAt = new Date(version.slice(sep + 1));
+  return Number.isNaN(createdAt.getTime()) ? null : { version, createdAt };
+}
+
+/**
+ * Speaker rows as the caller should show them NEXT TO A GIVEN TRANSCRIPT.
+ * Pass the transcript the caller loaded (`forTranscript`) so text and
+ * names can't come from two different transcripts when a replacement
+ * lands between the two reads; without it, the latest transcript is used.
+ */
 export async function listSpeakerAssignments(
   mediaObjectId: string,
-  ownerId: string
+  ownerId: string,
+  forTranscript?: CurrentTranscript
 ): Promise<SpeakerAssignment[]> {
   const rows = await db
     .select({ assignment: speakerAssignments })
@@ -170,6 +186,9 @@ export async function listSpeakerAssignments(
         eq(mediaObjects.type, "audio")
       )
     );
+  if (forTranscript !== undefined) {
+    return presentAssignments(rows.map((row) => row.assignment), forTranscript);
+  }
   const [t] = await db
     .select({ provider: transcripts.provider, createdAt: transcripts.createdAt })
     .from(transcripts)

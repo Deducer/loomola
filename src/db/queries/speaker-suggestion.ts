@@ -67,15 +67,19 @@ export async function getNoteForSpeakerSuggestion(
   };
 }
 
-/** Records the outcome of the LLM pass on the transcript's profile. */
+/** Records the outcome of the LLM pass on the transcript's profile —
+ *  only if the profile is still the one this run wrote (`runId`). A newer
+ *  run, an attendee edit (which clears the profile) or a replaced
+ *  transcript all make this a no-op. */
 export async function setSpeakerLlmStatus(
   transcriptId: string,
+  runId: string,
   status: "done" | "failed"
 ): Promise<void> {
   await db
     .update(transcripts)
     .set({ speakerProfile: sql`jsonb_set(${transcripts.speakerProfile}, '{llm}', to_jsonb(${status}::text))` })
-    .where(eq(transcripts.id, transcriptId));
+    .where(and(eq(transcripts.id, transcriptId), sql`${transcripts.speakerProfile}->>'runId' = ${runId}`));
 }
 
 export async function setActivityKey(mediaObjectId: string, key: string): Promise<void> {

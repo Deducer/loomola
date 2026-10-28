@@ -95,7 +95,9 @@ export async function computeActivityFromTrackKeys(args: {
     presignGet(args.systemAudioKey),
   ]);
   return runFfmpegWithActivity({
-    args: ["-hide_banner", "-loglevel", "error", "-i", micUrl, "-i", systemUrl, ...ACTIVITY_OUTPUT_ARGS],
+    // One decode thread: this fallback runs inside the web container
+    // next to mixing/transcoding; loudness doesn't need more.
+    args: ["-hide_banner", "-loglevel", "error", "-threads", "1", "-i", micUrl, "-i", systemUrl, ...ACTIVITY_OUTPUT_ARGS],
     timeoutMs: args.timeoutMs,
     signal: args.signal,
     label: "activity decode",
