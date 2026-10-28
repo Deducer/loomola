@@ -88,10 +88,21 @@ type TrackState = {
   uploadedBytes: number;
 };
 
+export type UploadCoordinatorOptions = {
+  /**
+   * Optional cancel signal. When it fires, in-flight PUTs are aborted and
+   * the per-part retry loop stops immediately instead of backing off, so a
+   * user-initiated cancel surfaces within a tick rather than ~10 s later.
+   */
+  signal?: AbortSignal;
+};
+
 export function createUploadCoordinator(
   inits: TrackUploadInit[],
-  getPartUrl: PartUrlFetcher
+  getPartUrl: PartUrlFetcher,
+  options: UploadCoordinatorOptions = {}
 ): UploadCoordinator {
+  const { signal } = options;
   const tracks = new Map<TrackKind, TrackState>();
   for (const init of inits) {
     tracks.set(init.kind, {
@@ -128,13 +139,16 @@ export function createUploadCoordinator(
   ): Promise<void> {
     let lastErr: unknown;
     for (let attempt = 0; attempt < MAX_PART_ATTEMPTS; attempt++) {
+      if (signal?.aborted) {
+        throw lastErr ?? new DOMException("Upload aborted", "AbortError");
+      }
       if (attempt > 0) await sleep(partRetryDelayMs(attempt - 1));
       try {
         // Fresh presigned URL EVERY attempt: a failed PUT may mean the
         // previous URL expired, and the part-url fetch itself is a network
         // call that deserves the same retry envelope.
         const url = await getPartUrl(kind, partNumber);
-        const res = await fetch(url, { method: "PUT", body });
+        const res = await fetch(url, { method: "PUT", body, signal });
         if (!res.ok) {
           throw new Error(`Part ${partNumber} of ${kind} failed: ${res.status}`);
         }
@@ -148,6 +162,7 @@ export function createUploadCoordinator(
         return;
       } catch (err) {
         lastErr = err;
+        if (signal?.aborted) throw err;
         console.warn(
           `[upload] part ${partNumber} (${kind}) attempt ${attempt + 1}/${MAX_PART_ATTEMPTS} failed:`,
           err
