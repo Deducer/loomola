@@ -416,7 +416,9 @@ struct NoteWorkspaceView: View {
         .overlay(alignment: .bottom) {
             if let toastMessage {
                 attachmentToast(message: toastMessage, tone: toastTone)
-                    .padding(.bottom, isRecording ? 80 : DSSpacing.xl)
+                    // Clear the bottom action bar in review mode
+                    // (parity rank 8) so a toast never sits on its chips.
+                    .padding(.bottom, isRecording ? 80 : 56 + DSSpacing.md + DSSpacing.lg)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
