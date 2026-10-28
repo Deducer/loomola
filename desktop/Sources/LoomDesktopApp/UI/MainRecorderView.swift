@@ -96,11 +96,6 @@ struct MainRecorderView: View {
         }
         .animation(LoomolaMotion.medium, value: viewModel.activeRecordingKind)
         .animation(LoomolaMotion.medium, value: noteTarget)
-        .sheet(isPresented: $showSettings) {
-            SettingsSheet(onDismiss: { showSettings = false })
-                .environmentObject(viewModel)
-                .environmentObject(onboardingProgress)
-        }
         .onAppear {
             AppActivation.bringRecorderToFront()
             viewModel.setReadinessMode(captureMode.readinessMode)
@@ -314,7 +309,7 @@ struct MainRecorderView: View {
 
     private var titleBarActions: some View {
         HStack(spacing: DSSpacing.sm) {
-            IconButton(icon: "gearshape", size: 30, action: { showSettings = true })
+            IconButton(icon: "gearshape", size: 30, action: { showSettings.toggle() })
                 .help("Settings")
             IconButton(
                 text: viewModel.email.first.map { String($0).uppercased() } ?? "?",
@@ -371,7 +366,14 @@ struct MainRecorderView: View {
     /// owns the whole window.
     @ViewBuilder
     private var contentForCurrentState: some View {
-        if let target = noteTarget {
+        if showSettings, noteTarget == nil {
+            // Settings swap into the window like a note does (parity
+            // rank 10); the home title bar stays, so the gear and the
+            // page's own close both lead back.
+            SettingsSheet(onDismiss: { showSettings = false }, topContentPadding: homeContentTopPadding)
+                .environmentObject(viewModel)
+                .environmentObject(onboardingProgress)
+        } else if let target = noteTarget {
             NoteWorkspaceView(
                 viewModel: viewModel,
                 target: target,

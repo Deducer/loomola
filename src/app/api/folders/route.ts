@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/require-auth";
 import {
+  countRecordingsPerFolder,
   createFolder,
   getFolderOwned,
   listFoldersForOwner,
@@ -8,7 +9,10 @@ import {
 
 export async function GET(request: Request) {
   const user = await requireAuth(request);
-  const folders = await listFoldersForOwner(user.id);
+  const [folders, counts] = await Promise.all([
+    listFoldersForOwner(user.id),
+    countRecordingsPerFolder(user.id),
+  ]);
   return NextResponse.json({
     folders: folders.map((f) => ({
       id: f.id,
@@ -16,6 +20,7 @@ export async function GET(request: Request) {
       parentId: f.parentId,
       isFavorite: f.isFavorite,
       icon: f.icon,
+      recordingCount: counts.get(f.id) ?? 0,
     })),
   });
 }

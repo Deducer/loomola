@@ -1144,6 +1144,9 @@ struct FolderDTO: Decodable, Equatable, Sendable, Identifiable {
     // the Stage 15 favorites/icon columns.
     var isFavorite: Bool?
     var icon: String?
+    /// Live recordings filed here; nil from servers predating the
+    /// parity rank 10 folder picker.
+    var recordingCount: Int?
 
     var favorite: Bool { isFavorite ?? false }
 }

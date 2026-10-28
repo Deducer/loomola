@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { folders, mediaFolderAssignments, mediaObjects } from "@/db/schema";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 
 export type Folder = typeof folders.$inferSelect;
 
@@ -12,6 +12,28 @@ export async function listFoldersForOwner(
     .from(folders)
     .where(eq(folders.ownerId, ownerId))
     .orderBy(folders.name);
+}
+
+/// Live (not trashed) recordings per folder, for the folder pickers'
+/// counts. Reads the legacy `folder_id` column like every other list.
+export async function countRecordingsPerFolder(
+  ownerId: string
+): Promise<Map<string, number>> {
+  const rows = await db
+    .select({
+      folderId: mediaObjects.folderId,
+      total: sql<number>`count(*)::int`,
+    })
+    .from(mediaObjects)
+    .where(
+      and(
+        eq(mediaObjects.ownerId, ownerId),
+        isNull(mediaObjects.deletedAt),
+        isNotNull(mediaObjects.folderId)
+      )
+    )
+    .groupBy(mediaObjects.folderId);
+  return new Map(rows.map((r) => [r.folderId as string, Number(r.total)]));
 }
 
 export async function getFolderOwned(

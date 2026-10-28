@@ -1,19 +1,32 @@
 import AppKit
 import SwiftUI
 
-/// Sheet presented from the title-bar gear icon. Houses Sources,
-/// Permissions (when missing), Integrations, Diagnostics, and Account.
-/// All actions route to the existing view-model methods so behavior
-/// matches what the legacy MainRecorderView footer + integration card
-/// did in M2.
+/// Settings page (parity rank 10): rendered in the main window in
+/// place of the home content, with Granola's left tab list. Houses
+/// Sources, Permissions (when missing), Integrations, Diagnostics,
+/// and Account. All actions route to the existing view-model methods.
+enum SettingsTab: String, CaseIterable, Identifiable {
+    case general = "General"
+    case sources = "Sources"
+    case notifications = "Notifications"
+    case integrations = "Integrations"
+    case recovery = "Recovery"
+    case account = "Account"
+    case diagnostics = "Diagnostics"
+
+    var id: String { rawValue }
+}
+
 struct SettingsSheet: View {
     let onDismiss: () -> Void
+    var topContentPadding: CGFloat = DSSpacing.xl
 
     @EnvironmentObject private var viewModel: RecorderViewModel
     @EnvironmentObject private var onboarding: OnboardingProgressStore
     @ObservedObject private var orphanStore = OrphanedRecordingStore.shared
     @State private var permissionStatus: PermissionStatus = PermissionChecker.currentStatus()
     @State private var diagnosticsExpanded = false
+    @State private var tab: SettingsTab = .general
     @State private var preferences = UserPreferencesDTO.defaults
     @State private var preferencesStatus: String?
     @State private var orphanPendingDiscard: OrphanedRecording?
@@ -38,36 +51,55 @@ struct SettingsSheet: View {
     @State private var sourceRefreshStatus: String?
     @State private var isRefreshingSources = false
 
+    private var visibleTabs: [SettingsTab] {
+        SettingsTab.allCases.filter { $0 != .recovery || !orphanStore.orphans.isEmpty }
+    }
+
+    private var permissionsNeedAttention: Bool {
+        permissionStatus.requiredMissing || permissionStatus.camera == .denied
+            || permissionStatus.microphone == .denied
+            || permissionStatus.screenRecording == .denied
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider().overlay(DSColor.Border.subtle)
-            ScrollView {
-                VStack(alignment: .leading, spacing: DSSpacing.xxl) {
-                    sourcesSection
-                    preferencesSection
-                    onboardingSection
-                    if permissionStatus.requiredMissing || permissionStatus.camera == .denied
-                        || permissionStatus.microphone == .denied
-                        || permissionStatus.screenRecording == .denied
-                    {
-                        permissionsSection
+            HStack(alignment: .top, spacing: 0) {
+                tabList
+                Divider().overlay(DSColor.Border.subtle)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: DSSpacing.xxl) {
+                        switch tab {
+                        case .general:
+                            preferencesSection
+                            onboardingSection
+                        case .sources:
+                            sourcesSection
+                            if permissionsNeedAttention {
+                                permissionsSection
+                            }
+                        case .notifications:
+                            notificationsSection
+                        case .integrations:
+                            integrationsSection
+                        case .recovery:
+                            recoverySection
+                        case .account:
+                            accountSection
+                        case .diagnostics:
+                            diagnosticsSection
+                        }
                     }
-                    integrationsSection
-                    notificationsSection
-                    if !orphanStore.orphans.isEmpty {
-                        recoverySection
-                    }
-                    accountSection
-                    diagnosticsSection
+                    .padding(.horizontal, DSSpacing.xxl)
+                    .padding(.vertical, DSSpacing.xl)
+                    .frame(maxWidth: 640, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(.horizontal, DSSpacing.xxl)
-                .padding(.vertical, DSSpacing.xl)
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .frame(width: 580, height: 620)
-        .background(DSColor.Bg.surface)
+        .padding(.top, topContentPadding)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(DSColor.Bg.canvas)
         .alert(
             orphanPendingDiscard?.discardConfirmationTitle ?? "Delete recovery copy?",
             isPresented: Binding(
@@ -128,13 +160,58 @@ struct SettingsSheet: View {
     private var header: some View {
         HStack(spacing: DSSpacing.md) {
             Text("Settings")
-                .font(DSFont.Display.lg())
+                .font(DSFont.Serif.display())
                 .foregroundStyle(DSColor.Text.primary)
             Spacer()
             IconButton(icon: "xmark", size: 30, action: onDismiss)
+                .help("Back")
         }
         .padding(.horizontal, DSSpacing.xxl)
-        .padding(.vertical, DSSpacing.lg)
+        .padding(.bottom, DSSpacing.lg)
+    }
+
+    /// Granola's 180pt tab rail.
+    private var tabList: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(visibleTabs) { item in
+                let selected = item == tab
+                HStack(spacing: DSSpacing.sm) {
+                    Image(systemName: tabIcon(item))
+                        .font(.system(size: 12, weight: .medium))
+                        .frame(width: 16)
+                    Text(item.rawValue)
+                        .font(DSFont.Body.md().weight(selected ? .medium : .regular))
+                    Spacer()
+                }
+                .foregroundStyle(selected ? DSColor.Text.primary : DSColor.Text.secondary)
+                .padding(.horizontal, DSSpacing.md)
+                .padding(.vertical, 7)
+                .background(
+                    RoundedRectangle(cornerRadius: DSRadius.sm)
+                        .fill(selected ? DSColor.Bg.subtle : Color.clear)
+                )
+                .contentShape(Rectangle())
+                .overlay {
+                    ActionHitArea { tab = item }
+                        .clipShape(RoundedRectangle(cornerRadius: DSRadius.sm))
+                }
+            }
+            Spacer()
+        }
+        .padding(.horizontal, DSSpacing.md)
+        .frame(width: 180, alignment: .leading)
+    }
+
+    private func tabIcon(_ item: SettingsTab) -> String {
+        switch item {
+        case .general: return "slider.horizontal.3"
+        case .sources: return "mic"
+        case .notifications: return "bell"
+        case .integrations: return "puzzlepiece.extension"
+        case .recovery: return "arrow.counterclockwise"
+        case .account: return "person.crop.circle"
+        case .diagnostics: return "stethoscope"
+        }
     }
 
     // MARK: - Preferences
