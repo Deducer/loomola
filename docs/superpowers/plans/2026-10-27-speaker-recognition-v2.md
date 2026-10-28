@@ -100,6 +100,8 @@
 - A review item becomes a user decision (`is_suggestion` false), so later transcript replacements and attendee edits can't delete it.
 - "Not <name>" is bound to the person shown.
 - Mic gaps are sized from buffer host times, not callback arrival.
+
+**Fourteenth review pass (2026-10-27):** attendee edits only clear versioned (v2) machine rows; unversioned legacy rows are left for reconcile to preserve or prove.
 **Style:** TDD. Pure logic first, under `src/lib/speaker-profile/` and `src/lib/speaker-suggestion/`, then wiring, then UI. Each phase ships on its own and is scored with the same offline eval script.
 
 ## Phases at a glance (ordered by impact ÷ effort)

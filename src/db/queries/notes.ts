@@ -9,7 +9,7 @@ import {
   speakerAssignments,
   transcripts,
 } from "@/db/schema";
-import { and, desc, eq, getTableColumns, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { generateSlug } from "@/lib/slug";
 
 export type Note = typeof notes.$inferSelect;
@@ -225,6 +225,10 @@ export async function updateAudioNoteAttendees(params: {
       .where(
         and(
           eq(speakerAssignments.mediaObjectId, params.mediaObjectId),
+          // Only v2 (versioned) machine rows: an unversioned legacy
+          // "pending" row may hold a manual correction made through the
+          // pre-v2 writer, so it is left for reconcile to preserve or prove.
+          isNotNull(speakerAssignments.transcriptVersion),
           or(
             eq(speakerAssignments.isSuggestion, true),
             and(

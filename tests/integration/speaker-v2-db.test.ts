@@ -451,4 +451,16 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
     });
     expect(ok).toEqual({ ok: true });
   });
+
+  it("relinking attendees before the backfill keeps a legacy manual correction (P1: attendee cleanup)", async () => {
+    await user`INSERT INTO speaker_assignments (id, media_object_id, speaker_idx, person_id, is_suggestion,
+        suggestion_confidence, suggested_at, created_at)
+      VALUES (${ROW}, ${MEDIA}, 0, ${ALEX}, true, 'self_via_dominant_speech', now() - interval '2 hours', now() - interval '2 hours')`;
+    // A versioned v2 suggestion from the old attendee list does get cleared.
+    await user`INSERT INTO speaker_assignments (media_object_id, speaker_idx, person_id, is_suggestion, transcript_version)
+      VALUES (${MEDIA}, 1, ${SARAH}, true, ${await currentVersion()})`;
+    await updateAudioNoteAttendees({ mediaObjectId: MEDIA, ownerId: OWNER, personIds: [ALEX] });
+    const left = await rows();
+    expect(left.map((r) => [r.speaker_idx, r.person_id])).toEqual([[0, ALEX]]);
+  });
 });
