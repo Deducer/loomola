@@ -247,7 +247,7 @@ describe("suggest_speakers job (speaker v2)", () => {
     setTranscript("deepgram", batchAt, t, [SARAH, ALEX]);
     store.activity = framesForTurns(t, [0]);
     llm.error = new Error("model overloaded");
-    await runSuggestSpeakersJob({ mediaObjectId: "m" });
+    await expect(runSuggestSpeakersJob({ mediaObjectId: "m" })).rejects.toThrow("model overloaded");
     expect((store.profiles[0] as { llm: string }).llm).toBe("pending");
     expect(store.llmStatus).toBe("failed");
     expect(named()).toEqual([[0, IAN, "auto", false]]);

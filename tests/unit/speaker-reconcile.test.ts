@@ -70,11 +70,14 @@ describe("reconcileAssignments", () => {
     expect(p.deleteIds.sort()).toEqual(["auto", "pending"]);
   });
 
-  it("deletes a legacy pending row only when it's provably the worker's untouched output", () => {
+  it("never deletes a legacy pending row — the old picker could confirm Ian without clearing is_suggestion (P1)", () => {
+    // Identical to the worker's own output, but possibly the user choosing
+    // Ian through the pre-v2 label picker.
     const p = plan([
       row({ id: "legacy", transcriptVersion: null, isSuggestion: true, personId: SELF, suggestionConfidence: "self_via_dominant_speech", suggestedAt: new Date("2026-08-06T00:00:00Z") }),
     ]);
-    expect(p.deleteIds).toEqual(["legacy"]);
+    expect(p.deleteIds).toEqual([]);
+    expect(p.reviewIds).toEqual(["legacy"]);
   });
 
   it("keeps a legacy pending row the old writer may have renamed — a manual correction goes to review (P1)", () => {

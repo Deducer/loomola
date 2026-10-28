@@ -21,11 +21,10 @@ import { meSpeakerIdxs, soleRemoteSpeakerIdx, type SpeakerProfile } from "./prof
  *  - Stale dismissals ("Not <name>"): kept, moved by the capture-channel
  *    rule when unambiguous. The worker won't auto-apply a kind of name
  *    the user dismissed on this note.
- *  - Legacy pending rows are deleted only when they're provably the
- *    worker's untouched output (the person still matches the row's own
- *    derivation). The pre-v2 label writer changed the person on a pending
- *    row WITHOUT clearing is_suggestion, so a legacy "pending" row may be
- *    a manual correction: anything not provably untouched goes to review.
+ *  - Legacy (unversioned) pending rows are never deleted: the pre-v2
+ *    label writer changed or confirmed the person on a pending row
+ *    WITHOUT clearing is_suggestion, so any of them may be a user's
+ *    choice. They go to review.
  *  - Stale USER decisions are never deleted or rewritten without
  *    capture evidence. Kept (restamped) when the evidence confirms them,
  *    moved when the old row was a live capture channel and the new
@@ -51,20 +50,6 @@ export type ReconcileRow = {
   /** The row's derivation (speaker_assignments.suggestion_confidence). */
   suggestionConfidence?: string | null;
 };
-
-const SELF_DERIVATIONS = new Set(["self_via_dominant_speech", "self_via_source_channel", "self_via_mic_capture"]);
-
-/** Is this legacy pending row PROVABLY exactly what the worker wrote?
- *  Only for a self-derivation that still names the owner: the worker
- *  wrote it naming the owner, and any edit (another person, or a one-off
- *  label, which clears the person) changes that. Every other legacy
- *  pending row — attendee-derived (one attendee may have been changed to
- *  another), new-person (a one-off label looks the same), or no
- *  derivation — is preserved for review. */
-function isUntouchedSuggestion(row: ReconcileRow, selfPersonId: string | null): boolean {
-  const d = row.suggestionConfidence ?? null;
-  return d !== null && SELF_DERIVATIONS.has(d) && selfPersonId !== null && row.personId === selfPersonId;
-}
 
 export type ReconcilePlan = {
   deleteIds: string[];
@@ -126,13 +111,13 @@ export function reconcileAssignments(args: {
     const userDecision = !row.isSuggestion && !row.autoApplied && row.dismissedAt === null;
 
     if (legacy && row.isSuggestion) {
-      if (isUntouchedSuggestion(row, args.selfPersonId)) {
-        plan.deleteIds.push(row.id);
-      } else {
-        // Possibly a manual correction made through the old writer.
-        plan.reviewIds.push(row.id);
-        keptIdxs.add(row.speakerIdx);
-      }
+      // Never deleted: the pre-v2 label writer left is_suggestion set when
+      // the user picked or renamed a person, so an unversioned "pending"
+      // row may be a user's choice — even one identical to what the
+      // worker wrote. Preserved for review (it doesn't block the evidence
+      // naming that person on another voice).
+      plan.reviewIds.push(row.id);
+      keptIdxs.add(row.speakerIdx);
       continue;
     }
     if (legacy && wrote >= args.currentTranscriptCreatedAt) {

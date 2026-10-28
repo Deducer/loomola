@@ -101,6 +101,10 @@
 - "Not <name>" is bound to the person shown.
 - Mic gaps are sized from buffer host times, not callback arrival.
 
+**Fifteenth review pass (2026-10-27):**
+- Legacy pending rows are never deleted (the old picker could confirm a person without clearing `is_suggestion`); all of them go to review.
+- An LLM failure is recorded, then rethrown so pg-boss retries.
+
 **Fourteenth review pass (2026-10-27):** attendee edits only clear versioned (v2) machine rows; unversioned legacy rows are left for reconcile to preserve or prove.
 **Style:** TDD. Pure logic first, under `src/lib/speaker-profile/` and `src/lib/speaker-suggestion/`, then wiring, then UI. Each phase ships on its own and is scored with the same offline eval script.
 

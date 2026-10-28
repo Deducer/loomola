@@ -198,7 +198,9 @@ export async function runSuggestSpeakersJob(
     // the backfill treats the note as unfinished and re-runs it.
     console.error(`[suggest-speakers] ${mediaObjectId} LLM attribution failed:`, err);
     await setSpeakerLlmStatus(transcriptId, runId, "failed");
-    return;
+    // Rethrow so pg-boss applies its retry; the rerun is idempotent
+    // (deterministic names are already written and won't be redone).
+    throw err;
   }
   throwIfAborted(opts.signal);
   if (llmSuggestions.length === 0) {
