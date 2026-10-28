@@ -226,6 +226,25 @@ describe("reconcileAssignments", () => {
     expect(p.reviewIds).toEqual(["me"]);
   });
 
+  it("doesn't 'prove' a stale remote name when Me itself rests on low-gain evidence", () => {
+    const t = turns([[0, 50], [1, 50]]);
+    const lowGainProfile = computeSpeakerProfile({
+      words: wordsFor(t),
+      provider: "deepgram",
+      activity: framesFor({ durationSec: 100, micOn: [[50, 60]], systemOn: [[0, 50]] }),
+    });
+    const p = reconcileAssignments({
+      rows: [row({ id: "accepted", speakerIdx: 0, personId: OTHER, transcriptVersion: null })],
+      currentVersion: BATCH,
+      currentTranscriptCreatedAt: batchAt,
+      profile: lowGainProfile,
+      selfPersonId: SELF,
+      attendeePersonIds: [OTHER],
+    });
+    expect(p.restampIds).toEqual([]);
+    expect(p.reviewIds).toEqual(["accepted"]);
+  });
+
   it("doesn't confirm the owner on either of two mic-dominant voices (shared mic)", () => {
     const shared = turns([[0, 40], [1, 40], [3, 30], [1, 20]]);
     const sharedProfile = computeSpeakerProfile({

@@ -23,6 +23,10 @@ struct MicRestartGapTracker {
     /// (the new engine's audio would then get no silence) nor count as the
     /// last buffer.
     private(set) var activeEpoch = 0
+    /// The gap `close` just handed out, kept so a fill that couldn't be
+    /// written in full can reopen exactly the unwritten remainder.
+    private var closedGapStart: TimeInterval?
+    private var closedPausedTotalAtGapStart: TimeInterval = 0
 
     var isOpen: Bool { gapStartUptime != nil }
 
@@ -56,11 +60,24 @@ struct MicRestartGapTracker {
     ) -> TimeInterval {
         guard let start = gapStartUptime else { return 0 }
         gapStartUptime = nil
+        closedGapStart = start
+        closedPausedTotalAtGapStart = pausedTotalAtGapStart
         let pausedDuringGap = max(0, pausedTotal - pausedTotalAtGapStart)
         // The incoming buffer's audio began `bufferDuration` before it
         // arrived; the previous buffer's audio ended when it arrived.
         let gap = (arrivalUptime - bufferDuration) - start - pausedDuringGap
         return gap >= Self.minimumGap ? min(gap, Self.maximumGap) : 0
+    }
+
+    /// The silence fill wrote only `written` seconds of the gap `close`
+    /// returned. Reopen the rest so the next buffer retries it — the
+    /// caller drops the buffer it was about to write, since writing it now
+    /// would put everything after it at the wrong time.
+    mutating func reopenAfterPartialFill(written: TimeInterval) {
+        guard let start = closedGapStart else { return }
+        gapStartUptime = start + max(0, written)
+        pausedTotalAtGapStart = closedPausedTotalAtGapStart
+        closedGapStart = nil
     }
 
     /// Below this, scheduling jitter — not worth a silence write.

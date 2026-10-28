@@ -317,15 +317,19 @@ export async function applySpeakerSuggestion(args: {
   mediaObjectId: string;
   ownerId: string;
   speakerIdx: number;
-  personId: string;
   displayLabelOverride?: string | null;
   transcriptVersion?: string | null;
-  /** True when the caller just created the person from the suggestion's
-   *  "new person" payload; otherwise `personId` must be the person the
-   *  suggestion names. */
-  createdFromSuggestion?: boolean;
-}): Promise<{
+} & (
+  /** Accepting "this voice is <existing person>": must be the person the
+   *  suggestion names now. */
+  | { personId: string; createPerson?: never }
+  /** Accepting a "new person" suggestion: must match the name/email the
+   *  suggestion shows now; the person is created inside the same locked
+   *  transaction, so a refused accept leaves no orphan person. */
+  | { personId?: never; createPerson: { displayName: string; email: string | null } }
+)): Promise<{
   ok: boolean;
+  personId?: string;
   reason?: "no_pending_suggestion" | "transcript_changed" | "transcript_version_required" | "suggestion_changed";
 }> {
   try {
@@ -336,6 +340,8 @@ export async function applySpeakerSuggestion(args: {
           .select({
             id: speakerAssignments.id,
             personId: speakerAssignments.personId,
+            suggestedNewPersonPayload: speakerAssignments.suggestedNewPersonPayload,
+            displayLabelOverride: speakerAssignments.displayLabelOverride,
             transcriptVersion: speakerAssignments.transcriptVersion,
             suggestedAt: speakerAssignments.suggestedAt,
             createdAt: speakerAssignments.createdAt,
@@ -357,12 +363,35 @@ export async function applySpeakerSuggestion(args: {
         // suggestion actually on this voice now. A client holding an older
         // suggestion for this index (recomputed since) must not apply its
         // person to whoever the voice is suggested as today.
-        const matches = args.createdFromSuggestion ? row.personId === null : row.personId === args.personId;
-        if (!matches) return { ok: false, reason: "suggestion_changed" as const };
+        let personId: string;
+        if (args.createPerson) {
+          const payload = (row.suggestedNewPersonPayload ?? null) as
+            | { displayName?: string | null; email?: string | null }
+            | null;
+          const shownName = payload?.displayName ?? row.displayLabelOverride ?? null;
+          const sameNewPerson =
+            row.personId === null &&
+            shownName !== null &&
+            shownName.trim().toLowerCase() === args.createPerson.displayName.trim().toLowerCase() &&
+            (payload?.email ?? null) === (args.createPerson.email ?? null);
+          if (!sameNewPerson) return { ok: false, reason: "suggestion_changed" as const };
+          const [created] = await tx
+            .insert(people)
+            .values({
+              ownerId: args.ownerId,
+              displayName: args.createPerson.displayName,
+              email: args.createPerson.email,
+            })
+            .returning({ id: people.id });
+          personId = created.id;
+        } else {
+          if (row.personId !== args.personId) return { ok: false, reason: "suggestion_changed" as const };
+          personId = args.personId;
+        }
         await tx
           .update(speakerAssignments)
           .set({
-            personId: args.personId,
+            personId,
             displayLabelOverride: args.displayLabelOverride ?? null,
             isSuggestion: false,
             autoApplied: false,
@@ -370,7 +399,7 @@ export async function applySpeakerSuggestion(args: {
             suggestedNewPersonPayload: null,
           })
           .where(eq(speakerAssignments.id, row.id));
-        return { ok: true };
+        return { ok: true, personId };
       }
     );
   } catch (err) {

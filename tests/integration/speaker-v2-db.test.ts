@@ -67,8 +67,10 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
         media_object_id uuid NOT NULL REFERENCES media_objects(id) ON DELETE CASCADE,
         provider text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), word_timestamps jsonb NOT NULL,
         speaker_profile jsonb);
-      CREATE TABLE people (id uuid PRIMARY KEY, owner_id uuid NOT NULL, display_name text NOT NULL,
-        email text, is_self boolean NOT NULL DEFAULT false);
+      CREATE TABLE people (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), owner_id uuid NOT NULL,
+        display_name text NOT NULL, email text, email_aliases jsonb NOT NULL DEFAULT '[]'::jsonb, notes text,
+        is_self boolean NOT NULL DEFAULT false, import_source text, import_source_id text,
+        created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now());
       CREATE TABLE speaker_assignments (id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         media_object_id uuid NOT NULL REFERENCES media_objects(id) ON DELETE CASCADE,
         speaker_idx integer NOT NULL, person_id uuid REFERENCES people(id) ON DELETE SET NULL,
@@ -101,7 +103,7 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
     await user`DELETE FROM people`;
     await user`INSERT INTO media_objects (id, owner_id, type, attendees, r2_mic_key, r2_systemaudio_key, r2_activity_key)
       VALUES (${MEDIA}, ${OWNER}, 'audio', ${user.json([SARAH])}, 'rec/raw/mic.m4a', 'rec/raw/system.m4a', 'rec/activity.bin')`;
-    await user`INSERT INTO people VALUES (${IAN}, ${OWNER}, 'Ian Cross', NULL, true),
+    await user`INSERT INTO people (id, owner_id, display_name, email, is_self) VALUES (${IAN}, ${OWNER}, 'Ian Cross', NULL, true),
       (${SARAH}, ${OWNER}, 'Sarah Chen', NULL, false), (${ALEX}, ${OWNER}, 'Alex Park', NULL, false)`;
     await user`INSERT INTO transcripts (media_object_id, provider, word_timestamps)
       VALUES (${MEDIA}, 'deepgram', ${user.json(wordsFor(call))})`;
@@ -305,7 +307,7 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
     expect((await rows())[0]).toMatchObject({ person_id: SARAH, is_suggestion: true });
     expect(
       await applySpeakerSuggestion({ mediaObjectId: MEDIA, ownerId: OWNER, speakerIdx: 0, personId: SARAH, transcriptVersion: shown })
-    ).toEqual({ ok: true });
+    ).toMatchObject({ ok: true, personId: SARAH });
   });
 
   it("refuses a label when the transcript is replaced while the write waits on it (P1: empty FOR SHARE)", async () => {
@@ -329,5 +331,27 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
     await persist;
     await expect(write).rejects.toThrow("transcript_changed");
     expect(await rows()).toEqual([]);
+  });
+
+  it("binds a new-person accept to the name shown, and a refused accept creates no person (P1)", async () => {
+    const shown = await currentVersion();
+    // The suggestion was re-run: "Alice?" became "Bob?" on the same voice.
+    await user`INSERT INTO speaker_assignments (media_object_id, speaker_idx, person_id, is_suggestion,
+        display_label_override, suggested_new_person_payload, transcript_version)
+      VALUES (${MEDIA}, 0, NULL, true, 'Bob', ${user.json({ displayName: "Bob", email: null })}, ${shown})`;
+    const before = await user`SELECT count(*)::int AS n FROM people`;
+    const stale = await applySpeakerSuggestion({
+      mediaObjectId: MEDIA, ownerId: OWNER, speakerIdx: 0, transcriptVersion: shown,
+      createPerson: { displayName: "Alice", email: null },
+    });
+    expect(stale).toEqual({ ok: false, reason: "suggestion_changed" });
+    expect((await user`SELECT count(*)::int AS n FROM people`)[0].n).toBe(before[0].n);
+    const ok = await applySpeakerSuggestion({
+      mediaObjectId: MEDIA, ownerId: OWNER, speakerIdx: 0, transcriptVersion: shown,
+      createPerson: { displayName: "Bob", email: null },
+    });
+    expect(ok.ok).toBe(true);
+    const [bob] = await user`SELECT id FROM people WHERE display_name = 'Bob'`;
+    expect((await rows())[0]).toMatchObject({ person_id: bob.id, is_suggestion: false });
   });
 });

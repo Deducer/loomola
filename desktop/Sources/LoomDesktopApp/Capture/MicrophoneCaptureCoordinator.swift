@@ -348,14 +348,23 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
         gapTracker.markBuffer(uptime: arrival, pausedTotal: pausedNow)
         gapLock.unlock()
         if silence > 0, let writer {
-            do {
-                try writer.appendSilence(seconds: silence)
-                microphoneCaptureLog.notice(
-                    "filled \(String(format: "%.2f", silence), privacy: .public)s mic gap after engine restart"
+            let written = writer.appendSilence(seconds: silence)
+            if written + 0.001 < silence {
+                // Keep the unwritten remainder open for the next buffer and
+                // drop this one: writing it now would shift the rest of the
+                // note against the system-audio track. The failure is in
+                // writeHealth, which drives the recorder's alert.
+                gapLock.lock()
+                gapTracker.reopenAfterPartialFill(written: written)
+                gapLock.unlock()
+                microphoneCaptureLog.error(
+                    "mic gap fill wrote \(String(format: "%.2f", written), privacy: .public)s of \(String(format: "%.2f", silence), privacy: .public)s; retrying on the next buffer"
                 )
-            } catch {
-                microphoneCaptureLog.error("mic gap fill failed: \(error.localizedDescription, privacy: .public)")
+                return
             }
+            microphoneCaptureLog.notice(
+                "filled \(String(format: "%.2f", silence), privacy: .public)s mic gap after engine restart"
+            )
         }
 
         if let level = peakLevel(of: buffer) {

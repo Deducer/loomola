@@ -108,28 +108,43 @@ final class AudioAssetWriter: @unchecked Sendable {
     /// track — mix_audio and speaker detection both assume the two
     /// tracks share a timeline. No-op before the first real buffer
     /// (the file's format isn't known yet) or after finish.
-    func appendSilence(seconds: TimeInterval) throws {
-        guard seconds > 0 else { return }
+    ///
+    /// Returns the seconds actually written. A failure is recorded in
+    /// `writeHealth` (so the recorder's write-health alert sees it) and the
+    /// caller keeps the rest of the gap open to retry, rather than writing
+    /// later audio at the wrong time.
+    @discardableResult
+    func appendSilence(seconds: TimeInterval) -> TimeInterval {
+        guard seconds > 0 else { return 0 }
         writeLock.lock()
         defer { writeLock.unlock() }
-        guard !finished, let file = audioFile else { return }
+        guard !finished, let file = audioFile else { return seconds }
         let format = file.processingFormat
-        var remaining = AVAudioFrameCount(min(seconds, 4 * 3600) * format.sampleRate)
+        let total = AVAudioFrameCount(min(seconds, 4 * 3600) * format.sampleRate)
+        var remaining = total
         let chunkFrames = AVAudioFrameCount(max(1, format.sampleRate))
-        guard let chunk = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: chunkFrames) else {
-            throw AudioAssetWriterError.conversionUnavailable
+        do {
+            guard let chunk = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: chunkFrames) else {
+                throw AudioAssetWriterError.conversionUnavailable
+            }
+            // Freshly allocated PCM buffers are not guaranteed zeroed.
+            let abl = UnsafeMutableAudioBufferListPointer(chunk.mutableAudioBufferList)
+            for buffer in abl {
+                if let data = buffer.mData { memset(data, 0, Int(buffer.mDataByteSize)) }
+            }
+            while remaining > 0 {
+                chunk.frameLength = min(remaining, chunkFrames)
+                try file.write(from: chunk)
+                health.framesWritten += Int64(chunk.frameLength)
+                remaining -= chunk.frameLength
+            }
+            health.consecutiveFailures = 0
+        } catch {
+            health.failedAppends += 1
+            health.consecutiveFailures += 1
+            health.lastError = "silence fill: \(error)"
         }
-        // Freshly allocated PCM buffers are not guaranteed zeroed.
-        let abl = UnsafeMutableAudioBufferListPointer(chunk.mutableAudioBufferList)
-        for buffer in abl {
-            if let data = buffer.mData { memset(data, 0, Int(buffer.mDataByteSize)) }
-        }
-        while remaining > 0 {
-            chunk.frameLength = min(remaining, chunkFrames)
-            try file.write(from: chunk)
-            health.framesWritten += Int64(chunk.frameLength)
-            remaining -= chunk.frameLength
-        }
+        return Double(total - remaining) / format.sampleRate
     }
 
     func finish() async throws -> URL {

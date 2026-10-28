@@ -106,6 +106,22 @@ final class MicRestartGapTrackerTests: XCTestCase {
         XCTAssertEqual(absurd.close(arrivalUptime: 10 * 3600, bufferDuration: 0.1, pausedTotal: 0), MicRestartGapTracker.maximumGap)
     }
 
+    /// Review finding (seventh pass): a fill that fails part-way must not
+    /// close the gap — the unwritten remainder is retried with the next
+    /// buffer, or the rest of the note shifts against the system track.
+    func testPartialFillReopensTheUnwrittenRemainder() {
+        var tracker = MicRestartGapTracker()
+        tracker.markBuffer(uptime: 100, pausedTotal: 0)
+        tracker.open(nextEpoch: 1)
+        let first = tracker.close(arrivalUptime: 110.1, bufferDuration: 0.1, pausedTotal: 0)
+        XCTAssertEqual(first, 10, accuracy: 0.0001)
+        tracker.reopenAfterPartialFill(written: 4) // 6 s still missing
+        XCTAssertTrue(tracker.isOpen)
+        // Next buffer 0.1 s later: the remainder plus the dropped buffer.
+        let retry = tracker.close(arrivalUptime: 110.2, bufferDuration: 0.1, pausedTotal: 0)
+        XCTAssertEqual(retry, 6.1, accuracy: 0.0001)
+    }
+
     /// Review finding P1: stop() during a restart. A restart queued before
     /// stop (or a retry after a failed restart) must be obsolete once the
     /// note stops — it may not start an engine or reopen the writer.
@@ -151,7 +167,7 @@ final class MicRestartGapTrackerTests: XCTestCase {
         let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 24_000)!
         buffer.frameLength = 24_000
         try writer.append(buffer)                 // 0.5 s of audio
-        try writer.appendSilence(seconds: 2)      // restart gap
+        XCTAssertEqual(writer.appendSilence(seconds: 2), 2, accuracy: 0.001) // restart gap
         try writer.append(buffer)                 // 0.5 s after the restart
         _ = try await writer.finish()
 
@@ -172,7 +188,7 @@ final class MicRestartGapTrackerTests: XCTestCase {
         buffer.frameLength = 4_800
         try writer.append(buffer)
         let started = Date()
-        try writer.appendSilence(seconds: 60)
+        writer.appendSilence(seconds: 60)
         let elapsed = Date().timeIntervalSince(started)
         print("appendSilence(60 s) took \(String(format: "%.3f", elapsed)) s")
         XCTAssertLessThan(elapsed, 1.5)
@@ -183,7 +199,7 @@ final class MicRestartGapTrackerTests: XCTestCase {
             .appending(path: "mic-gap-fill-\(UUID()).m4a")
         defer { try? FileManager.default.removeItem(at: url) }
         let writer = try AudioAssetWriter(outputURL: url, sampleRate: 48_000, channelCount: 1)
-        XCTAssertNoThrow(try writer.appendSilence(seconds: 1))
+        _ = writer.appendSilence(seconds: 1)
         XCTAssertEqual(writer.writeHealth.framesWritten, 0)
     }
 }

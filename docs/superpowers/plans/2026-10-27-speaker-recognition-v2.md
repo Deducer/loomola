@@ -64,6 +64,13 @@
 - Exports only write confirmed or auto-applied names; names under review are marked "(unconfirmed)".
 - Low-gain mic evidence never proves or moves an accepted name.
 - The backfill reports deduplicated sends and uses a 60 s dedupe slot.
+
+**Seventh review pass (2026-10-27):**
+- Low-gain Me also blocks remote-name proof.
+- A new-person accept is matched to the name shown, and the person is created inside the locked transaction (no orphan on refusal).
+- A partly failed silence fill reopens the remainder and drops the buffer instead of shifting the note.
+- The backfill checks completion before decoding.
+- The LLM call and later writes honour the job's abort signal.
 **Style:** TDD. Pure logic first, under `src/lib/speaker-profile/` and `src/lib/speaker-suggestion/`, then wiring, then UI. Each phase ships on its own and is scored with the same offline eval script.
 
 ## Phases at a glance (ordered by impact ÷ effort)

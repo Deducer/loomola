@@ -63,6 +63,7 @@ type NoteRow = {
   t_created_at: Date;
   profile_version: number | null;
   llm_status: string | null;
+  profile_status: string | null;
   words: WordTimestamp[];
 };
 
@@ -112,12 +113,6 @@ async function analyze(n: NoteRow, people: Map<string, Person[]>): Promise<Outco
     newAuto: 0, newSuggestions: 0, llmCandidates: 0, acceptedSelfRows: 0, acceptedSelfWrong: 0, framesToUpload: null,
   };
   try {
-    const { frames: activity, decoded } =
-      n.provider === "deepgram-live" ? { frames: null, decoded: false } : await activityFor(n);
-    const tracks = n.r2_mic_key && n.r2_systemaudio_key ? "both" : n.r2_mic_key || n.r2_systemaudio_key ? "partial" : "none";
-    const profile = computeSpeakerProfile({ words: n.words, provider: n.provider, activity, tracks });
-    const ownerPeople = people.get(n.owner_id) ?? [];
-    const self = ownerPeople.find((p) => p.isSelf) ?? null;
     // Before migration 0034 is applied the v2 columns don't exist yet;
     // read them as their defaults so the dry run works pre-deploy.
     const rows = (v2Columns
@@ -143,15 +138,31 @@ async function analyze(n: NoteRow, people: Map<string, Person[]>): Promise<Outco
       suggestedAt: (r.suggested_at as Date | null) ?? null,
       derivation: (r.suggestion_confidence as string | null) ?? null,
     }));
-    const version = transcriptVersionOf(n.provider, n.t_created_at);
     // The worker stores the profile in the same transaction as the names,
     // after them — so it is the completion marker for this transcript.
     // The LLM pass must have finished too ("pending" = crashed mid-run,
     // "failed" = retry it).
+    const version = transcriptVersionOf(n.provider, n.t_created_at);
     const alreadyCurrent =
       n.profile_version === PROFILE_VERSION &&
       (n.llm_status === "done" || n.llm_status === "skipped") &&
       reconcileRows.every((r) => r.transcriptVersion === version);
+    if (alreadyCurrent) {
+      // Done by the worker already: no download or decode.
+      return {
+        ...base,
+        status: (n.profile_status as SpeakerProfile["status"] | null) ?? "error",
+        alreadyCurrent: true,
+        pendingReview: reconcileRows.filter((r) => r.needsReview && !r.dismissedAt).length,
+      };
+    }
+    const { frames: activity, decoded } =
+      n.provider === "deepgram-live" ? { frames: null, decoded: false } : await activityFor(n);
+    const tracks = n.r2_mic_key && n.r2_systemaudio_key ? "both" : n.r2_mic_key || n.r2_systemaudio_key ? "partial" : "none";
+    const profile = computeSpeakerProfile({ words: n.words, provider: n.provider, activity, tracks });
+    const ownerPeople = people.get(n.owner_id) ?? [];
+    const self = ownerPeople.find((p) => p.isSelf) ?? null;
+
     const plan = reconcileAssignments({
       rows: reconcileRows,
       currentVersion: version,
@@ -222,8 +233,9 @@ async function analyze(n: NoteRow, people: Map<string, Person[]>): Promise<Outco
 async function loadNotes(ids?: string[]): Promise<NoteRow[]> {
   const activityCol = v2Columns ? sql`m.r2_activity_key` : sql`NULL::text AS r2_activity_key`;
   const profileCol = v2Columns
-    ? sql`(t.speaker_profile->>'version')::int AS profile_version, t.speaker_profile->>'llm' AS llm_status`
-    : sql`NULL::int AS profile_version, NULL::text AS llm_status`;
+    ? sql`(t.speaker_profile->>'version')::int AS profile_version, t.speaker_profile->>'llm' AS llm_status,
+          t.speaker_profile->>'status' AS profile_status`
+    : sql`NULL::int AS profile_version, NULL::text AS llm_status, NULL::text AS profile_status`;
   const filter = ids
     ? sql`m.id = ANY(${ids}::uuid[])`
     : onlyId

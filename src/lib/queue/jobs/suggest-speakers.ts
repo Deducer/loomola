@@ -103,6 +103,10 @@ export async function runSuggestSpeakersJob(
   const people = await getPeopleForSuggestion(note.ownerId);
   const selfPerson = people.find((p) => p.isSelf) ?? null;
 
+  // An expired job (pg-boss aborts it and schedules the retry) must not
+  // keep writing alongside its own retry.
+  throwIfAborted(opts.signal);
+
   // Reconcile + deterministic names, in one locked transaction against
   // the transcript this job profiled (see withSpeakerWriteLock).
   const first = await withSpeakerWriteLock({ mediaObjectId, transcriptId }, async ({ tx, rows, attendees: lockedAttendees }) => {
@@ -184,14 +188,17 @@ export async function runSuggestSpeakersJob(
       allowSelf:
         meSpeakerIdxs(profile).length === 0 && !first.result.decided.personIds.has(selfPerson.id),
       uncoveredIdxs: uncovered,
+      signal: opts.signal,
     });
   } catch (err) {
+    throwIfAborted(opts.signal);
     // Best-effort: deterministic names are already written. Recorded so
     // the backfill treats the note as unfinished and re-runs it.
     console.error(`[suggest-speakers] ${mediaObjectId} LLM attribution failed:`, err);
     await setSpeakerLlmStatus(transcriptId, "failed");
     return;
   }
+  throwIfAborted(opts.signal);
   if (llmSuggestions.length === 0) {
     await setSpeakerLlmStatus(transcriptId, "done");
     return;
@@ -212,6 +219,10 @@ export async function runSuggestSpeakersJob(
   console.log(
     `[suggest-speakers] ${mediaObjectId} LLM attributed ${second.result.length}/${uncovered.length} unlabeled speaker(s)`
   );
+}
+
+function throwIfAborted(signal: AbortSignal | undefined) {
+  if (signal?.aborted) throw new Error("suggest_speakers aborted (job expired); its retry takes over");
 }
 
 function decidedState(rows: ReadonlyArray<{ speakerIdx: number; personId: string | null; dismissedAt: Date | null }>) {
@@ -267,6 +278,7 @@ async function attributeViaTranscript(params: {
   selfPerson: PersonCandidate;
   allowSelf: boolean;
   uncoveredIdxs: ReadonlyArray<number>;
+  signal?: AbortSignal;
 }): Promise<SpeakerSuggestion[]> {
   const peopleById = new Map(params.people.map((p) => [p.id, p]));
   // Resolve attendee display names (attendees are stored as person
@@ -291,6 +303,7 @@ async function attributeViaTranscript(params: {
   });
 
   const { object } = await generateObjectWithFallback({
+    abortSignal: params.signal,
     schema: speakerAttributionSchema,
     schemaName: "SpeakerAttribution",
     prompt: buildAttributionPrompt({

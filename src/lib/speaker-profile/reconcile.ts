@@ -87,7 +87,9 @@ export function reconcileAssignments(args: {
   // it may not prove — or move — an accepted name here either.
   const lowGain = new Set(args.profile.entries.filter((e) => e.lowGain).map((e) => e.speakerIdx));
   const me = meSpeakerIdxs(args.profile).filter((i) => !lowGain.has(i));
-  const soleRemote = soleRemoteSpeakerIdx(args.profile);
+  // "Remote" is defined relative to Me; when Me rests on low-gain
+  // evidence, so does every remote voice — no proof either way.
+  const soleRemote = lowGain.size > 0 ? null : soleRemoteSpeakerIdx(args.profile);
   const remote = soleRemote === null ? [] : [soleRemote];
 
   const proposedRemaps: Array<{ id: string; newIdx: number }> = [];
