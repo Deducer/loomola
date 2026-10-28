@@ -1,14 +1,20 @@
 import XCTest
 
 final class AudioDiscardUXTests: XCTestCase {
-    func testHomeBannerExposesConfirmedDiscard() throws {
-        let source = try source(at: "Sources/LoomDesktopApp/UI/Home/IdleHomeView.swift")
+    func testHomeRecordingPillStopsOrOpensTheNote() throws {
+        // Parity rank 7: the home shell shows Granola's "••• New note ✕"
+        // pill while recording; Discard lives in the workspace menu
+        // (confirmed there, see below) rather than on the home card.
+        let main = try source(at: "Sources/LoomDesktopApp/UI/MainRecorderView.swift")
+        XCTAssertTrue(main.contains("RecordingInProgressPill("))
+        XCTAssertTrue(main.contains("onStop: { viewModel.stopAudioNoteRecordingAndUpload() }"))
+        XCTAssertTrue(main.contains("onOpen: { noteTarget = .recording }"))
 
-        XCTAssertTrue(
-            source.contains("SecondaryButton(\"Discard\", icon: \"trash\")"),
-            "The active audio card should expose Discard without making the user open the note."
+        let home = try source(at: "Sources/LoomDesktopApp/UI/Home/IdleHomeView.swift")
+        XCTAssertFalse(
+            home.contains("DSFont.Mono"),
+            "The home surface shows no elapsed timer; the menu bar carries it."
         )
-        assertConfirmedDiscard(in: source)
     }
 
     func testWorkspaceMenuAlsoRequiresConfirmation() throws {
@@ -37,9 +43,9 @@ final class AudioDiscardUXTests: XCTestCase {
         XCTAssertFalse(discard.contains("state = .finalizing"))
         XCTAssertTrue(discard.contains("state = .signedInIdle"))
 
-        let home = try source(at: "Sources/LoomDesktopApp/UI/Home/IdleHomeView.swift")
-        XCTAssertTrue(home.contains("Discarding audio note…"))
-        XCTAssertTrue(home.contains("Deleting local audio…"))
+        let pill = try source(at: "Sources/LoomDesktopApp/UI/Home/RecordingInProgressPill.swift")
+        XCTAssertTrue(pill.contains("Discarding audio note…"))
+        XCTAssertTrue(pill.contains("isEnabled: !isDiscarding"))
     }
 
     func testNewAudioNoteStartsFromFreshDraftState() throws {

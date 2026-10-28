@@ -225,6 +225,20 @@ struct MainRecorderView: View {
                 }
             }
         }
+        .overlay {
+            // Granola's "••• New note ✕" sits dead centre of the title
+            // row while a note records; the home content stays put.
+            if viewModel.activeRecordingKind == .audio {
+                RecordingInProgressPill(
+                    label: RecordingInProgressPillModel(title: viewModel.audioTitle).label,
+                    isPaused: viewModel.isAudioNotePaused,
+                    isDiscarding: viewModel.isDiscardingAudioNote,
+                    onOpen: { noteTarget = .recording },
+                    onStop: { viewModel.stopAudioNoteRecordingAndUpload() }
+                )
+                .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            }
+        }
         .padding(.leading, WindowChromeLayout.homeLeadingPadding)
         .padding(.trailing, WindowChromeLayout.trailingPadding)
         .padding(.top, WindowChromeLayout.topPadding)
@@ -407,7 +421,6 @@ struct MainRecorderView: View {
                 captureMode: $captureMode,
                 folderFilterId: $folderFilterId,
                 topContentPadding: homeContentTopPadding,
-                onOpenLiveAudioNote: { noteTarget = .recording },
                 onOpenAudioNote: { recording in
                     noteTarget = .reviewing(recording: recording)
                 }

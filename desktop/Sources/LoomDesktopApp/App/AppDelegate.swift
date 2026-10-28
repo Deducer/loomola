@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import Combine
 import OSLog
 import SwiftUI
 @preconcurrency import UserNotifications
@@ -34,6 +35,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let recorderViewModel = RecorderViewModel()
     let onboardingProgress = OnboardingProgressStore()
     private var statusItem: NSStatusItem?
+    /// Parity rank 7: the window hides the timer like Granola; the
+    /// menu bar item carries the elapsed time while a note records.
+    private var menuBarTimer: Timer?
+    private var recordingObservers: Set<AnyCancellable> = []
     /// Bubble overlay wraps the shared camera + position-controller
     /// singletons (CameraCaptureCoordinator.shared,
     /// BubblePositionController.shared) so the RecorderViewModel's
@@ -52,6 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSLog("[loomola] applicationDidFinishLaunching — boot")
         configureMenuBar()
         configureGlobalHotkeys()
+        observeAudioRecordingForMenuBar()
         UNUserNotificationCenter.current().delegate = self
         CalendarReminderCoordinator.shared.start()
         // Refresh menubar item titles when the recording state flips
@@ -152,6 +158,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         item.menu = menu
         statusItem = item
+    }
+
+    private func observeAudioRecordingForMenuBar() {
+        recorderViewModel.$activeAudioRecordingStartedAt
+            .combineLatest(recorderViewModel.$audioNotePausedAt)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] startedAt, _ in
+                guard let self else { return }
+                self.menuBarTimer?.invalidate()
+                self.menuBarTimer = nil
+                guard startedAt != nil else {
+                    self.updateMenuBarElapsed()
+                    return
+                }
+                self.updateMenuBarElapsed()
+                let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+                    Task { @MainActor in self?.updateMenuBarElapsed() }
+                }
+                RunLoop.main.add(timer, forMode: .common)
+                self.menuBarTimer = timer
+            }
+            .store(in: &recordingObservers)
+    }
+
+    private func updateMenuBarElapsed() {
+        guard let button = statusItem?.button else { return }
+        guard let startedAt = recorderViewModel.activeAudioRecordingStartedAt else {
+            button.title = ""
+            button.imagePosition = button.image == nil ? .noImage : .imageOnly
+            button.toolTip = nil
+            return
+        }
+        let elapsed = RecordingElapsedFormatter.elapsed(
+            now: Date(),
+            startedAt: startedAt,
+            pausedAt: recorderViewModel.audioNotePausedAt,
+            pausedAccumulatedSeconds: recorderViewModel.audioNotePausedAccumulatedSeconds
+        )
+        let label = RecordingElapsedFormatter.string(seconds: elapsed)
+        button.attributedTitle = NSAttributedString(
+            string: " " + label,
+            attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)]
+        )
+        button.imagePosition = button.image == nil ? .noImage : .imageLeft
+        button.toolTip = recorderViewModel.audioNotePausedAt == nil
+            ? "Loomola is recording"
+            : "Loomola is paused"
     }
 
     @objc private func toggleRecording() {
