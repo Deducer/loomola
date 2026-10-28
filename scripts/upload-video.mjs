@@ -50,6 +50,14 @@ if (title && files.length > 1) {
   process.exit(2);
 }
 
+for (const f of files) {
+  const p = resolve(f);
+  if (!existsSync(p) || !statSync(p).isFile()) {
+    console.error(`no such file: ${p}`);
+    process.exit(2);
+  }
+}
+
 const { SUPABASE_URL, SUPABASE_ANON_KEY, TEST_CREATOR_EMAIL, TEST_CREATOR_PASSWORD } = process.env;
 for (const [k, v] of Object.entries({ SUPABASE_URL, SUPABASE_ANON_KEY, TEST_CREATOR_EMAIL, TEST_CREATOR_PASSWORD })) {
   if (!v) { console.error(`missing env ${k}`); process.exit(2); }
