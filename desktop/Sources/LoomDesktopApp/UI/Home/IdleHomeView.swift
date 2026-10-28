@@ -12,7 +12,11 @@ struct IdleHomeView: View {
     let onOpenLiveAudioNote: () -> Void
     let onOpenAudioNote: (RecentRecording) -> Void
 
-    private let homeContentMaxWidth: CGFloat = 1080
+    /// Notes surface uses Granola's readable column; the video grid
+    /// keeps the wide canvas it was built for.
+    private var homeContentMaxWidth: CGFloat {
+        captureMode == .audio ? WindowChromeLayout.notesHomeMaxWidth : 1080
+    }
 
     private var activeFolderName: String? {
         guard let folderFilterId else { return nil }
@@ -81,6 +85,13 @@ struct IdleHomeView: View {
     private var primarySurface: some View {
         if viewModel.activeRecordingKind == .audio {
             activeAudioRecordingCard
+        } else if captureMode == .audio {
+            // Granola home: the calendar card leads, the capture button
+            // lives in the title bar (`+ New note`).
+            ComingUpSection { event in
+                viewModel.audioTitle = event.title
+                viewModel.startAudioNoteRecording()
+            }
         } else {
             heroCard
         }

@@ -55,7 +55,11 @@ enum WindowChromeLayout {
     static let homeContentTopPaddingNormal: CGFloat = 72
     static let homeContentTopPaddingExpanded: CGFloat = 64
     static let noteContentTopPadding: CGFloat = 88
-    static let sidebarWidth: CGFloat = 280
+    /// Granola's rail is 192pt; a little wider here so folder names
+    /// with emoji don't truncate.
+    static let sidebarWidth: CGFloat = 208
+    /// Readable column for the notes-side home content (Granola ~620pt).
+    static let notesHomeMaxWidth: CGFloat = 640
 }
 
 extension View {

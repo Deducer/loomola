@@ -35,6 +35,28 @@ final class RecentDateGroupingTests: XCTestCase {
         XCTAssertEqual(groups[1].items.map(\.id), ["yesterday"])
     }
 
+    // MARK: - Formatter cache (parity audit side finding)
+
+    func testFormattersAreCachedPerCalendar() {
+        let a = RecentDateGrouping.formatter(format: "EEE, MMM d", calendar: calendar)
+        let b = RecentDateGrouping.formatter(format: "EEE, MMM d", calendar: calendar)
+        XCTAssertTrue(a === b, "The same formatter instance must come back on every call")
+        XCTAssertFalse(a === RecentDateGrouping.formatter(format: "MMM d", calendar: calendar))
+    }
+
+    func testGroupingThreeHundredItemsStaysCheap() {
+        let items = (0..<300).map { i in
+            recording(id: "r\(i)", at: ISO8601DateFormatter().string(from: now.addingTimeInterval(-Double(i) * 36_000)))
+        }
+        _ = RecentDateGrouping.grouped(items, now: now, calendar: calendar)
+        let start = Date()
+        for _ in 0..<20 {
+            _ = RecentDateGrouping.grouped(items, now: now, calendar: calendar)
+        }
+        let perPass = Date().timeIntervalSince(start) / 20
+        XCTAssertLessThan(perPass, 0.05, "grouping 300 rows took \(perPass)s per pass")
+    }
+
     // MARK: - Label semantics
 
     func testTodayLabelForSameCalendarDay() {

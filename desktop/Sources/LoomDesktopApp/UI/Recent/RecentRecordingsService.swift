@@ -290,6 +290,40 @@ final class RecentRecordingsService: ObservableObject {
         }
     }
 
+    /// Accept the AI folder suggestion on a row (Granola's inline
+    /// "Add to ▸ Folder ✓"). Optimistic: the row files itself at once
+    /// and reverts if the server declines.
+    func acceptFolderSuggestion(recordingId: String) async {
+        guard let index = items.firstIndex(where: { $0.id == recordingId }),
+              let folderId = items[index].suggestedFolderId else { return }
+        let original = items[index]
+        let folderName = folders.first(where: { $0.id == folderId })?.name
+        items[index] = original.with(folderId: folderId, folderName: folderName)
+        do {
+            try await backend.acceptSuggestedFolder(recordingId: recordingId)
+            log.notice("accepted folder suggestion for \(recordingId, privacy: .public)")
+        } catch {
+            items[index] = original
+            log.error("accept folder suggestion failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Dismiss the suggestion (the ✕). The server keeps a sticky lock
+    /// so the same folder isn't re-suggested until the next AI regen.
+    func dismissFolderSuggestion(recordingId: String) async {
+        guard let index = items.firstIndex(where: { $0.id == recordingId }) else { return }
+        let original = items[index]
+        var updated = original
+        updated.suggestedFolderId = nil
+        items[index] = updated
+        do {
+            try await backend.dismissSuggestedFolder(recordingId: recordingId)
+        } catch {
+            items[index] = original
+            log.error("dismiss folder suggestion failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     private func wireLifecycleObservers() {
         didBecomeActiveObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification,

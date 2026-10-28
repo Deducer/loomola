@@ -15,10 +15,13 @@ struct MainRecorderView: View {
     @State private var recordingStatusOverlay = RecordingStatusOverlayController()
     @State private var permissionStatus: PermissionStatus = PermissionChecker.currentStatus()
     @State private var dismissedPreflight = false
-    @State private var captureMode: CaptureMode = .video
+    /// Notes-first (Granola parity): the last-used mode is remembered.
+    @State private var captureMode: CaptureMode =
+        CaptureMode(rawValue: UserDefaults.standard.string(forKey: "loomola.captureMode") ?? "") ?? .audio
     @State private var showSettings = false
     @State private var showAccountMenu = false
-    @State private var sidebarOpen = false
+    /// Granola keeps its rail open; remembered across launches.
+    @State private var sidebarOpen = UserDefaults.standard.object(forKey: "loomola.sidebarOpen") as? Bool ?? true
     @State private var sidebarQuery = ""
     @State private var folderFilterId: String? = nil
     @State private var hostWindow: NSWindow?
@@ -41,13 +44,18 @@ struct MainRecorderView: View {
                         recents: viewModel.recentRecordings,
                         query: $sidebarQuery,
                         selectedFolderId: $folderFilterId,
+                        captureMode: $captureMode,
                         topPadding: sidebarTopPadding,
+                        email: viewModel.email,
                         onClose: {
                             withAnimation(LoomolaMotion.quick) { sidebarOpen = false }
                         },
                         onOpenSearchResult: { result in
                             openSearchResult(result)
-                        }
+                        },
+                        onOpenSettings: { showSettings = true },
+                        onOpenLibrary: openDashboard,
+                        onSignOut: { viewModel.signOut() }
                     )
                     .transition(.move(edge: .leading))
                 }
@@ -119,6 +127,10 @@ struct MainRecorderView: View {
         .onChange(of: captureMode) { _, mode in
             viewModel.setReadinessMode(mode.readinessMode)
             updateMeetingPromptWindow()
+            UserDefaults.standard.set(mode.rawValue, forKey: "loomola.captureMode")
+        }
+        .onChange(of: sidebarOpen) { _, open in
+            UserDefaults.standard.set(open, forKey: "loomola.sidebarOpen")
         }
         .onChange(of: viewModel.activeRecordingKind) { _, kind in
             updateMeetingPromptWindow()
@@ -192,16 +204,26 @@ struct MainRecorderView: View {
         HStack(alignment: .center) {
             HStack(spacing: DSSpacing.sm) {
                 titleBarSidebarButton
-                BrandLogoMark(size: 22)
-                Text("Loomola")
-                    .font(DSFont.Body.lg())
-                    .foregroundStyle(DSColor.Text.primary)
-                    .lineLimit(1)
+                // With the rail open the brand sits in the rail's
+                // column; the wordmark only shows when the rail is
+                // collapsed (Granola's title row is just icons).
+                if !sidebarOpen {
+                    BrandLogoMark(size: 22)
+                    Text("Loomola")
+                        .font(DSFont.Body.lg())
+                        .foregroundStyle(DSColor.Text.primary)
+                        .lineLimit(1)
+                }
             }
 
             Spacer()
 
-            titleBarActions
+            HStack(spacing: DSSpacing.sm) {
+                newCaptureButton
+                if !sidebarOpen {
+                    titleBarActions
+                }
+            }
         }
         .padding(.leading, WindowChromeLayout.homeLeadingPadding)
         .padding(.trailing, WindowChromeLayout.trailingPadding)
@@ -239,6 +261,36 @@ struct MainRecorderView: View {
                 .clipShape(Circle())
             }
             .help(sidebarOpen ? "Close sidebar (⌘S)" : "Open sidebar (⌘S)")
+    }
+
+    /// Granola's top-right `+ New note` pill (or `+ New recording`
+    /// on the Videos surface). Starts capture straight away.
+    private var newCaptureButton: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "plus")
+                .font(.system(size: 11, weight: .semibold))
+            Text(captureMode == .audio ? "New note" : "New recording")
+                .font(DSFont.Body.md().weight(.medium))
+        }
+        .foregroundStyle(DSColor.Text.primary)
+        .padding(.horizontal, DSSpacing.md)
+        .padding(.vertical, 6)
+        .background(Capsule().fill(DSColor.Bg.surface))
+        .overlay { Capsule().strokeBorder(DSColor.Border.strong, lineWidth: 1) }
+        .contentShape(Capsule())
+        .overlay {
+            ActionHitArea {
+                if captureMode == .audio {
+                    viewModel.startAudioNoteRecording()
+                } else {
+                    viewModel.startLocalRecording()
+                }
+            }
+            .clipShape(Capsule())
+        }
+        .opacity(viewModel.activeRecordingKind == nil ? 1 : 0.4)
+        .allowsHitTesting(viewModel.activeRecordingKind == nil)
+        .help(captureMode == .audio ? "Start a new note" : "Start a new recording")
     }
 
     private var titleBarActions: some View {

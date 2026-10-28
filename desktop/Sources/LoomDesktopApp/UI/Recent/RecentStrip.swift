@@ -52,8 +52,16 @@ struct RecentStrip: View {
         filteredItems.filter { selectedIds.contains($0.id) }
     }
 
+    /// Granola's notes list has no "Recent notes" heading — the date
+    /// groups carry it. The header row only appears for a folder
+    /// filter, a bulk selection, or the video grid.
+    private var showsHeader: Bool {
+        captureMode == .video || activeFolderName != nil || !selectedIds.isEmpty
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: DSSpacing.lg) {
+            if showsHeader {
             HStack(alignment: .firstTextBaseline, spacing: DSSpacing.sm) {
                 Text(headerTitle)
                     .font(DSFont.Display.lg())
@@ -82,6 +90,7 @@ struct RecentStrip: View {
                         .contentShape(Rectangle())
                         .overlay { ActionHitArea(action: openLibrary) }
                 }
+            }
             }
 
             content
@@ -163,7 +172,9 @@ struct RecentStrip: View {
                     Text(group.label)
                         .font(DSFont.Body.sm())
                         .foregroundStyle(DSColor.Text.tertiary)
-                        .padding(.horizontal, DSSpacing.md)
+                        // Align with the row icon: row padding (12) +
+                        // checkbox slot (16) + gap (8).
+                        .padding(.leading, DSSpacing.md + 16 + DSSpacing.sm)
                     VStack(spacing: 0) {
                         ForEach(group.items) { recording in
                             RecentNoteRow(
@@ -192,6 +203,12 @@ struct RecentStrip: View {
                                     } catch {
                                         return nil
                                     }
+                                },
+                                onAcceptSuggestion: {
+                                    Task { await service.acceptFolderSuggestion(recordingId: recording.id) }
+                                },
+                                onDismissSuggestion: {
+                                    Task { await service.dismissFolderSuggestion(recordingId: recording.id) }
                                 },
                                 onDelete: {
                                     Task {

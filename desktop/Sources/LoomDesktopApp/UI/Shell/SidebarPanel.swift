@@ -22,9 +22,18 @@ struct SidebarPanel: View {
     @ObservedObject var recents: RecentRecordingsService
     @Binding var query: String
     @Binding var selectedFolderId: String?
+    /// Notes vs Videos: the rail's top items switch the home surface
+    /// (parity rank 2 moved the Video/Audio segmented control here).
+    @Binding var captureMode: CaptureMode
     let topPadding: CGFloat
+    let email: String
     let onClose: () -> Void
     let onOpenSearchResult: (SearchResultDTO) -> Void
+    let onOpenSettings: () -> Void
+    let onOpenLibrary: () -> Void
+    let onSignOut: () -> Void
+
+    @State private var showAccountMenu = false
 
     @FocusState private var searchFocused: Bool
     @State private var emojiEditingFolder: FolderDTO?
@@ -55,10 +64,12 @@ struct SidebarPanel: View {
                 .padding(.bottom, DSSpacing.sm)
 
             navList
+
+            footer
         }
         .frame(width: WindowChromeLayout.sidebarWidth)
         .frame(maxHeight: .infinity)
-        .background(DSColor.Bg.canvas)
+        .background(DSColor.Bg.sidebar)
         .overlay(alignment: .trailing) {
             // Hairline separator on the right edge — Granola has a
             // very faint vertical line where the sidebar meets the
@@ -150,7 +161,6 @@ struct SidebarPanel: View {
                 ForEach(searchResults) { result in
                     SearchResultRow(result: result) {
                         onOpenSearchResult(result)
-                        onClose()
                     }
                 }
             }
@@ -215,13 +225,52 @@ struct SidebarPanel: View {
             navItem(
                 label: "Home",
                 systemImage: "house",
-                isActive: selectedFolderId == nil,
+                isActive: selectedFolderId == nil && captureMode == .audio,
                 action: {
                     selectedFolderId = nil
-                    onClose()
+                    captureMode = .audio
+                }
+            )
+            navItem(
+                label: "Videos",
+                systemImage: "video",
+                isActive: captureMode == .video,
+                action: {
+                    selectedFolderId = nil
+                    captureMode = .video
                 }
             )
         }
+    }
+
+    /// Settings gear + account avatar, Granola's bottom-of-rail cluster.
+    private var footer: some View {
+        HStack(spacing: DSSpacing.sm) {
+            IconButton(icon: "gearshape", size: 28, action: onOpenSettings)
+                .help("Settings")
+            IconButton(
+                text: email.first.map { String($0).uppercased() } ?? "?",
+                size: 28,
+                action: { showAccountMenu.toggle() }
+            )
+            .help("Account")
+            .popover(isPresented: $showAccountMenu, arrowEdge: .top) {
+                AccountMenuPopover(
+                    email: email.isEmpty ? nil : email,
+                    onOpenLibrary: {
+                        showAccountMenu = false
+                        onOpenLibrary()
+                    },
+                    onSignOut: {
+                        showAccountMenu = false
+                        onSignOut()
+                    }
+                )
+            }
+            Spacer()
+        }
+        .padding(.horizontal, DSSpacing.md)
+        .padding(.vertical, DSSpacing.md)
     }
 
     private func folderSection(title: String, sectionFolders: [FolderDTO]) -> some View {
@@ -247,7 +296,7 @@ struct SidebarPanel: View {
                         isActive: selectedFolderId == folder.id,
                         action: {
                             selectedFolderId = folder.id
-                            onClose()
+                            captureMode = .audio
                         }
                     )
                     .contextMenu {

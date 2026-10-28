@@ -1,24 +1,18 @@
 import AppKit
 import SwiftUI
 
-/// Granola-shape row for the Recent notes list.
+/// Granola-shape row for the Recent notes list (parity rank 2).
 ///
-/// Layout: `[checkbox] [icon] [title] [folder pill] [time] [⋯]`
+/// Layout: `[checkbox] [icon] [title / attendees] [suggestion or folder] [time] [⋯]`
 ///
 /// Visibility rules:
-///   • icon, title, folder pill, time → always
+///   • icon, title, attendee subtitle, time → always
+///   • "Add to ▸ Folder ✓ ✕" suggestion pill → while the note is
+///     unfiled and the AI suggestion is pending
+///   • folder icon + name → when filed
 ///   • checkbox → on row hover, OR when this row is selected,
 ///     OR when any row in the strip is in selection mode
 ///   • ⋯ menu → on row hover (or while its popover is open)
-///
-/// The folder pill is **always visible** (Granola pattern). When the
-/// note is unfiled it shows a subtle tray glyph; when filed it shows
-/// the folder name with a chevron. Click → folder picker popover with
-/// search + "+ New folder" inline.
-///
-/// The ⋯ popover offers Move to folder (re-opens the picker) and
-/// Delete. Bulk operations live on the strip's floating action bar
-/// when one or more checkboxes are ticked.
 struct RecentNoteRow: View {
     let recording: RecentRecording
     let folders: [FolderDTO]
@@ -28,6 +22,8 @@ struct RecentNoteRow: View {
     let onToggleSelected: () -> Void
     let onAssignFolder: (String?) -> Void
     let onCreateFolder: (String) async -> FolderDTO?
+    let onAcceptSuggestion: () -> Void
+    let onDismissSuggestion: () -> Void
     let onDelete: () -> Void
 
     @State private var hovering = false
@@ -42,44 +38,60 @@ struct RecentNoteRow: View {
         hovering || showRowMenu
     }
 
+    private var suggestedFolderName: String? {
+        guard recording.folderId == nil, let id = recording.suggestedFolderId else { return nil }
+        return folders.first(where: { $0.id == id })?.name
+    }
+
+    /// "Me" alone, or "Me, Neely, Bhaskar" — Granola lists the people
+    /// under the title.
+    private var attendeeLine: String {
+        let names = recording.attendees.map(\.name).filter { !$0.isEmpty }
+        return (["Me"] + names).joined(separator: ", ")
+    }
+
     var body: some View {
         HStack(spacing: DSSpacing.sm) {
             checkbox
                 .frame(width: 16)
                 .opacity(checkboxVisible ? 1 : 0)
 
-            // Click target for "open the note" — icon + title only.
-            // Splitting hit regions like this so the folder pill,
-            // ⋯ menu, and checkbox can each own their clicks
-            // without the row-wide overlay swallowing them.
+            // Click target for "open the note" — icon + title region.
             HStack(spacing: DSSpacing.md) {
                 iconView
                     .frame(width: 32, height: 32)
                     .clipShape(RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous))
-                Text(recording.title)
-                    .font(DSFont.Body.md())
-                    .foregroundStyle(DSColor.Text.primary)
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(recording.title)
+                        .font(DSFont.Body.md())
+                        .foregroundStyle(DSColor.Text.primary)
+                        .lineLimit(1)
+                    Text(attendeeLine)
+                        .font(DSFont.Body.sm().weight(.regular))
+                        .foregroundStyle(DSColor.Text.tertiary)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .contentShape(Rectangle())
             .overlay { ActionHitArea(action: onOpen) }
 
-            folderPill
+            if let suggestedFolderName {
+                suggestionPill(suggestedFolderName)
+            } else {
+                folderPill
+            }
 
-            Text(timeOfDay)
-                .font(DSFont.Body.sm())
-                .foregroundStyle(DSColor.Text.secondary)
-                .monospacedDigit()
-                .frame(width: 60, alignment: .trailing)
+            timeLabel
+                .frame(width: 64, alignment: .trailing)
 
             rowMenuButton
                 .frame(width: 20)
                 .opacity(rowMenuVisible ? 1 : 0)
         }
         .padding(.horizontal, DSSpacing.md)
-        .padding(.vertical, DSSpacing.sm)
-        .frame(height: 52)
+        .padding(.vertical, 6)
+        .frame(height: 48)
         .background(
             RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
                 .fill(rowBackground)
@@ -113,10 +125,13 @@ struct RecentNoteRow: View {
 
     private var paperIcon: some View {
         ZStack {
-            Rectangle().fill(DSColor.Bg.subtle)
-            Image(systemName: "doc.text")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(DSColor.Text.tertiary)
+            RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous)
+                .fill(DSColor.Bg.surface)
+            RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous)
+                .strokeBorder(DSColor.Border.subtle, lineWidth: 1)
+            Image(systemName: "doc")
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(DSColor.Text.secondary)
         }
     }
 
@@ -142,61 +157,120 @@ struct RecentNoteRow: View {
         .overlay { ActionHitArea(action: onToggleSelected) }
     }
 
-    // MARK: - Folder pill
+    /// "9:44 AM" with the period in small caps — Granola's time column.
+    private var timeLabel: some View {
+        let formatter = RecentDateGrouping.formatter(format: "h:mm", calendar: .current)
+        let period = RecentDateGrouping.formatter(format: "a", calendar: .current)
+        return (
+            Text(formatter.string(from: recording.createdAt))
+                .font(DSFont.Body.sm().weight(.regular))
+            + Text(" " + period.string(from: recording.createdAt).uppercased())
+                .font(.system(size: 9, weight: .medium))
+        )
+        .foregroundStyle(DSColor.Text.secondary)
+        .monospacedDigit()
+        .lineLimit(1)
+    }
 
-    private var folderPill: some View {
-        HStack(spacing: 4) {
-            Image(systemName: recording.folderId == nil ? "tray" : "folder")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(folderPillForeground)
-            if let name = recording.folderName, !name.isEmpty {
+    // MARK: - Suggestion pill ("Add to ▸ Folder ✓ ✕")
+
+    private func suggestionPill(_ name: String) -> some View {
+        HStack(spacing: 6) {
+            Text("Add to")
+                .font(DSFont.Body.sm().weight(.regular))
+                .foregroundStyle(DSColor.Text.tertiary)
+            HStack(spacing: 4) {
+                Image(systemName: "folder")
+                    .font(.system(size: 10, weight: .medium))
                 Text(name)
                     .font(DSFont.Body.sm())
-                    .foregroundStyle(folderPillForeground)
+                    .lineLimit(1)
+            }
+            .foregroundStyle(DSColor.Text.secondary)
+            Image(systemName: "checkmark")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(DSColor.Accent.ai)
+                .frame(width: 18, height: 18)
+                .contentShape(Rectangle())
+                .overlay { ActionHitArea(action: onAcceptSuggestion) }
+                .help("File in \(name)")
+            Image(systemName: "xmark")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(DSColor.Text.tertiary)
+                .frame(width: 18, height: 18)
+                .contentShape(Rectangle())
+                .overlay { ActionHitArea(action: onDismissSuggestion) }
+                .help("Dismiss suggestion")
+        }
+        .padding(.leading, DSSpacing.md)
+        .padding(.trailing, 6)
+        .padding(.vertical, 5)
+        .background(
+            Capsule().fill(DSColor.Bg.surface)
+        )
+        .overlay {
+            Capsule().strokeBorder(DSColor.Border.subtle, lineWidth: 1)
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    // MARK: - Folder pill (filed notes only; unfiled rows stay quiet)
+
+    @ViewBuilder
+    private var folderPill: some View {
+        if let name = recording.folderName, !name.isEmpty {
+            HStack(spacing: 4) {
+                Image(systemName: "folder")
+                    .font(.system(size: 11, weight: .medium))
+                Text(name)
+                    .font(DSFont.Body.sm())
                     .lineLimit(1)
                     .truncationMode(.tail)
-            }
-            // Chevron only when hovering — keeps the unfiled / filed
-            // pill visually quiet at rest, surfaces "this is clickable"
-            // on hover. Granola does the same.
-            if hovering {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(DSColor.Text.tertiary)
-            }
-        }
-        .padding(.horizontal, recording.folderName == nil ? 8 : DSSpacing.sm)
-        .padding(.vertical, 4)
-        .frame(maxWidth: 160)
-        .fixedSize(horizontal: true, vertical: false)
-        .background(
-            RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous)
-                .fill(hovering ? DSColor.Bg.surfaceRaised : Color.clear)
-        )
-        .contentShape(Rectangle())
-        .overlay {
-            ActionHitArea {
-                showFolderPicker.toggle()
-            }
-        }
-        .help(recording.folderName ?? "Unfiled")
-        .popover(isPresented: $showFolderPicker, arrowEdge: .bottom) {
-            FolderPickerPopover(
-                folders: folders,
-                selectedFolderId: recording.folderId,
-                onSelect: { newFolderId in
-                    showFolderPicker = false
-                    onAssignFolder(newFolderId)
-                },
-                onCreate: { name in
-                    await onCreateFolder(name)
+                if hovering {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(DSColor.Text.tertiary)
                 }
+            }
+            .foregroundStyle(DSColor.Text.secondary)
+            .padding(.horizontal, DSSpacing.sm)
+            .padding(.vertical, 4)
+            .frame(maxWidth: 160)
+            .fixedSize(horizontal: true, vertical: false)
+            .background(
+                RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous)
+                    .fill(hovering ? DSColor.Bg.surfaceRaised : Color.clear)
             )
+            .contentShape(Rectangle())
+            .overlay { ActionHitArea { showFolderPicker.toggle() } }
+            .help(name)
+            .popover(isPresented: $showFolderPicker, arrowEdge: .bottom) { folderPicker }
+        } else if hovering || showFolderPicker {
+            Image(systemName: "folder.badge.plus")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(DSColor.Text.tertiary)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+                .overlay { ActionHitArea { showFolderPicker.toggle() } }
+                .help("Add to folder")
+                .popover(isPresented: $showFolderPicker, arrowEdge: .bottom) { folderPicker }
+        } else {
+            Color.clear.frame(width: 24, height: 24)
         }
     }
 
-    private var folderPillForeground: Color {
-        recording.folderId == nil ? DSColor.Text.tertiary : DSColor.Text.secondary
+    private var folderPicker: some View {
+        FolderPickerPopover(
+            folders: folders,
+            selectedFolderId: recording.folderId,
+            onSelect: { newFolderId in
+                showFolderPicker = false
+                onAssignFolder(newFolderId)
+            },
+            onCreate: { name in
+                await onCreateFolder(name)
+            }
+        )
     }
 
     // MARK: - Per-row ⋯ menu
@@ -224,12 +298,6 @@ struct RecentNoteRow: View {
                     }
                 )
             }
-    }
-
-    private var timeOfDay: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm a"
-        return formatter.string(from: recording.createdAt)
     }
 }
 

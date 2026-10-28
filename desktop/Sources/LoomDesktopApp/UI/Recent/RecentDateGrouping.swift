@@ -7,6 +7,11 @@ import Foundation
 ///
 /// `now` and `calendar` are parameterized so tests can pin them
 /// instead of relying on the system clock.
+///
+/// Formatters are cached per calendar: `grouped` runs inside a SwiftUI
+/// body, and allocating a `DateFormatter` per row per render pinned the
+/// main thread at 100% during a recording (found in the 2026-10-28
+/// parity audit).
 enum RecentDateGrouping {
     struct Group: Equatable {
         let label: String
@@ -78,17 +83,48 @@ enum RecentDateGrouping {
                 from: calendar.startOfDay(for: date),
                 to: today
             ).day ?? 0
+        let format: String
+        if daysAgo < 7 {
+            format = "EEE, MMM d"   // "Mon, May 4"
+        } else if calendar.isDate(date, equalTo: now, toGranularity: .year) {
+            format = "MMM d"        // "Apr 30"
+        } else {
+            format = "MMM d, yyyy"  // "Dec 12, 2025"
+        }
+        return formatter(format: format, calendar: calendar).string(from: date)
+    }
+
+    // MARK: - Formatter cache
+
+    private struct FormatterKey: Hashable {
+        let format: String
+        let calendar: Calendar.Identifier
+        let locale: String
+        let timeZone: String
+    }
+
+    private static let cacheLock = NSLock()
+    private static var cache: [FormatterKey: DateFormatter] = [:]
+
+    /// One formatter per (format, calendar, locale, time zone). Returns
+    /// the same instance on every call so view bodies stay cheap.
+    static func formatter(format: String, calendar: Calendar) -> DateFormatter {
+        let locale = calendar.locale ?? Locale.current
+        let key = FormatterKey(
+            format: format,
+            calendar: calendar.identifier,
+            locale: locale.identifier,
+            timeZone: calendar.timeZone.identifier
+        )
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        if let cached = cache[key] { return cached }
         let formatter = DateFormatter()
         formatter.calendar = calendar
-        formatter.locale = calendar.locale ?? Locale.current
+        formatter.locale = locale
         formatter.timeZone = calendar.timeZone
-        if daysAgo < 7 {
-            formatter.dateFormat = "EEE, MMM d"   // "Mon, May 4"
-        } else if calendar.isDate(date, equalTo: now, toGranularity: .year) {
-            formatter.dateFormat = "MMM d"        // "Apr 30"
-        } else {
-            formatter.dateFormat = "MMM d, yyyy"  // "Dec 12, 2025"
-        }
-        return formatter.string(from: date)
+        formatter.dateFormat = format
+        cache[key] = formatter
+        return formatter
     }
 }
