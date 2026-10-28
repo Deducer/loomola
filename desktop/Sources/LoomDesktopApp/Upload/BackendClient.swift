@@ -1066,6 +1066,10 @@ struct SpeakerAssignmentDTO: Decodable, Equatable, Sendable {
     /// Speaker v2: a confirmed name the new transcript's capture
     /// evidence couldn't vouch for. Optional for older servers.
     var needsReview: Bool?
+    /// Speaker v2: the transcript this row's speaker index refers to —
+    /// sent back when accepting/dismissing it, so the server refuses the
+    /// write if that transcript has been replaced since.
+    var transcriptVersion: String?
 }
 
 private struct AssignSpeakerRequest: Encodable {

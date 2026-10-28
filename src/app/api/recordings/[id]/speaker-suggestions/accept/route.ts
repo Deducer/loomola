@@ -66,9 +66,15 @@ export async function POST(
     personId,
     displayLabelOverride,
     transcriptVersion: parsed.data.transcriptVersion ?? null,
+    createdFromSuggestion: Boolean(parsed.data.createPerson),
   });
 
-  if (!result.ok && (result.reason === "transcript_changed" || result.reason === "transcript_version_required")) {
+  if (
+    !result.ok &&
+    (result.reason === "transcript_changed" ||
+      result.reason === "transcript_version_required" ||
+      result.reason === "suggestion_changed")
+  ) {
     // The suggestion (or the screen) is for a transcript that has since
     // been replaced; voice indices may mean someone else now.
     return NextResponse.json({ error: result.reason }, { status: 409 });

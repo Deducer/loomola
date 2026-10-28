@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { composeSpeakerSuggestions } from "@/lib/speaker-suggestion/compose";
 import { computeSpeakerProfile } from "@/lib/speaker-profile/profile";
 import type { PersonCandidate } from "@/lib/speaker-suggestion/match-person";
-import { framesForTurns, turns, wordsFor, type Turn } from "./fixtures/speaker-v2";
+import { framesFor, framesForTurns, turns, wordsFor, type Turn } from "./fixtures/speaker-v2";
 
 const SELF: PersonCandidate = { id: "ian", displayName: "Ian Cross", email: "ian@example.com" };
 const SARAH: PersonCandidate = { id: "sarah", displayName: "Sarah Chen", email: "sarah@example.com" };
@@ -219,6 +219,19 @@ describe("composeSpeakerSuggestions (v2 evidence ladder)", () => {
       selfPersonId: SELF.id,
     });
     expect(r).toEqual([]);
+  });
+
+  it("suggests (doesn't auto-apply) Me found only by the low-gain mic rule", () => {
+    const t = turns([[0, 50], [1, 50]]);
+    const words = wordsFor(t);
+    // The recorder's mic is loud for only a fifth of their speech.
+    const profile = computeSpeakerProfile({
+      words,
+      provider: "deepgram",
+      activity: framesFor({ durationSec: 100, micOn: [[0, 10]], systemOn: [[50, 100]] }),
+    });
+    const r = composeSpeakerSuggestions({ words, profile, attendees: [], people: [SELF], selfPersonId: SELF.id });
+    expect(r).toEqual([expect.objectContaining({ speakerIdx: 0, personId: SELF.id, autoApply: false })]);
   });
 
   it("never re-applies a kind of name the user dismissed on this note — it becomes a suggestion", () => {

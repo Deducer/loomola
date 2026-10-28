@@ -91,13 +91,19 @@ final class MicRestartGapTrackerTests: XCTestCase {
         XCTAssertEqual(MicRestartDevicePolicy.devicesToTry(selected: nil), [nil])
     }
 
-    func testSilenceFillIsCapped() {
+    /// Review finding P2 (fifth pass): a 10-minute cap shifted everything
+    /// after a 15-minute outage five minutes early. Long gaps are filled
+    /// in full; only an absurd clock delta is capped.
+    func testLongOutageIsFilledInFull() {
         var tracker = MicRestartGapTracker()
         tracker.markBuffer(uptime: 0, pausedTotal: 0)
         tracker.open(nextEpoch: 1)
-        let silence = tracker.close(arrivalUptime: 3 * 3600, bufferDuration: 0.1, pausedTotal: 0)
-        XCTAssertEqual(silence, MicRestartGapTracker.maximumGap)
-        XCTAssertLessThanOrEqual(MicRestartGapTracker.maximumGap, 600)
+        let silence = tracker.close(arrivalUptime: 15 * 60 + 0.1, bufferDuration: 0.1, pausedTotal: 0)
+        XCTAssertEqual(silence, 15 * 60, accuracy: 0.0001)
+        var absurd = MicRestartGapTracker()
+        absurd.markBuffer(uptime: 0, pausedTotal: 0)
+        absurd.open(nextEpoch: 1)
+        XCTAssertEqual(absurd.close(arrivalUptime: 10 * 3600, bufferDuration: 0.1, pausedTotal: 0), MicRestartGapTracker.maximumGap)
     }
 
     /// Review finding P1: stop() during a restart. A restart queued before

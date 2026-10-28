@@ -65,13 +65,15 @@ struct MicRestartGapTracker {
 
     /// Below this, scheduling jitter — not worth a silence write.
     static let minimumGap: TimeInterval = 0.05
-    /// The fill is encoded synchronously on the tap thread (~50 ms per
-    /// minute of silence on Apple silicon), so it is capped: 10 minutes
-    /// costs ~0.5 s once. A longer outage leaves the mic track that much
-    /// shorter — the server then sees reduced mic coverage rather than a
-    /// capture stall. With the default-device fallback, restarts take
-    /// seconds, not minutes.
-    static let maximumGap: TimeInterval = 10 * 60
+    /// The WHOLE gap is filled: a partial fill would shift everything
+    /// recorded afterwards earlier than the call audio, silently breaking
+    /// mic-vs-system alignment for the rest of the note. The fill is
+    /// encoded synchronously on the tap thread (~50 ms per minute of
+    /// silence on Apple silicon, so ~3 s once after an hour-long outage) —
+    /// a one-off stall beats a permanent misalignment, and with the
+    /// default-device fallback real outages last seconds. The cap only
+    /// guards against a nonsensical clock delta.
+    static let maximumGap: TimeInterval = 4 * 3600
 }
 
 /// Which input devices a restart tries, in order. The selected mic first;

@@ -148,13 +148,14 @@ export function reconcileAssignments(args: {
     //  - the owner: the mic singles out exactly one voice and it's this one;
     //  - someone else: the same evidence the worker auto-applies a 1:1
     //    name with (sole remote voice, sole attendee, and it's them);
-    //  - or channel continuity: the row was made on the live transcript
-    //    (legacy rows written before this transcript were too) where
-    //    index 0 is the mic and 1 the call audio, and that channel's
-    //    voice is unambiguous AND at the same index.
+    //  - or channel continuity: the row is STAMPED as made on a live
+    //    transcript (index 0 = mic, 1 = call audio) and that channel's
+    //    voice is unambiguous AND at the same index. Unversioned legacy
+    //    rows have unknown provenance (live or an earlier batch), so they
+    //    need identity proof or go to review.
     const isSelf = args.selfPersonId !== null && row.personId === args.selfPersonId;
     const attendeeIds = args.attendeePersonIds ?? [];
-    const channelBasis = legacy || oldIsLive;
+    const channelBasis = oldIsLive;
     const channelTarget = !channelBasis
       ? null
       : isSelf && row.speakerIdx === 0 && me.length === 1
@@ -174,10 +175,9 @@ export function reconcileAssignments(args: {
       continue;
     }
     // A live-version row maps onto the voice its channel became. Legacy
-    // rows that would MOVE go to review instead: those are the pre-v2
-    // mislabels, which the owner reviews rather than having them
-    // silently corrected (2026-10-27 decision).
-    if (channelTarget !== null && oldIsLive) {
+    // rows never move: those are the pre-v2 mislabels, which the owner
+    // reviews rather than having them silently corrected (2026-10-27).
+    if (channelTarget !== null) {
       proposedRemaps.push({ id: row.id, newIdx: channelTarget });
       continue;
     }

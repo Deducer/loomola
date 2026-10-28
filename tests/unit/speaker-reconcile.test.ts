@@ -190,6 +190,26 @@ describe("reconcileAssignments", () => {
     expect(ok.restampIds).toEqual(["y"]);
   });
 
+  it("sends an unversioned legacy name of unknown provenance to review, even at the remote voice's index", () => {
+    // A legacy label "Bob" at voice 1 — maybe made on an earlier BATCH
+    // transcript, not the live one. Today voice 1 is the sole remote
+    // voice, but the invitee is Alice: nothing proves it's Bob.
+    const p = reconcileAssignments({
+      rows: [row({ id: "bob", speakerIdx: 1, personId: "bob", transcriptVersion: null })],
+      currentVersion: BATCH,
+      currentTranscriptCreatedAt: batchAt,
+      profile: computeSpeakerProfile({
+        words: wordsFor(turns([[1, 60], [0, 30], [1, 40]])),
+        provider: "deepgram",
+        activity: framesForTurns(turns([[1, 60], [0, 30], [1, 40]]), [0]),
+      }),
+      selfPersonId: SELF,
+      attendeePersonIds: ["alice"],
+    });
+    expect(p.restampIds).toEqual([]);
+    expect(p.reviewIds).toEqual(["bob"]);
+  });
+
   it("doesn't confirm the owner on either of two mic-dominant voices (shared mic)", () => {
     const shared = turns([[0, 40], [1, 40], [3, 30], [1, 20]]);
     const sharedProfile = computeSpeakerProfile({

@@ -49,7 +49,15 @@
 - The transcript version is mandatory on every user speaker write, including DELETE.
 - The 1:1 rule is stricter.
 - The LLM pass status is part of the done-marker.
-- Desktop: a restart falls back to the default input when the selected mic is gone, and the silence fill is capped at 10 minutes.
+- Desktop: a restart falls back to the default input when the selected mic is gone. (The 10-minute silence cap was reverted in the fifth pass below.)
+
+**Fifth review pass (2026-10-27):**
+- Legacy rows need identity proof and never move.
+- Accept is bound to the suggestion's current person.
+- The desktop sends the version of the row or transcript it shows.
+- Mic gaps are filled in full (capped only at 4 h).
+- Backfill enqueues dedupe through a pg-boss singleton slot.
+- Low-gain Me is a suggestion.
 **Style:** TDD. Pure logic first, under `src/lib/speaker-profile/` and `src/lib/speaker-suggestion/`, then wiring, then UI. Each phase ships on its own and is scored with the same offline eval script.
 
 ## Phases at a glance (ordered by impact ÷ effort)

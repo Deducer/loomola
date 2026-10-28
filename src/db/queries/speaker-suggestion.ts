@@ -320,7 +320,14 @@ export async function applySpeakerSuggestion(args: {
   personId: string;
   displayLabelOverride?: string | null;
   transcriptVersion?: string | null;
-}): Promise<{ ok: boolean; reason?: "no_pending_suggestion" | "transcript_changed" | "transcript_version_required" }> {
+  /** True when the caller just created the person from the suggestion's
+   *  "new person" payload; otherwise `personId` must be the person the
+   *  suggestion names. */
+  createdFromSuggestion?: boolean;
+}): Promise<{
+  ok: boolean;
+  reason?: "no_pending_suggestion" | "transcript_changed" | "transcript_version_required" | "suggestion_changed";
+}> {
   try {
     return await withUserSpeakerLock(
       { mediaObjectId: args.mediaObjectId, ownerId: args.ownerId, expectedTranscriptVersion: args.transcriptVersion },
@@ -328,6 +335,7 @@ export async function applySpeakerSuggestion(args: {
         const [row] = await tx
           .select({
             id: speakerAssignments.id,
+            personId: speakerAssignments.personId,
             transcriptVersion: speakerAssignments.transcriptVersion,
             suggestedAt: speakerAssignments.suggestedAt,
             createdAt: speakerAssignments.createdAt,
@@ -345,6 +353,12 @@ export async function applySpeakerSuggestion(args: {
         if (current && !isRowOnTranscript(row, current.version, current.createdAt)) {
           return { ok: false, reason: "transcript_changed" as const };
         }
+        // Accept means "yes, the person you suggested" — bound to the
+        // suggestion actually on this voice now. A client holding an older
+        // suggestion for this index (recomputed since) must not apply its
+        // person to whoever the voice is suggested as today.
+        const matches = args.createdFromSuggestion ? row.personId === null : row.personId === args.personId;
+        if (!matches) return { ok: false, reason: "suggestion_changed" as const };
         await tx
           .update(speakerAssignments)
           .set({

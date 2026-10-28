@@ -291,4 +291,20 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
     // The worker sees its transcript is gone and writes nothing.
     await expect(lock).resolves.toEqual({ stale: true });
   });
+
+  it("binds accept to the suggestion on that voice now, not one a client cached (P1: stale accept target)", async () => {
+    const shown = await currentVersion();
+    // Today the suggestion on voice 0 is Sarah; an old screen still shows
+    // "voice 0: Alex?" and the user clicks Apply.
+    await user`INSERT INTO speaker_assignments (media_object_id, speaker_idx, person_id, is_suggestion, transcript_version)
+      VALUES (${MEDIA}, 0, ${SARAH}, true, ${shown})`;
+    const result = await applySpeakerSuggestion({
+      mediaObjectId: MEDIA, ownerId: OWNER, speakerIdx: 0, personId: ALEX, transcriptVersion: shown,
+    });
+    expect(result).toEqual({ ok: false, reason: "suggestion_changed" });
+    expect((await rows())[0]).toMatchObject({ person_id: SARAH, is_suggestion: true });
+    expect(
+      await applySpeakerSuggestion({ mediaObjectId: MEDIA, ownerId: OWNER, speakerIdx: 0, personId: SARAH, transcriptVersion: shown })
+    ).toEqual({ ok: true });
+  });
 });

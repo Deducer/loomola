@@ -48,6 +48,10 @@ export type SpeakerProfileEntry = {
   source: SpeakerSource;
   micOnlyShare: number | null;
   systemShare: number | null;
+  /** Identified as the recorder only by the low-gain rule (15% mic-only
+   *  with every other voice near 0) — weaker evidence, so suggested
+   *  rather than applied. */
+  lowGain?: boolean;
 };
 
 export type SpeakerProfile = {
@@ -187,6 +191,7 @@ export function computeSpeakerProfile(args: {
   const micDominant = new Set(
     participants.filter((e) => e.micOnlyShare >= MIC_ONLY_STRONG).map((e) => e.speakerIdx)
   );
+  let lowGainIdx: number | null = null;
   if (micDominant.size === 0) {
     // Low-gain mic: one voice clearly ahead while every other voice is
     // essentially never mic-only.
@@ -198,6 +203,7 @@ export function computeSpeakerProfile(args: {
       ranked.slice(1).every((e) => e.micOnlyShare <= OTHERS_MAX_FOR_WEAK)
     ) {
       micDominant.add(top.speakerIdx);
+      lowGainIdx = top.speakerIdx;
     }
   }
   const systemShareOf = new Map(measured.map((e) => [e.speakerIdx, e.systemShare]));
@@ -206,6 +212,7 @@ export function computeSpeakerProfile(args: {
 
   const entries: SpeakerProfileEntry[] = measured.map((e) => ({
     ...e,
+    ...(e.speakerIdx === lowGainIdx ? { lowGain: true } : {}),
     source: strong.has(e.speakerIdx)
       ? "mic"
       : merged.has(e.speakerIdx)

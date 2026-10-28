@@ -87,6 +87,8 @@ export function composeSpeakerSuggestions(args: {
   // names applied without a click.
   const me = meSpeakerIdxs(profile);
   const sharedMic = me.length > 1;
+  // The low-gain rule is weaker evidence than a clearly mic-only voice.
+  const lowGain = profile.entries.some((e) => me.includes(e.speakerIdx) && e.lowGain);
   for (const idx of me) {
     // A user who already put the owner on some voice has decided.
     if (skip.has(idx) || taken.has(selfPersonId)) continue;
@@ -100,7 +102,7 @@ export function composeSpeakerSuggestions(args: {
           : sharedMic
             ? "self_via_mic_capture_shared"
             : "self_via_mic_capture",
-      autoApply: !sharedMic && !selfDismissed,
+      autoApply: !sharedMic && !selfDismissed && !lowGain,
       ...(sharedMic ? { needsReview: true } : {}),
     });
   }
@@ -129,7 +131,7 @@ export function composeSpeakerSuggestions(args: {
       result.push({
         ...s,
         reason: "remote_via_single_voice",
-        autoApply: s.personId !== null && !remoteDismissed && profile.status !== "live_channels",
+        autoApply: s.personId !== null && !remoteDismissed && !lowGain && profile.status !== "live_channels",
       });
     }
   }

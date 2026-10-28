@@ -2799,7 +2799,9 @@ struct NoteWorkspaceView: View {
                     mediaId: recording.id,
                     speakerIdx: idx,
                     personId: personId,
-                    transcriptVersion: await transcriptVersionForSpeakerWrite(recordingId: recording.id, backend: backend)
+                    // The transcript the user is looking at (the label menu
+                    // only exists in the loaded transcript drawer).
+                    transcriptVersion: transcript?.transcriptVersion
                 )
                 if let list = try? await backend.speakerAssignments(mediaId: recording.id) {
                     speakerAssignments = list
@@ -2835,7 +2837,9 @@ struct NoteWorkspaceView: View {
                         recordingId: recording.id,
                         speakerIdx: suggestion.speakerIdx,
                         personId: personId,
-                        transcriptVersion: await transcriptVersionForSpeakerWrite(recordingId: recording.id, backend: backend)
+                        // Bound to the suggestion as shown: if the server
+                        // has replaced its transcript, it refuses.
+                        transcriptVersion: suggestion.transcriptVersion ?? transcript?.transcriptVersion
                     )
                     applied += 1
                 } catch {
@@ -2848,15 +2852,6 @@ struct NoteWorkspaceView: View {
             }
             showToast(message: applied > 0 ? "Speaker names applied" : "Names were already applied")
         }
-    }
-
-    /// The transcript version speaker writes must name (the server refuses
-    /// a write whose transcript was replaced, or that names none). The
-    /// suggestion banner can show before the transcript drawer has loaded
-    /// the transcript, so fetch it when needed.
-    private func transcriptVersionForSpeakerWrite(recordingId: String, backend: BackendClient) async -> String? {
-        if let version = transcript?.transcriptVersion { return version }
-        return try? await backend.getNoteTranscript(mediaId: recordingId).transcriptVersion
     }
 
     private func activeAssignment(idx: Int) -> SpeakerAssignmentDTO? {
@@ -2892,13 +2887,16 @@ struct NoteWorkspaceView: View {
               let backend = viewModel.backendClient
         else { return }
         let previous = speakerAssignments
+        // "Not <name>" is said about the transcript on screen (a stale row is
+        // shown over it as needs-review), so that is the version to name.
+        let shownVersion = transcript?.transcriptVersion ?? activeAssignment(idx: idx)?.transcriptVersion
         speakerAssignments = speakerAssignments.filter { $0.speakerIdx != idx }
         Task { @MainActor in
             do {
                 try await backend.dismissSpeakerSuggestion(
                     recordingId: recording.id,
                     speakerIdx: idx,
-                    transcriptVersion: await transcriptVersionForSpeakerWrite(recordingId: recording.id, backend: backend)
+                    transcriptVersion: shownVersion
                 )
             } catch {
                 speakerAssignments = previous
@@ -2919,7 +2917,7 @@ struct NoteWorkspaceView: View {
                 try? await backend.dismissSpeakerSuggestion(
                     recordingId: recording.id,
                     speakerIdx: suggestion.speakerIdx,
-                    transcriptVersion: await transcriptVersionForSpeakerWrite(recordingId: recording.id, backend: backend)
+                    transcriptVersion: suggestion.transcriptVersion
                 )
             }
         }
