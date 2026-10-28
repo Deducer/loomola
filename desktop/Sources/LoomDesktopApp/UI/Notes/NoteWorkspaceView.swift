@@ -374,12 +374,8 @@ struct NoteWorkspaceView: View {
                         .padding(.bottom, DSSpacing.sm)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
-                // No divider — Granola's restraint pattern.
-                recordingControlBar
-                    .frame(maxWidth: viewModel.isAudioNotePaused ? 520 : 480)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.horizontal, DSSpacing.lg)
-                    .padding(.bottom, DSSpacing.lg)
+                // Stop / Resume live in the header row (parity rank 3);
+                // nothing is pinned to the bottom while recording.
             } else {
                 if transcriptDrawerOpen {
                     transcriptDrawer
@@ -475,14 +471,26 @@ struct NoteWorkspaceView: View {
 
             Spacer()
 
-            // Keep the hit target mounted even when the dots are
-            // visually quiet so the menu does not vanish under the
-            // pointer before SwiftUI can enter the button hover state.
-            GhostEllipsisButton(isVisible: workspaceHovering || showRowMenu) {
-                showRowMenu.toggle()
-            }
-            .popover(isPresented: $showRowMenu, arrowEdge: .top) {
-                rowMenu
+            HStack(spacing: DSSpacing.xs) {
+                // Keep the hit target mounted even when the dots are
+                // visually quiet so the menu does not vanish under the
+                // pointer before SwiftUI can enter the button hover state.
+                GhostEllipsisButton(isVisible: true) {
+                    showRowMenu.toggle()
+                }
+                .popover(isPresented: $showRowMenu, arrowEdge: .top) {
+                    rowMenu
+                }
+                ChromeIconButton(
+                    icon: folderId == nil ? "folder.badge.plus" : "folder",
+                    help: folderName.map { "In \($0)" } ?? "Add to folder",
+                    isActive: folderId != nil
+                ) {
+                    showFolderPicker.toggle()
+                }
+                .popover(isPresented: $showFolderPicker, arrowEdge: .top) {
+                    folderPickerPopover
+                }
             }
         }
         .padding(.leading, WindowChromeLayout.noteLeadingPadding)
@@ -562,6 +570,18 @@ struct NoteWorkspaceView: View {
             }
             if isRecording {
                 Divider().overlay(DSColor.Border.subtle)
+                menuItem(
+                    label: viewModel.isAudioNotePaused ? "Resume recording" : "Pause recording",
+                    icon: viewModel.isAudioNotePaused ? "play.fill" : "pause.fill",
+                    tint: DSColor.Text.primary
+                ) {
+                    showRowMenu = false
+                    if viewModel.isAudioNotePaused {
+                        viewModel.resumeAudioNoteRecording()
+                    } else {
+                        viewModel.pauseAudioNoteRecording()
+                    }
+                }
                 menuItem(label: "Discard audio note", icon: "trash", tint: DSColor.State.danger) {
                     showRowMenu = false
                     showDiscardAudioConfirmation = true
@@ -840,45 +860,104 @@ struct NoteWorkspaceView: View {
 
     // MARK: - Pill row
 
+    /// Granola's header row: `[My notes │ Transcript]` segmented pill,
+    /// `■ Stop` / `▶ Resume`, and the date pill on the trailing edge.
+    /// Folder and template moved to the top-right chrome; attendees
+    /// live inside the date popover.
     private var pillRow: some View {
-        HStack(spacing: DSSpacing.md) {
-            if !enhancedBody.isEmpty {
-                notesModePill
+        HStack(spacing: DSSpacing.sm) {
+            NoteSegmentedPill(
+                notesLabel: showingEnhancedPane ? "Enhanced" : "My notes",
+                notesIcon: showingEnhancedPane ? "sparkles" : "doc.text",
+                notesHasMenu: !enhancedBody.isEmpty,
+                transcriptActive: transcriptDrawerOpen,
+                isLive: isRecording && viewModel.liveTranscriptionEnabled && !viewModel.isAudioNotePaused,
+                onNotes: {
+                    if transcriptDrawerOpen {
+                        transcriptDrawerOpen = false
+                    } else if !enhancedBody.isEmpty {
+                        withAnimation(LoomolaMotion.quick) { showEnhanced.toggle() }
+                    }
+                },
+                onNotesMenu: { showTemplatePicker.toggle() },
+                onTranscript: toggleTranscript
+            )
+            .popover(isPresented: $showTemplatePicker, arrowEdge: .bottom) {
+                templatePickerPopover
             }
+            stopResumePill
+            Spacer(minLength: DSSpacing.md)
             todayPill
-            mePill
-            folderPill
-            templatePill
         }
     }
 
-    /// Granola's "My notes / ✦ Enhanced" switch. Only rendered once an
-    /// enhanced version exists; clicking flips between the user's raw
-    /// notes (editable) and the AI-generated notes (read-only — web is
-    /// the editor of record for generated content).
-    private var notesModePill: some View {
-        WorkspacePill(
-            icon: showEnhanced ? "sparkles" : "text.alignleft",
-            label: showEnhanced ? "Enhanced" : "My notes",
-            isActive: showEnhanced,
-            action: { withAnimation(LoomolaMotion.quick) { showEnhanced.toggle() } }
-        )
-        .help(showEnhanced ? "Showing AI-enhanced notes — click for your raw notes" : "Showing your raw notes — click for the AI-enhanced version")
+    private var showingEnhancedPane: Bool {
+        showEnhanced && !enhancedBody.isEmpty
+    }
+
+    private func toggleTranscript() {
+        transcriptDrawerOpen.toggle()
+        if transcriptDrawerOpen, !isRecording, transcript == nil, !loadingTranscript {
+            loadTranscript()
+        }
+    }
+
+    @ViewBuilder
+    private var stopResumePill: some View {
+        switch target {
+        case .recording:
+            NoteStopResumePill(mode: viewModel.isAudioNotePaused ? .resumePaused : .stop) {
+                if viewModel.isAudioNotePaused {
+                    viewModel.resumeAudioNoteRecording()
+                } else {
+                    viewModel.stopAudioNoteRecordingAndUpload()
+                }
+            }
+            .contextMenu {
+                Button(viewModel.isAudioNotePaused ? "Resume" : "Pause") {
+                    if viewModel.isAudioNotePaused {
+                        viewModel.resumeAudioNoteRecording()
+                    } else {
+                        viewModel.pauseAudioNoteRecording()
+                    }
+                }
+                Divider()
+                Button("Discard audio note…", role: .destructive) {
+                    showDiscardAudioConfirmation = true
+                }
+            }
+        case .reviewing:
+            NoteStopResumePill(mode: .resumeSaved) {}
+        }
     }
 
     private var todayPill: some View {
         WorkspacePill(
             icon: "calendar",
-            label: calendarPillLabel,
-            isActive: linkedCalendarEventTitle != nil,
+            label: DatePillModel.label(for: eventPickerReferenceDate),
+            isActive: false,
             action: {
                 todayEvents = CalendarAttendeeService.shared.eventsToday(now: eventPickerReferenceDate)
                 showCalendarPopover.toggle()
             }
         )
-        .help(linkedCalendarEventTitle ?? "Link a calendar event")
-        .popover(isPresented: $showCalendarPopover, arrowEdge: .top) {
+        .help(linkedCalendarEventTitle ?? "Calendar event and attendees")
+        .popover(isPresented: $showCalendarPopover, arrowEdge: .bottom) {
             calendarEventPopover
+        }
+        .popover(isPresented: $showAttendeePicker, arrowEdge: .bottom) {
+            AttendeePickerPopover(
+                people: externalPeople,
+                selectedIds: attendeeIds,
+                isSaving: savingAttendees,
+                onSave: { personIds in
+                    showAttendeePicker = false
+                    handleAttendeesSelect(personIds: personIds)
+                },
+                onCreate: { displayName, email in
+                    await createAttendeePerson(displayName: displayName, email: email)
+                }
+            )
         }
     }
 
@@ -906,6 +985,26 @@ struct NoteWorkspaceView: View {
     /// linking re-resolves attendees and re-runs speaker suggestions.
     private var calendarEventPopover: some View {
         VStack(alignment: .leading, spacing: DSSpacing.sm) {
+            HStack(spacing: DSSpacing.sm) {
+                Image(systemName: "person.2")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(DSColor.Text.tertiary)
+                Text(attendeeLabel)
+                    .font(DSFont.Body.sm())
+                    .foregroundStyle(DSColor.Text.secondary)
+                    .lineLimit(1)
+                Spacer()
+                Button(attendeeIds.isEmpty ? "Add attendees…" : "Edit") {
+                    showCalendarPopover = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        showAttendeePicker = true
+                    }
+                }
+                .buttonStyle(.plain)
+                .font(DSFont.Body.sm().weight(.medium))
+                .foregroundStyle(DSColor.Accent.ai)
+            }
+            Divider()
             if let title = linkedCalendarEventTitle {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
@@ -1015,39 +1114,7 @@ struct NoteWorkspaceView: View {
         }
     }
 
-    private var mePill: some View {
-        WorkspacePill(
-            icon: "person.2",
-            label: attendeeLabel,
-            isActive: !attendeeIds.isEmpty,
-            action: { showAttendeePicker.toggle() }
-        )
-        .help("Attendees")
-        .popover(isPresented: $showAttendeePicker, arrowEdge: .top) {
-            AttendeePickerPopover(
-                people: externalPeople,
-                selectedIds: attendeeIds,
-                isSaving: savingAttendees,
-                onSave: { personIds in
-                    showAttendeePicker = false
-                    handleAttendeesSelect(personIds: personIds)
-                },
-                onCreate: { displayName, email in
-                    await createAttendeePerson(displayName: displayName, email: email)
-                }
-            )
-        }
-    }
-
-    @ViewBuilder
-    private var folderPill: some View {
-        WorkspacePill(
-            icon: folderId == nil ? "folder.badge.plus" : "folder",
-            label: folderName ?? "Add to folder",
-            isActive: folderId != nil,
-            action: { showFolderPicker.toggle() }
-        )
-        .popover(isPresented: $showFolderPicker, arrowEdge: .top) {
+    private var folderPickerPopover: some View {
             FolderPickerPopover(
                 folders: viewModel.recentRecordings.folders,
                 selectedFolderId: folderId,
@@ -1063,7 +1130,6 @@ struct NoteWorkspaceView: View {
                     }
                 }
             )
-        }
     }
 
     private func handleFolderSelect(folderId newFolderId: String?) {
@@ -1165,24 +1231,15 @@ struct NoteWorkspaceView: View {
         }
     }
 
-    @ViewBuilder
-    private var templatePill: some View {
-        WorkspacePill(
-            icon: "book.closed",
-            label: selectedTemplate?.name ?? "Template",
-            isActive: false,
-            action: { showTemplatePicker.toggle() }
+    private var templatePickerPopover: some View {
+        NoteTemplatePickerPopover(
+            templates: noteTemplates,
+            selectedTemplateId: selectedTemplateId,
+            onSelect: { template in
+                showTemplatePicker = false
+                handleTemplateSelect(template)
+            }
         )
-        .popover(isPresented: $showTemplatePicker, arrowEdge: .top) {
-            NoteTemplatePickerPopover(
-                templates: noteTemplates,
-                selectedTemplateId: selectedTemplateId,
-                onSelect: { template in
-                    showTemplatePicker = false
-                    handleTemplateSelect(template)
-                }
-            )
-        }
     }
 
     private func handleTemplateSelect(_ template: NoteTemplateDTO) {
@@ -1298,147 +1355,6 @@ struct NoteWorkspaceView: View {
         }
         .buttonStyle(.plain)
         .help("Open web note at \(timestampLabel(item.timestampSec))")
-    }
-
-    // MARK: - Recording control bar (recording mode only)
-
-    /// THE canonical audio-recording control surface. Routed by
-    /// MainRecorderView whenever an audio note is active — this is the
-    /// pill the user actually clicks. RecordingHomeView is video-only;
-    /// any audio-recording UI change MUST land here, not there.
-    ///
-    /// Single grouped pill. While recording: [meter] [v] | [timer] | [Pause].
-    /// While paused: [meter dim] [v] | [timer frozen] | [Resume] |
-    /// [End & upload]. Granola-style pause-by-default —
-    /// the prominent button never finalizes the upload. End requires a
-    /// pause first.
-    private var recordingControlBar: some View {
-        HStack(spacing: 0) {
-            // Meter + chevron (transcription drawer placeholder).
-            // Meter shows 0 while paused (engines run but buffers are
-            // dropped, so meter readings would be misleading).
-            HStack(spacing: 8) {
-                AudioLevelMeter(
-                    level: viewModel.isAudioNotePaused ? 0 : viewModel.audioLevel
-                )
-                Image(systemName: transcriptDrawerOpen ? "chevron.down" : "chevron.up")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(DSColor.Text.tertiary)
-            }
-            .padding(.leading, 14)
-            .padding(.trailing, 12)
-            .contentShape(Rectangle())
-            .overlay {
-                ActionHitArea {
-                    transcriptDrawerOpen.toggle()
-                    if transcriptDrawerOpen, !isRecording, transcript == nil, !loadingTranscript {
-                        loadTranscript()
-                    }
-                }
-            }
-            .help(isRecording ? "Show live transcript" : "Show transcript")
-
-            pillSeparator
-
-            // Timer. While paused, freeze at the elapsed-at-pause value
-            // so the user sees a stable number and gets visual feedback
-            // that the recording isn't accumulating dead air.
-            if let startedAt = viewModel.activeAudioRecordingStartedAt {
-                Group {
-                    if viewModel.isAudioNotePaused, let pausedAt = viewModel.audioNotePausedAt {
-                        let frozen = pausedAt.timeIntervalSince(startedAt)
-                            - viewModel.audioNotePausedAccumulatedSeconds
-                        Text(elapsedString(seconds: max(0, frozen)))
-                            .font(DSFont.Mono.body())
-                            .foregroundStyle(DSColor.Text.tertiary)
-                            .monospacedDigit()
-                    } else {
-                        TimelineView(.periodic(from: startedAt, by: 1)) { ctx in
-                            let elapsed = ctx.date.timeIntervalSince(startedAt)
-                                - viewModel.audioNotePausedAccumulatedSeconds
-                            Text(elapsedString(seconds: max(0, elapsed)))
-                                .font(DSFont.Mono.body())
-                                .foregroundStyle(DSColor.Text.secondary)
-                                .monospacedDigit()
-                        }
-                    }
-                }
-                .padding(.horizontal, 14)
-            }
-
-            pillSeparator
-
-            if viewModel.isAudioNotePaused {
-                // ▶ Resume — primary action when paused.
-                HStack(spacing: 7) {
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 10, weight: .semibold))
-                    Text("Resume")
-                        .font(DSFont.Body.md().weight(.medium))
-                }
-                    .foregroundStyle(DSColor.State.success)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .contentShape(Rectangle())
-                    .overlay {
-                        ActionHitArea {
-                            viewModel.resumeAudioNoteRecording()
-                        }
-                    }
-                    .help("Resume recording")
-
-                pillSeparator
-
-                // ✓ End & upload — explicit second click to finalize.
-                // Subtler than Resume so the user has to deliberately
-                // pick "I'm done" rather than misclick out of a pause.
-                Image(systemName: "checkmark")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(DSColor.Text.tertiary)
-                    .frame(width: 12, height: 12)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .contentShape(Rectangle())
-                    .overlay {
-                        ActionHitArea {
-                            viewModel.stopAudioNoteRecordingAndUpload()
-                        }
-                    }
-                    .help("End & upload")
-            } else {
-                // Pause — keeps the prominent live action recoverable.
-                // Granola pattern: the
-                // most prominent button on a live recording is always
-                // the recoverable action, never the upload trigger.
-                Image(systemName: "pause.fill")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(DSColor.State.recording)
-                    .frame(width: 12, height: 12)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .contentShape(Rectangle())
-                    .overlay {
-                        ActionHitArea {
-                            viewModel.pauseAudioNoteRecording()
-                        }
-                    }
-                    .help("Pause (click again to resume; End & upload appears once paused)")
-            }
-        }
-        .background(
-            Capsule().fill(DSColor.Bg.surface)
-        )
-        .overlay {
-            Capsule().strokeBorder(DSColor.Border.subtle, lineWidth: 1)
-        }
-        .frame(height: 44)
-        .frame(maxWidth: .infinity)
-    }
-
-    private var pillSeparator: some View {
-        Rectangle()
-            .fill(DSColor.Border.subtle)
-            .frame(width: 1, height: 24)
     }
 
     // MARK: - Generate-notes bar
@@ -4018,6 +3934,34 @@ private struct HomeBackButton: View {
         .overlay { ActionHitArea(action: action) }
         .onHover { hovering = $0 }
         .animation(LoomolaMotion.quick, value: hovering)
+    }
+}
+
+/// Top-right chrome icon (folder, share…): bare glyph in a 32pt
+/// circle that fills on hover — same register as the ⋯.
+private struct ChromeIconButton: View {
+    let icon: String
+    let help: String
+    let isActive: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(hovering ? DSColor.Bg.subtle.opacity(0.94) : Color.clear)
+            Circle()
+                .strokeBorder(DSColor.Border.subtle.opacity(hovering ? 0.9 : 0.55), lineWidth: 1)
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(isActive || hovering ? DSColor.Text.primary.opacity(0.85) : DSColor.Text.tertiary)
+        }
+        .frame(width: 32, height: 32)
+        .contentShape(Circle())
+        .overlay { ActionHitArea(action: action).clipShape(Circle()) }
+        .onHover { hovering = $0 }
+        .animation(LoomolaMotion.quick, value: hovering)
+        .help(help)
     }
 }
 

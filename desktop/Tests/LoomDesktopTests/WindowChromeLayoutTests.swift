@@ -8,7 +8,10 @@ final class WindowChromeLayoutTests: XCTestCase {
         XCTAssertGreaterThan(WindowChromeLayout.homeContentTopPaddingNormal, WindowChromeLayout.barHeight)
         XCTAssertGreaterThan(WindowChromeLayout.homeContentTopPaddingExpanded, WindowChromeLayout.barHeight)
         XCTAssertGreaterThan(WindowChromeLayout.noteContentTopPadding, WindowChromeLayout.barHeight)
-        XCTAssertGreaterThan(WindowChromeLayout.sidebarWidth, 240)
+        // Granola's rail is 192pt; ours is a touch wider for emoji
+        // folder names but stays a rail, not a pane (parity rank 2).
+        XCTAssertGreaterThanOrEqual(WindowChromeLayout.sidebarWidth, 192)
+        XCTAssertLessThanOrEqual(WindowChromeLayout.sidebarWidth, 240)
     }
 
     func testRecorderWindowDefaultAndMinimumFitHomeLayout() {
