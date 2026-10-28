@@ -2586,7 +2586,14 @@ struct NoteWorkspaceView: View {
         Task { @MainActor in
             do {
                 let response = try await backend.getNoteTranscript(mediaId: recording.id)
+                let versionChanged = response.transcriptVersion != transcript?.transcriptVersion
                 transcript = response
+                if versionChanged {
+                    // New voice numbering: the names on screen belong to the
+                    // old transcript. Drop them and fetch names for this one.
+                    speakerAssignments = []
+                    await reloadSpeakerAssignments(recordingId: recording.id, backend: backend)
+                }
                 clearTranscriptWaitingStateIfReady(response)
                 if notesGeneratedForCurrentTranscript {
                     rememberGeneratedTranscript(fingerprint: transcriptFingerprint(from: response))
@@ -2709,10 +2716,19 @@ struct NoteWorkspaceView: View {
         guard case .reviewing(let recording) = target else { return }
         guard let backend = viewModel.backendClient else { return }
         Task { @MainActor in
-            if let list = try? await backend.speakerAssignments(mediaId: recording.id, transcriptVersion: transcript?.transcriptVersion) {
-                speakerAssignments = list
-            }
+            await reloadSpeakerAssignments(recordingId: recording.id, backend: backend)
         }
+    }
+
+    /// Names are always requested FOR the transcript on screen, and a
+    /// response that arrives after the transcript changed is discarded —
+    /// otherwise names computed for one transcript's voice numbering could
+    /// land on another's (the live → batch swap).
+    private func reloadSpeakerAssignments(recordingId: String, backend: BackendClient) async {
+        let requested = transcript?.transcriptVersion
+        guard let list = try? await backend.speakerAssignments(mediaId: recordingId, transcriptVersion: requested) else { return }
+        guard transcript?.transcriptVersion == requested else { return }
+        speakerAssignments = list
     }
 
     /// Notes opened from search arrive with a slim DTO (no attendees,
@@ -2803,9 +2819,7 @@ struct NoteWorkspaceView: View {
                     // only exists in the loaded transcript drawer).
                     transcriptVersion: transcript?.transcriptVersion
                 )
-                if let list = try? await backend.speakerAssignments(mediaId: recording.id, transcriptVersion: transcript?.transcriptVersion) {
-                    speakerAssignments = list
-                }
+                await reloadSpeakerAssignments(recordingId: recording.id, backend: backend)
                 showToast(message: "Speaker assigned")
             } catch BackendClientError.badStatus(let statusCode, _, _) where statusCode == 409 {
                 // The final transcript replaced the one on screen and the
@@ -2853,9 +2867,7 @@ struct NoteWorkspaceView: View {
                 }
             }
             if refused > 0 { loadTranscript() }
-            if let list = try? await backend.speakerAssignments(mediaId: recording.id, transcriptVersion: transcript?.transcriptVersion) {
-                speakerAssignments = list
-            }
+            await reloadSpeakerAssignments(recordingId: recording.id, backend: backend)
             if failed > 0 {
                 showToast(message: "Couldn't apply \(failed) name\(failed == 1 ? "" : "s") — try again", tone: .error)
             } else if refused > 0 {

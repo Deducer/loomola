@@ -88,6 +88,11 @@
 - Legacy pending rows are deleted only when provably untouched worker output; the pre-v2 writer could rename a pending row without clearing `is_suggestion`, so others go to review (and review items don't block Me).
 - Desktop "Apply names" reports refusals and failures.
 - The watchdog re-enqueues fresh notes (transcript written 10 min to 6 h ago) whose speaker work never completed.
+
+**Eleventh review pass (2026-10-27):**
+- Only provably untouched legacy suggestions are deleted (self-derived still naming the owner, or new-person with no person); attendee-derived ones go to review.
+- The desktop binds name loads to the transcript version on screen and reloads them when the transcript changes.
+- Recovery also covers failed or stranded LLM passes.
 **Style:** TDD. Pure logic first, under `src/lib/speaker-profile/` and `src/lib/speaker-suggestion/`, then wiring, then UI. Each phase ships on its own and is scored with the same offline eval script.
 
 ## Phases at a glance (ordered by impact ÷ effort)

@@ -68,9 +68,10 @@ export async function getNoteForSpeakerSuggestion(
 }
 
 /**
- * Recent audio notes whose current batch transcript has no speaker profile
- * yet — its suggest_speakers job was never enqueued (an enqueue failure
- * after the transcript was saved) or never finished. The watchdog
+ * Recent audio notes whose current batch transcript's speaker work isn't
+ * done: no profile yet (the job was never enqueued — an enqueue failure
+ * after the transcript was saved — or never finished), or an LLM pass
+ * that failed or was stranded "pending" by a crashed run. The watchdog
  * re-enqueues them. Bounded to transcripts written 10 min – 6 h ago so it
  * recovers fresh notes only and never sweeps the historical backlog
  * (that is the backfill's job, run deliberately).
@@ -82,7 +83,7 @@ export async function listNotesNeedingSpeakerRecovery(limit = 10): Promise<strin
     JOIN ${mediaObjects} m ON m.id = t.media_object_id
     WHERE m.type = 'audio' AND m.deleted_at IS NULL
       AND t.provider <> 'deepgram-live'
-      AND t.speaker_profile IS NULL
+      AND (t.speaker_profile IS NULL OR t.speaker_profile->>'llm' IN ('failed', 'pending'))
       AND t.created_at < now() - interval '10 minutes'
       AND t.created_at > now() - interval '6 hours'
       AND t.created_at = (SELECT max(t2.created_at) FROM ${transcripts} t2 WHERE t2.media_object_id = t.media_object_id)

@@ -407,8 +407,13 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
     await user`UPDATE transcripts SET created_at = now() - interval '1 hour' WHERE media_object_id = ${MEDIA}`;
     expect(await listNotesNeedingSpeakerRecovery()).toEqual([MEDIA]);
     // Done-marker present → nothing to recover.
-    await user`UPDATE transcripts SET speaker_profile = ${user.json({ version: 1 })} WHERE media_object_id = ${MEDIA}`;
+    await user`UPDATE transcripts SET speaker_profile = ${user.json({ version: 1, llm: "done" })} WHERE media_object_id = ${MEDIA}`;
     expect(await listNotesNeedingSpeakerRecovery()).toEqual([]);
+    // A failed or stranded LLM pass is unfinished work too.
+    await user`UPDATE transcripts SET speaker_profile = ${user.json({ version: 1, llm: "failed" })} WHERE media_object_id = ${MEDIA}`;
+    expect(await listNotesNeedingSpeakerRecovery()).toEqual([MEDIA]);
+    await user`UPDATE transcripts SET speaker_profile = ${user.json({ version: 1, llm: "pending" })} WHERE media_object_id = ${MEDIA}`;
+    expect(await listNotesNeedingSpeakerRecovery()).toEqual([MEDIA]);
     // Historical transcripts are the backfill's, never the watchdog's.
     await user`UPDATE transcripts SET speaker_profile = NULL, created_at = now() - interval '2 days' WHERE media_object_id = ${MEDIA}`;
     expect(await listNotesNeedingSpeakerRecovery()).toEqual([]);

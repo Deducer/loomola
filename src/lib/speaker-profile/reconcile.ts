@@ -53,27 +53,20 @@ export type ReconcileRow = {
 };
 
 const SELF_DERIVATIONS = new Set(["self_via_dominant_speech", "self_via_source_channel", "self_via_mic_capture"]);
-const ATTENDEE_DERIVATIONS = new Set([
-  "person_id_exact",
-  "email_exact",
-  "name_token_match",
-  "llm_transcript_evidence",
-  "remote_via_single_voice",
-]);
+const NEW_PERSON_DERIVATIONS = new Set(["new_person_from_attendee", "llm_transcript_evidence_new_person"]);
 
-/** Is this legacy pending row exactly what the worker wrote? Its person
- *  must still be the one its derivation implies; a renamed row (or one
- *  with no derivation) isn't provably untouched. */
-function isUntouchedSuggestion(
-  row: ReconcileRow,
-  selfPersonId: string | null,
-  attendeeIds: ReadonlyArray<string>
-): boolean {
+/** Is this legacy pending row PROVABLY exactly what the worker wrote?
+ *  Only where the derivation fixes the person: a self-derivation was
+ *  written naming the owner (a rename can only change it to someone
+ *  else), a new-person suggestion was written with no person (a rename
+ *  sets one). An attendee-derived row can't be proven — the user may have
+ *  changed one attendee to another — so it, and anything without a
+ *  derivation, is preserved for review. */
+function isUntouchedSuggestion(row: ReconcileRow, selfPersonId: string | null): boolean {
   const d = row.suggestionConfidence ?? null;
   if (!d) return false;
   if (SELF_DERIVATIONS.has(d)) return selfPersonId !== null && row.personId === selfPersonId;
-  if (ATTENDEE_DERIVATIONS.has(d)) return row.personId !== null && attendeeIds.includes(row.personId);
-  if (d === "new_person_from_attendee" || d === "llm_transcript_evidence_new_person") return row.personId === null;
+  if (NEW_PERSON_DERIVATIONS.has(d)) return row.personId === null;
   return false;
 }
 
@@ -137,7 +130,7 @@ export function reconcileAssignments(args: {
     const userDecision = !row.isSuggestion && !row.autoApplied && row.dismissedAt === null;
 
     if (legacy && row.isSuggestion) {
-      if (isUntouchedSuggestion(row, args.selfPersonId, args.attendeePersonIds ?? [])) {
+      if (isUntouchedSuggestion(row, args.selfPersonId)) {
         plan.deleteIds.push(row.id);
       } else {
         // Possibly a manual correction made through the old writer.

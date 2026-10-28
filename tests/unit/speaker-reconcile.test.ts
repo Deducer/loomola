@@ -86,6 +86,13 @@ describe("reconcileAssignments", () => {
     ]);
     expect(renamed.deleteIds).toEqual([]);
     expect(renamed.reviewIds).toEqual(["renamed"]);
+    // An attendee-derived row renamed to ANOTHER attendee (Alice → Bob,
+    // both invited) looks plausible but isn't provably untouched.
+    const alice = plan([
+      row({ id: "aliceToBob", transcriptVersion: null, isSuggestion: true, personId: "bob", suggestionConfidence: "person_id_exact", speakerIdx: 1 }),
+    ]);
+    expect(alice.deleteIds).toEqual([]);
+    expect(alice.reviewIds).toEqual(["aliceToBob"]);
     // No derivation at all (pre-provenance rows): can't prove untouched.
     const unknown = plan([
       row({ id: "unknown", transcriptVersion: null, isSuggestion: true, personId: SELF, suggestionConfidence: null }),
