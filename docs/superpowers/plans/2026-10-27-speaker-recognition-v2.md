@@ -42,6 +42,14 @@
 - `--verify` covers every selected note and fails on analysis errors.
 - The dry run shares the worker's dismissal logic.
 - The activity fetch and the mix honour the job's abort signal.
+
+**Fourth review pass (2026-10-27):**
+- Stale names are kept only with identity proof.
+- Note locks use `FOR NO KEY UPDATE`; a deadlock regression test with real foreign keys covers it.
+- The transcript version is mandatory on every user speaker write, including DELETE.
+- The 1:1 rule is stricter.
+- The LLM pass status is part of the done-marker.
+- Desktop: a restart falls back to the default input when the selected mic is gone, and the silence fill is capped at 10 minutes.
 **Style:** TDD. Pure logic first, under `src/lib/speaker-profile/` and `src/lib/speaker-suggestion/`, then wiring, then UI. Each phase ships on its own and is scored with the same offline eval script.
 
 ## Phases at a glance (ordered by impact ÷ effort)

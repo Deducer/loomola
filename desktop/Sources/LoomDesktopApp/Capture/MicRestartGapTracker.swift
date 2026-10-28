@@ -65,7 +65,24 @@ struct MicRestartGapTracker {
 
     /// Below this, scheduling jitter — not worth a silence write.
     static let minimumGap: TimeInterval = 0.05
-    static let maximumGap: TimeInterval = 4 * 3600
+    /// The fill is encoded synchronously on the tap thread (~50 ms per
+    /// minute of silence on Apple silicon), so it is capped: 10 minutes
+    /// costs ~0.5 s once. A longer outage leaves the mic track that much
+    /// shorter — the server then sees reduced mic coverage rather than a
+    /// capture stall. With the default-device fallback, restarts take
+    /// seconds, not minutes.
+    static let maximumGap: TimeInterval = 10 * 60
+}
+
+/// Which input devices a restart tries, in order. The selected mic first;
+/// if it can't start (unplugged, or taken by another app) the system
+/// default input, so the note keeps recording the user instead of
+/// retrying a device that is gone. The selection itself is kept, so a
+/// later restart returns to it once it's back.
+enum MicRestartDevicePolicy {
+    static func devicesToTry(selected: String?) -> [String?] {
+        selected == nil ? [nil] : [selected, nil]
+    }
 }
 
 /// Serializes mic-engine restarts against stop(). Every restart attempt

@@ -62,6 +62,7 @@ type NoteRow = {
   provider: string;
   t_created_at: Date;
   profile_version: number | null;
+  llm_status: string | null;
   words: WordTimestamp[];
 };
 
@@ -145,14 +146,21 @@ async function analyze(n: NoteRow, people: Map<string, Person[]>): Promise<Outco
     const version = transcriptVersionOf(n.provider, n.t_created_at);
     // The worker stores the profile in the same transaction as the names,
     // after them — so it is the completion marker for this transcript.
+    // The LLM pass must have finished too ("pending" = crashed mid-run,
+    // "failed" = retry it).
     const alreadyCurrent =
-      n.profile_version === PROFILE_VERSION && reconcileRows.every((r) => r.transcriptVersion === version);
+      n.profile_version === PROFILE_VERSION &&
+      (n.llm_status === "done" || n.llm_status === "skipped") &&
+      reconcileRows.every((r) => r.transcriptVersion === version);
     const plan = reconcileAssignments({
       rows: reconcileRows,
       currentVersion: version,
       currentTranscriptCreatedAt: n.t_created_at,
       profile,
       selfPersonId: self?.id ?? null,
+      attendeePersonIds: parseAttendees(n.attendees)
+        .map((a) => a.personId)
+        .filter((id): id is string => Boolean(id) && id !== self?.id),
     });
     const me = meSpeakerIdxs(profile);
 
@@ -213,7 +221,9 @@ async function analyze(n: NoteRow, people: Map<string, Person[]>): Promise<Outco
 
 async function loadNotes(ids?: string[]): Promise<NoteRow[]> {
   const activityCol = v2Columns ? sql`m.r2_activity_key` : sql`NULL::text AS r2_activity_key`;
-  const profileCol = v2Columns ? sql`(t.speaker_profile->>'version')::int AS profile_version` : sql`NULL::int AS profile_version`;
+  const profileCol = v2Columns
+    ? sql`(t.speaker_profile->>'version')::int AS profile_version, t.speaker_profile->>'llm' AS llm_status`
+    : sql`NULL::int AS profile_version, NULL::text AS llm_status`;
   const filter = ids
     ? sql`m.id = ANY(${ids}::uuid[])`
     : onlyId

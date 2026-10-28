@@ -6,6 +6,7 @@ import {
   persistSpeakerSuggestions,
   saveSpeakerProfile,
   setActivityKey,
+  setSpeakerLlmStatus,
   withSpeakerWriteLock,
 } from "@/db/queries/speaker-suggestion";
 import {
@@ -112,6 +113,9 @@ export async function runSuggestSpeakersJob(
       currentTranscriptCreatedAt: transcriptCreatedAt,
       profile,
       selfPersonId: selfPerson?.id ?? null,
+      attendeePersonIds: attendees
+        .map((a) => a.personId)
+        .filter((id): id is string => Boolean(id) && id !== selfPerson?.id),
     });
     if (plan.deleteIds.length + plan.remaps.length + plan.restampIds.length + plan.reviewIds.length > 0) {
       await applyReconcilePlan(tx, { mediaObjectId, version, plan });
@@ -135,9 +139,24 @@ export async function runSuggestSpeakersJob(
         })
       : [];
     await persistSpeakerSuggestions(tx, { mediaObjectId, transcriptVersion: version, suggestions });
-    // Last, so a stored profile means this transcript's rows are done.
-    await saveSpeakerProfile(tx, transcriptId, profile);
-    return { suggestions, decided, attendees, attendeesRaw: JSON.stringify(lockedAttendees ?? null) };
+    // Stage 17 transcript-content attribution runs for participant voices
+    // the deterministic rungs left unlabeled. Never on a live transcript:
+    // its system channel is everyone else at once, so one name would be a
+    // lie.
+    const covered = new Set([...decided.idxs, ...suggestions.map((s) => s.speakerIdx)]);
+    const uncovered = profile.entries
+      .filter((e) => !e.fragment && !covered.has(e.speakerIdx))
+      .map((e) => e.speakerIdx);
+    const runLlm =
+      Boolean(selfPerson) &&
+      uncovered.length > 0 &&
+      profile.entries.length >= 2 &&
+      attendees.length > 0 &&
+      profile.status !== "live_channels";
+    // Last, so a stored profile means this transcript's rows are done —
+    // except the LLM pass, whose status is "pending" until it finishes.
+    await saveSpeakerProfile(tx, transcriptId, { ...profile, llm: runLlm ? "pending" : "skipped" });
+    return { suggestions, decided, attendees, uncovered, runLlm, attendeesRaw: JSON.stringify(lockedAttendees ?? null) };
   });
   if (first.stale) {
     console.log(`[suggest-speakers] ${mediaObjectId} transcript replaced mid-job; writing nothing (its own job runs)`);
@@ -148,25 +167,11 @@ export async function runSuggestSpeakersJob(
     return;
   }
   logWritten(mediaObjectId, first.result.suggestions, profile.status);
-  const { attendees } = first.result;
+  const { attendees, uncovered, runLlm } = first.result;
+  if (!runLlm) return;
 
-  // Stage 17 transcript-content attribution for participant voices the
-  // deterministic rungs left unlabeled — outside the lock (it's an LLM
-  // call), then written under the lock again with decisions re-checked.
-  // Never on a live transcript: its system channel is everyone else at
-  // once, so one name would be a lie.
-  const covered = new Set([...first.result.decided.idxs, ...first.result.suggestions.map((s) => s.speakerIdx)]);
-  const uncovered = profile.entries
-    .filter((e) => !e.fragment && !covered.has(e.speakerIdx))
-    .map((e) => e.speakerIdx);
-  if (
-    uncovered.length === 0 ||
-    profile.entries.length < 2 ||
-    attendees.length === 0 ||
-    profile.status === "live_channels"
-  ) {
-    return;
-  }
+  // The LLM call runs outside the lock; its names are written under the
+  // lock again with decisions and the attendee list re-checked.
   let llmSuggestions: SpeakerSuggestion[];
   try {
     llmSuggestions = await attributeViaTranscript({
@@ -181,11 +186,16 @@ export async function runSuggestSpeakersJob(
       uncoveredIdxs: uncovered,
     });
   } catch (err) {
-    // Best-effort: deterministic names are already written.
+    // Best-effort: deterministic names are already written. Recorded so
+    // the backfill treats the note as unfinished and re-runs it.
     console.error(`[suggest-speakers] ${mediaObjectId} LLM attribution failed:`, err);
+    await setSpeakerLlmStatus(transcriptId, "failed");
     return;
   }
-  if (llmSuggestions.length === 0) return;
+  if (llmSuggestions.length === 0) {
+    await setSpeakerLlmStatus(transcriptId, "done");
+    return;
+  }
   const second = await withSpeakerWriteLock({ mediaObjectId, transcriptId }, async ({ tx, rows, attendees: nowAttendees }) => {
     // The LLM named people from the attendee list read under the first
     // lock; if the list changed since, its names may be the old ones.
@@ -198,6 +208,7 @@ export async function runSuggestSpeakersJob(
     return fresh;
   });
   if (second.stale) return;
+  await setSpeakerLlmStatus(transcriptId, "done");
   console.log(
     `[suggest-speakers] ${mediaObjectId} LLM attributed ${second.result.length}/${uncovered.length} unlabeled speaker(s)`
   );

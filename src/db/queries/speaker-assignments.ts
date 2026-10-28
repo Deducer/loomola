@@ -24,7 +24,7 @@ export type CurrentTranscript = { version: string; createdAt: Date } | null;
 
 /**
  * Every user speaker mutation (label, delete, accept, dismiss) runs here:
- * the note row is locked FOR UPDATE — the same lock suggest_speakers
+ * the note row is locked FOR NO KEY UPDATE — the same lock suggest_speakers
  * holds while it reconciles and writes — so a user write can never land
  * between the worker's read and write, or vice versa. The current
  * transcript is read under that lock; when the client says which
@@ -48,7 +48,8 @@ export async function withUserSpeakerLock<T>(
           eq(mediaObjects.type, "audio")
         )
       )
-      .for("update");
+      // Same lock strength as the worker (see withSpeakerWriteLock).
+      .for("no key update");
     if (!media) throw new Error("media_object_not_found");
     const [t] = await tx
       .select({ provider: transcripts.provider, createdAt: transcripts.createdAt })
@@ -58,7 +59,11 @@ export async function withUserSpeakerLock<T>(
       .limit(1)
       .for("share");
     const current = t ? { version: transcriptVersionOf(t.provider, t.createdAt), createdAt: t.createdAt } : null;
-    if (args.expectedTranscriptVersion && args.expectedTranscriptVersion !== current?.version) {
+    // Required, not optional: a client that doesn't say which transcript
+    // it was showing (an old desktop build) could be labeling a live
+    // channel index against the batch transcript.
+    if (current && !args.expectedTranscriptVersion) throw new Error("transcript_version_required");
+    if (current && args.expectedTranscriptVersion !== current.version) {
       throw new Error("transcript_changed");
     }
     return fn(tx, current);
@@ -174,10 +179,11 @@ export async function listSpeakerAssignments(
 export async function deleteSpeakerAssignment(
   mediaObjectId: string,
   ownerId: string,
-  speakerIdx: number
+  speakerIdx: number,
+  transcriptVersion: string | null
 ): Promise<boolean> {
   try {
-    return await withUserSpeakerLock({ mediaObjectId, ownerId }, async (tx) => {
+    return await withUserSpeakerLock({ mediaObjectId, ownerId, expectedTranscriptVersion: transcriptVersion }, async (tx) => {
       const result = await tx
         .delete(speakerAssignments)
         .where(

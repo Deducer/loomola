@@ -46,6 +46,7 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
   let updateAudioNoteAttendees: typeof import("@/db/queries/notes").updateAudioNoteAttendees;
   let listSpeakerAssignments: typeof import("@/db/queries/speaker-assignments").listSpeakerAssignments;
   let applySpeakerSuggestion: typeof import("@/db/queries/speaker-suggestion").applySpeakerSuggestion;
+  let withSpeakerWriteLock: typeof import("@/db/queries/speaker-suggestion").withSpeakerWriteLock;
 
   // Sarah talks first and most; Ian (mic) is diarized as voice 1.
   const call = turns([[0, 60], [1, 30], [0, 50], [1, 20]]);
@@ -60,13 +61,17 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
       CREATE TABLE media_objects (id uuid PRIMARY KEY, owner_id uuid NOT NULL, type text NOT NULL,
         attendees jsonb, r2_mic_key text, r2_systemaudio_key text, r2_activity_key text,
         deleted_at timestamptz, updated_at timestamptz);
-      CREATE TABLE transcripts (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), media_object_id uuid NOT NULL,
+      -- Real foreign keys, as in production: a transcript insert takes
+      -- KEY SHARE on its note row, which is what makes lock order matter.
+      CREATE TABLE transcripts (id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        media_object_id uuid NOT NULL REFERENCES media_objects(id) ON DELETE CASCADE,
         provider text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), word_timestamps jsonb NOT NULL,
         speaker_profile jsonb);
       CREATE TABLE people (id uuid PRIMARY KEY, owner_id uuid NOT NULL, display_name text NOT NULL,
         email text, is_self boolean NOT NULL DEFAULT false);
       CREATE TABLE speaker_assignments (id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-        media_object_id uuid NOT NULL, speaker_idx integer NOT NULL, person_id uuid,
+        media_object_id uuid NOT NULL REFERENCES media_objects(id) ON DELETE CASCADE,
+        speaker_idx integer NOT NULL, person_id uuid REFERENCES people(id) ON DELETE SET NULL,
         display_label_override text, is_suggestion boolean NOT NULL DEFAULT false,
         suggested_at timestamptz, dismissed_at timestamptz, suggested_new_person_payload jsonb,
         suggestion_confidence text, suggestion_evidence text, transcript_version text,
@@ -77,7 +82,7 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
     user = postgres(scoped, { onnotice: () => {} });
     ({ runSuggestSpeakersJob } = await import("@/lib/queue/jobs/suggest-speakers"));
     ({ upsertSpeakerAssignment, listSpeakerAssignments } = await import("@/db/queries/speaker-assignments"));
-    ({ applySpeakerSuggestion } = await import("@/db/queries/speaker-suggestion"));
+    ({ applySpeakerSuggestion, withSpeakerWriteLock } = await import("@/db/queries/speaker-suggestion"));
     ({ updateAudioNoteAttendees } = await import("@/db/queries/notes"));
   });
 
@@ -92,8 +97,8 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
     hooks.activity = framesForTurns(call, [1]);
     await user`DELETE FROM speaker_assignments`;
     await user`DELETE FROM transcripts`;
-    await user`DELETE FROM people`;
     await user`DELETE FROM media_objects`;
+    await user`DELETE FROM people`;
     await user`INSERT INTO media_objects (id, owner_id, type, attendees, r2_mic_key, r2_systemaudio_key, r2_activity_key)
       VALUES (${MEDIA}, ${OWNER}, 'audio', ${user.json([SARAH])}, 'rec/raw/mic.m4a', 'rec/raw/system.m4a', 'rec/activity.bin')`;
     await user`INSERT INTO people VALUES (${IAN}, ${OWNER}, 'Ian Cross', NULL, true),
@@ -230,6 +235,23 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
     expect((await rows()).map((r) => [r.speaker_idx, r.person_id])).toEqual([[1, SARAH]]);
   });
 
+  it("requires the client to say which transcript it was showing (P1: optional version)", async () => {
+    // An old desktop build sends no version: it might be labeling a live
+    // channel index against the batch transcript.
+    await expect(
+      upsertSpeakerAssignment({ mediaObjectId: MEDIA, ownerId: OWNER, speakerIdx: 0, personId: SARAH })
+    ).rejects.toThrow("transcript_version_required");
+    const { deleteSpeakerAssignment } = await import("@/db/queries/speaker-assignments");
+    await user`INSERT INTO speaker_assignments (media_object_id, speaker_idx, person_id, transcript_version)
+      VALUES (${MEDIA}, 0, ${SARAH}, ${await currentVersion()})`;
+    await expect(deleteSpeakerAssignment(MEDIA, OWNER, 0, null)).rejects.toThrow("transcript_version_required");
+    await expect(deleteSpeakerAssignment(MEDIA, OWNER, 0, "deepgram-live:2026-10-27T21:45:00.000Z")).rejects.toThrow(
+      "transcript_changed"
+    );
+    expect(await rows()).toHaveLength(1);
+    expect(await deleteSpeakerAssignment(MEDIA, OWNER, 0, await currentVersion())).toBe(true);
+  });
+
   it("shows names from an older transcript as uncertain and hides stale suggestions (P1: stale reads)", async () => {
     await user`INSERT INTO speaker_assignments (media_object_id, speaker_idx, person_id, is_suggestion, transcript_version)
       VALUES (${MEDIA}, 0, ${SARAH}, false, 'deepgram-live:2026-10-27T21:45:00.000Z'),
@@ -241,8 +263,32 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
   it("refuses to accept a suggestion computed on an older transcript (P1: stale accept)", async () => {
     await user`INSERT INTO speaker_assignments (media_object_id, speaker_idx, person_id, is_suggestion, suggested_at, created_at)
       VALUES (${MEDIA}, 1, ${IAN}, true, now() - interval '1 hour', now() - interval '1 hour')`;
-    const result = await applySpeakerSuggestion({ mediaObjectId: MEDIA, ownerId: OWNER, speakerIdx: 1, personId: IAN });
+    const result = await applySpeakerSuggestion({
+      mediaObjectId: MEDIA, ownerId: OWNER, speakerIdx: 1, personId: IAN, transcriptVersion: await currentVersion(),
+    });
     expect(result).toEqual({ ok: false, reason: "transcript_changed" });
     expect((await rows())[0].is_suggestion).toBe(true);
+  });
+
+  it("doesn't deadlock with a transcript replacement (delete, then FK insert) (P1: lock order)", async () => {
+    const [old] = await user<{ id: string }[]>`SELECT id FROM transcripts WHERE media_object_id = ${MEDIA}`;
+    // persistTranscript's order: delete the old row (row lock held), then
+    // insert the new one (foreign key → KEY SHARE on the note row).
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const persist = user.begin(async (tx) => {
+      await tx`DELETE FROM transcripts WHERE media_object_id = ${MEDIA}`;
+      await held;
+      await tx`INSERT INTO transcripts (media_object_id, provider, word_timestamps, created_at)
+        VALUES (${MEDIA}, 'deepgram', ${tx.json(wordsFor(call))}, now() + interval '1 minute')`;
+    });
+    await new Promise((r) => setTimeout(r, 100));
+    // The worker takes the note lock, then waits on the transcript row.
+    const lock = withSpeakerWriteLock({ mediaObjectId: MEDIA, transcriptId: old.id }, async () => "wrote");
+    await new Promise((r) => setTimeout(r, 300));
+    release();
+    await expect(persist).resolves.toBeUndefined(); // committed, not aborted as a deadlock victim
+    // The worker sees its transcript is gone and writes nothing.
+    await expect(lock).resolves.toEqual({ stale: true });
   });
 });

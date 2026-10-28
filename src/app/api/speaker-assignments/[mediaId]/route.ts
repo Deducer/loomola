@@ -64,10 +64,11 @@ export async function PUT(
     });
     return NextResponse.json(row, { status: 200 });
   } catch (err) {
-    if (err instanceof Error && err.message === "transcript_changed") {
+    if (err instanceof Error && (err.message === "transcript_changed" || err.message === "transcript_version_required")) {
       // The client labeled a voice on a transcript that has since been
-      // replaced (speaker indices re-numbered); it must reload first.
-      return NextResponse.json({ error: "transcript_changed" }, { status: 409 });
+      // replaced (speaker indices re-numbered), or didn't say which
+      // transcript it was showing; it must reload first.
+      return NextResponse.json({ error: err.message }, { status: 409 });
     }
     return NextResponse.json(
       { error: "speaker_assignment_invalid" },
@@ -94,6 +95,18 @@ export async function DELETE(
     );
   }
 
-  const removed = await deleteSpeakerAssignment(mediaId, user.id, speakerIdx);
-  return NextResponse.json({ removed }, { status: 200 });
+  try {
+    const removed = await deleteSpeakerAssignment(
+      mediaId,
+      user.id,
+      speakerIdx,
+      url.searchParams.get("transcriptVersion")
+    );
+    return NextResponse.json({ removed }, { status: 200 });
+  } catch (err) {
+    if (err instanceof Error && (err.message === "transcript_changed" || err.message === "transcript_version_required")) {
+      return NextResponse.json({ error: err.message }, { status: 409 });
+    }
+    throw err;
+  }
 }

@@ -1,4 +1,4 @@
-import { meSpeakerIdxs, remoteSpeakerIdxs, type SpeakerProfile } from "./profile";
+import { meSpeakerIdxs, soleRemoteSpeakerIdx, type SpeakerProfile } from "./profile";
 
 /**
  * Carries speaker_assignments across a transcript replacement (speaker
@@ -78,11 +78,14 @@ export function reconcileAssignments(args: {
   currentTranscriptCreatedAt: Date;
   profile: SpeakerProfile;
   selfPersonId: string | null;
+  /** The note's attendee person ids (owner excluded), read under lock. */
+  attendeePersonIds?: ReadonlyArray<string>;
 }): ReconcilePlan {
   const plan: ReconcilePlan = { deleteIds: [], restampIds: [], remaps: [], reviewIds: [] };
   const currentIsLive = args.currentVersion.startsWith(LIVE_PREFIX);
   const me = meSpeakerIdxs(args.profile);
-  const remote = remoteSpeakerIdxs(args.profile);
+  const soleRemote = soleRemoteSpeakerIdx(args.profile);
+  const remote = soleRemote === null ? [] : [soleRemote];
 
   const proposedRemaps: Array<{ id: string; newIdx: number }> = [];
   const keptIdxs = new Set<number>();
@@ -139,24 +142,42 @@ export function reconcileAssignments(args: {
       continue;
     }
 
+    // A stale name is kept only with proof that THIS voice is THAT
+    // person on the new transcript — a coincidentally equal index proves
+    // nothing after re-numbering:
+    //  - the owner: the mic singles out exactly one voice and it's this one;
+    //  - someone else: the same evidence the worker auto-applies a 1:1
+    //    name with (sole remote voice, sole attendee, and it's them);
+    //  - or channel continuity: the row was made on the live transcript
+    //    (legacy rows written before this transcript were too) where
+    //    index 0 is the mic and 1 the call audio, and that channel's
+    //    voice is unambiguous AND at the same index.
     const isSelf = args.selfPersonId !== null && row.personId === args.selfPersonId;
-    const confirmed = isSelf
-      ? me.includes(row.speakerIdx)
-      : remote.length === 1 && remote[0] === row.speakerIdx;
-    if (confirmed) {
+    const attendeeIds = args.attendeePersonIds ?? [];
+    const channelBasis = legacy || oldIsLive;
+    const channelTarget = !channelBasis
+      ? null
+      : isSelf && row.speakerIdx === 0 && me.length === 1
+        ? me[0]
+        : !isSelf && row.speakerIdx === 1 && remote.length === 1
+          ? remote[0]
+          : null;
+    const proven = isSelf
+      ? me.length === 1 && me[0] === row.speakerIdx
+      : remote.length === 1 &&
+        remote[0] === row.speakerIdx &&
+        attendeeIds.length === 1 &&
+        attendeeIds[0] === row.personId;
+    if (proven || channelTarget === row.speakerIdx) {
       plan.restampIds.push(row.id);
       keptIdxs.add(row.speakerIdx);
       continue;
     }
-    // A live row names a capture channel, so it maps onto the voice that
-    // channel became — but only when exactly one voice qualifies.
-    const channelTarget =
-      oldIsLive && isSelf && row.speakerIdx === 0 && me.length === 1
-        ? me[0]
-        : oldIsLive && !isSelf && row.speakerIdx === 1 && remote.length === 1
-          ? remote[0]
-          : null;
-    if (channelTarget !== null) {
+    // A live-version row maps onto the voice its channel became. Legacy
+    // rows that would MOVE go to review instead: those are the pre-v2
+    // mislabels, which the owner reviews rather than having them
+    // silently corrected (2026-10-27 decision).
+    if (channelTarget !== null && oldIsLive) {
       proposedRemaps.push({ id: row.id, newIdx: channelTarget });
       continue;
     }

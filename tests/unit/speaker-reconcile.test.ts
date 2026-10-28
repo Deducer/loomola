@@ -164,6 +164,44 @@ describe("reconcileAssignments", () => {
     expect(p.reviewIds.sort()).toEqual(["A", "B"]);
   });
 
+  it("doesn't bless a stale non-owner name just because its index is now the sole remote voice", () => {
+    // Legacy row "voice 0 is OTHER" from the live transcript (where 0 was
+    // the MIC). In the batch 1:1, voice 0 is the sole remote voice — but
+    // nothing says it's OTHER: the invitee is someone else.
+    const p = reconcileAssignments({
+      rows: [row({ id: "x", speakerIdx: 0, personId: OTHER, transcriptVersion: null })],
+      currentVersion: BATCH,
+      currentTranscriptCreatedAt: batchAt,
+      profile: profile1on1,
+      selfPersonId: SELF,
+      attendeePersonIds: ["the-real-invitee"],
+    });
+    expect(p.restampIds).toEqual([]);
+    expect(p.reviewIds).toEqual(["x"]);
+    // …whereas the sole remote voice + sole attendee IS the evidence.
+    const ok = reconcileAssignments({
+      rows: [row({ id: "y", speakerIdx: 0, personId: OTHER, transcriptVersion: null })],
+      currentVersion: BATCH,
+      currentTranscriptCreatedAt: batchAt,
+      profile: profile1on1,
+      selfPersonId: SELF,
+      attendeePersonIds: [OTHER],
+    });
+    expect(ok.restampIds).toEqual(["y"]);
+  });
+
+  it("doesn't confirm the owner on either of two mic-dominant voices (shared mic)", () => {
+    const shared = turns([[0, 40], [1, 40], [3, 30], [1, 20]]);
+    const sharedProfile = computeSpeakerProfile({
+      words: wordsFor(shared),
+      provider: "deepgram",
+      activity: framesForTurns(shared, [0, 3]),
+    });
+    const p = plan([row({ id: "me", speakerIdx: 3, personId: SELF, transcriptVersion: null })], sharedProfile);
+    expect(p.restampIds).toEqual([]);
+    expect(p.reviewIds).toEqual(["me"]);
+  });
+
   it("keeps a user's dismissal across transcript replacement, moving it with its live channel", () => {
     // "Not Ian" on the live mic channel (0) → the batch mic voice is 1.
     const moved = plan([row({ id: "dis", speakerIdx: 0, dismissedAt: liveAt })]);

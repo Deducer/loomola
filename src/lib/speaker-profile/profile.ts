@@ -56,6 +56,10 @@ export type SpeakerProfile = {
   /** mic track length ÷ system track length, capped at 1. */
   micCoverage: number | null;
   entries: SpeakerProfileEntry[];
+  /** Stage-17 LLM pass for this transcript, set by the worker: "pending"
+   *  while it runs (so a crash leaves the note unfinished for the
+   *  backfill), then "done" / "failed" / "skipped" (nothing to ask). */
+  llm?: "pending" | "skipped" | "done" | "failed";
 };
 
 export const FRAGMENT_MIN_SEC = 10;
@@ -247,3 +251,29 @@ export function mergedMeSpeakerIdx(profile: SpeakerProfile): number | null {
   const merged = profile.entries.filter((e) => !e.fragment && e.source === "merged");
   return merged.length === 1 ? merged[0].speakerIdx : null;
 }
+
+/** Other voices may total at most this share of all speech, each under
+ *  OTHER_VOICE_MAX_SEC, for a call to count as having ONE remote voice. */
+const OTHER_VOICES_MAX_SHARE = 0.03;
+const OTHER_VOICE_MAX_SEC = 30;
+
+/**
+ * The remote voice of a genuine 1:1, or null. Stricter than "one
+ * non-fragment remote voice": the fragment cutoff (10 s / 2%) could hide
+ * a real but quiet third participant, so every other non-recorder voice
+ * must be under 30 s and all of them together under 3% of the speech.
+ * Live transcripts: the call-audio channel, when the recorder was found.
+ */
+export function soleRemoteSpeakerIdx(profile: SpeakerProfile): number | null {
+  const remote = remoteSpeakerIdxs(profile);
+  if (remote.length !== 1) return null;
+  if (profile.status === "live_channels") return remote[0];
+  const me = new Set(meSpeakerIdxs(profile));
+  const total = profile.entries.reduce((a, e) => a + e.speechSec, 0) || 1;
+  const others = profile.entries.filter((e) => !me.has(e.speakerIdx) && e.speakerIdx !== remote[0]);
+  const othersSec = others.reduce((a, e) => a + e.speechSec, 0);
+  if (others.some((e) => e.speechSec >= OTHER_VOICE_MAX_SEC)) return null;
+  if (othersSec / total >= OTHER_VOICES_MAX_SHARE) return null;
+  return remote[0];
+}
+

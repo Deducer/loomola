@@ -28,8 +28,8 @@ export async function POST(
     transcriptVersion: parsed.data.transcriptVersion ?? null,
   });
 
-  if (!result.ok && result.reason === "transcript_changed") {
-    return NextResponse.json({ error: "transcript_changed" }, { status: 409 });
+  if (!result.ok && result.reason) {
+    return NextResponse.json({ error: result.reason }, { status: 409 });
   }
   if (!result.ok) {
     // No pending suggestion at that idx — idempotent OK from caller's view.

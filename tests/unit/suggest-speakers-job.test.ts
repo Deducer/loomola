@@ -29,6 +29,7 @@ const store = vi.hoisted(() => ({
   currentTranscriptId: null as string | null,
   activityError: null as Error | null,
   lockError: null as Error | null,
+  llmStatus: null as string | null,
   activity: null as ActivityFrames | null,
   profiles: [] as unknown[],
   nextId: 1,
@@ -56,6 +57,9 @@ vi.mock("@/db/queries/speaker-suggestion", () => ({
     store.profiles.push(p);
   }),
   setActivityKey: vi.fn(async () => {}),
+  setSpeakerLlmStatus: vi.fn(async (_id: string, status: string) => {
+    store.llmStatus = status;
+  }),
   applyReconcilePlan: vi.fn(async (_tx: unknown, { version, plan }: { version: string; plan: ReconcilePlan }) => {
     store.rows = store.rows.filter((r) => !plan.deleteIds.includes(r.id));
     for (const m of plan.remaps) {
@@ -101,10 +105,11 @@ vi.mock("@/lib/speaker-profile/track-activity", () => ({
   uploadActivity: vi.fn(async () => {}),
 }));
 
-const llm = vi.hoisted(() => ({ calls: 0 }));
+const llm = vi.hoisted(() => ({ calls: 0, error: null as Error | null }));
 vi.mock("@/lib/ai/with-fallback", () => ({
   generateObjectWithFallback: vi.fn(async () => {
     llm.calls++;
+    if (llm.error) throw llm.error;
     return { object: { attributions: [] } };
   }),
 }));
@@ -139,10 +144,12 @@ const named = () =>
 beforeEach(() => {
   store.activityError = null;
   store.lockError = null;
+  store.llmStatus = null;
   store.rows = [];
   store.profiles = [];
   store.nextId = 1;
   llm.calls = 0;
+  llm.error = null;
 });
 
 describe("suggest_speakers job (speaker v2)", () => {
@@ -222,6 +229,18 @@ describe("suggest_speakers job (speaker v2)", () => {
     await expect(runSuggestSpeakersJob({ mediaObjectId: "m" })).rejects.toThrow(/503/);
     expect(store.rows).toEqual([]);
     expect(store.profiles).toEqual([]);
+  });
+
+  it("marks the LLM pass pending in the done-marker, then failed when it fails (so a backfill re-runs it)", async () => {
+    // Group call: Me from the mic, two remote voices left for the LLM.
+    const t = turns([[0, 40], [1, 40], [2, 40]]);
+    setTranscript("deepgram", batchAt, t, [SARAH, ALEX]);
+    store.activity = framesForTurns(t, [0]);
+    llm.error = new Error("model overloaded");
+    await runSuggestSpeakersJob({ mediaObjectId: "m" });
+    expect((store.profiles[0] as { llm: string }).llm).toBe("pending");
+    expect(store.llmStatus).toBe("failed");
+    expect(named()).toEqual([[0, IAN, "auto", false]]);
   });
 
   it("stores the profile (the backfill's done-marker) only when the names commit", async () => {

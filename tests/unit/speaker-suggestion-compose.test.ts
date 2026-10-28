@@ -111,6 +111,19 @@ describe("composeSpeakerSuggestions (v2 evidence ladder)", () => {
     expect(r.find((s) => s.speakerIdx === 2)).toBeUndefined();
   });
 
+  it("doesn't treat a call with a quiet but real third participant as a 1:1", () => {
+    // 40 s from voice 2 in a ~50-minute call is under the 2% fragment
+    // share, but it's a real person — the invitee may not be the main
+    // remote speaker, so no automatic 1:1 name.
+    const r = composeSpeakerSuggestions({
+      ...batch(turns([[0, 1500], [1, 1500], [2, 40]]), [0]),
+      attendees: sarah,
+      people: [SELF, SARAH],
+      selfPersonId: SELF.id,
+    });
+    expect(r.map((s) => s.speakerIdx)).toEqual([0]);
+  });
+
   it("keeps an unknown attendee as a create-person suggestion, not auto-applied", () => {
     const r = composeSpeakerSuggestions({
       ...batch(turns([[0, 30], [1, 30]]), [0]),

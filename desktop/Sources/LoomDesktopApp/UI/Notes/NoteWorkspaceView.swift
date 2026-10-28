@@ -2799,7 +2799,7 @@ struct NoteWorkspaceView: View {
                     mediaId: recording.id,
                     speakerIdx: idx,
                     personId: personId,
-                    transcriptVersion: transcript?.transcriptVersion
+                    transcriptVersion: await transcriptVersionForSpeakerWrite(recordingId: recording.id, backend: backend)
                 )
                 if let list = try? await backend.speakerAssignments(mediaId: recording.id) {
                     speakerAssignments = list
@@ -2835,7 +2835,7 @@ struct NoteWorkspaceView: View {
                         recordingId: recording.id,
                         speakerIdx: suggestion.speakerIdx,
                         personId: personId,
-                        transcriptVersion: transcript?.transcriptVersion
+                        transcriptVersion: await transcriptVersionForSpeakerWrite(recordingId: recording.id, backend: backend)
                     )
                     applied += 1
                 } catch {
@@ -2848,6 +2848,15 @@ struct NoteWorkspaceView: View {
             }
             showToast(message: applied > 0 ? "Speaker names applied" : "Names were already applied")
         }
+    }
+
+    /// The transcript version speaker writes must name (the server refuses
+    /// a write whose transcript was replaced, or that names none). The
+    /// suggestion banner can show before the transcript drawer has loaded
+    /// the transcript, so fetch it when needed.
+    private func transcriptVersionForSpeakerWrite(recordingId: String, backend: BackendClient) async -> String? {
+        if let version = transcript?.transcriptVersion { return version }
+        return try? await backend.getNoteTranscript(mediaId: recordingId).transcriptVersion
     }
 
     private func activeAssignment(idx: Int) -> SpeakerAssignmentDTO? {
@@ -2889,7 +2898,7 @@ struct NoteWorkspaceView: View {
                 try await backend.dismissSpeakerSuggestion(
                     recordingId: recording.id,
                     speakerIdx: idx,
-                    transcriptVersion: transcript?.transcriptVersion
+                    transcriptVersion: await transcriptVersionForSpeakerWrite(recordingId: recording.id, backend: backend)
                 )
             } catch {
                 speakerAssignments = previous
@@ -2910,7 +2919,7 @@ struct NoteWorkspaceView: View {
                 try? await backend.dismissSpeakerSuggestion(
                     recordingId: recording.id,
                     speakerIdx: suggestion.speakerIdx,
-                    transcriptVersion: transcript?.transcriptVersion
+                    transcriptVersion: await transcriptVersionForSpeakerWrite(recordingId: recording.id, backend: backend)
                 )
             }
         }

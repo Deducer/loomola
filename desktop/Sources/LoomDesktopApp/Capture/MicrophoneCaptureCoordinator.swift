@@ -458,13 +458,33 @@ final class MicrophoneCaptureCoordinator: NSObject, AVCaptureAudioDataOutputSamp
         gapLock.unlock()
 
         do {
-            try startEngine(
-                deviceID: selectedDeviceID,
-                outputURL: selectedOutputURL,
-                voiceProcessingEnabled: selectedVoiceProcessingEnabled,
-                createWriter: false,
-                epoch: engineEpoch
-            )
+            var lastError: Error?
+            var started = false
+            for device in MicRestartDevicePolicy.devicesToTry(selected: selectedDeviceID) {
+                do {
+                    try startEngine(
+                        deviceID: device,
+                        outputURL: selectedOutputURL,
+                        voiceProcessingEnabled: selectedVoiceProcessingEnabled,
+                        createWriter: false,
+                        epoch: engineEpoch
+                    )
+                    started = true
+                    if device != selectedDeviceID {
+                        microphoneCaptureLog.error("selected microphone unavailable; recording from the system default input")
+                    }
+                    break
+                } catch {
+                    lastError = error
+                    // A half-built engine must not linger between attempts.
+                    if let engine {
+                        engine.inputNode.removeTap(onBus: 0)
+                        engine.stop()
+                    }
+                    engine = nil
+                }
+            }
+            if !started { throw lastError ?? MicrophoneCaptureCoordinatorError.noMicrophone }
             microphoneCaptureLog.notice("microphone engine restarted")
         } catch {
             microphoneCaptureLog.error("microphone engine restart failed: \(error.localizedDescription, privacy: .public)")

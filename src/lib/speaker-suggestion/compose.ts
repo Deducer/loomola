@@ -9,7 +9,7 @@ import {
 import {
   meSpeakerIdxs,
   mergedMeSpeakerIdx,
-  remoteSpeakerIdxs,
+  soleRemoteSpeakerIdx,
   type SpeakerProfile,
 } from "@/lib/speaker-profile/profile";
 
@@ -119,9 +119,9 @@ export function composeSpeakerSuggestions(args: {
     });
   }
 
-  const remote = remoteSpeakerIdxs(profile);
-  if (me.length > 0 && remote.length === 1 && attendees.length === 1 && !skip.has(remote[0])) {
-    const s = suggestionForAttendee({ speakerIdx: remote[0], attendee: attendees[0], people });
+  const soleRemote = soleRemoteSpeakerIdx(profile);
+  if (me.length > 0 && soleRemote !== null && attendees.length === 1 && !skip.has(soleRemote)) {
+    const s = suggestionForAttendee({ speakerIdx: soleRemote, attendee: attendees[0], people });
     if (!s.personId || !taken.has(s.personId)) {
       // On a LIVE transcript the remote "voice" is the whole system-audio
       // channel; an uninvited extra participant would be inside it, so the

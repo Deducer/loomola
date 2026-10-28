@@ -84,6 +84,22 @@ final class MicRestartGapTrackerTests: XCTestCase {
         XCTAssertEqual(tracker.gapStartUptime, 100)
     }
 
+    /// Review finding P2 (fourth pass): an unplugged selected mic used to
+    /// be retried forever, leaving the rest of the note silent.
+    func testRestartFallsBackToTheDefaultInputWhenTheSelectedMicIsGone() {
+        XCTAssertEqual(MicRestartDevicePolicy.devicesToTry(selected: "usb-mic-uid"), ["usb-mic-uid", nil])
+        XCTAssertEqual(MicRestartDevicePolicy.devicesToTry(selected: nil), [nil])
+    }
+
+    func testSilenceFillIsCapped() {
+        var tracker = MicRestartGapTracker()
+        tracker.markBuffer(uptime: 0, pausedTotal: 0)
+        tracker.open(nextEpoch: 1)
+        let silence = tracker.close(arrivalUptime: 3 * 3600, bufferDuration: 0.1, pausedTotal: 0)
+        XCTAssertEqual(silence, MicRestartGapTracker.maximumGap)
+        XCTAssertLessThanOrEqual(MicRestartGapTracker.maximumGap, 600)
+    }
+
     /// Review finding P1: stop() during a restart. A restart queued before
     /// stop (or a retry after a failed restart) must be obsolete once the
     /// note stops — it may not start an engine or reopen the writer.

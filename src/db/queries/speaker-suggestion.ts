@@ -67,6 +67,17 @@ export async function getNoteForSpeakerSuggestion(
   };
 }
 
+/** Records the outcome of the LLM pass on the transcript's profile. */
+export async function setSpeakerLlmStatus(
+  transcriptId: string,
+  status: "done" | "failed"
+): Promise<void> {
+  await db
+    .update(transcripts)
+    .set({ speakerProfile: sql`jsonb_set(${transcripts.speakerProfile}, '{llm}', to_jsonb(${status}::text))` })
+    .where(eq(transcripts.id, transcriptId));
+}
+
 export async function setActivityKey(mediaObjectId: string, key: string): Promise<void> {
   await db.update(mediaObjects).set({ r2ActivityKey: key }).where(eq(mediaObjects.id, mediaObjectId));
 }
@@ -116,7 +127,7 @@ export type LockedAssignmentRow = ReconcileRow & { suggestionConfidence: string 
  * job computed on still current — the only safe moment to reconcile or
  * write names:
  *
- *  - the media_objects row is locked FOR UPDATE, serializing concurrent
+ *  - the media_objects row is locked FOR NO KEY UPDATE, serializing concurrent
  *    suggest_speakers runs and attendee changes for this note;
  *  - the latest transcript is read FOR SHARE: if it isn't `transcriptId`
  *    the job computed against a transcript that has been replaced, so it
@@ -137,11 +148,16 @@ export async function withSpeakerWriteLock<T>(
     // The attendee list is read HERE, under the row lock: names derived
     // from attendees must come from the list that is current when they're
     // written (an attendee edit commits with this same row lock).
+    // NO KEY UPDATE, not UPDATE: transcript replacement inserts a row
+    // whose foreign key takes KEY SHARE on this note row while it holds
+    // the old transcript's row lock. FOR UPDATE would block that insert
+    // while we wait on the old transcript — a deadlock. NO KEY UPDATE
+    // still serializes with attendee edits, other jobs and user writes.
     const [media] = await tx
       .select({ id: mediaObjects.id, attendees: mediaObjects.attendees })
       .from(mediaObjects)
       .where(eq(mediaObjects.id, args.mediaObjectId))
-      .for("update");
+      .for("no key update");
     if (!media) return { stale: true as const };
     const [current] = await tx
       .select({ id: transcripts.id })
@@ -304,7 +320,7 @@ export async function applySpeakerSuggestion(args: {
   personId: string;
   displayLabelOverride?: string | null;
   transcriptVersion?: string | null;
-}): Promise<{ ok: boolean; reason?: "no_pending_suggestion" | "transcript_changed" }> {
+}): Promise<{ ok: boolean; reason?: "no_pending_suggestion" | "transcript_changed" | "transcript_version_required" }> {
   try {
     return await withUserSpeakerLock(
       { mediaObjectId: args.mediaObjectId, ownerId: args.ownerId, expectedTranscriptVersion: args.transcriptVersion },
@@ -344,8 +360,8 @@ export async function applySpeakerSuggestion(args: {
       }
     );
   } catch (err) {
-    if (err instanceof Error && err.message === "transcript_changed") {
-      return { ok: false, reason: "transcript_changed" };
+    if (err instanceof Error && (err.message === "transcript_changed" || err.message === "transcript_version_required")) {
+      return { ok: false, reason: err.message };
     }
     if (err instanceof Error && err.message === "media_object_not_found") {
       return { ok: false, reason: "no_pending_suggestion" };
@@ -363,7 +379,7 @@ export async function dismissSpeakerSuggestion(args: {
   ownerId: string;
   speakerIdx: number;
   transcriptVersion?: string | null;
-}): Promise<{ ok: boolean; reason?: "transcript_changed" }> {
+}): Promise<{ ok: boolean; reason?: "transcript_changed" | "transcript_version_required" }> {
   try {
     return await withUserSpeakerLock(
       { mediaObjectId: args.mediaObjectId, ownerId: args.ownerId, expectedTranscriptVersion: args.transcriptVersion },
@@ -410,8 +426,8 @@ export async function dismissSpeakerSuggestion(args: {
       }
     );
   } catch (err) {
-    if (err instanceof Error && err.message === "transcript_changed") {
-      return { ok: false, reason: "transcript_changed" };
+    if (err instanceof Error && (err.message === "transcript_changed" || err.message === "transcript_version_required")) {
+      return { ok: false, reason: err.message };
     }
     if (err instanceof Error && err.message === "media_object_not_found") return { ok: false };
     throw err;

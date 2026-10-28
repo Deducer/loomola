@@ -68,10 +68,10 @@ export async function POST(
     transcriptVersion: parsed.data.transcriptVersion ?? null,
   });
 
-  if (!result.ok && result.reason === "transcript_changed") {
+  if (!result.ok && (result.reason === "transcript_changed" || result.reason === "transcript_version_required")) {
     // The suggestion (or the screen) is for a transcript that has since
     // been replaced; voice indices may mean someone else now.
-    return NextResponse.json({ error: "transcript_changed" }, { status: 409 });
+    return NextResponse.json({ error: result.reason }, { status: 409 });
   }
   if (!result.ok) {
     // No pending is_suggestion row for that (recording, speakerIdx).
