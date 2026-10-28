@@ -382,12 +382,27 @@ struct NoteWorkspaceView: View {
                         .padding(.bottom, DSSpacing.sm)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
-                // Reviewing mode: lime ✦ Generate-notes pill anchored
-                // bottom-center. POSTs /api/notes/<id>/enhance and
-                // polls until status flips to complete.
+                // Reviewing mode: lime ✦ Generate-notes pill above the
+                // bottom bar, as in Granola. POSTs /api/notes/<id>/enhance
+                // and polls until status flips to complete.
                 generateNotesBar
                     .padding(.horizontal, DSSpacing.lg)
-                    .padding(.bottom, DSSpacing.lg)
+                    .padding(.bottom, DSSpacing.sm)
+                if case .reviewing(let recording) = target {
+                    NoteBottomBar(
+                        obsidianInFlight: menuActionInFlight != nil,
+                        onCopyText: {
+                            let pasteboard = NSPasteboard.general
+                            pasteboard.clearContents()
+                            pasteboard.setString(currentBody, forType: .string)
+                            showToast(message: "Copied")
+                        },
+                        onOpenOnWeb: { viewModel.openWebNote(slug: recording.slug) },
+                        onSaveToObsidian: { saveNoteToObsidian(recording: recording) }
+                    )
+                    .padding(.horizontal, DSSpacing.lg)
+                    .padding(.bottom, DSSpacing.md)
+                }
             }
         }
         .background(DSColor.Bg.canvas)
