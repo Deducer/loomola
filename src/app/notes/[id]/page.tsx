@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { transcriptVersionOf } from "@/lib/speaker-profile/reconcile";
 import { requireAuth } from "@/lib/require-auth";
 import { enableGranola } from "@/lib/feature-flags";
 import { presignGet } from "@/lib/r2/presigned-get";
@@ -90,6 +91,9 @@ export default async function NotesPage({
       waveformUrl={waveformUrl}
       transcriptText={data.transcript?.fullText ?? ""}
       transcriptWords={normalizeWords(data.transcript?.wordTimestamps)}
+      transcriptVersion={
+        data.transcript ? transcriptVersionOf(data.transcript.provider, data.transcript.createdAt) : null
+      }
       initialAttachments={await Promise.all(
         attachments.map(async (attachment) => ({
           id: attachment.id,

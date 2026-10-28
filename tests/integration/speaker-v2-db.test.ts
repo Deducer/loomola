@@ -35,12 +35,15 @@ const OWNER = "00000000-0000-4000-8000-000000000001";
 const MEDIA = "00000000-0000-4000-8000-0000000000a1";
 const IAN = "00000000-0000-4000-8000-0000000000b1";
 const SARAH = "00000000-0000-4000-8000-0000000000b2";
+const ALEX = "00000000-0000-4000-8000-0000000000b3";
 const ROW = "00000000-0000-4000-8000-0000000000c1";
 
 describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
   let admin: postgres.Sql;
   let user: postgres.Sql;
   let runSuggestSpeakersJob: typeof import("@/lib/queue/jobs/suggest-speakers").runSuggestSpeakersJob;
+  let upsertSpeakerAssignment: typeof import("@/db/queries/speaker-assignments").upsertSpeakerAssignment;
+  let updateAudioNoteAttendees: typeof import("@/db/queries/notes").updateAudioNoteAttendees;
 
   // Sarah talks first and most; Ian (mic) is diarized as voice 1.
   const call = turns([[0, 60], [1, 30], [0, 50], [1, 20]]);
@@ -53,7 +56,8 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
     await admin.unsafe(`
       SET search_path = ${SCHEMA};
       CREATE TABLE media_objects (id uuid PRIMARY KEY, owner_id uuid NOT NULL, type text NOT NULL,
-        attendees jsonb, r2_mic_key text, r2_systemaudio_key text, r2_activity_key text);
+        attendees jsonb, r2_mic_key text, r2_systemaudio_key text, r2_activity_key text,
+        deleted_at timestamptz, updated_at timestamptz);
       CREATE TABLE transcripts (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), media_object_id uuid NOT NULL,
         provider text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), word_timestamps jsonb NOT NULL,
         speaker_profile jsonb);
@@ -70,6 +74,8 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
     `);
     user = postgres(scoped, { onnotice: () => {} });
     ({ runSuggestSpeakersJob } = await import("@/lib/queue/jobs/suggest-speakers"));
+    ({ upsertSpeakerAssignment } = await import("@/db/queries/speaker-assignments"));
+    ({ updateAudioNoteAttendees } = await import("@/db/queries/notes"));
   });
 
   afterAll(async () => {
@@ -85,10 +91,10 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
     await user`DELETE FROM transcripts`;
     await user`DELETE FROM people`;
     await user`DELETE FROM media_objects`;
-    await user`INSERT INTO media_objects VALUES (${MEDIA}, ${OWNER}, 'audio', ${user.json([SARAH])},
-      'rec/raw/mic.m4a', 'rec/raw/system.m4a', 'rec/activity.bin')`;
+    await user`INSERT INTO media_objects (id, owner_id, type, attendees, r2_mic_key, r2_systemaudio_key, r2_activity_key)
+      VALUES (${MEDIA}, ${OWNER}, 'audio', ${user.json([SARAH])}, 'rec/raw/mic.m4a', 'rec/raw/system.m4a', 'rec/activity.bin')`;
     await user`INSERT INTO people VALUES (${IAN}, ${OWNER}, 'Ian Cross', NULL, true),
-      (${SARAH}, ${OWNER}, 'Sarah Chen', NULL, false)`;
+      (${SARAH}, ${OWNER}, 'Sarah Chen', NULL, false), (${ALEX}, ${OWNER}, 'Alex Park', NULL, false)`;
     await user`INSERT INTO transcripts (media_object_id, provider, word_timestamps)
       VALUES (${MEDIA}, 'deepgram', ${user.json(wordsFor(call))})`;
   });
@@ -142,5 +148,48 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
     ]);
     await runSuggestSpeakersJob({ mediaObjectId: MEDIA });
     expect(await rows()).toEqual(first);
+  });
+
+  it("refuses a label made on a transcript that has since been replaced (P1: stale screen)", async () => {
+    const [t] = await user<{ provider: string; created_at: Date }[]>`
+      SELECT provider, created_at FROM transcripts WHERE media_object_id = ${MEDIA}`;
+    const current = `${t.provider}:${t.created_at.toISOString()}`;
+    // The user was looking at the live transcript (channel indices).
+    await expect(
+      upsertSpeakerAssignment({
+        mediaObjectId: MEDIA, ownerId: OWNER, speakerIdx: 1, personId: SARAH,
+        transcriptVersion: "deepgram-live:2026-10-27T21:45:00.000Z",
+      })
+    ).rejects.toThrow("transcript_changed");
+    expect(await rows()).toEqual([]);
+    // Against the transcript on screen it saves, stamped with that version.
+    await upsertSpeakerAssignment({ mediaObjectId: MEDIA, ownerId: OWNER, speakerIdx: 0, personId: SARAH, transcriptVersion: current });
+    const [saved] = await user`SELECT transcript_version, is_suggestion FROM speaker_assignments`;
+    expect(saved).toMatchObject({ transcript_version: current, is_suggestion: false });
+  });
+
+  it("uses the attendee list current at write time, not the one the job started with (P1: attendee race)", async () => {
+    hooks.onLoadActivity = async () => {
+      // The user links a different calendar event while the job computes.
+      await updateAudioNoteAttendees({ mediaObjectId: MEDIA, ownerId: OWNER, personIds: [ALEX] });
+    };
+    await runSuggestSpeakersJob({ mediaObjectId: MEDIA });
+    const after = await rows();
+    expect(after.find((r) => r.speaker_idx === 0)?.person_id).toBe(ALEX);
+    expect(after.some((r) => r.person_id === SARAH)).toBe(false);
+  });
+
+  it("leaves no done-marker when the write fails, so a backfill retries the note (P1: completion)", async () => {
+    await admin.unsafe(`
+      SET search_path = ${SCHEMA};
+      CREATE FUNCTION fail_insert() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'simulated write failure'; END $$ LANGUAGE plpgsql;
+      CREATE TRIGGER fail_insert BEFORE INSERT ON speaker_assignments FOR EACH ROW EXECUTE FUNCTION fail_insert();`);
+    try {
+      await expect(runSuggestSpeakersJob({ mediaObjectId: MEDIA })).rejects.toThrow();
+      const [t] = await user`SELECT speaker_profile FROM transcripts WHERE media_object_id = ${MEDIA}`;
+      expect(t.speaker_profile).toBeNull();
+    } finally {
+      await admin.unsafe(`SET search_path = ${SCHEMA}; DROP TRIGGER fail_insert ON speaker_assignments; DROP FUNCTION fail_insert();`);
+    }
   });
 });

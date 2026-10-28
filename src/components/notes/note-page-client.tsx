@@ -69,6 +69,7 @@ type NotePageClientProps = {
   waveformUrl: string | null;
   transcriptText: string;
   transcriptWords: Word[];
+  transcriptVersion?: string | null;
   initialAttachments: NoteAttachment[];
   initialTemplateId: string;
   initialGeneratedTemplateId: string | null;
@@ -141,6 +142,7 @@ export function NotePageClient({
   waveformUrl,
   transcriptText,
   transcriptWords,
+  transcriptVersion,
   initialAttachments,
   initialEnhancedSummary,
   initialActionItems,
@@ -1025,6 +1027,7 @@ export function NotePageClient({
             <TranscriptPanel
               mediaId={mediaId}
               words={transcriptWords}
+              transcriptVersion={transcriptVersion}
               fullText={transcriptText}
               currentTime={currentTime}
               onSeek={(sec) => seekTo(sec)}

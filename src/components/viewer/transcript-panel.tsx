@@ -44,6 +44,7 @@ export function TranscriptPanel({
   speakerAssignments = [],
   onSpeakerAssignmentsChange,
   tone = "accent",
+  transcriptVersion,
 }: {
   mediaId?: string;
   words: Word[];
@@ -61,6 +62,9 @@ export function TranscriptPanel({
   speakerAssignments?: TranscriptSpeakerAssignment[];
   onSpeakerAssignmentsChange?: (assignments: TranscriptSpeakerAssignment[]) => void;
   tone?: "accent" | "neutral";
+  /** Version of the transcript being shown; sent with label writes so the
+   *  server refuses a label made against a transcript that was replaced. */
+  transcriptVersion?: string | null;
 }) {
   const [fetchedWords, setFetchedWords] = useState<Word[] | null>(null);
   const outerRef = useRef<HTMLDivElement | null>(null);
@@ -151,8 +155,12 @@ export function TranscriptPanel({
       const response = await fetch(`/api/speaker-assignments/${mediaId}`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ speakerIdx, ...input }),
+        body: JSON.stringify({ speakerIdx, ...input, transcriptVersion: transcriptVersion ?? null }),
       });
+      if (response.status === 409) {
+        toast.error("The transcript was just updated — reload the page to label speakers.");
+        return;
+      }
       if (!response.ok) throw new Error("speaker_assignment_failed");
       const row = (await response.json()) as TranscriptSpeakerAssignment;
       const next = [

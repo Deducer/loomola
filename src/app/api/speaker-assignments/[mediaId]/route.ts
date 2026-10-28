@@ -13,6 +13,7 @@ const upsertAssignmentSchema = z
     speakerIdx: z.number().int().min(0),
     personId: z.string().uuid().nullable().optional(),
     displayLabelOverride: z.string().trim().min(1).max(160).nullable().optional(),
+    transcriptVersion: z.string().max(120).nullable().optional(),
   })
   .refine(
     (value) => Boolean(value.personId || value.displayLabelOverride),
@@ -59,9 +60,15 @@ export async function PUT(
       speakerIdx: parsed.data.speakerIdx,
       personId: parsed.data.personId ?? null,
       displayLabelOverride: parsed.data.displayLabelOverride ?? null,
+      transcriptVersion: parsed.data.transcriptVersion ?? null,
     });
     return NextResponse.json(row, { status: 200 });
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.message === "transcript_changed") {
+      // The client labeled a voice on a transcript that has since been
+      // replaced (speaker indices re-numbered); it must reload first.
+      return NextResponse.json({ error: "transcript_changed" }, { status: 409 });
+    }
     return NextResponse.json(
       { error: "speaker_assignment_invalid" },
       { status: 400 }

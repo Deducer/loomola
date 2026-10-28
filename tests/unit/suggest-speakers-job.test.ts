@@ -28,6 +28,7 @@ const store = vi.hoisted(() => ({
   rows: [] as Row[],
   currentTranscriptId: null as string | null,
   activityError: null as Error | null,
+  lockError: null as Error | null,
   activity: null as ActivityFrames | null,
   profiles: [] as unknown[],
   nextId: 1,
@@ -41,13 +42,17 @@ vi.mock("@/db/queries/speaker-suggestion", () => ({
     { id: ALEX, displayName: "Alex Park", email: null, isSelf: false },
   ]),
   withSpeakerWriteLock: vi.fn(
-    async ({ transcriptId }: { transcriptId: string }, fn: (ctx: { tx: unknown; rows: Row[] }) => Promise<unknown>) => {
+    async ({ transcriptId }: { transcriptId: string }, fn: (ctx: { tx: unknown; rows: Row[]; attendees: unknown }) => Promise<unknown>) => {
       if (store.currentTranscriptId !== transcriptId) return { stale: true };
-      return { stale: false, result: await fn({ tx: {}, rows: store.rows.map((r) => ({ ...r })) }) };
+      if (store.lockError) throw store.lockError;
+      return {
+        stale: false,
+        result: await fn({ tx: {}, rows: store.rows.map((r) => ({ ...r })), attendees: store.note?.attendees }),
+      };
     }
   ),
   lockedAssignments: vi.fn(async () => store.rows.map((r) => ({ ...r }))),
-  saveSpeakerProfile: vi.fn(async (_id: string, p: unknown) => {
+  saveSpeakerProfile: vi.fn(async (_tx: unknown, _id: string, p: unknown) => {
     store.profiles.push(p);
   }),
   setActivityKey: vi.fn(async () => {}),
@@ -133,6 +138,7 @@ const named = () =>
 
 beforeEach(() => {
   store.activityError = null;
+  store.lockError = null;
   store.rows = [];
   store.profiles = [];
   store.nextId = 1;
@@ -160,12 +166,16 @@ describe("suggest_speakers job (speaker v2)", () => {
     setTranscript("deepgram-live", liveAt, turns([[0, 30], [1, 60]]), [SARAH]);
     store.activity = null;
     await runSuggestSpeakersJob({ mediaObjectId: "m" });
+    // The live system channel is only suggested (it could hold extra voices).
     expect(named()).toEqual([
       [0, IAN, "auto", false],
-      [1, SARAH, "auto", false],
+      [1, SARAH, "pending", false],
     ]);
     // The user confirms both while the live transcript is showing.
-    for (const r of store.rows) r.autoApplied = false;
+    for (const r of store.rows) {
+      r.autoApplied = false;
+      r.isSuggestion = false;
+    }
 
     // Batch numbers Sarah first — the swapped-1:1 shape.
     const batchTurns = turns([[0, 60], [1, 30], [0, 40]]);
@@ -211,6 +221,15 @@ describe("suggest_speakers job (speaker v2)", () => {
     store.activityError = new Error("activity.bin fetch failed: HTTP 503");
     await expect(runSuggestSpeakersJob({ mediaObjectId: "m" })).rejects.toThrow(/503/);
     expect(store.rows).toEqual([]);
+    expect(store.profiles).toEqual([]);
+  });
+
+  it("stores the profile (the backfill's done-marker) only when the names commit", async () => {
+    const batchTurns = turns([[0, 60], [1, 60]]);
+    setTranscript("deepgram", batchAt, batchTurns, [SARAH]);
+    store.activity = framesForTurns(batchTurns, [0]);
+    store.lockError = new Error("canceling statement due to lock timeout");
+    await expect(runSuggestSpeakersJob({ mediaObjectId: "m" })).rejects.toThrow(/lock timeout/);
     expect(store.profiles).toEqual([]);
   });
 

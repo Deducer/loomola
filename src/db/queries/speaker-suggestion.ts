@@ -70,10 +70,16 @@ export async function setActivityKey(mediaObjectId: string, key: string): Promis
   await db.update(mediaObjects).set({ r2ActivityKey: key }).where(eq(mediaObjects.id, mediaObjectId));
 }
 
-/** Stores the profile on the exact transcript row it was computed from,
- *  so a transcript replaced mid-job never inherits a stale profile. */
-export async function saveSpeakerProfile(transcriptId: string, profile: SpeakerProfile): Promise<void> {
-  await db.update(transcripts).set({ speakerProfile: profile }).where(eq(transcripts.id, transcriptId));
+/** Stores the profile on the exact transcript row it was computed from.
+ *  Written inside `withSpeakerWriteLock`, after the names, so a stored
+ *  profile also means "this transcript's speaker rows are reconciled" —
+ *  the backfill's completion marker. */
+export async function saveSpeakerProfile(
+  tx: SpeakerWriteTx,
+  transcriptId: string,
+  profile: SpeakerProfile
+): Promise<void> {
+  await tx.update(transcripts).set({ speakerProfile: profile }).where(eq(transcripts.id, transcriptId));
 }
 
 export interface PersonForSuggestion extends PersonCandidate {
@@ -123,15 +129,19 @@ export type LockedAssignmentRow = ReconcileRow & { suggestionConfidence: string 
  */
 export async function withSpeakerWriteLock<T>(
   args: { mediaObjectId: string; transcriptId: string },
-  fn: (ctx: { tx: SpeakerWriteTx; rows: LockedAssignmentRow[] }) => Promise<T>
+  fn: (ctx: { tx: SpeakerWriteTx; rows: LockedAssignmentRow[]; attendees: unknown }) => Promise<T>
 ): Promise<{ stale: true } | { stale: false; result: T }> {
   return db.transaction(async (tx) => {
     await tx.execute(sql`SET LOCAL lock_timeout = '10s'`);
-    await tx
-      .select({ id: mediaObjects.id })
+    // The attendee list is read HERE, under the row lock: names derived
+    // from attendees must come from the list that is current when they're
+    // written (an attendee edit commits with this same row lock).
+    const [media] = await tx
+      .select({ id: mediaObjects.id, attendees: mediaObjects.attendees })
       .from(mediaObjects)
       .where(eq(mediaObjects.id, args.mediaObjectId))
       .for("update");
+    if (!media) return { stale: true as const };
     const [current] = await tx
       .select({ id: transcripts.id })
       .from(transcripts)
@@ -141,7 +151,7 @@ export async function withSpeakerWriteLock<T>(
       .for("share");
     if (!current || current.id !== args.transcriptId) return { stale: true as const };
     const rows = await lockedAssignments(tx, args.mediaObjectId);
-    return { stale: false as const, result: await fn({ tx, rows }) };
+    return { stale: false as const, result: await fn({ tx, rows, attendees: media.attendees }) };
   });
 }
 

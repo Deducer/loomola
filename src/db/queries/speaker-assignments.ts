@@ -11,6 +11,11 @@ export type UpsertSpeakerAssignmentInput = {
   speakerIdx: number;
   personId?: string | null;
   displayLabelOverride?: string | null;
+  /** The transcript version the user was looking at when they labeled
+   *  the voice. When it's no longer current the index may mean someone
+   *  else (live → batch re-numbering), so the write is refused. Optional
+   *  for older clients. */
+  transcriptVersion?: string | null;
 };
 
 async function verifyMediaOwner(mediaObjectId: string, ownerId: string) {
@@ -54,6 +59,10 @@ export async function upsertSpeakerAssignment(
     .where(eq(transcripts.mediaObjectId, input.mediaObjectId))
     .orderBy(desc(transcripts.createdAt))
     .limit(1);
+  const currentVersion = current ? transcriptVersionOf(current.provider, current.createdAt) : null;
+  if (input.transcriptVersion && input.transcriptVersion !== currentVersion) {
+    throw new Error("transcript_changed");
+  }
   const decision = {
     personId: input.personId ?? null,
     displayLabelOverride: label,
@@ -62,7 +71,7 @@ export async function upsertSpeakerAssignment(
     needsReview: false,
     dismissedAt: null,
     suggestedNewPersonPayload: null,
-    transcriptVersion: current ? transcriptVersionOf(current.provider, current.createdAt) : null,
+    transcriptVersion: currentVersion,
   };
 
   const [row] = await db

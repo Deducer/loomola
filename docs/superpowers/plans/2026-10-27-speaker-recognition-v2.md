@@ -25,6 +25,14 @@
 - `needs_review` names render visibly uncertain on web and desktop.
 - `0034` runs with `SET LOCAL lock_timeout = '5s'`.
 - Desktop: stop and restart are serialized through `MicRestartGate`, and a restart never creates a writer. The gap tracker records the pause total with each buffer, so a pause that started before the restart isn't filled with silence.
+
+**Second review pass (2026-10-27):**
+- Manual labels are version-checked (409 when the transcript on screen was replaced).
+- Attendees are read under the write lock, and attendee edits are atomic with their suggestion clear.
+- The profile is written as the final step inside the write transaction (the backfill's done marker); `--verify` exits non-zero on incomplete work.
+- Dismissals are kept across transcript replacement and suppress auto-apply of that kind of name.
+- A live system-channel name is a suggestion only.
+- Desktop: per-engine epochs, and the old tap is quiesced before the gap opens.
 **Style:** TDD. Pure logic first, under `src/lib/speaker-profile/` and `src/lib/speaker-suggestion/`, then wiring, then UI. Each phase ships on its own and is scored with the same offline eval script.
 
 ## Phases at a glance (ordered by impact ÷ effort)

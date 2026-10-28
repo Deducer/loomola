@@ -95,15 +95,14 @@ export async function runSuggestSpeakersJob(
   const activity =
     transcriptProvider === "deepgram-live" ? null : await activityFor(mediaObjectId, note, opts.signal);
   const profile = computeSpeakerProfile({ words: note.words, provider: transcriptProvider, activity });
-  await saveSpeakerProfile(transcriptId, profile);
 
   const people = await getPeopleForSuggestion(note.ownerId);
   const selfPerson = people.find((p) => p.isSelf) ?? null;
-  const attendees = parseAttendees(note.attendees);
 
   // Reconcile + deterministic names, in one locked transaction against
   // the transcript this job profiled (see withSpeakerWriteLock).
-  const first = await withSpeakerWriteLock({ mediaObjectId, transcriptId }, async ({ tx, rows }) => {
+  const first = await withSpeakerWriteLock({ mediaObjectId, transcriptId }, async ({ tx, rows, attendees: lockedAttendees }) => {
+    const attendees = parseAttendees(lockedAttendees);
     const plan = reconcileAssignments({
       rows,
       currentVersion: version,
@@ -118,19 +117,24 @@ export async function runSuggestSpeakersJob(
           `deleted=${plan.deleteIds.length} moved=${plan.remaps.length} kept=${plan.restampIds.length} review=${plan.reviewIds.length}`
       );
     }
-    const decided = decidedState(await lockedAssignments(tx, mediaObjectId));
-    if (!selfPerson) return { suggestions: [] as SpeakerSuggestion[], decided };
-    const suggestions = composeSpeakerSuggestions({
-      words: note.words,
-      profile,
-      attendees,
-      people,
-      selfPersonId: selfPerson.id,
-      skipIdxs: decided.idxs,
-      takenPersonIds: decided.personIds,
-    });
+    const locked = await lockedAssignments(tx, mediaObjectId);
+    const decided = decidedState(locked);
+    const suggestions = selfPerson
+      ? composeSpeakerSuggestions({
+          words: note.words,
+          profile,
+          attendees,
+          people,
+          selfPersonId: selfPerson.id,
+          skipIdxs: decided.idxs,
+          takenPersonIds: decided.personIds,
+          dismissedDerivations: dismissedDerivations(locked),
+        })
+      : [];
     await persistSpeakerSuggestions(tx, { mediaObjectId, transcriptVersion: version, suggestions });
-    return { suggestions, decided };
+    // Last, so a stored profile means this transcript's rows are done.
+    await saveSpeakerProfile(tx, transcriptId, profile);
+    return { suggestions, decided, attendees, attendeesRaw: JSON.stringify(lockedAttendees ?? null) };
   });
   if (first.stale) {
     console.log(`[suggest-speakers] ${mediaObjectId} transcript replaced mid-job; writing nothing (its own job runs)`);
@@ -141,6 +145,7 @@ export async function runSuggestSpeakersJob(
     return;
   }
   logWritten(mediaObjectId, first.result.suggestions, profile.status);
+  const { attendees } = first.result;
 
   // Stage 17 transcript-content attribution for participant voices the
   // deterministic rungs left unlabeled — outside the lock (it's an LLM
@@ -178,7 +183,10 @@ export async function runSuggestSpeakersJob(
     return;
   }
   if (llmSuggestions.length === 0) return;
-  const second = await withSpeakerWriteLock({ mediaObjectId, transcriptId }, async ({ tx, rows }) => {
+  const second = await withSpeakerWriteLock({ mediaObjectId, transcriptId }, async ({ tx, rows, attendees: nowAttendees }) => {
+    // The LLM named people from the attendee list read under the first
+    // lock; if the list changed since, its names may be the old ones.
+    if (JSON.stringify(nowAttendees ?? null) !== first.result.attendeesRaw) return [] as SpeakerSuggestion[];
     const decided = decidedState(rows);
     const fresh = llmSuggestions.filter(
       (s) => !decided.idxs.has(s.speakerIdx) && (!s.personId || !decided.personIds.has(s.personId))
@@ -189,6 +197,16 @@ export async function runSuggestSpeakersJob(
   if (second.stale) return;
   console.log(
     `[suggest-speakers] ${mediaObjectId} LLM attributed ${second.result.length}/${uncovered.length} unlabeled speaker(s)`
+  );
+}
+
+/** Derivations of names the user dismissed on this note ("Not <name>").
+ *  A dismissal survives transcript replacement even when its voice can't
+ *  be mapped, and it stops that kind of name being re-applied without a
+ *  click. */
+function dismissedDerivations(rows: ReadonlyArray<{ dismissedAt: Date | null; suggestionConfidence: string | null }>): Set<string> {
+  return new Set(
+    rows.filter((r) => r.dismissedAt !== null && r.suggestionConfidence).map((r) => r.suggestionConfidence as string)
   );
 }
 

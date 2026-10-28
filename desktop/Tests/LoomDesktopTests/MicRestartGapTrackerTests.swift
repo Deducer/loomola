@@ -8,7 +8,7 @@ final class MicRestartGapTrackerTests: XCTestCase {
     func testGapIsTimeBetweenLastAudioAndNewAudio() {
         var tracker = MicRestartGapTracker()
         tracker.markBuffer(uptime: 100, pausedTotal: 0)
-        tracker.open()
+        tracker.open(nextEpoch: 1)
         XCTAssertTrue(tracker.isOpen)
         // New buffer (0.1 s long) arrives at 103.6 → its audio began at 103.5.
         let silence = tracker.close(arrivalUptime: 103.6, bufferDuration: 0.1, pausedTotal: 0)
@@ -19,7 +19,7 @@ final class MicRestartGapTrackerTests: XCTestCase {
     func testPausedTimeDuringTheGapIsNotFilled() {
         var tracker = MicRestartGapTracker()
         tracker.markBuffer(uptime: 100, pausedTotal: 5)
-        tracker.open()
+        tracker.open(nextEpoch: 1)
         // 20 s of the gap was a user pause (paused total 5 → 25).
         let silence = tracker.close(arrivalUptime: 130.1, bufferDuration: 0.1, pausedTotal: 25)
         XCTAssertEqual(silence, 10, accuracy: 0.0001)
@@ -35,7 +35,7 @@ final class MicRestartGapTrackerTests: XCTestCase {
         var tracker = MicRestartGapTracker()
         tracker.markBuffer(uptime: 100, pausedTotal: 0)
         // (pause starts at 101; no buffers while paused)
-        tracker.open() // restart at 110, paused total is 9 by now
+        tracker.open(nextEpoch: 1) // restart at 110, paused total is 9 by now
         let silence = tracker.close(arrivalUptime: 120.1, bufferDuration: 0.1, pausedTotal: 19)
         XCTAssertEqual(silence, 1, accuracy: 0.0001)
     }
@@ -43,20 +43,45 @@ final class MicRestartGapTrackerTests: XCTestCase {
     func testRetriedRestartKeepsTheOriginalGapStart() {
         var tracker = MicRestartGapTracker()
         tracker.markBuffer(uptime: 100, pausedTotal: 0)
-        tracker.open()
+        tracker.open(nextEpoch: 1)
         tracker.markBuffer(uptime: 104, pausedTotal: 0)
-        tracker.open()
+        tracker.open(nextEpoch: 1)
         XCTAssertEqual(tracker.gapStartUptime, 100)
     }
 
     func testJitterAndClosedGapsInsertNothing() {
         var tracker = MicRestartGapTracker()
         XCTAssertEqual(tracker.close(arrivalUptime: 10, bufferDuration: 0.1, pausedTotal: 0), 0)
-        tracker.open() // no audio yet: nothing to align
+        tracker.open(nextEpoch: 1) // no audio yet: nothing to align
         XCTAssertFalse(tracker.isOpen)
         tracker.markBuffer(uptime: 100, pausedTotal: 0)
-        tracker.open()
+        tracker.open(nextEpoch: 1)
         XCTAssertEqual(tracker.close(arrivalUptime: 100.12, bufferDuration: 0.1, pausedTotal: 0), 0)
+    }
+
+    /// Review finding P2 (second pass): a callback still in flight from
+    /// the engine being torn down must not close the gap — if it did, the
+    /// new engine's first buffer would get no silence and the mic track
+    /// would end up shorter than the system track.
+    func testLateCallbackFromTheOldEngineDoesNotConsumeTheGap() {
+        var tracker = MicRestartGapTracker()
+        tracker.markBuffer(uptime: 100, pausedTotal: 0)
+        tracker.open(nextEpoch: 1)
+        XCTAssertFalse(tracker.isCurrent(epoch: 0), "old engine's tap is stale")
+        XCTAssertTrue(tracker.isOpen, "gap stays open for the new engine")
+        XCTAssertTrue(tracker.isCurrent(epoch: 1))
+        let silence = tracker.close(arrivalUptime: 103.1, bufferDuration: 0.1, pausedTotal: 0)
+        XCTAssertEqual(silence, 3, accuracy: 0.0001)
+    }
+
+    func testRetriedRestartMovesToTheNewestEngine() {
+        var tracker = MicRestartGapTracker()
+        tracker.markBuffer(uptime: 100, pausedTotal: 0)
+        tracker.open(nextEpoch: 1) // restart attempt 1 fails
+        tracker.open(nextEpoch: 2) // retry
+        XCTAssertFalse(tracker.isCurrent(epoch: 1))
+        XCTAssertTrue(tracker.isCurrent(epoch: 2))
+        XCTAssertEqual(tracker.gapStartUptime, 100)
     }
 
     /// Review finding P1: stop() during a restart. A restart queued before
@@ -111,6 +136,24 @@ final class MicRestartGapTrackerTests: XCTestCase {
         let file = try AVAudioFile(forReading: url)
         let seconds = Double(file.length) / file.fileFormat.sampleRate
         XCTAssertEqual(seconds, 3.0, accuracy: 0.1)
+    }
+
+    /// The gap fill runs on the tap thread, so it has to be cheap even
+    /// for a long gap (a minute of silence must not stall capture).
+    func testSilenceFillForAMinuteIsFast() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appending(path: "mic-gap-fill-\(UUID()).m4a")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let writer = try AudioAssetWriter(outputURL: url, sampleRate: 48_000, channelCount: 1)
+        let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1)!
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4_800)!
+        buffer.frameLength = 4_800
+        try writer.append(buffer)
+        let started = Date()
+        try writer.appendSilence(seconds: 60)
+        let elapsed = Date().timeIntervalSince(started)
+        print("appendSilence(60 s) took \(String(format: "%.3f", elapsed)) s")
+        XCTAssertLessThan(elapsed, 1.5)
     }
 
     func testAppendSilenceBeforeAnyAudioIsANoOp() throws {

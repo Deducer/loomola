@@ -2798,12 +2798,19 @@ struct NoteWorkspaceView: View {
                 try await backend.assignSpeaker(
                     mediaId: recording.id,
                     speakerIdx: idx,
-                    personId: personId
+                    personId: personId,
+                    transcriptVersion: transcript?.transcriptVersion
                 )
                 if let list = try? await backend.speakerAssignments(mediaId: recording.id) {
                     speakerAssignments = list
                 }
                 showToast(message: "Speaker assigned")
+            } catch BackendClientError.badStatus(let statusCode, _, _) where statusCode == 409 {
+                // The final transcript replaced the one on screen and the
+                // voices were re-numbered: reload instead of mislabeling.
+                loadTranscript()
+                loadSpeakerAssignments()
+                showToast(message: "Transcript updated — pick the speaker again", tone: .warning)
             } catch {
                 showToast(message: "Couldn't assign speaker", tone: .error)
             }

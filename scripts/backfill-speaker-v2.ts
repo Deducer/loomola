@@ -142,6 +142,8 @@ async function analyze(n: NoteRow, people: Map<string, Person[]>): Promise<Outco
       derivation: (r.suggestion_confidence as string | null) ?? null,
     }));
     const version = transcriptVersionOf(n.provider, n.t_created_at);
+    // The worker stores the profile in the same transaction as the names,
+    // after them — so it is the completion marker for this transcript.
     const alreadyCurrent =
       n.profile_version === PROFILE_VERSION && reconcileRows.every((r) => r.transcriptVersion === version);
     const plan = reconcileAssignments({
@@ -281,13 +283,15 @@ async function pendingJobMediaIds(ids: string[]): Promise<Set<string>> {
   return new Set(rows.map((r) => r.id as string));
 }
 
-async function waitForJobs(ids: string[]): Promise<void> {
+async function waitForJobs(ids: string[]): Promise<{ incomplete: number }> {
   const started = Date.now();
+  let stillPending = 0;
   for (;;) {
     const pending = await pendingJobMediaIds(ids);
     if (pending.size === 0) break;
     if (Date.now() - started > VERIFY_TIMEOUT_MS) {
       console.log(`verify: gave up after ${VERIFY_TIMEOUT_MS / 60000} min with ${pending.size} job(s) still pending`);
+      stillPending = pending.size;
       break;
     }
     console.log(`verify: ${pending.size} job(s) pending…`);
@@ -300,7 +304,14 @@ async function waitForJobs(ids: string[]): Promise<void> {
   const counts: Record<string, number> = {};
   for (const s of states) counts[s.state as string] = (counts[s.state as string] ?? 0) + 1;
   console.log(`verify: latest job state per note: ${JSON.stringify(counts)}`);
-  for (const s of states) if (s.state === "failed") console.log(`  failed: ${s.id}`);
+  let failed = 0;
+  for (const s of states) {
+    if (s.state === "failed") {
+      failed++;
+      console.log(`  failed: ${s.id}`);
+    }
+  }
+  return { incomplete: stillPending + failed };
 }
 
 async function main() {
@@ -360,8 +371,17 @@ async function main() {
 
   if (verify && toVerify.length > 0) {
     console.log(`\n=== verify: waiting for ${toVerify.length} job(s) ===`);
-    await waitForJobs(toVerify);
-    await score(await loadNotes(toVerify), people, "after backfill");
+    const { incomplete } = await waitForJobs(toVerify);
+    const after = await score(await loadNotes(toVerify), people, "after backfill");
+    // Done = every note now carries the v2 done-marker (profile stored in
+    // the same transaction as its names) and no job failed or timed out.
+    const notDone = after.filter((o) => !o.alreadyCurrent || o.error).length;
+    if (incomplete > 0 || notDone > 0) {
+      console.error(`verify: INCOMPLETE — ${incomplete} job(s) failed/pending, ${notDone} note(s) not on v2`);
+      process.exitCode = 1;
+    } else {
+      console.log("verify: all notes on v2");
+    }
   } else if (verify) {
     console.log("\nverify: no jobs to wait for");
   }

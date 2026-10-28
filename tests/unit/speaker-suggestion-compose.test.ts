@@ -178,6 +178,36 @@ describe("composeSpeakerSuggestions (v2 evidence ladder)", () => {
     expect(group.map((s) => s.speakerIdx)).toEqual([0]);
   });
 
+  it("never re-applies a kind of name the user dismissed on this note — it becomes a suggestion", () => {
+    const r = composeSpeakerSuggestions({
+      ...batch(turns([[0, 80], [1, 20], [0, 60], [1, 15]]), [1]),
+      attendees: sarah,
+      people: [SELF, SARAH],
+      selfPersonId: SELF.id,
+      dismissedDerivations: new Set(["self_via_source_channel", "remote_via_single_voice"]),
+    });
+    expect(r.map((s) => [s.speakerIdx, s.personId, s.autoApply])).toEqual([
+      [1, SELF.id, false],
+      [0, SARAH.id, false],
+    ]);
+  });
+
+  it("a live system-channel name is only a suggestion (it may hold an uninvited extra voice)", () => {
+    const t = turns([[0, 10], [1, 60]]);
+    const words = wordsFor(t);
+    const r = composeSpeakerSuggestions({
+      words,
+      profile: computeSpeakerProfile({ words, provider: "deepgram-live", activity: null }),
+      attendees: sarah,
+      people: [SELF, SARAH],
+      selfPersonId: SELF.id,
+    });
+    expect(r.map((s) => [s.speakerIdx, s.autoApply])).toEqual([
+      [0, true],
+      [1, false],
+    ]);
+  });
+
   it("no tracks: talk-time fallback only for small calls with an overwhelming margin, as a suggestion", () => {
     const dominant = composeSpeakerSuggestions({
       ...batch(turns([[0, 90], [1, 20]]), null),

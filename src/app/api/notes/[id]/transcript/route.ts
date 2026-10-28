@@ -3,6 +3,7 @@ import { getAudioNotePageData } from "@/db/queries/notes";
 import { enableGranola } from "@/lib/feature-flags";
 import { requireAuth } from "@/lib/require-auth";
 import { groupWordsIntoParagraphs, type Word } from "@/lib/viewer/paragraphs";
+import { transcriptVersionOf } from "@/lib/speaker-profile/reconcile";
 
 function granolaNotFound() {
   return NextResponse.json({ error: "not_found" }, { status: 404 });
@@ -35,6 +36,9 @@ export async function GET(
       fullText,
       language: data.transcript.language,
       provider: data.transcript.provider,
+      // Echoed back on speaker-label writes so a label made on a transcript
+      // that has since been replaced is refused instead of mislabeling.
+      transcriptVersion: transcriptVersionOf(data.transcript.provider, data.transcript.createdAt),
       paragraphs:
         paragraphs.length > 0
           ? paragraphs.map((paragraph) => ({

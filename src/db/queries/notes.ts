@@ -195,41 +195,47 @@ export async function updateAudioNoteAttendees(params: {
     }
   }
 
-  const [row] = await db
-    .update(mediaObjects)
-    .set({
-      attendees: personIds,
-      updatedAt: sql`now()`,
-    })
-    .where(
-      and(
-        eq(mediaObjects.id, params.mediaObjectId),
-        eq(mediaObjects.ownerId, params.ownerId),
-        eq(mediaObjects.type, "audio"),
-        isNull(mediaObjects.deletedAt)
-      )
-    )
-    .returning({ attendees: mediaObjects.attendees });
-
-  if (!row) throw new AttendeeUpdateError("media_object_not_found");
-
-  // Same rule as clearPendingSpeakerSuggestions: pending rows and
-  // auto-applied names derived from the old attendee list go; mic-derived
-  // Me rows and user decisions stay.
-  await db
-    .delete(speakerAssignments)
-    .where(
-      and(
-        eq(speakerAssignments.mediaObjectId, params.mediaObjectId),
-        or(
-          eq(speakerAssignments.isSuggestion, true),
-          and(
-            eq(speakerAssignments.autoApplied, true),
-            eq(speakerAssignments.suggestionConfidence, "remote_via_single_voice")
-          )
+  // One transaction: the UPDATE row-locks the note, which serializes this
+  // with a running suggest_speakers job (it locks the same row before it
+  // writes and reads the attendee list under that lock), so a job can't
+  // write a name from the old list after this commit.
+  const row = await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(mediaObjects)
+      .set({
+        attendees: personIds,
+        updatedAt: sql`now()`,
+      })
+      .where(
+        and(
+          eq(mediaObjects.id, params.mediaObjectId),
+          eq(mediaObjects.ownerId, params.ownerId),
+          eq(mediaObjects.type, "audio"),
+          isNull(mediaObjects.deletedAt)
         )
       )
-    );
+      .returning({ attendees: mediaObjects.attendees });
+    if (!updated) throw new AttendeeUpdateError("media_object_not_found");
+
+    // Same rule as clearPendingSpeakerSuggestions: pending rows and
+    // auto-applied names derived from the old attendee list go; mic-derived
+    // Me rows and user decisions stay.
+    await tx
+      .delete(speakerAssignments)
+      .where(
+        and(
+          eq(speakerAssignments.mediaObjectId, params.mediaObjectId),
+          or(
+            eq(speakerAssignments.isSuggestion, true),
+            and(
+              eq(speakerAssignments.autoApplied, true),
+              eq(speakerAssignments.suggestionConfidence, "remote_via_single_voice")
+            )
+          )
+        )
+      );
+    return updated;
+  });
 
   return Array.isArray(row.attendees)
     ? row.attendees.filter((item): item is string => typeof item === "string")

@@ -164,8 +164,17 @@ describe("reconcileAssignments", () => {
     expect(p.reviewIds.sort()).toEqual(["A", "B"]);
   });
 
-  it("drops stale dismissals so the voice can be re-identified", () => {
-    const p = plan([row({ id: "dis", dismissedAt: liveAt })]);
-    expect(p.deleteIds).toEqual(["dis"]);
+  it("keeps a user's dismissal across transcript replacement, moving it with its live channel", () => {
+    // "Not Ian" on the live mic channel (0) → the batch mic voice is 1.
+    const moved = plan([row({ id: "dis", speakerIdx: 0, dismissedAt: liveAt })]);
+    expect(moved.deleteIds).toEqual([]);
+    expect(moved.remaps).toEqual([{ id: "dis", newIdx: 1 }]);
+    // A dismissal that can't be mapped stays put (never deleted).
+    const group = turns([[0, 40], [1, 40], [2, 40]]);
+    const groupProfile = computeSpeakerProfile({ words: wordsFor(group), provider: "deepgram", activity: framesForTurns(group, [2]) });
+    const kept = plan([row({ id: "dis", speakerIdx: 1, dismissedAt: liveAt })], groupProfile);
+    expect(kept.deleteIds).toEqual([]);
+    expect(kept.restampIds).toEqual(["dis"]);
+    expect(kept.reviewIds).toEqual([]);
   });
 });

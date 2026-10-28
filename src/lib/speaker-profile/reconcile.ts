@@ -16,8 +16,11 @@ import { meSpeakerIdxs, remoteSpeakerIdxs, type SpeakerProfile } from "./profile
  *  - Legacy rows (no version) count as current only when they were
  *    written after the current transcript.
  *  - Live → live (snapshot re-save): indices are still channels; restamp.
- *  - Stale pending suggestions, stale auto-applied rows, stale
- *    dismissals: deleted — the worker recomputes them.
+ *  - Stale pending suggestions and stale auto-applied rows: deleted —
+ *    the worker recomputes them.
+ *  - Stale dismissals ("Not <name>"): kept, moved by the capture-channel
+ *    rule when unambiguous. The worker won't auto-apply a kind of name
+ *    the user dismissed on this note.
  *  - Legacy pending rows are always deleted: they came from the v1
  *    positional / talk-time rules, which this version retires.
  *  - Stale USER decisions are never deleted or rewritten without
@@ -71,6 +74,7 @@ export function reconcileAssignments(args: {
 
   const proposedRemaps: Array<{ id: string; newIdx: number }> = [];
   const keptIdxs = new Set<number>();
+  const dismissalIds = new Set<string>();
 
   for (const row of args.rows) {
     if (row.transcriptVersion === args.currentVersion) {
@@ -95,6 +99,27 @@ export function reconcileAssignments(args: {
     if (oldIsLive && currentIsLive) {
       plan.restampIds.push(row.id);
       keptIdxs.add(row.speakerIdx);
+      continue;
+    }
+    if (row.dismissedAt !== null) {
+      // "Not <name>" is a user decision too. Carry it onto the voice its
+      // live capture channel became when exactly one qualifies; otherwise
+      // keep it where it is. Never delete it: the worker reads dismissals
+      // to stop re-applying that kind of name without a click.
+      const target = oldIsLive
+        ? row.speakerIdx === 0 && me.length === 1
+          ? me[0]
+          : row.speakerIdx === 1 && remote.length === 1
+            ? remote[0]
+            : null
+        : null;
+      if (target !== null && target !== row.speakerIdx) {
+        dismissalIds.add(row.id);
+        proposedRemaps.push({ id: row.id, newIdx: target });
+      } else {
+        plan.restampIds.push(row.id);
+        keptIdxs.add(row.speakerIdx);
+      }
       continue;
     }
     if (!userDecision) {
@@ -143,7 +168,9 @@ export function reconcileAssignments(args: {
     );
     if (rejected.length === 0) break;
     for (const r of rejected) {
-      plan.reviewIds.push(r.id);
+      // A dismissal that can't move just stays put; a name needs review.
+      if (dismissalIds.has(r.id)) plan.restampIds.push(r.id);
+      else plan.reviewIds.push(r.id);
       occupied.add(originalIdx.get(r.id)!);
     }
     candidates = candidates.filter((r) => !rejected.includes(r));

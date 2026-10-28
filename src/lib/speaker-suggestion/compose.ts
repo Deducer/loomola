@@ -65,6 +65,8 @@ export function composeSpeakerSuggestions(args: {
   selfPersonId: string | null;
   skipIdxs?: ReadonlySet<number>;
   takenPersonIds?: ReadonlySet<string>;
+  /** Derivations of names the user dismissed on this note. */
+  dismissedDerivations?: ReadonlySet<string>;
 }): SpeakerSuggestion[] {
   const { profile, people, selfPersonId } = args;
   if (!selfPersonId) return [];
@@ -72,6 +74,11 @@ export function composeSpeakerSuggestions(args: {
   const taken = args.takenPersonIds ?? new Set<string>();
   const attendees = args.attendees.filter((a) => a.personId !== selfPersonId);
   const result: SpeakerSuggestion[] = [];
+  const dismissed = args.dismissedDerivations ?? new Set<string>();
+  // The user said "Not <name>" to an automatic Me / remote name on this
+  // note: keep offering the evidence, but never re-apply it without a click.
+  const selfDismissed = [...dismissed].some((d) => d.startsWith("self_via_"));
+  const remoteDismissed = dismissed.has("remote_via_single_voice");
 
   // One mic-dominant voice is the recorder. Two are either the recorder
   // split by diarization or two people on one microphone; loudness can't
@@ -92,7 +99,7 @@ export function composeSpeakerSuggestions(args: {
           : sharedMic
             ? "self_via_mic_capture_shared"
             : "self_via_mic_capture",
-      autoApply: !sharedMic,
+      autoApply: !sharedMic && !selfDismissed,
       ...(sharedMic ? { needsReview: true } : {}),
     });
   }
@@ -101,7 +108,14 @@ export function composeSpeakerSuggestions(args: {
   if (me.length > 0 && remote.length === 1 && attendees.length === 1 && !skip.has(remote[0])) {
     const s = suggestionForAttendee({ speakerIdx: remote[0], attendee: attendees[0], people });
     if (!s.personId || !taken.has(s.personId)) {
-      result.push({ ...s, reason: "remote_via_single_voice", autoApply: s.personId !== null });
+      // On a LIVE transcript the remote "voice" is the whole system-audio
+      // channel; an uninvited extra participant would be inside it, so the
+      // live name stays a suggestion (the batch transcript decides).
+      result.push({
+        ...s,
+        reason: "remote_via_single_voice",
+        autoApply: s.personId !== null && !remoteDismissed && profile.status !== "live_channels",
+      });
     }
   }
 

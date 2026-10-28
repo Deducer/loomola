@@ -18,8 +18,15 @@ struct MicRestartGapTracker {
     private var pausedTotalAtLastBuffer: TimeInterval = 0
     private(set) var gapStartUptime: TimeInterval?
     private var pausedTotalAtGapStart: TimeInterval = 0
+    /// Which engine's tap the tracker listens to. A callback still in
+    /// flight from the engine being torn down must neither close the gap
+    /// (the new engine's audio would then get no silence) nor count as the
+    /// last buffer.
+    private(set) var activeEpoch = 0
 
     var isOpen: Bool { gapStartUptime != nil }
+
+    func isCurrent(epoch: Int) -> Bool { epoch == activeEpoch }
 
     /// Every delivered (unpaused) buffer: when its audio ended, and the
     /// paused total at that moment.
@@ -28,10 +35,12 @@ struct MicRestartGapTracker {
         pausedTotalAtLastBuffer = pausedTotal
     }
 
-    /// The engine is being torn down for a restart. The gap starts where
-    /// the last audio ended; a retried restart keeps the original start.
-    /// No-op before any audio (nothing to align yet).
-    mutating func open() {
+    /// The old engine has been torn down and `nextEpoch`'s is about to
+    /// start. The gap starts where the last audio ended; a retried restart
+    /// keeps the original start. No gap before any audio (nothing to align
+    /// yet).
+    mutating func open(nextEpoch: Int) {
+        activeEpoch = nextEpoch
         guard gapStartUptime == nil, let lastBufferUptime else { return }
         gapStartUptime = lastBufferUptime
         pausedTotalAtGapStart = pausedTotalAtLastBuffer

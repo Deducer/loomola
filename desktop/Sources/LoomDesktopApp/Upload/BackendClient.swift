@@ -182,10 +182,19 @@ actor BackendClient {
         try await get(path: "/api/recordings/\(recordingId)/attendees")
     }
 
-    func assignSpeaker(mediaId: String, speakerIdx: Int, personId: String) async throws {
+    func assignSpeaker(
+        mediaId: String,
+        speakerIdx: Int,
+        personId: String,
+        transcriptVersion: String? = nil
+    ) async throws {
         let _: EmptyResponse = try await put(
             path: "/api/speaker-assignments/\(mediaId)",
-            body: AssignSpeakerRequest(speakerIdx: speakerIdx, personId: personId)
+            body: AssignSpeakerRequest(
+                speakerIdx: speakerIdx,
+                personId: personId,
+                transcriptVersion: transcriptVersion
+            )
         )
     }
 
@@ -1047,6 +1056,7 @@ struct SpeakerAssignmentDTO: Decodable, Equatable, Sendable {
 private struct AssignSpeakerRequest: Encodable {
     let speakerIdx: Int
     let personId: String
+    let transcriptVersion: String?
 }
 
 private struct SpeakerSuggestionAcceptRequest: Encodable {
@@ -1170,6 +1180,10 @@ struct NoteTranscriptResponse: Decodable, Sendable {
     let fullText: String
     let language: String?
     let provider: String?
+    /// Speaker v2: echoed on label writes so a label made on a transcript
+    /// the server has since replaced is refused (409). Optional for older
+    /// servers.
+    var transcriptVersion: String?
     let paragraphs: [Paragraph]
 
     var wordCount: Int {
