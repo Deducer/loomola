@@ -60,6 +60,18 @@ export function transcriptVersionOf(provider: string, createdAt: Date): string {
 
 const LIVE_PREFIX = "deepgram-live:";
 
+/** Does this row's speaker_idx refer to the CURRENT transcript's voices?
+ *  Rows stamped with another version — and legacy unversioned rows
+ *  written before the current transcript — don't, until reconciled. */
+export function isRowOnTranscript(
+  row: { transcriptVersion: string | null; suggestedAt: Date | null; createdAt: Date },
+  currentVersion: string,
+  currentTranscriptCreatedAt: Date
+): boolean {
+  if (row.transcriptVersion !== null) return row.transcriptVersion === currentVersion;
+  return (row.suggestedAt ?? row.createdAt) >= currentTranscriptCreatedAt;
+}
+
 export function reconcileAssignments(args: {
   rows: ReadonlyArray<ReconcileRow>;
   currentVersion: string;

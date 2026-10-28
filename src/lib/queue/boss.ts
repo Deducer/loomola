@@ -313,7 +313,7 @@ async function init(): Promise<PgBoss> {
   if (granolaEnabled) {
     await boss.work<MixAudioJobData>(MIX_AUDIO_JOB, WORKER_OPTIONS, async (jobs) => {
       for (const job of jobs) {
-        const { mixedKey } = await runMixAudioJob(job.data);
+        const { mixedKey } = await runMixAudioJob(job.data, { signal: job.signal });
         // Mono mix + free diarization instead of the old stereo
         // (mic-L/system-R) multichannel submit, which Deepgram billed as
         // 2x minutes. Matches what the retry path already transcribes.

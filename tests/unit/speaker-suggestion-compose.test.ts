@@ -178,6 +178,36 @@ describe("composeSpeakerSuggestions (v2 evidence ladder)", () => {
     expect(group.map((s) => s.speakerIdx)).toEqual([0]);
   });
 
+  it("offers a merged recorder+remote voice as an uncertain 'Me?' and names no remote voice", () => {
+    const words = wordsFor([
+      { speaker: 0, from: 0, to: 45 },
+      { speaker: 0, from: 45, to: 100 },
+      { speaker: 1, from: 100, to: 160 },
+    ]);
+    const profile = computeSpeakerProfile({
+      words,
+      provider: "deepgram",
+      activity: framesForTurns([{ speaker: 0, from: 0, to: 45 }, { speaker: 1, from: 45, to: 160 }], [0]),
+    });
+    const r = composeSpeakerSuggestions({ words, profile, attendees: sarah, people: [SELF, SARAH], selfPersonId: SELF.id });
+    expect(r).toEqual([
+      expect.objectContaining({ speakerIdx: 0, personId: SELF.id, autoApply: false, needsReview: true, reason: "self_via_mic_capture_merged" }),
+    ]);
+  });
+
+  it("no talk-time fallback when the note has one of its two tracks", () => {
+    const t = turns([[0, 90], [1, 20]]);
+    const words = wordsFor(t);
+    const r = composeSpeakerSuggestions({
+      words,
+      profile: computeSpeakerProfile({ words, provider: "deepgram", activity: null, tracks: "partial" }),
+      attendees: sarah,
+      people: [SELF, SARAH],
+      selfPersonId: SELF.id,
+    });
+    expect(r).toEqual([]);
+  });
+
   it("never re-applies a kind of name the user dismissed on this note — it becomes a suggestion", () => {
     const r = composeSpeakerSuggestions({
       ...batch(turns([[0, 80], [1, 20], [0, 60], [1, 15]]), [1]),

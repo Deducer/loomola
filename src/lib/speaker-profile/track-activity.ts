@@ -108,8 +108,8 @@ export async function uploadActivity(key: string, frames: ActivityFrames): Promi
 
 /** Null when the object is missing or not a valid activity file; a
  *  network/storage error throws (the caller's job retries). */
-export async function loadActivity(key: string): Promise<ActivityFrames | null> {
-  const res = await fetch(await presignGet(key));
+export async function loadActivity(key: string, signal?: AbortSignal): Promise<ActivityFrames | null> {
+  const res = await fetch(await presignGet(key), { signal });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`activity.bin fetch failed: HTTP ${res.status}`);
   return decodeActivity(new Uint8Array(await res.arrayBuffer()));

@@ -10,6 +10,7 @@ import {
 } from "@/db/queries/speaker-suggestion";
 import {
   composeSpeakerSuggestions,
+  dismissedDerivationsOf,
   type SpeakerSuggestion,
 } from "@/lib/speaker-suggestion/compose";
 import {
@@ -94,7 +95,9 @@ export async function runSuggestSpeakersJob(
   // guessing on exactly the notes where the mic would have answered.
   const activity =
     transcriptProvider === "deepgram-live" ? null : await activityFor(mediaObjectId, note, opts.signal);
-  const profile = computeSpeakerProfile({ words: note.words, provider: transcriptProvider, activity });
+  const tracks =
+    note.r2MicKey && note.r2SystemaudioKey ? "both" : note.r2MicKey || note.r2SystemaudioKey ? "partial" : "none";
+  const profile = computeSpeakerProfile({ words: note.words, provider: transcriptProvider, activity, tracks });
 
   const people = await getPeopleForSuggestion(note.ownerId);
   const selfPerson = people.find((p) => p.isSelf) ?? null;
@@ -128,7 +131,7 @@ export async function runSuggestSpeakersJob(
           selfPersonId: selfPerson.id,
           skipIdxs: decided.idxs,
           takenPersonIds: decided.personIds,
-          dismissedDerivations: dismissedDerivations(locked),
+          dismissedDerivations: dismissedDerivationsOf(locked),
         })
       : [];
     await persistSpeakerSuggestions(tx, { mediaObjectId, transcriptVersion: version, suggestions });
@@ -200,16 +203,6 @@ export async function runSuggestSpeakersJob(
   );
 }
 
-/** Derivations of names the user dismissed on this note ("Not <name>").
- *  A dismissal survives transcript replacement even when its voice can't
- *  be mapped, and it stops that kind of name being re-applied without a
- *  click. */
-function dismissedDerivations(rows: ReadonlyArray<{ dismissedAt: Date | null; suggestionConfidence: string | null }>): Set<string> {
-  return new Set(
-    rows.filter((r) => r.dismissedAt !== null && r.suggestionConfidence).map((r) => r.suggestionConfidence as string)
-  );
-}
-
 function decidedState(rows: ReadonlyArray<{ speakerIdx: number; personId: string | null; dismissedAt: Date | null }>) {
   return {
     idxs: new Set(rows.map((r) => r.speakerIdx)),
@@ -236,7 +229,7 @@ async function activityFor(
   signal: AbortSignal | undefined
 ): Promise<ActivityFrames | null> {
   if (note.r2ActivityKey) {
-    const frames = await loadActivity(note.r2ActivityKey);
+    const frames = await loadActivity(note.r2ActivityKey, signal);
     if (frames) return frames;
   }
   if (!note.r2MicKey || !note.r2SystemaudioKey) return null;

@@ -31,7 +31,10 @@ export type MixAudioJobData = {
 // billed minutes, and diarization (free) on the mono mix separates
 // multi-party meetings better than the binary mic/system split. It also
 // duplicated a full-length audio file per note in R2.
-export async function runMixAudioJob(data: MixAudioJobData): Promise<{
+export async function runMixAudioJob(
+  data: MixAudioJobData,
+  opts: { signal?: AbortSignal } = {}
+): Promise<{
   mixedKey: string;
 }> {
   const micUrl = await presignGet(data.micKey);
@@ -41,7 +44,7 @@ export async function runMixAudioJob(data: MixAudioJobData): Promise<{
   const mixedKey = mixedAudioKeyForTrack(data.micKey);
 
   try {
-    const frames = await ffmpegMixToMono({ micUrl, systemUrl, outputPath });
+    const frames = await ffmpegMixToMono({ micUrl, systemUrl, outputPath, signal: opts.signal });
     await uploadFile(mixedKey, outputPath, "audio/mp4");
 
     await db
@@ -133,10 +136,12 @@ function ffmpegMixToMono(params: {
   micUrl: string;
   systemUrl: string;
   outputPath: string;
+  signal?: AbortSignal;
 }): Promise<ActivityFrames> {
   return runFfmpegWithActivity({
     args: ffmpegMixArgs(params),
     timeoutMs: MIX_TIMEOUT_MS,
+    signal: params.signal,
     label: "audio mix",
   });
 }

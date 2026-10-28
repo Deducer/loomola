@@ -8,6 +8,7 @@ const bodySchema = z
   .object({
     speakerIdx: z.number().int().min(0),
     personId: z.string().uuid().optional(),
+    transcriptVersion: z.string().max(120).nullable().optional(),
     createPerson: z
       .object({
         displayName: z.string().min(1).max(120),
@@ -64,8 +65,14 @@ export async function POST(
     speakerIdx: parsed.data.speakerIdx,
     personId,
     displayLabelOverride,
+    transcriptVersion: parsed.data.transcriptVersion ?? null,
   });
 
+  if (!result.ok && result.reason === "transcript_changed") {
+    // The suggestion (or the screen) is for a transcript that has since
+    // been replaced; voice indices may mean someone else now.
+    return NextResponse.json({ error: "transcript_changed" }, { status: 409 });
+  }
   if (!result.ok) {
     // No pending is_suggestion row for that (recording, speakerIdx).
     return NextResponse.json(

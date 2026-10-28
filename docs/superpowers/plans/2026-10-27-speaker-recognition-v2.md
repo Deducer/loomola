@@ -33,6 +33,15 @@
 - Dismissals are kept across transcript replacement and suppress auto-apply of that kind of name.
 - A live system-channel name is a suggestion only.
 - Desktop: per-engine epochs, and the old tap is quiesced before the gap opens.
+
+**Third review pass (2026-10-27):**
+- Every user speaker mutation runs under the worker's note lock and is version-checked.
+- Reads hide or mark rows that belong to an older transcript.
+- Merged recorder+remote voices become uncertain suggestions.
+- A partial track pair counts as `mic_unusable`.
+- `--verify` covers every selected note and fails on analysis errors.
+- The dry run shares the worker's dismissal logic.
+- The activity fetch and the mix honour the job's abort signal.
 **Style:** TDD. Pure logic first, under `src/lib/speaker-profile/` and `src/lib/speaker-suggestion/`, then wiring, then UI. Each phase ships on its own and is scored with the same offline eval script.
 
 ## Phases at a glance (ordered by impact ÷ effort)

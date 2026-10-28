@@ -199,11 +199,16 @@ export function TranscriptPanel({
         {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify(body),
+          body: JSON.stringify({ ...body, transcriptVersion: transcriptVersion ?? null }),
         }
       );
       if (!response.ok) {
         if (response.status === 409) {
+          const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+          if (payload?.error === "transcript_changed") {
+            toast.error("The transcript was just updated — reload the page to label speakers.");
+            return;
+          }
           // Already cleared by another tab — silent.
           onSpeakerAssignmentsChange?.(
             speakerAssignments.filter(
@@ -246,9 +251,13 @@ export function TranscriptPanel({
         {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ speakerIdx }),
+          body: JSON.stringify({ speakerIdx, transcriptVersion: transcriptVersion ?? null }),
         }
       );
+      if (response.status === 409) {
+        toast.error("The transcript was just updated — reload the page to label speakers.");
+        return;
+      }
       if (!response.ok) throw new Error(`dismiss_failed_${response.status}`);
       onSpeakerAssignmentsChange?.(
         speakerAssignments.filter((item) => item.speakerIdx !== speakerIdx)

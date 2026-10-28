@@ -13,7 +13,9 @@ import type { ActivityFrames } from "./activity";
  * other voice 0–13% (one outlier at 17%).
  */
 
-export type SpeakerSource = "mic" | "system" | "mixed" | "unknown";
+/** "merged": mic-dominant speech AND substantial system audio in one
+ *  diarized voice — the recorder and a remote speaker merged together. */
+export type SpeakerSource = "mic" | "system" | "mixed" | "merged" | "unknown";
 
 /**
  * - live_channels: a live transcript — indices ARE capture channels
@@ -25,7 +27,9 @@ export type SpeakerSource = "mic" | "system" | "mixed" | "unknown";
  *   the mic, so the mic can't single out the recorder.
  * - ambiguous: more than two mic-dominant voices (someone else in the
  *   room with the recorder).
- * - no_tracks: no activity frames (web recordings, imports).
+ * - no_tracks: the note has no capture tracks at all (web recordings,
+ *   imports) — the only case where talk-time guessing is allowed.
+ * A note with only ONE of the two tracks is mic_unusable, not no_tracks.
  */
 export type CaptureStatus =
   | "live_channels"
@@ -62,6 +66,9 @@ const MIC_ONLY_STRONG = 0.4;
 const MIC_ONLY_WEAK = 0.15;
 const OTHERS_MAX_FOR_WEAK = 0.03;
 const SYSTEM_DOMINANT = 0.7;
+/** The recorder's own voice sat at 2–14% system activity across the
+ *  50-note probe; more than this means remote speech is in the cluster. */
+const MIC_VOICE_SYSTEM_MAX = 0.25;
 const IN_PERSON_SYSTEM_MAX = 0.1;
 
 function percentile(values: number[], q: number): number {
@@ -78,6 +85,9 @@ export function computeSpeakerProfile(args: {
   words: ReadonlyArray<WordTimestamp>;
   provider: string | null;
   activity: ActivityFrames | null;
+  /** Whether the note has its capture tracks. Defaults to "both" when
+   *  activity is given, "none" otherwise. */
+  tracks?: "both" | "partial" | "none";
 }): SpeakerProfile {
   const speech = new Map<number, number>();
   for (const w of args.words) {
@@ -111,10 +121,13 @@ export function computeSpeakerProfile(args: {
   }
 
   const activity = args.activity;
+  const tracks = args.tracks ?? (activity ? "both" : "none");
   if (!activity || activity.system.length === 0) {
     return {
       version: 1,
-      status: "no_tracks",
+      // One track present (or frames unreadable) is NOT "no tracks": the
+      // mic would have answered, so no talk-time fallback either.
+      status: tracks === "none" && !activity ? "no_tracks" : "mic_unusable",
       micCoverage: null,
       entries: base.map((e) => ({ ...e, source: "unknown", micOnlyShare: null, systemShare: null })),
     };
@@ -164,10 +177,13 @@ export function computeSpeakerProfile(args: {
   }
 
   const participants = measured.filter((e) => !e.fragment);
-  const strong = new Set(
+  // Mic-dominant voices; those that ALSO carry substantial system audio
+  // are the recorder merged with a remote speaker by diarization, and
+  // can't be named "Me" (or "them") on loudness alone.
+  const micDominant = new Set(
     participants.filter((e) => e.micOnlyShare >= MIC_ONLY_STRONG).map((e) => e.speakerIdx)
   );
-  if (strong.size === 0) {
+  if (micDominant.size === 0) {
     // Low-gain mic: one voice clearly ahead while every other voice is
     // essentially never mic-only.
     const ranked = [...participants].sort((a, b) => b.micOnlyShare - a.micOnlyShare);
@@ -177,17 +193,22 @@ export function computeSpeakerProfile(args: {
       top.micOnlyShare >= MIC_ONLY_WEAK &&
       ranked.slice(1).every((e) => e.micOnlyShare <= OTHERS_MAX_FOR_WEAK)
     ) {
-      strong.add(top.speakerIdx);
+      micDominant.add(top.speakerIdx);
     }
   }
+  const systemShareOf = new Map(measured.map((e) => [e.speakerIdx, e.systemShare]));
+  const strong = new Set([...micDominant].filter((i) => (systemShareOf.get(i) ?? 1) <= MIC_VOICE_SYSTEM_MAX));
+  const merged = new Set([...micDominant].filter((i) => !strong.has(i)));
 
   const entries: SpeakerProfileEntry[] = measured.map((e) => ({
     ...e,
     source: strong.has(e.speakerIdx)
       ? "mic"
-      : e.systemShare >= SYSTEM_DOMINANT
-        ? "system"
-        : "mixed",
+      : merged.has(e.speakerIdx)
+        ? "merged"
+        : e.systemShare >= SYSTEM_DOMINANT
+          ? "system"
+          : "mixed",
   }));
 
   const status: CaptureStatus =
@@ -209,10 +230,20 @@ export function meSpeakerIdxs(profile: SpeakerProfile): number[] {
 export function remoteSpeakerIdxs(profile: SpeakerProfile): number[] {
   const me = new Set(meSpeakerIdxs(profile));
   if (me.size === 0) return [];
+  // A voice holding both the recorder and a remote speaker means the
+  // remaining voices can't be trusted as "everyone else".
+  if (profile.entries.some((e) => !e.fragment && e.source === "merged")) return [];
   if (profile.status === "live_channels") {
     return profile.entries.some((e) => e.speakerIdx === 1 && e.speechSec > 0) ? [1] : [];
   }
   return profile.entries
     .filter((e) => !e.fragment && !me.has(e.speakerIdx))
     .map((e) => e.speakerIdx);
+}
+
+/** The single non-fragment voice that merges the recorder with a remote
+ *  speaker, when there is exactly one — offered for review, never named. */
+export function mergedMeSpeakerIdx(profile: SpeakerProfile): number | null {
+  const merged = profile.entries.filter((e) => !e.fragment && e.source === "merged");
+  return merged.length === 1 ? merged[0].speakerIdx : null;
 }

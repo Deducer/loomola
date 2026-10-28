@@ -2834,7 +2834,8 @@ struct NoteWorkspaceView: View {
                     try await backend.acceptSpeakerSuggestion(
                         recordingId: recording.id,
                         speakerIdx: suggestion.speakerIdx,
-                        personId: personId
+                        personId: personId,
+                        transcriptVersion: transcript?.transcriptVersion
                     )
                     applied += 1
                 } catch {
@@ -2885,7 +2886,11 @@ struct NoteWorkspaceView: View {
         speakerAssignments = speakerAssignments.filter { $0.speakerIdx != idx }
         Task { @MainActor in
             do {
-                try await backend.dismissSpeakerSuggestion(recordingId: recording.id, speakerIdx: idx)
+                try await backend.dismissSpeakerSuggestion(
+                    recordingId: recording.id,
+                    speakerIdx: idx,
+                    transcriptVersion: transcript?.transcriptVersion
+                )
             } catch {
                 speakerAssignments = previous
                 showToast(message: "Couldn't clear the name", tone: .error)
@@ -2904,7 +2909,8 @@ struct NoteWorkspaceView: View {
             for suggestion in pending {
                 try? await backend.dismissSpeakerSuggestion(
                     recordingId: recording.id,
-                    speakerIdx: suggestion.speakerIdx
+                    speakerIdx: suggestion.speakerIdx,
+                    transcriptVersion: transcript?.transcriptVersion
                 )
             }
         }

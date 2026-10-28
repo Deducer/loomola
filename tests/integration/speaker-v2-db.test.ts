@@ -44,6 +44,8 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
   let runSuggestSpeakersJob: typeof import("@/lib/queue/jobs/suggest-speakers").runSuggestSpeakersJob;
   let upsertSpeakerAssignment: typeof import("@/db/queries/speaker-assignments").upsertSpeakerAssignment;
   let updateAudioNoteAttendees: typeof import("@/db/queries/notes").updateAudioNoteAttendees;
+  let listSpeakerAssignments: typeof import("@/db/queries/speaker-assignments").listSpeakerAssignments;
+  let applySpeakerSuggestion: typeof import("@/db/queries/speaker-suggestion").applySpeakerSuggestion;
 
   // Sarah talks first and most; Ian (mic) is diarized as voice 1.
   const call = turns([[0, 60], [1, 30], [0, 50], [1, 20]]);
@@ -74,7 +76,8 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
     `);
     user = postgres(scoped, { onnotice: () => {} });
     ({ runSuggestSpeakersJob } = await import("@/lib/queue/jobs/suggest-speakers"));
-    ({ upsertSpeakerAssignment } = await import("@/db/queries/speaker-assignments"));
+    ({ upsertSpeakerAssignment, listSpeakerAssignments } = await import("@/db/queries/speaker-assignments"));
+    ({ applySpeakerSuggestion } = await import("@/db/queries/speaker-suggestion"));
     ({ updateAudioNoteAttendees } = await import("@/db/queries/notes"));
   });
 
@@ -191,5 +194,55 @@ describe.skipIf(!url)("suggest_speakers write path against Postgres", () => {
     } finally {
       await admin.unsafe(`SET search_path = ${SCHEMA}; DROP TRIGGER fail_insert ON speaker_assignments; DROP FUNCTION fail_insert();`);
     }
+  });
+
+  const currentVersion = async () => {
+    const [t] = await user<{ provider: string; created_at: Date }[]>`
+      SELECT provider, created_at FROM transcripts WHERE media_object_id = ${MEDIA}`;
+    return `${t.provider}:${t.created_at.toISOString()}`;
+  };
+
+  it("serializes a user's label with a worker holding the note lock (P1: user write race)", async () => {
+    const shown = await currentVersion();
+    await user`INSERT INTO speaker_assignments (media_object_id, speaker_idx, person_id, transcript_version)
+      VALUES (${MEDIA}, 0, ${SARAH}, ${shown})`;
+    // A worker holds the note lock: it moves Sarah 0→1 and the transcript
+    // is replaced under it.
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const worker = user.begin(async (tx) => {
+      await tx`SELECT id FROM media_objects WHERE id = ${MEDIA} FOR UPDATE`;
+      await tx`UPDATE speaker_assignments SET speaker_idx = 1 WHERE media_object_id = ${MEDIA}`;
+      await tx`DELETE FROM transcripts WHERE media_object_id = ${MEDIA}`;
+      await tx`INSERT INTO transcripts (media_object_id, provider, word_timestamps, created_at)
+        VALUES (${MEDIA}, 'deepgram', ${tx.json(wordsFor(call))}, now() + interval '1 minute')`;
+      await held;
+    });
+    await new Promise((r) => setTimeout(r, 100));
+    // The user labels voice 0 from the screen they still have open.
+    const write = upsertSpeakerAssignment({
+      mediaObjectId: MEDIA, ownerId: OWNER, speakerIdx: 0, personId: IAN, transcriptVersion: shown,
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    release();
+    await worker;
+    await expect(write).rejects.toThrow("transcript_changed");
+    expect((await rows()).map((r) => [r.speaker_idx, r.person_id])).toEqual([[1, SARAH]]);
+  });
+
+  it("shows names from an older transcript as uncertain and hides stale suggestions (P1: stale reads)", async () => {
+    await user`INSERT INTO speaker_assignments (media_object_id, speaker_idx, person_id, is_suggestion, transcript_version)
+      VALUES (${MEDIA}, 0, ${SARAH}, false, 'deepgram-live:2026-10-27T21:45:00.000Z'),
+             (${MEDIA}, 1, ${IAN}, true, 'deepgram-live:2026-10-27T21:45:00.000Z')`;
+    const shown = await listSpeakerAssignments(MEDIA, OWNER);
+    expect(shown.map((r) => [r.speakerIdx, r.personId, r.needsReview])).toEqual([[0, SARAH, true]]);
+  });
+
+  it("refuses to accept a suggestion computed on an older transcript (P1: stale accept)", async () => {
+    await user`INSERT INTO speaker_assignments (media_object_id, speaker_idx, person_id, is_suggestion, suggested_at, created_at)
+      VALUES (${MEDIA}, 1, ${IAN}, true, now() - interval '1 hour', now() - interval '1 hour')`;
+    const result = await applySpeakerSuggestion({ mediaObjectId: MEDIA, ownerId: OWNER, speakerIdx: 1, personId: IAN });
+    expect(result).toEqual({ ok: false, reason: "transcript_changed" });
+    expect((await rows())[0].is_suggestion).toBe(true);
   });
 });

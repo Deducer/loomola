@@ -198,17 +198,32 @@ actor BackendClient {
         )
     }
 
-    func acceptSpeakerSuggestion(recordingId: String, speakerIdx: Int, personId: String) async throws {
+    /// `transcriptVersion`: the transcript on screen (409 when the server
+    /// has replaced it since — voice indices may mean someone else).
+    func acceptSpeakerSuggestion(
+        recordingId: String,
+        speakerIdx: Int,
+        personId: String,
+        transcriptVersion: String? = nil
+    ) async throws {
         let _: EmptyResponse = try await post(
             path: "/api/recordings/\(recordingId)/speaker-suggestions/accept",
-            body: SpeakerSuggestionAcceptRequest(speakerIdx: speakerIdx, personId: personId)
+            body: SpeakerSuggestionAcceptRequest(
+                speakerIdx: speakerIdx,
+                personId: personId,
+                transcriptVersion: transcriptVersion
+            )
         )
     }
 
-    func dismissSpeakerSuggestion(recordingId: String, speakerIdx: Int) async throws {
+    func dismissSpeakerSuggestion(
+        recordingId: String,
+        speakerIdx: Int,
+        transcriptVersion: String? = nil
+    ) async throws {
         let _: EmptyResponse = try await post(
             path: "/api/recordings/\(recordingId)/speaker-suggestions/dismiss",
-            body: SpeakerSuggestionDismissRequest(speakerIdx: speakerIdx)
+            body: SpeakerSuggestionDismissRequest(speakerIdx: speakerIdx, transcriptVersion: transcriptVersion)
         )
     }
 
@@ -1062,10 +1077,12 @@ private struct AssignSpeakerRequest: Encodable {
 private struct SpeakerSuggestionAcceptRequest: Encodable {
     let speakerIdx: Int
     let personId: String
+    let transcriptVersion: String?
 }
 
 private struct SpeakerSuggestionDismissRequest: Encodable {
     let speakerIdx: Int
+    let transcriptVersion: String?
 }
 
 struct RecentAttendeeDTO: Decodable, Equatable, Sendable, Identifiable {

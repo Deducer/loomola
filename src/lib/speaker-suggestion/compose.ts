@@ -8,6 +8,7 @@ import {
 } from "./match-person";
 import {
   meSpeakerIdxs,
+  mergedMeSpeakerIdx,
   remoteSpeakerIdxs,
   type SpeakerProfile,
 } from "@/lib/speaker-profile/profile";
@@ -104,6 +105,20 @@ export function composeSpeakerSuggestions(args: {
     });
   }
 
+  // Diarization merged the recorder with someone else into one voice:
+  // offer "Me?" for the user to check; never apply it.
+  const mergedIdx = me.length === 0 ? mergedMeSpeakerIdx(profile) : null;
+  if (mergedIdx !== null && !skip.has(mergedIdx) && !taken.has(selfPersonId)) {
+    result.push({
+      speakerIdx: mergedIdx,
+      personId: selfPersonId,
+      confidence: "medium",
+      reason: "self_via_mic_capture_merged",
+      autoApply: false,
+      needsReview: true,
+    });
+  }
+
   const remote = remoteSpeakerIdxs(profile);
   if (me.length > 0 && remote.length === 1 && attendees.length === 1 && !skip.has(remote[0])) {
     const s = suggestionForAttendee({ speakerIdx: remote[0], attendee: attendees[0], people });
@@ -163,4 +178,18 @@ function suggestionForAttendee(args: {
     confidence: matched.confidence,
     reason: matched.reason,
   };
+}
+
+/** Derivations of names the user dismissed on this note ("Not <name>").
+ *  A dismissal survives transcript replacement even when its voice can't
+ *  be mapped, and stops that kind of name being re-applied without a
+ *  click. Shared by the worker and the backfill dry run. */
+export function dismissedDerivationsOf(
+  rows: ReadonlyArray<{ dismissedAt: Date | null; suggestionConfidence: string | null }>
+): Set<string> {
+  return new Set(
+    rows
+      .filter((r) => r.dismissedAt !== null && r.suggestionConfidence)
+      .map((r) => r.suggestionConfidence as string)
+  );
 }

@@ -26,7 +26,7 @@
 import postgres from "postgres";
 import { computeSpeakerProfile, meSpeakerIdxs, type SpeakerProfile } from "../src/lib/speaker-profile/profile";
 import { reconcileAssignments, transcriptVersionOf, type ReconcileRow } from "../src/lib/speaker-profile/reconcile";
-import { composeSpeakerSuggestions } from "../src/lib/speaker-suggestion/compose";
+import { composeSpeakerSuggestions, dismissedDerivationsOf } from "../src/lib/speaker-suggestion/compose";
 import { parseAttendees } from "../src/lib/speaker-suggestion/parse-attendees";
 import type { ActivityFrames } from "../src/lib/speaker-profile/activity";
 import type { WordTimestamp } from "../src/db/queries/transcripts";
@@ -113,7 +113,8 @@ async function analyze(n: NoteRow, people: Map<string, Person[]>): Promise<Outco
   try {
     const { frames: activity, decoded } =
       n.provider === "deepgram-live" ? { frames: null, decoded: false } : await activityFor(n);
-    const profile = computeSpeakerProfile({ words: n.words, provider: n.provider, activity });
+    const tracks = n.r2_mic_key && n.r2_systemaudio_key ? "both" : n.r2_mic_key || n.r2_systemaudio_key ? "partial" : "none";
+    const profile = computeSpeakerProfile({ words: n.words, provider: n.provider, activity, tracks });
     const ownerPeople = people.get(n.owner_id) ?? [];
     const self = ownerPeople.find((p) => p.isSelf) ?? null;
     // Before migration 0034 is applied the v2 columns don't exist yet;
@@ -170,6 +171,9 @@ async function analyze(n: NoteRow, people: Map<string, Person[]>): Promise<Outco
           selfPersonId: self.id,
           skipIdxs: new Set(surviving.map((r) => r.speakerIdx)),
           takenPersonIds: new Set(surviving.filter((r) => r.personId && !r.dismissedAt).map((r) => r.personId as string)),
+          dismissedDerivations: dismissedDerivationsOf(
+            surviving.map((r) => ({ dismissedAt: r.dismissedAt, suggestionConfidence: r.derivation }))
+          ),
         })
       : [];
     const covered = new Set([...surviving.map((r) => r.speakerIdx), ...suggestions.map((s) => s.speakerIdx)]);
@@ -337,9 +341,18 @@ async function main() {
   const mode = execute ? "EXECUTE" : verify ? "VERIFY" : "DRY RUN (read-only)";
   const outcomes = await score(notes, people, `speaker-v2 backfill ${mode} since ${onlyId ? "(single id)" : since}${limit ? ` (limit ${limit})` : ""}`);
 
-  let toVerify: string[] = [];
+  // Every selected note is verified, not just ones with a pending job: a
+  // job that already failed, or a note never enqueued, is still not done.
+  const toVerify = notes.map((n) => n.id);
+  const analysisErrors = outcomes.filter((o) => o.error).length;
+  if (analysisErrors > 0) {
+    console.error(`${analysisErrors} note(s) could not be analysed (see ERROR lines above)`);
+    process.exitCode = 1;
+  }
   if (execute) {
-    const todo = outcomes.filter((o) => !o.alreadyCurrent && !o.error);
+    // Notes the dry run couldn't analyse are still enqueued: the worker
+    // retries the decode itself, and --verify reports whether it worked.
+    const todo = outcomes.filter((o) => !o.alreadyCurrent);
     const { PgBoss } = await import("pg-boss");
     const boss = new PgBoss({ connectionString: process.env.DATABASE_URL! });
     boss.on("error", (err: unknown) => console.error("[pg-boss]", err));
@@ -362,11 +375,8 @@ async function main() {
         });
         console.log(`enqueued ${o.id}`);
       }
-      toVerify.push(o.id);
     }
     await boss.stop();
-  } else if (verify) {
-    toVerify = [...(await pendingJobMediaIds(notes.map((n) => n.id)))];
   }
 
   if (verify && toVerify.length > 0) {

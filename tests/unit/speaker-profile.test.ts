@@ -125,6 +125,28 @@ describe("computeSpeakerProfile", () => {
     expect(meSpeakerIdxs(profile)).toEqual([0]);
   });
 
+  it("never calls a voice that merges the recorder with a remote speaker 'Me' (45 s local + 55 s remote)", () => {
+    // Diarization put Ian (mic, 0–45 s) and a remote speaker (system,
+    // 45–100 s) into ONE voice 0; voice 1 is another remote speaker.
+    const words = wordsFor([
+      { speaker: 0, from: 0, to: 45 },
+      { speaker: 0, from: 45, to: 100 },
+      { speaker: 1, from: 100, to: 160 },
+    ]);
+    const activity = framesFor({ durationSec: 160, micOn: [[0, 45]], systemOn: [[45, 160]] });
+    const profile = computeSpeakerProfile({ words, provider: "deepgram", activity });
+    const v0 = profile.entries.find((e) => e.speakerIdx === 0)!;
+    expect(v0.micOnlyShare).toBeGreaterThan(0.4);
+    expect(v0.source).toBe("merged");
+    expect(meSpeakerIdxs(profile)).toEqual([]);
+    expect(remoteSpeakerIdxs(profile)).toEqual([]);
+  });
+
+  it("treats a note with only one capture track as mic_unusable, never no_tracks", () => {
+    const profile = computeSpeakerProfile({ words: wordsFor(call), provider: "deepgram", activity: null, tracks: "partial" });
+    expect(profile.status).toBe("mic_unusable");
+  });
+
   it("uses capture channels as-is for live transcripts", () => {
     const live = turns([[0, 10], [1, 60]]);
     const profile = computeSpeakerProfile({ words: wordsFor(live), provider: "deepgram-live", activity: null });

@@ -10,7 +10,8 @@ import type { WordTimestamp } from "@/db/queries/transcripts";
 import type { PersonCandidate } from "@/lib/speaker-suggestion/match-person";
 import type { SpeakerSuggestion } from "@/lib/speaker-suggestion/compose";
 import type { SpeakerProfile } from "@/lib/speaker-profile/profile";
-import type { ReconcilePlan, ReconcileRow } from "@/lib/speaker-profile/reconcile";
+import { isRowOnTranscript, type ReconcilePlan, type ReconcileRow } from "@/lib/speaker-profile/reconcile";
+import { withUserSpeakerLock } from "@/db/queries/speaker-assignments";
 
 export interface NoteForSpeakerSuggestion {
   ownerId: string;
@@ -292,73 +293,127 @@ export async function clearPendingSpeakerSuggestions(
 
 /** Used by the API to apply an accepted suggestion: flip is_suggestion
  *  to false, optionally set person_id (when accepting a "create new
- *  person" suggestion the API does the INSERT into people first). */
+ *  person" suggestion the API does the INSERT into people first). Runs
+ *  under the same note lock as the worker; a suggestion that belongs to
+ *  an older transcript (reconcile pending) can't be accepted — its index
+ *  may mean someone else now. */
 export async function applySpeakerSuggestion(args: {
   mediaObjectId: string;
   ownerId: string;
   speakerIdx: number;
   personId: string;
   displayLabelOverride?: string | null;
-}): Promise<{ ok: boolean }> {
-  const result = await db
-    .update(speakerAssignments)
-    .set({
-      personId: args.personId,
-      displayLabelOverride: args.displayLabelOverride ?? null,
-      isSuggestion: false,
-      autoApplied: false,
-      needsReview: false,
-      suggestedNewPersonPayload: null,
-    })
-    .from(mediaObjects)
-    .where(
-      and(
-        eq(speakerAssignments.mediaObjectId, args.mediaObjectId),
-        eq(speakerAssignments.speakerIdx, args.speakerIdx),
-        eq(mediaObjects.id, speakerAssignments.mediaObjectId),
-        eq(mediaObjects.ownerId, args.ownerId),
-        eq(speakerAssignments.isSuggestion, true)
-      )
-    )
-    .returning({ id: speakerAssignments.id });
-  return { ok: result.length > 0 };
+  transcriptVersion?: string | null;
+}): Promise<{ ok: boolean; reason?: "no_pending_suggestion" | "transcript_changed" }> {
+  try {
+    return await withUserSpeakerLock(
+      { mediaObjectId: args.mediaObjectId, ownerId: args.ownerId, expectedTranscriptVersion: args.transcriptVersion },
+      async (tx, current) => {
+        const [row] = await tx
+          .select({
+            id: speakerAssignments.id,
+            transcriptVersion: speakerAssignments.transcriptVersion,
+            suggestedAt: speakerAssignments.suggestedAt,
+            createdAt: speakerAssignments.createdAt,
+          })
+          .from(speakerAssignments)
+          .where(
+            and(
+              eq(speakerAssignments.mediaObjectId, args.mediaObjectId),
+              eq(speakerAssignments.speakerIdx, args.speakerIdx),
+              eq(speakerAssignments.isSuggestion, true)
+            )
+          )
+          .for("update");
+        if (!row) return { ok: false, reason: "no_pending_suggestion" as const };
+        if (current && !isRowOnTranscript(row, current.version, current.createdAt)) {
+          return { ok: false, reason: "transcript_changed" as const };
+        }
+        await tx
+          .update(speakerAssignments)
+          .set({
+            personId: args.personId,
+            displayLabelOverride: args.displayLabelOverride ?? null,
+            isSuggestion: false,
+            autoApplied: false,
+            needsReview: false,
+            suggestedNewPersonPayload: null,
+          })
+          .where(eq(speakerAssignments.id, row.id));
+        return { ok: true };
+      }
+    );
+  } catch (err) {
+    if (err instanceof Error && err.message === "transcript_changed") {
+      return { ok: false, reason: "transcript_changed" };
+    }
+    if (err instanceof Error && err.message === "media_object_not_found") {
+      return { ok: false, reason: "no_pending_suggestion" };
+    }
+    throw err;
+  }
 }
 
-/** Used by the API to dismiss a pending suggestion. Deletes the row +
- *  inserts a marker row with dismissed_at set, so the worker can detect
- *  the dismissal and suppress re-suggesting. Idempotent. */
+/** Used by the API to dismiss ("Not <name>") a pending suggestion, an
+ *  auto-applied name, or a name flagged for review. The row becomes a
+ *  dismissal marker (dismissed_at set) so the worker won't re-suggest it.
+ *  Idempotent; runs under the same note lock as the worker. */
 export async function dismissSpeakerSuggestion(args: {
   mediaObjectId: string;
   ownerId: string;
   speakerIdx: number;
-}): Promise<{ ok: boolean }> {
-  const result = await db
-    .update(speakerAssignments)
-    .set({
-      isSuggestion: false,
-      personId: null,
-      displayLabelOverride: null,
-      suggestedNewPersonPayload: null,
-      autoApplied: false,
-      needsReview: false,
-      dismissedAt: new Date(),
-    })
-    .from(mediaObjects)
-    .where(
-      and(
-        eq(speakerAssignments.mediaObjectId, args.mediaObjectId),
-        eq(speakerAssignments.speakerIdx, args.speakerIdx),
-        eq(mediaObjects.id, speakerAssignments.mediaObjectId),
-        eq(mediaObjects.ownerId, args.ownerId),
-        // Pending suggestions, auto-applied names (the "undo" for capture
-        // evidence) and rows flagged for review can all be dismissed.
-        or(
-          eq(speakerAssignments.isSuggestion, true),
-          eq(speakerAssignments.autoApplied, true),
-          eq(speakerAssignments.needsReview, true)
-        )
-      )
-    )
-    .returning({ id: speakerAssignments.id });
-  return { ok: result.length > 0 };
+  transcriptVersion?: string | null;
+}): Promise<{ ok: boolean; reason?: "transcript_changed" }> {
+  try {
+    return await withUserSpeakerLock(
+      { mediaObjectId: args.mediaObjectId, ownerId: args.ownerId, expectedTranscriptVersion: args.transcriptVersion },
+      async (tx, current) => {
+        const [row] = await tx
+          .select({
+            id: speakerAssignments.id,
+            isSuggestion: speakerAssignments.isSuggestion,
+            autoApplied: speakerAssignments.autoApplied,
+            needsReview: speakerAssignments.needsReview,
+            dismissedAt: speakerAssignments.dismissedAt,
+            transcriptVersion: speakerAssignments.transcriptVersion,
+            suggestedAt: speakerAssignments.suggestedAt,
+            createdAt: speakerAssignments.createdAt,
+          })
+          .from(speakerAssignments)
+          .where(
+            and(
+              eq(speakerAssignments.mediaObjectId, args.mediaObjectId),
+              eq(speakerAssignments.speakerIdx, args.speakerIdx)
+            )
+          )
+          .for("update");
+        if (!row || row.dismissedAt !== null) return { ok: false };
+        // Pending suggestions, auto-applied names (the undo for capture
+        // evidence), rows flagged for review — and names on an older
+        // transcript, which clients show as needing review — can all be
+        // dismissed. A current confirmed name is changed by relabeling.
+        const stale = current !== null && !isRowOnTranscript(row, current.version, current.createdAt);
+        if (!row.isSuggestion && !row.autoApplied && !row.needsReview && !stale) return { ok: false };
+        await tx
+          .update(speakerAssignments)
+          .set({
+            isSuggestion: false,
+            personId: null,
+            displayLabelOverride: null,
+            suggestedNewPersonPayload: null,
+            autoApplied: false,
+            needsReview: false,
+            dismissedAt: new Date(),
+          })
+          .where(eq(speakerAssignments.id, row.id));
+        return { ok: true };
+      }
+    );
+  } catch (err) {
+    if (err instanceof Error && err.message === "transcript_changed") {
+      return { ok: false, reason: "transcript_changed" };
+    }
+    if (err instanceof Error && err.message === "media_object_not_found") return { ok: false };
+    throw err;
+  }
 }
