@@ -120,6 +120,9 @@ fi
 rm -rf "$INSTALLED_APP_PATH"
 ditto "$BUILD_APP_PATH" "$INSTALLED_APP_PATH"
 xattr -dr com.apple.quarantine "$INSTALLED_APP_PATH" 2>/dev/null || true
+# Drop the staging bundle: Spotlight indexes any .app under .build, so
+# leaving it behind puts a second "Loomola" in Raycast / Spotlight.
+rm -rf "$BUILD_APP_PATH"
 
 # Verify the just-installed bundle's stamp matches HEAD. If it
 # doesn't, something cached or skipped a build step — print loud.
