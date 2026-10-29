@@ -1725,55 +1725,10 @@ struct NoteWorkspaceView: View {
     }
 
     private var liveTranscriptBubbles: [TranscriptDisplayBubble] {
-        var bubbles: [TranscriptDisplayBubble] = []
-        for segment in viewModel.liveTranscription.segments {
-            let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { continue }
-            if let last = bubbles.last,
-               last.source == segment.source,
-               !last.isInterim,
-               segment.startSec - last.endSec < 2.5 {
-                bubbles[bubbles.count - 1] = TranscriptDisplayBubble(
-                    id: last.id,
-                    source: last.source,
-                    speaker: last.speaker,
-                    text: [last.text, text].joined(separator: " "),
-                    isInterim: false,
-                    startSec: last.startSec,
-                    endSec: segment.endSec
-                )
-            } else {
-                bubbles.append(
-                    TranscriptDisplayBubble(
-                        id: segment.id.uuidString,
-                        source: segment.source,
-                        speaker: segment.source.displayName,
-                        text: text,
-                        isInterim: false,
-                        startSec: segment.startSec,
-                        endSec: segment.endSec
-                    )
-                )
-            }
-        }
-
-        for source in LiveTranscriptAudioSource.allCases {
-            if let interim = viewModel.liveTranscription.interimBySource[source],
-               !interim.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                bubbles.append(
-                    TranscriptDisplayBubble(
-                        id: "interim-\(source.rawValue)",
-                        source: source,
-                        speaker: source.displayName,
-                        text: interim.trimmingCharacters(in: .whitespacesAndNewlines),
-                        isInterim: true,
-                        startSec: bubbles.last?.endSec ?? 0,
-                        endSec: bubbles.last?.endSec ?? 0
-                    )
-                )
-            }
-        }
-        return bubbles
+        TranscriptRunGrouper.liveBubbles(
+            segments: viewModel.liveTranscription.segments,
+            interimBySource: viewModel.liveTranscription.interimBySource
+        )
     }
 
     private var savedTranscriptBubbles: [TranscriptDisplayBubble] {
@@ -1941,7 +1896,10 @@ struct NoteWorkspaceView: View {
 
     @ViewBuilder
     private func speakerLabel(_ speaker: String, idx: Int?, slot: Int) -> some View {
-        let isUnknown = speaker.hasPrefix("Speaker ") || speaker == "Unknown speaker"
+        // Saved transcripts grey out voices nobody has identified yet;
+        // live "Speaker N" labels are the only identity there is, so
+        // they keep their colour to stay tellable apart.
+        let isUnknown = !isRecording && (speaker.hasPrefix("Speaker ") || speaker == "Unknown speaker")
         let color = isUnknown ? DSColor.Text.tertiary : Self.speakerPalette[slot % Self.speakerPalette.count]
         if !isRecording, let idx, !people.isEmpty {
             // Never-misattribute fallback: any voice the pipeline

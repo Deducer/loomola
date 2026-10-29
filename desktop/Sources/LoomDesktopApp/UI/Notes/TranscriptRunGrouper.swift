@@ -69,8 +69,102 @@ enum TranscriptRunGrouper {
 
     private static func sameSpeaker(_ run: TranscriptRun, _ bubble: TranscriptDisplayBubble) -> Bool {
         if let idx = run.speakerIdx, let other = bubble.speakerIdx { return idx == other }
-        if let source = run.source, let other = bubble.source { return source == other }
+        if let source = run.source, let other = bubble.source {
+            // Call audio carries several diarized voices under one
+            // source; only the same labelled voice continues a run.
+            return source == other && (run.speaker ?? "") == (bubble.speaker ?? "")
+        }
         return (run.speaker ?? "") == (bubble.speaker ?? "")
+    }
+
+    /// Longest a live paragraph may grow before the next segment starts
+    /// a fresh bubble, so a talkative call never becomes one wall.
+    static let liveParagraphMaxSeconds: Double = 30
+    static let liveParagraphMaxWords = 70
+    /// Consecutive same-voice segments closer than this merge into one
+    /// paragraph; a longer pause reads as a new thought.
+    static let liveParagraphGapSeconds: Double = 2.5
+
+    /// Bubbles for the live transcript tab: consecutive final segments
+    /// from the same voice merge into a paragraph until a pause, a
+    /// voice change, or the size cap (ideally at a sentence end), and
+    /// each stream's interim text trails as a dimmed bubble.
+    static func liveBubbles(
+        segments: [LiveTranscriptSegment],
+        interimBySource: [LiveTranscriptAudioSource: String]
+    ) -> [TranscriptDisplayBubble] {
+        var bubbles: [TranscriptDisplayBubble] = []
+        for segment in segments {
+            let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+            let label = segment.displayLabel
+            if let last = bubbles.last,
+               !last.isInterim,
+               last.source == segment.source,
+               last.speaker == label,
+               segment.startSec - last.endSec < liveParagraphGapSeconds,
+               !isFull(last, adding: text, endingAt: segment.endSec) {
+                bubbles[bubbles.count - 1] = TranscriptDisplayBubble(
+                    id: last.id,
+                    source: last.source,
+                    speaker: last.speaker,
+                    text: [last.text, text].joined(separator: " "),
+                    isInterim: false,
+                    startSec: last.startSec,
+                    endSec: segment.endSec
+                )
+            } else {
+                bubbles.append(
+                    TranscriptDisplayBubble(
+                        id: segment.id.uuidString,
+                        source: segment.source,
+                        speaker: label,
+                        text: text,
+                        isInterim: false,
+                        startSec: segment.startSec,
+                        endSec: segment.endSec
+                    )
+                )
+            }
+        }
+
+        for source in LiveTranscriptAudioSource.allCases {
+            guard let interim = interimBySource[source]?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !interim.isEmpty
+            else { continue }
+            // Interim text has no speaker yet; keep it under the voice
+            // this stream last used so it doesn't open a stray run.
+            let label = bubbles.last(where: { $0.source == source })?.speaker ?? source.displayName
+            bubbles.append(
+                TranscriptDisplayBubble(
+                    id: "interim-\(source.rawValue)",
+                    source: source,
+                    speaker: label,
+                    text: interim,
+                    isInterim: true,
+                    startSec: bubbles.last?.endSec ?? 0,
+                    endSec: bubbles.last?.endSec ?? 0
+                )
+            )
+        }
+        return bubbles
+    }
+
+    /// A paragraph is full once it has run past the duration or word
+    /// cap and the text so far ends a sentence; past double the cap it
+    /// breaks regardless, so an unpunctuated ramble still wraps.
+    private static func isFull(_ bubble: TranscriptDisplayBubble, adding text: String, endingAt end: Double) -> Bool {
+        let duration = bubble.endSec - bubble.startSec
+        let words = bubble.text.split(separator: " ").count
+        let overCap = duration >= liveParagraphMaxSeconds || words >= liveParagraphMaxWords
+        guard overCap else { return false }
+        let hardCap = duration >= liveParagraphMaxSeconds * 2 || words >= liveParagraphMaxWords * 2
+        return hardCap || endsSentence(bubble.text)
+    }
+
+    private static func endsSentence(_ text: String) -> Bool {
+        guard let last = text.last else { return false }
+        return ".?!".contains(last)
     }
 
     /// Legacy transcripts arrive as one text block with inline
@@ -145,7 +239,11 @@ enum TranscriptRunGrouper {
     static func colorSlot(for run: TranscriptRun) -> Int {
         if run.source == .microphone { return 0 }
         if let idx = run.speakerIdx { return (idx % 5) + 1 }
-        if run.source == .systemAudio { return 1 }
+        if run.source == .systemAudio {
+            // Live call voices are "Speaker N"; give each its own slot.
+            if let number = liveSpeakerNumber(run.speaker) { return ((number - 1) % 5) + 1 }
+            return 1
+        }
         // Named speakers without a diarization index (legacy
         // transcripts): a stable hash of the name picks the colour so
         // two people never share one by accident of ordering.
@@ -154,5 +252,11 @@ enum TranscriptRunGrouper {
             return (abs(hash) % 5) + 1
         }
         return 5
+    }
+
+    /// 2 for "Speaker 2"; nil for any other label.
+    static func liveSpeakerNumber(_ speaker: String?) -> Int? {
+        guard let speaker, speaker.hasPrefix("Speaker ") else { return nil }
+        return Int(speaker.dropFirst("Speaker ".count))
     }
 }

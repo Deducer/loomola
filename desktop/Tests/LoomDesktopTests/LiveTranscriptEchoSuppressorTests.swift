@@ -167,4 +167,33 @@ final class LiveTranscriptEchoSuppressorTests: XCTestCase {
             words: words
         )
     }
+
+    func testSplitBreaksOnDiarizedSpeakerChange() {
+        let words = ["Yeah", "sure", "No", "wait"].enumerated().map { index, word in
+            LiveTranscriptWord(
+                word: word,
+                start: Double(index) * 0.3,
+                end: Double(index) * 0.3 + 0.2,
+                confidence: 0.9,
+                source: .systemAudio,
+                speaker: index < 2 ? 0 : 1
+            )
+        }
+        let segment = LiveTranscriptSegment(
+            source: .systemAudio, startSec: 0, endSec: 1.1, text: "Yeah sure No wait", words: words
+        )
+        let split = TranscriptEchoSuppressor.split(segment)
+        XCTAssertEqual(split.map(\.text), ["Yeah sure", "No wait"])
+        XCTAssertEqual(split.map(\.speaker), [0, 1])
+        XCTAssertEqual(split.map(\.displayLabel), ["Speaker 1", "Speaker 2"])
+        XCTAssertEqual(split.map(\.speakerIndex), [1, 2])
+    }
+
+    func testDominantSpeakerIgnoresUntaggedWordsAndMicIsAlwaysMe() {
+        let mic = segment(source: .microphone, start: 0, text: "Hello there")
+        XCTAssertNil(TranscriptEchoSuppressor.dominantSpeaker(mic.words))
+        XCTAssertEqual(mic.displayLabel, "Me")
+        XCTAssertEqual(mic.speakerIndex, 0)
+        XCTAssertEqual(LiveSpeakerLabel.label(source: .systemAudio, speaker: nil), "Call audio")
+    }
 }

@@ -96,4 +96,86 @@ final class TranscriptRunGrouperTests: XCTestCase {
         XCTAssertEqual(TranscriptRunGrouper.colorSlot(for: namedA), TranscriptRunGrouper.colorSlot(for: namedA2))
         XCTAssertTrue((1...5).contains(TranscriptRunGrouper.colorSlot(for: namedB)))
     }
+
+    // MARK: - Live bubbles
+
+    private func liveSegment(
+        source: LiveTranscriptAudioSource,
+        speaker: Int? = nil,
+        start: Double,
+        end: Double,
+        text: String
+    ) -> LiveTranscriptSegment {
+        LiveTranscriptSegment(source: source, startSec: start, endSec: end, text: text, words: [], speaker: speaker)
+    }
+
+    func testLiveBubblesSplitWhenTheCallVoiceChanges() {
+        let bubbles = TranscriptRunGrouper.liveBubbles(
+            segments: [
+                liveSegment(source: .systemAudio, speaker: 0, start: 0, end: 2, text: "Hi all."),
+                liveSegment(source: .systemAudio, speaker: 0, start: 2.5, end: 4, text: "Shall we start?"),
+                liveSegment(source: .systemAudio, speaker: 1, start: 4.2, end: 6, text: "Sure."),
+                liveSegment(source: .microphone, start: 6.5, end: 8, text: "Sounds good."),
+            ],
+            interimBySource: [:]
+        )
+        XCTAssertEqual(bubbles.map(\.speaker), ["Speaker 1", "Speaker 2", "Me"])
+        XCTAssertEqual(bubbles[0].text, "Hi all. Shall we start?")
+        let runs = TranscriptRunGrouper.runs(from: bubbles)
+        XCTAssertEqual(runs.map(\.speaker), ["Speaker 1", "Speaker 2", "Me"])
+    }
+
+    func testLiveBubblesKeepCallAudioLabelWithoutDiarization() {
+        let bubbles = TranscriptRunGrouper.liveBubbles(
+            segments: [liveSegment(source: .systemAudio, start: 0, end: 2, text: "Hello")],
+            interimBySource: [.systemAudio: "and", .microphone: "hmm"]
+        )
+        XCTAssertEqual(bubbles.map(\.speaker), ["Call audio", "Me", "Call audio"])
+        XCTAssertEqual(bubbles.map(\.isInterim), [false, true, true])
+    }
+
+    func testLiveInterimTrailsUnderTheStreamsLastVoice() {
+        let bubbles = TranscriptRunGrouper.liveBubbles(
+            segments: [liveSegment(source: .systemAudio, speaker: 2, start: 0, end: 2, text: "Hello")],
+            interimBySource: [.systemAudio: "and then"]
+        )
+        XCTAssertEqual(bubbles.map(\.speaker), ["Speaker 3", "Speaker 3"])
+        XCTAssertEqual(TranscriptRunGrouper.runs(from: bubbles).count, 1)
+    }
+
+    func testLiveParagraphBreaksAtSentenceEndOnceOverTheCap() {
+        // Eight 5-second sentences from one voice with no pauses: the
+        // first paragraph closes at the first sentence end past 30 s.
+        var segments: [LiveTranscriptSegment] = []
+        for i in 0..<8 {
+            let start = Double(i) * 5
+            segments.append(liveSegment(source: .systemAudio, speaker: 0, start: start, end: start + 4.5, text: "Sentence \(i) here."))
+        }
+        let bubbles = TranscriptRunGrouper.liveBubbles(segments: segments, interimBySource: [:])
+        XCTAssertEqual(bubbles.count, 2)
+        XCTAssertEqual(bubbles[0].text.components(separatedBy: ". ").count, 7)
+        XCTAssertEqual(bubbles[1].startSec, 35)
+        XCTAssertEqual(TranscriptRunGrouper.runs(from: bubbles).count, 1, "same voice stays one run with two paragraphs")
+    }
+
+    func testLiveParagraphHardBreaksWithoutPunctuation() {
+        let words = Array(repeating: "word", count: 50).joined(separator: " ")
+        let segments = (0..<4).map { i in
+            liveSegment(source: .systemAudio, speaker: 0, start: Double(i) * 3, end: Double(i) * 3 + 2.5, text: words)
+        }
+        let bubbles = TranscriptRunGrouper.liveBubbles(segments: segments, interimBySource: [:])
+        XCTAssertEqual(bubbles.count, 2)
+        XCTAssertEqual(bubbles[0].text.split(separator: " ").count, 150)
+    }
+
+    func testLiveCallVoicesGetDistinctColourSlots() {
+        let runs = TranscriptRunGrouper.runs(from: [
+            bubble("a", speaker: "Speaker 1", source: .systemAudio, start: 0, end: 1, text: "a"),
+            bubble("b", speaker: "Speaker 2", source: .systemAudio, start: 1, end: 2, text: "b"),
+            bubble("c", speaker: "Call audio", source: .systemAudio, start: 2, end: 3, text: "c"),
+            bubble("d", speaker: "Me", source: .microphone, start: 3, end: 4, text: "d"),
+        ])
+        XCTAssertEqual(runs.count, 4)
+        XCTAssertEqual(runs.map(TranscriptRunGrouper.colorSlot(for:)), [1, 2, 1, 0])
+    }
 }

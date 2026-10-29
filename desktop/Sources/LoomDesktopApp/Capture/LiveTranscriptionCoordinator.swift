@@ -50,6 +50,9 @@ struct LiveTranscriptWord: Equatable, Sendable {
     let end: Double
     let confidence: Double?
     let source: LiveTranscriptAudioSource
+    /// Deepgram's live diarization slot for call audio (0-based, per
+    /// connection). Nil for the mic stream, which is always "Me".
+    var speaker: Int? = nil
 }
 
 struct LiveTranscriptSegment: Identifiable, Equatable, Sendable {
@@ -59,6 +62,36 @@ struct LiveTranscriptSegment: Identifiable, Equatable, Sendable {
     let endSec: Double
     let text: String
     let words: [LiveTranscriptWord]
+    /// Diarized call-audio voice (0-based). Nil for the mic, or when
+    /// Deepgram sent no speaker for this stretch.
+    var speaker: Int? = nil
+
+    /// "Me", "Speaker 2", or "Call audio" when the voice is unknown.
+    var displayLabel: String { LiveSpeakerLabel.label(source: source, speaker: speaker) }
+
+    /// Index persisted with the live words: 0 = mic, 1+ = call voices.
+    var speakerIndex: Int { LiveSpeakerLabel.index(source: source, speaker: speaker) }
+}
+
+enum LiveSpeakerLabel {
+    static func label(source: LiveTranscriptAudioSource, speaker: Int?) -> String {
+        switch source {
+        case .microphone:
+            return source.displayName
+        case .systemAudio:
+            guard let speaker else { return source.displayName }
+            return "Speaker \(speaker + 1)"
+        }
+    }
+
+    static func index(source: LiveTranscriptAudioSource, speaker: Int?) -> Int {
+        switch source {
+        case .microphone:
+            return 0
+        case .systemAudio:
+            return 1 + (speaker ?? 0)
+        }
+    }
 }
 
 @MainActor
@@ -161,7 +194,7 @@ final class LiveTranscriptionCoordinator: ObservableObject {
         }
 
         let fullText = ordered
-            .map { "\($0.source.displayName): \($0.text)" }
+            .map { "\($0.displayLabel): \($0.text)" }
             .joined(separator: "\n\n")
         let words = ordered.flatMap { segment in
             segment.words.map {
@@ -170,7 +203,7 @@ final class LiveTranscriptionCoordinator: ObservableObject {
                     start: $0.start,
                     end: $0.end,
                     confidence: $0.confidence,
-                    speaker: $0.source.speakerIndex
+                    speaker: LiveSpeakerLabel.index(source: $0.source, speaker: $0.speaker ?? segment.speaker)
                 )
             }
         }
@@ -265,7 +298,8 @@ struct TranscriptEchoSuppressor {
 
         for word in segment.words {
             let gap = word.start - previousEnd
-            if !buffer.isEmpty, gap > 0.9 {
+            let speakerChanged = buffer.last.map { $0.speaker != word.speaker } ?? false
+            if !buffer.isEmpty, gap > 0.9 || speakerChanged {
                 result.append(makeSegment(source: segment.source, words: buffer))
                 buffer = []
             }
@@ -318,8 +352,21 @@ struct TranscriptEchoSuppressor {
             startSec: words.first?.start ?? 0,
             endSec: words.last?.end ?? 0,
             text: words.map(\.word).joined(separator: " "),
-            words: words
+            words: words,
+            speaker: dominantSpeaker(words)
         )
+    }
+
+    /// The speaker Deepgram tagged most of the words with; nil when none
+    /// carry one (mic stream, or diarization still warming up).
+    static func dominantSpeaker(_ words: [LiveTranscriptWord]) -> Int? {
+        var counts: [Int: Int] = [:]
+        for word in words {
+            if let speaker = word.speaker { counts[speaker, default: 0] += 1 }
+        }
+        return counts.max { lhs, rhs in
+            lhs.value == rhs.value ? lhs.key > rhs.key : lhs.value < rhs.value
+        }?.key
     }
 
     private static func sortSegments(
@@ -876,6 +923,11 @@ private final class LiveTranscriptionStream: @unchecked Sendable {
             URLQueryItem(name: "channels", value: "1"),
             URLQueryItem(name: "tag", value: "loomola-\(source.rawValue)")
         ]
+        // Only the call side has more than one voice; the mic is always
+        // "Me", and diarization costs extra per stream.
+        if source == .systemAudio {
+            components.queryItems?.append(URLQueryItem(name: "diarize", value: "true"))
+        }
         guard let url = components.url else {
             opening = false
             onState(.failed("Could not build Deepgram URL"))
@@ -1019,7 +1071,8 @@ private final class LiveTranscriptionStream: @unchecked Sendable {
                     start: word.start + offset,
                     end: word.end + offset,
                     confidence: word.confidence,
-                    source: source
+                    source: source,
+                    speaker: source == .systemAudio ? word.speaker : nil
                 )
             }
             let start = words.first?.start ?? ((event.start ?? 0) + offset)
@@ -1032,7 +1085,8 @@ private final class LiveTranscriptionStream: @unchecked Sendable {
                         startSec: start,
                         endSec: end,
                         text: transcript,
-                        words: words
+                        words: words,
+                        speaker: TranscriptEchoSuppressor.dominantSpeaker(words)
                     )
                 )
             )
@@ -1077,6 +1131,7 @@ private struct DeepgramLiveWord: Decodable {
     let end: Double
     let confidence: Double?
     let punctuatedWord: String?
+    let speaker: Int?
 
     enum CodingKeys: String, CodingKey {
         case word
@@ -1084,6 +1139,7 @@ private struct DeepgramLiveWord: Decodable {
         case end
         case confidence
         case punctuatedWord = "punctuated_word"
+        case speaker
     }
 }
 
