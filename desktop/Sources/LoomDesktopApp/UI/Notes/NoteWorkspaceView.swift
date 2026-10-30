@@ -73,6 +73,17 @@ enum NoteWorkspaceLayout {
     static let readableContentMaxWidth: CGFloat = 760
     static let editableBodyMinimumHeight: CGFloat = 320
     static let enhancedBodyMinimumHeight: CGFloat = 120
+    static let scrollCoordinateSpace = "noteWorkspaceScroll"
+    /// A new live segment adds a line or two; anything closer than this
+    /// still counts as "at the end" so auto-follow keeps up, while a
+    /// reader who scrolled further up keeps their place.
+    static let followLiveSlackPoints: CGFloat = 160
+
+    /// `distance` is how far the transcript's end sits below the
+    /// viewport's bottom edge (negative when it is on screen).
+    static func isAwayFromBottom(distance: CGFloat) -> Bool {
+        distance > followLiveSlackPoints
+    }
 }
 
 /// Granola-shape note workspace, embedded directly in the main
@@ -164,6 +175,11 @@ struct NoteWorkspaceView: View {
     @State private var transcript: NoteTranscriptResponse? = nil
     @State private var reviewActionItems: [EnhanceActionItemDTO] = []
     @State private var transcriptDrawerOpen = false
+    /// Where the transcript's bottom sentinel sits relative to the
+    /// scroll viewport, so a reader who scrolled up isn't yanked back
+    /// by every new segment and gets a "Jump to latest" pill instead.
+    @State private var transcriptBottomMaxY: CGFloat = 0
+    @State private var noteScrollViewportHeight: CGFloat = 0
 
     /// AI-enhanced notes (ai_outputs.summary), kept SEPARATE from the
     /// user's raw notes — Granola's "My notes / Enhanced" split. The
@@ -365,6 +381,22 @@ struct NoteWorkspaceView: View {
                         .transition(.opacity)
                 }
             }
+            .coordinateSpace(name: NoteWorkspaceLayout.scrollCoordinateSpace)
+            .background(
+                GeometryReader { geometry in
+                    Color.clear.preference(key: NoteScrollViewportHeightKey.self, value: geometry.size.height)
+                }
+            )
+            .onPreferenceChange(NoteScrollViewportHeightKey.self) { noteScrollViewportHeight = $0 }
+            .onPreferenceChange(TranscriptBottomMaxYKey.self) { transcriptBottomMaxY = $0 }
+            .overlay(alignment: .bottom) {
+                if transcriptIsAwayFromBottom {
+                    jumpToLatestPill(proxy: scrollProxy)
+                        .padding(.bottom, DSSpacing.md)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(LoomolaMotion.quick, value: transcriptIsAwayFromBottom)
             }
 
             if isRecording {
@@ -1774,6 +1806,14 @@ struct NoteWorkspaceView: View {
             Color.clear
                 .frame(height: 1)
                 .id("transcript-bottom")
+                .background(
+                    GeometryReader { geometry in
+                        Color.clear.preference(
+                            key: TranscriptBottomMaxYKey.self,
+                            value: geometry.frame(in: .named(NoteWorkspaceLayout.scrollCoordinateSpace)).maxY
+                        )
+                    }
+                )
         }
         .onChange(of: normalizedTranscriptSearchQuery) { _, _ in
             activeTranscriptSearchIndex = 0
@@ -1787,12 +1827,48 @@ struct NoteWorkspaceView: View {
             scrollToActiveTranscriptSearchMatch(proxy: proxy)
         }
         .onChange(of: viewModel.liveTranscription.segments.count) { _, _ in
-            guard isRecording else { return }
+            // Follow the live transcript only while the reader is at
+            // (or near) the end; scrolled up, they keep their place and
+            // the pill brings them back.
+            guard isRecording, !transcriptIsAwayFromBottom else { return }
             withAnimation(LoomolaMotion.medium) {
                 proxy.scrollTo("transcript-bottom", anchor: .bottom)
             }
         }
         .animation(LoomolaMotion.quick, value: transcriptSearchVisible)
+    }
+
+    /// How far the transcript's end sits below the visible bottom edge.
+    private var transcriptDistanceFromBottom: CGFloat {
+        transcriptBottomMaxY - noteScrollViewportHeight
+    }
+
+    private var transcriptIsAwayFromBottom: Bool {
+        transcriptDrawerOpen && NoteWorkspaceLayout.isAwayFromBottom(distance: transcriptDistanceFromBottom)
+    }
+
+    private func jumpToLatestPill(proxy: ScrollViewProxy) -> some View {
+        Button {
+            withAnimation(LoomolaMotion.medium) {
+                proxy.scrollTo("transcript-bottom", anchor: .bottom)
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.down")
+                    .font(.system(size: 11, weight: .semibold))
+                Text(isRecording ? "Jump to latest" : "Jump to end")
+                    .font(DSFont.Body.sm().weight(.medium))
+            }
+            .foregroundStyle(DSColor.Text.primary)
+            .padding(.horizontal, DSSpacing.md)
+            .padding(.vertical, 8)
+            .background(Capsule().fill(DSColor.Bg.surfaceRaised))
+            .overlay { Capsule().strokeBorder(DSColor.Border.subtle, lineWidth: 1) }
+            .dsShadow(.raised)
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(.downArrow, modifiers: .command)
+        .help("Scroll to the end of the transcript (⌘↓)")
     }
 
     private var transcriptHeaderControls: some View {
@@ -4364,4 +4440,14 @@ private extension String {
         }
         return ranges
     }
+}
+
+private struct NoteScrollViewportHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+private struct TranscriptBottomMaxYKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }

@@ -31,6 +31,13 @@ enum RecorderWindowGeometry {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private static let launchedAt = Date()
+    static var secondsSinceLaunch: TimeInterval { Date().timeIntervalSince(launchedAt) }
+
+    override init() {
+        super.init()
+        _ = Self.launchedAt // pin "launch" to delegate creation, not first use
+    }
     // The recorder and the native Settings scene must share one auth/capture session.
     let recorderViewModel = RecorderViewModel()
     let onboardingProgress = OnboardingProgressStore()

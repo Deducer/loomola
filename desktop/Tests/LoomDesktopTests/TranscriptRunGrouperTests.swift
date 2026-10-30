@@ -178,4 +178,14 @@ final class TranscriptRunGrouperTests: XCTestCase {
         XCTAssertEqual(runs.count, 4)
         XCTAssertEqual(runs.map(TranscriptRunGrouper.colorSlot(for:)), [1, 2, 1, 0])
     }
+
+    // MARK: - Jump to latest
+
+    func testTranscriptCountsAsAtBottomWithinTheFollowSlack() {
+        XCTAssertFalse(NoteWorkspaceLayout.isAwayFromBottom(distance: -40), "end on screen")
+        XCTAssertFalse(NoteWorkspaceLayout.isAwayFromBottom(distance: 0))
+        XCTAssertFalse(NoteWorkspaceLayout.isAwayFromBottom(distance: NoteWorkspaceLayout.followLiveSlackPoints))
+        XCTAssertTrue(NoteWorkspaceLayout.isAwayFromBottom(distance: NoteWorkspaceLayout.followLiveSlackPoints + 1))
+        XCTAssertTrue(NoteWorkspaceLayout.isAwayFromBottom(distance: 2_000))
+    }
 }
