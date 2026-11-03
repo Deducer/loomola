@@ -15,7 +15,7 @@ struct LoomDesktopApp: App {
     /// launch. `.defaultLaunchBehavior(.suppressed)` would fix it on
     /// macOS 15+, but SceneBuilder can't gate it behind #available at
     /// the macOS 14 target, so NativeSettingsPanel closes the window
-    /// when it was presented by launch rather than by ⌘, / the menu.
+    /// when no user action (⌘, / the menu) is behind its appearance.
     var body: some Scene {
         Settings {
             NativeSettingsPanel()
@@ -25,18 +25,36 @@ struct LoomDesktopApp: App {
     }
 }
 
+/// Tells a Settings window the user asked for from one SwiftUI presented
+/// on its own at launch (see LoomDesktopApp.body).
+enum SettingsLaunchGuard {
+    /// Event types a person produces to open Settings: ⌘, is a key
+    /// equivalent (keyDown) and a menu pick ends on mouse-up. Launch
+    /// activation, mouse moves and the like are not requests.
+    static func isUserOpened(eventType: NSEvent.EventType?) -> Bool {
+        guard let eventType else { return false }
+        switch eventType {
+        case .keyDown, .keyUp, .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp, .otherMouseUp:
+            return true
+        default:
+            return false
+        }
+    }
+}
+
 private struct NativeSettingsPanel: View {
-    /// A Settings window that appears this soon after launch was not
-    /// asked for (see LoomDesktopApp.body).
-    static let autoPresentedWindowSeconds: TimeInterval = 3
     @State private var window: NSWindow?
 
     var body: some View {
+        // Read the event here, in the same run-loop pass that presented
+        // the scene: the accessor's callback lands a hop later, when a
+        // mouse move could already have replaced the ⌘, key event.
+        let openedByUser = SettingsLaunchGuard.isUserOpened(eventType: NSApp.currentEvent?.type)
         SettingsSheet(onDismiss: { window?.close() })
             .background(WindowAccessor { settingsWindow in
                 window = settingsWindow
                 settingsWindow.isRestorable = false
-                if AppDelegate.secondsSinceLaunch < Self.autoPresentedWindowSeconds {
+                if !openedByUser {
                     Self.dismissAutoPresented(settingsWindow)
                 }
             })

@@ -73,6 +73,26 @@ struct LiveTranscriptSegment: Identifiable, Equatable, Sendable {
     var speakerIndex: Int { LiveSpeakerLabel.index(source: source, speaker: speaker) }
 }
 
+/// Deepgram numbers diarized voices per websocket connection, so after a
+/// reconnect slot 0 may be a different person. Each new connection's
+/// slots are shifted past every slot the previous ones used, so one
+/// "Speaker N" never covers two people.
+struct LiveSpeakerSlotRebase {
+    private(set) var base = 0
+    private var highestSeen: Int? = nil
+
+    mutating func beginConnection() {
+        if let highestSeen { base = highestSeen + 1 }
+    }
+
+    mutating func map(_ slot: Int?) -> Int? {
+        guard let slot else { return nil }
+        let mapped = slot + base
+        highestSeen = max(highestSeen ?? mapped, mapped)
+        return mapped
+    }
+}
+
 enum LiveSpeakerLabel {
     static func label(source: LiveTranscriptAudioSource, speaker: Int?) -> String {
         switch source {
@@ -181,13 +201,17 @@ final class LiveTranscriptionCoordinator: ObservableObject {
                 guard let interim = interimBySource[source]?.trimmingCharacters(in: .whitespacesAndNewlines),
                       !interim.isEmpty
                 else { continue }
+                // Interim text carries no speaker; keep it under the voice
+                // this stream last used so the saved text doesn't invent
+                // a "Call audio" speaker beside "Speaker N" paragraphs.
                 ordered.append(
                     LiveTranscriptSegment(
                         source: source,
                         startSec: ordered.last?.endSec ?? 0,
                         endSec: ordered.last?.endSec ?? 0,
                         text: interim,
-                        words: []
+                        words: [],
+                        speaker: ordered.last(where: { $0.source == source })?.speaker
                     )
                 )
             }
@@ -257,7 +281,7 @@ final class LiveTranscriptionCoordinator: ObservableObject {
         status = .idle
     }
 
-    private func apply(_ result: LiveTranscriptionResult) {
+    func apply(_ result: LiveTranscriptionResult) {
         switch result {
         case .final(let segment):
             guard !segment.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
@@ -672,7 +696,7 @@ struct TranscriptEchoSuppressor {
     }
 }
 
-private enum LiveTranscriptionResult: Sendable {
+enum LiveTranscriptionResult: Sendable {
     case final(LiveTranscriptSegment)
     case interim(LiveTranscriptAudioSource, String)
 }
@@ -749,6 +773,7 @@ private final class LiveTranscriptionStream: @unchecked Sendable {
     /// by it so segments stay on the recording's timeline.
     private var timelineOffset: Double = 0
     private var lastEventEnd: Double = 0
+    private var speakerSlots = LiveSpeakerSlotRebase()
 
     init(
         source: LiveTranscriptAudioSource,
@@ -947,6 +972,7 @@ private final class LiveTranscriptionStream: @unchecked Sendable {
         if lastEventEnd > 0 {
             timelineOffset = lastEventEnd
         }
+        speakerSlots.beginConnection()
         task.resume()
         startKeepAlive()
         receiveNext(on: task)
@@ -1063,16 +1089,19 @@ private final class LiveTranscriptionStream: @unchecked Sendable {
             // healthy again — reset the reconnect backoff.
             reconnectAttempts = 0
             let offset = timelineOffset
-            let words = (alternative.words ?? []).compactMap { word -> LiveTranscriptWord? in
+            var words: [LiveTranscriptWord] = []
+            for word in alternative.words ?? [] {
                 let text = word.punctuatedWord ?? word.word
-                guard !text.isEmpty else { return nil }
-                return LiveTranscriptWord(
-                    word: text,
-                    start: word.start + offset,
-                    end: word.end + offset,
-                    confidence: word.confidence,
-                    source: source,
-                    speaker: source == .systemAudio ? word.speaker : nil
+                guard !text.isEmpty else { continue }
+                words.append(
+                    LiveTranscriptWord(
+                        word: text,
+                        start: word.start + offset,
+                        end: word.end + offset,
+                        confidence: word.confidence,
+                        source: source,
+                        speaker: source == .systemAudio ? speakerSlots.map(word.speaker) : nil
+                    )
                 )
             }
             let start = words.first?.start ?? ((event.start ?? 0) + offset)
@@ -1085,8 +1114,7 @@ private final class LiveTranscriptionStream: @unchecked Sendable {
                         startSec: start,
                         endSec: end,
                         text: transcript,
-                        words: words,
-                        speaker: TranscriptEchoSuppressor.dominantSpeaker(words)
+                        words: words
                     )
                 )
             )

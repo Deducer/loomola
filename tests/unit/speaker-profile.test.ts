@@ -3,6 +3,7 @@ import {
   computeSpeakerProfile,
   meSpeakerIdxs,
   remoteSpeakerIdxs,
+  soleRemoteSpeakerIdx,
 } from "@/lib/speaker-profile/profile";
 import {
   decodeActivity,
@@ -153,6 +154,26 @@ describe("computeSpeakerProfile", () => {
     expect(profile.status).toBe("live_channels");
     expect(meSpeakerIdxs(profile)).toEqual([0]);
     expect(remoteSpeakerIdxs(profile)).toEqual([1]);
+  });
+
+  it("treats every diarized live call voice as remote, so a group call is not a 1:1", () => {
+    // The desktop persists diarized call voices as 1, 2, 3…; before this
+    // only index 1 counted and a second guest vanished as "unknown".
+    const live = turns([[0, 10], [1, 60], [2, 45]]);
+    const profile = computeSpeakerProfile({ words: wordsFor(live), provider: "deepgram-live", activity: null });
+    expect(profile.status).toBe("live_channels");
+    expect(profile.entries.map((e) => e.source)).toEqual(["mic", "system", "system"]);
+    expect(remoteSpeakerIdxs(profile)).toEqual([1, 2]);
+    expect(soleRemoteSpeakerIdx(profile)).toBeNull();
+  });
+
+  it("still finds the sole live remote voice when the only other voice is a stray fragment", () => {
+    const live = turns([[0, 10], [1, 60], [2, 2]]);
+    const profile = computeSpeakerProfile({ words: wordsFor(live), provider: "deepgram-live", activity: null });
+    expect(soleRemoteSpeakerIdx(profile)).toBe(1);
+    // A guest whose slot renumbered to 2 (e.g. diarization started late) is no longer lost.
+    const late = turns([[0, 10], [2, 60]]);
+    expect(soleRemoteSpeakerIdx(computeSpeakerProfile({ words: wordsFor(late), provider: "deepgram-live", activity: null }))).toBe(2);
   });
 
   it("reports no_tracks without activity frames", () => {

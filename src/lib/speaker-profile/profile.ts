@@ -18,8 +18,9 @@ import type { ActivityFrames } from "./activity";
 export type SpeakerSource = "mic" | "system" | "mixed" | "merged" | "unknown";
 
 /**
- * - live_channels: a live transcript — indices ARE capture channels
- *   (0 = mic, 1 = everyone on system audio).
+ * - live_channels: a live transcript — index 0 is the mic; every index
+ *   from 1 up is a voice Deepgram diarized on the call-audio stream
+ *   (one per remote speaker, or just 1 when diarization gave nothing).
  * - capture: batch transcript with usable mic/system evidence.
  * - mic_unusable: tracks exist but no voice is mic-dominant (dead,
  *   truncated or silent mic, or the recorder never spoke).
@@ -124,7 +125,7 @@ export function computeSpeakerProfile(args: {
       micCoverage: null,
       entries: base.map((e) => ({
         ...e,
-        source: e.speakerIdx === 0 ? "mic" : e.speakerIdx === 1 ? "system" : "unknown",
+        source: e.speakerIdx === 0 ? "mic" : "system",
         micOnlyShare: null,
         systemShare: null,
       })),
@@ -247,9 +248,7 @@ export function remoteSpeakerIdxs(profile: SpeakerProfile): number[] {
   // A voice holding both the recorder and a remote speaker means the
   // remaining voices can't be trusted as "everyone else".
   if (profile.entries.some((e) => !e.fragment && e.source === "merged")) return [];
-  if (profile.status === "live_channels") {
-    return profile.entries.some((e) => e.speakerIdx === 1 && e.speechSec > 0) ? [1] : [];
-  }
+  // Live transcripts: every diarized call-audio voice, like batch.
   return profile.entries
     .filter((e) => !e.fragment && !me.has(e.speakerIdx))
     .map((e) => e.speakerIdx);
@@ -272,12 +271,12 @@ const OTHER_VOICE_MAX_SEC = 30;
  * non-fragment remote voice": the fragment cutoff (10 s / 2%) could hide
  * a real but quiet third participant, so every other non-recorder voice
  * must be under 30 s and all of them together under 3% of the speech.
- * Live transcripts: the call-audio channel, when the recorder was found.
+ * Live transcripts: the one diarized call-audio voice, under the same
+ * other-voices limits (an un-diarized call is a single index 1 voice).
  */
 export function soleRemoteSpeakerIdx(profile: SpeakerProfile): number | null {
   const remote = remoteSpeakerIdxs(profile);
   if (remote.length !== 1) return null;
-  if (profile.status === "live_channels") return remote[0];
   // Positive evidence it's call audio, not just "not the recorder": a
   // "mixed" voice (little system activity) could be a second person at
   // the recorder's microphone, who must not inherit the invitee's name.

@@ -175,11 +175,13 @@ struct NoteWorkspaceView: View {
     @State private var transcript: NoteTranscriptResponse? = nil
     @State private var reviewActionItems: [EnhanceActionItemDTO] = []
     @State private var transcriptDrawerOpen = false
-    /// Where the transcript's bottom sentinel sits relative to the
-    /// scroll viewport, so a reader who scrolled up isn't yanked back
-    /// by every new segment and gets a "Jump to latest" pill instead.
-    @State private var transcriptBottomMaxY: CGFloat = 0
-    @State private var noteScrollViewportHeight: CGFloat = 0
+    /// Whether the transcript's end is more than a screen's slack below
+    /// the viewport, so a reader who scrolled up isn't yanked back by
+    /// every new segment and gets a "Jump to latest" pill instead. The
+    /// raw geometry lives in `scrollMetrics` (a reference, so a scroll
+    /// tick doesn't re-render the workspace); only this Bool is state.
+    @State private var transcriptAwayFromBottom = false
+    @State private var scrollMetrics = NoteScrollMetrics()
 
     /// AI-enhanced notes (ai_outputs.summary), kept SEPARATE from the
     /// user's raw notes — Granola's "My notes / Enhanced" split. The
@@ -387,8 +389,14 @@ struct NoteWorkspaceView: View {
                     Color.clear.preference(key: NoteScrollViewportHeightKey.self, value: geometry.size.height)
                 }
             )
-            .onPreferenceChange(NoteScrollViewportHeightKey.self) { noteScrollViewportHeight = $0 }
-            .onPreferenceChange(TranscriptBottomMaxYKey.self) { transcriptBottomMaxY = $0 }
+            .onPreferenceChange(NoteScrollViewportHeightKey.self) {
+                scrollMetrics.viewportHeight = $0
+                refreshTranscriptAwayFromBottom()
+            }
+            .onPreferenceChange(TranscriptBottomMaxYKey.self) {
+                scrollMetrics.bottomMaxY = $0
+                refreshTranscriptAwayFromBottom()
+            }
             .overlay(alignment: .bottom) {
                 if transcriptIsAwayFromBottom {
                     jumpToLatestPill(proxy: scrollProxy)
@@ -1838,13 +1846,21 @@ struct NoteWorkspaceView: View {
         .animation(LoomolaMotion.quick, value: transcriptSearchVisible)
     }
 
-    /// How far the transcript's end sits below the visible bottom edge.
-    private var transcriptDistanceFromBottom: CGFloat {
-        transcriptBottomMaxY - noteScrollViewportHeight
+    /// Runs on every scroll tick; writes state only when the answer flips.
+    private func refreshTranscriptAwayFromBottom() {
+        let away = NoteWorkspaceLayout.isAwayFromBottom(
+            distance: scrollMetrics.bottomMaxY - scrollMetrics.viewportHeight
+        )
+        if away != transcriptAwayFromBottom {
+            transcriptAwayFromBottom = away
+        }
     }
 
+    /// The pill (and the auto-follow hold-off) only matter while new
+    /// text is arriving; a saved transcript reads uncluttered, as in
+    /// Granola.
     private var transcriptIsAwayFromBottom: Bool {
-        transcriptDrawerOpen && NoteWorkspaceLayout.isAwayFromBottom(distance: transcriptDistanceFromBottom)
+        isRecording && transcriptDrawerOpen && transcriptAwayFromBottom
     }
 
     private func jumpToLatestPill(proxy: ScrollViewProxy) -> some View {
@@ -1856,7 +1872,7 @@ struct NoteWorkspaceView: View {
             HStack(spacing: 6) {
                 Image(systemName: "arrow.down")
                     .font(.system(size: 11, weight: .semibold))
-                Text(isRecording ? "Jump to latest" : "Jump to end")
+                Text("Jump to latest")
                     .font(DSFont.Body.sm().weight(.medium))
             }
             .foregroundStyle(DSColor.Text.primary)
@@ -1867,8 +1883,10 @@ struct NoteWorkspaceView: View {
             .dsShadow(.raised)
         }
         .buttonStyle(.plain)
-        .keyboardShortcut(.downArrow, modifiers: .command)
-        .help("Scroll to the end of the transcript (⌘↓)")
+        // ⌘↓ belongs to the text fields (move to end of document); ⌘J is
+        // the usual "jump to" chord and no AppKit text view owns it.
+        .keyboardShortcut("j", modifiers: .command)
+        .help("Scroll to the latest transcript text (⌘J)")
     }
 
     private var transcriptHeaderControls: some View {
@@ -1974,8 +1992,12 @@ struct NoteWorkspaceView: View {
     private func speakerLabel(_ speaker: String, idx: Int?, slot: Int) -> some View {
         // Saved transcripts grey out voices nobody has identified yet;
         // live "Speaker N" labels are the only identity there is, so
-        // they keep their colour to stay tellable apart.
-        let isUnknown = !isRecording && (speaker.hasPrefix("Speaker ") || speaker == "Unknown speaker")
+        // they keep their colour to stay tellable apart. Un-diarized
+        // live call text ("Call audio") is nobody in particular, so it
+        // must not borrow Speaker 1's colour.
+        let isUnknown = speaker == "Unknown speaker"
+            || speaker == LiveTranscriptAudioSource.systemAudio.displayName
+            || (!isRecording && speaker.hasPrefix("Speaker "))
         let color = isUnknown ? DSColor.Text.tertiary : Self.speakerPalette[slot % Self.speakerPalette.count]
         if !isRecording, let idx, !people.isEmpty {
             // Never-misattribute fallback: any voice the pipeline
@@ -4440,6 +4462,13 @@ private extension String {
         }
         return ranges
     }
+}
+
+/// Scroll geometry that changes every frame. A class so updates don't
+/// invalidate the view; `NoteWorkspaceView` derives one Bool from it.
+final class NoteScrollMetrics {
+    var viewportHeight: CGFloat = 0
+    var bottomMaxY: CGFloat = 0
 }
 
 private struct NoteScrollViewportHeightKey: PreferenceKey {
