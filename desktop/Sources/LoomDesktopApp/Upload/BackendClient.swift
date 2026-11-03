@@ -202,9 +202,46 @@ actor BackendClient {
             body: AssignSpeakerRequest(
                 speakerIdx: speakerIdx,
                 personId: personId,
+                displayLabelOverride: nil,
                 transcriptVersion: transcriptVersion
             )
         )
+    }
+
+    /// Names a voice with free text on this note only (no Person row);
+    /// the web transcript panel's "One-off label".
+    func labelSpeaker(
+        mediaId: String,
+        speakerIdx: Int,
+        label: String,
+        transcriptVersion: String? = nil
+    ) async throws {
+        let _: EmptyResponse = try await put(
+            path: "/api/speaker-assignments/\(mediaId)",
+            body: AssignSpeakerRequest(
+                speakerIdx: speakerIdx,
+                personId: nil,
+                displayLabelOverride: label,
+                transcriptVersion: transcriptVersion
+            )
+        )
+    }
+
+    /// Removes a hand-made name (person or label) from a voice. 409 when
+    /// the transcript on screen has been replaced since.
+    func removeSpeakerAssignment(
+        mediaId: String,
+        speakerIdx: Int,
+        transcriptVersion: String? = nil
+    ) async throws {
+        var path = "/api/speaker-assignments/\(mediaId)?speakerIdx=\(speakerIdx)"
+        if let transcriptVersion {
+            var allowed = CharacterSet.urlQueryAllowed
+            allowed.remove(charactersIn: "+&=:")
+            let encoded = transcriptVersion.addingPercentEncoding(withAllowedCharacters: allowed) ?? transcriptVersion
+            path += "&transcriptVersion=\(encoded)"
+        }
+        try await deleteRequest(path: path)
     }
 
     /// `transcriptVersion`: the transcript on screen (409 when the server
@@ -655,6 +692,27 @@ actor BackendClient {
         try await jsonRequest(method: "PUT", path: path, body: body)
     }
 
+    /// Bodiless DELETE; the response body is ignored.
+    private func deleteRequest(path: String) async throws {
+        let token = try await accessTokenProvider()
+        let url = makeURL(path: path)
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        log.notice("DELETE \(url.absoluteString, privacy: .public)")
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw BackendClientError.nonHTTPResponse(path: path)
+        }
+        log.notice("DELETE \(url.absoluteString, privacy: .public) → \(http.statusCode, privacy: .public)")
+        if let serviceErr = detectServiceUnavailable(data: data, response: http, path: path) {
+            throw serviceErr
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw BackendClientError.badStatus(statusCode: http.statusCode, path: path, body: data)
+        }
+    }
+
     private func post<RequestBody: Encodable, ResponseBody: Decodable>(
         path: String,
         body: RequestBody
@@ -1099,7 +1157,10 @@ struct SpeakerAssignmentDTO: Decodable, Equatable, Sendable {
 
 private struct AssignSpeakerRequest: Encodable {
     let speakerIdx: Int
-    let personId: String
+    /// Exactly one of `personId` / `displayLabelOverride` is set; the
+    /// server rejects a body with neither.
+    let personId: String?
+    let displayLabelOverride: String?
     let transcriptVersion: String?
 }
 

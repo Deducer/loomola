@@ -198,6 +198,8 @@ struct NoteWorkspaceView: View {
     /// G-M13 speaker suggestions for the transcript drawer.
     @State private var speakerAssignments: [SpeakerAssignmentDTO] = []
     @State private var applyingSpeakerSuggestions = false
+    /// The voice whose "Who is this?" popover is open (speaker index).
+    @State private var renamingSpeakerIdx: Int? = nil
 
     /// Stage 16 Today pill: matched/linked calendar event.
     @State private var linkedCalendarEventTitle: String?
@@ -1999,30 +2001,19 @@ struct NoteWorkspaceView: View {
             || speaker == LiveTranscriptAudioSource.systemAudio.displayName
             || (!isRecording && speaker.hasPrefix("Speaker "))
         let color = isUnknown ? DSColor.Text.tertiary : Self.speakerPalette[slot % Self.speakerPalette.count]
-        if !isRecording, let idx, !people.isEmpty {
+        if !isRecording, let idx {
             // Never-misattribute fallback: any voice the pipeline
             // couldn't identify with evidence stays "Speaker N" — click
             // to say who it is (also works to fix an accepted name).
-            Menu {
-                Section(speaker.hasPrefix("Speaker ") ? "Who is this?" : "Reassign speaker") {
-                    ForEach(identifyCandidates) { person in
-                        Button(person.displayName) {
-                            assignSpeaker(idx: idx, personId: person.id)
-                        }
-                    }
-                }
-                if isClearableName(idx: idx) {
-                    Section {
-                        Button("Not \(speaker)") {
-                            clearSpeakerName(idx: idx)
-                        }
-                    }
-                }
+            // Works with an empty People library: the popover takes a
+            // typed name as a one-off label or a new person.
+            let presentation = SpeakerLabelPresentation.make(
+                name: speaker,
+                assignment: activeAssignment(idx: idx)
+            )
+            Button {
+                renamingSpeakerIdx = idx
             } label: {
-                let presentation = SpeakerLabelPresentation.make(
-                    name: speaker,
-                    assignment: activeAssignment(idx: idx)
-                )
                 HStack(spacing: 3) {
                     if presentation.isUncertain {
                         Image(systemName: "questionmark.circle")
@@ -2035,11 +2026,37 @@ struct NoteWorkspaceView: View {
                         .foregroundStyle(DSColor.Text.tertiary)
                 }
                 .foregroundStyle(presentation.isUncertain ? DSColor.State.warning : color)
+                .contentShape(Rectangle())
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
+            .buttonStyle(.plain)
             .fixedSize()
             .help(speakerProvenanceHelp(idx: idx))
+            .popover(
+                isPresented: Binding(
+                    get: { renamingSpeakerIdx == idx },
+                    set: { if !$0, renamingSpeakerIdx == idx { renamingSpeakerIdx = nil } }
+                ),
+                arrowEdge: .bottom
+            ) {
+                SpeakerRenamePopover(
+                    currentName: speaker,
+                    people: people,
+                    attendeeIds: Set(attendeeIds),
+                    clearTitle: speakerClearTitle(idx: idx, speaker: speaker),
+                    onPick: { row in
+                        renamingSpeakerIdx = nil
+                        handleSpeakerRename(idx: idx, row: row)
+                    },
+                    onClear: {
+                        renamingSpeakerIdx = nil
+                        if isClearableName(idx: idx) {
+                            clearSpeakerName(idx: idx)
+                        } else {
+                            removeSpeakerName(idx: idx)
+                        }
+                    }
+                )
+            }
         } else {
             Text(speaker == "Me" ? "You" : speaker)
                 .font(DSFont.Body.md().weight(.medium))
@@ -2735,18 +2752,6 @@ struct NoteWorkspaceView: View {
         return name
     }
 
-    /// Manual-identify fallback: attendees first, then the rest of the
-    /// people library — shown when the user assigns a voice by hand.
-    private var identifyCandidates: [PersonDTO] {
-        let attendeeSet = Set(attendeeIds)
-        return people.sorted { a, b in
-            let aAttendee = attendeeSet.contains(a.id)
-            let bAttendee = attendeeSet.contains(b.id)
-            if aAttendee != bAttendee { return aAttendee }
-            return a.displayName.localizedCompare(b.displayName) == .orderedAscending
-        }
-    }
-
     private func assignSpeaker(idx: Int, personId: String) {
         guard case .reviewing(let recording) = target,
               let backend = viewModel.backendClient
@@ -2772,6 +2777,99 @@ struct NoteWorkspaceView: View {
                 showToast(message: "Transcript updated — pick the speaker again", tone: .warning)
             } catch {
                 showToast(message: "Couldn't assign speaker", tone: .error)
+            }
+        }
+    }
+
+    /// A hand-made name (picked person or one-off label) that is neither
+    /// a suggestion nor an auto-applied one — removable, not "dismissed".
+    private func isManualName(idx: Int) -> Bool {
+        guard let assignment = activeAssignment(idx: idx), !assignment.isSuggestion else { return false }
+        return assignment.autoApplied != true && assignment.needsReview != true
+    }
+
+    private func speakerClearTitle(idx: Int, speaker: String) -> String? {
+        if isClearableName(idx: idx) { return "Not \(speaker)" }
+        if isManualName(idx: idx) { return "Remove name" }
+        return nil
+    }
+
+    private func handleSpeakerRename(idx: Int, row: SpeakerRenameRow) {
+        switch row {
+        case .person(let person):
+            assignSpeaker(idx: idx, personId: person.id)
+        case .labelOnly(let label):
+            labelSpeaker(idx: idx, label: label)
+        case .createPerson(let name):
+            createPersonAndAssign(idx: idx, name: name)
+        }
+    }
+
+    private func labelSpeaker(idx: Int, label: String) {
+        guard case .reviewing(let recording) = target,
+              let backend = viewModel.backendClient
+        else { return }
+        let shownVersion = transcript?.transcriptVersion
+        Task { @MainActor in
+            do {
+                try await backend.labelSpeaker(
+                    mediaId: recording.id,
+                    speakerIdx: idx,
+                    label: label,
+                    transcriptVersion: shownVersion
+                )
+                await reloadSpeakerAssignments(recordingId: recording.id, backend: backend)
+                showToast(message: "Labeled as \(label)")
+            } catch BackendClientError.badStatus(let statusCode, _, _) where statusCode == 409 {
+                loadTranscript()
+                loadSpeakerAssignments()
+                showToast(message: "Transcript updated — pick the speaker again", tone: .warning)
+            } catch {
+                showToast(message: "Couldn't label speaker", tone: .error)
+            }
+        }
+    }
+
+    /// Adds the typed name to People (so later calls can suggest them),
+    /// then names this voice as them.
+    private func createPersonAndAssign(idx: Int, name: String) {
+        guard let backend = viewModel.backendClient else { return }
+        Task { @MainActor in
+            do {
+                let person = try await backend.createPerson(displayName: name, email: nil)
+                if !people.contains(where: { $0.id == person.id }) {
+                    people.append(person)
+                }
+                assignSpeaker(idx: idx, personId: person.id)
+            } catch {
+                showToast(message: "Couldn't add \(name) to People", tone: .error)
+            }
+        }
+    }
+
+    private func removeSpeakerName(idx: Int) {
+        guard case .reviewing(let recording) = target,
+              let backend = viewModel.backendClient
+        else { return }
+        let previous = speakerAssignments
+        let shownVersion = transcript?.transcriptVersion ?? activeAssignment(idx: idx)?.transcriptVersion
+        speakerAssignments = speakerAssignments.filter { $0.speakerIdx != idx }
+        Task { @MainActor in
+            do {
+                try await backend.removeSpeakerAssignment(
+                    mediaId: recording.id,
+                    speakerIdx: idx,
+                    transcriptVersion: shownVersion
+                )
+                await reloadSpeakerAssignments(recordingId: recording.id, backend: backend)
+            } catch BackendClientError.badStatus(let statusCode, _, _) where statusCode == 409 {
+                speakerAssignments = previous
+                loadTranscript()
+                loadSpeakerAssignments()
+                showToast(message: "Transcript updated — try again", tone: .warning)
+            } catch {
+                speakerAssignments = previous
+                showToast(message: "Couldn't remove the name", tone: .error)
             }
         }
     }
