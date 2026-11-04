@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -47,6 +47,29 @@ describe.skipIf(!available)("mix_audio activity pipes (real ffmpeg)", () => {
     expect(avg(frames.mic.slice(22, 38))).toBeLessThan(-80);
     expect(avg(frames.system.slice(2, 18))).toBeLessThan(-80);
     expect(avg(frames.system.slice(22, 38))).toBeGreaterThan(-30);
+  });
+
+  it("normalises a quiet capture so batch transcription hears it", async () => {
+    // A webcam mic across the room produced a -37 LUFS track on 2026-11-04;
+    // Deepgram returned zero words for the plain mix and 104 after loudness
+    // normalisation. Speech should leave the mix near -16 LUFS at 48 kHz.
+    const quietMic = join(dir, "quiet-mic.m4a");
+    const silentSystem = join(dir, "silent-system.m4a");
+    execFileSync(ffmpeg, ["-loglevel", "error", "-f", "lavfi", "-i", "sine=f=220:d=8", "-af", "volume=-40dB", "-c:a", "aac", "-y", quietMic]);
+    execFileSync(ffmpeg, ["-loglevel", "error", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono:d=8", "-c:a", "aac", "-y", silentSystem]);
+    const out = join(dir, "quiet-mixed.m4a");
+    await runFfmpegWithActivity({
+      args: ffmpegMixArgs({ micUrl: quietMic, systemUrl: silentSystem, outputPath: out }),
+      timeoutMs: 60_000,
+      label: "quiet mix",
+    });
+    // ebur128 prints its summary on stderr.
+    const report = spawnSync(ffmpeg, ["-hide_banner", "-i", out, "-af", "ebur128=framelog=quiet", "-f", "null", "-"], { encoding: "utf8" }).stderr;
+    const integrated = Number(/\n\s+I:\s+(-?[\d.]+) LUFS/.exec(report)?.[1]);
+    expect(integrated).toBeGreaterThan(-22);
+    expect(integrated).toBeLessThan(-12);
+    const rate = execFileSync("ffprobe", ["-v", "error", "-show_entries", "stream=sample_rate", "-of", "csv=p=0", out], { encoding: "utf8" }).trim();
+    expect(rate).toBe("48000");
   });
 
   it("kills a decode that exceeds its hard timeout", async () => {

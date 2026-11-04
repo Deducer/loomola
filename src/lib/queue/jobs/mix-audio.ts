@@ -101,12 +101,22 @@ export function ffmpegMixArgs(params: {
   // quiet; simultaneous crosstalk ducks the user, which is the same
   // trade every AEC makes. Headphone users' mic has no bleed, so the
   // duck almost never engages.
+  //
+  // Then normalise loudness. A webcam mic across the room (2026-11-04,
+  // Opal C1 as the default input) gave a -37 LUFS mic track; amix's
+  // normalize=1 took another 6 dB off and Deepgram's batch pass returned
+  // ZERO words for 5.6 minutes of speech, while the same audio brought to
+  // -16 LUFS transcribed at 0.94 confidence. loudnorm's single-pass mode
+  // is a dynamic normaliser, so a normal-level call is barely touched.
+  // It resamples to 192 kHz internally; aresample puts the mix back at
+  // 48 kHz so the file stays small and transcript timings line up with
+  // the raw-track activity frames (which come off inputs 0/1, not [out]).
   const filter = [
     "[0:a]aformat=channel_layouts=mono[mic]",
     "[1:a]aformat=channel_layouts=mono[system]",
     "[system]asplit=2[sc][sysmix]",
     "[mic][sc]sidechaincompress=threshold=0.004:ratio=20:attack=3:release=400:level_sc=2[micducked]",
-    "[micducked][sysmix]amix=inputs=2:duration=longest:normalize=1[out]",
+    "[micducked][sysmix]amix=inputs=2:duration=longest:normalize=1,loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000[out]",
   ].join(";");
   return [
     "-hide_banner",

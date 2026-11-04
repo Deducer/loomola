@@ -21,7 +21,12 @@ export async function POST(
   const data = await getAudioNoteEnhancementStatus(id, user.id);
   if (!data) return granolaNotFound();
 
-  if ((data.transcriptTextLength ?? 0) > 0) {
+  // The live transcript survives an empty batch callback, so "has text"
+  // alone would lock a note whose batch pass heard nothing out of retry.
+  const batchTranscriptReady =
+    (data.transcriptTextLength ?? 0) > 0 &&
+    data.transcriptProvider !== "deepgram-live";
+  if (batchTranscriptReady) {
     return NextResponse.json(
       { error: "transcript_already_ready" },
       { status: 409 }

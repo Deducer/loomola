@@ -64,6 +64,15 @@ export async function POST(
   const parsedTranscript = parseDeepgramTranscript(channels);
   const requestId = body.metadata?.request_id ?? null;
 
+  if (parsedTranscript.wordTimestamps.length === 0) {
+    // insertTranscript keeps whatever transcript exists (often the live
+    // one) and the note still flips to ready, so this is the only trace
+    // of a batch pass that heard nothing. Usually a quiet capture.
+    console.warn(
+      `[webhook/deepgram] empty transcript for ${recordingId} (request ${requestId ?? "unknown"}); keeping any existing transcript`
+    );
+  }
+
   const result = await persistTranscriptAndFanOut({
     mediaObjectId: recordingId,
     provider: "deepgram",

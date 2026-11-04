@@ -70,6 +70,7 @@ export type AudioNoteEnhancementStatus = {
   aiTemplateId: string | null;
   generationStatus: string | null;
   transcriptTextLength: number | null;
+  transcriptProvider: string | null;
 };
 
 export class AttendeeUpdateError extends Error {
@@ -467,6 +468,7 @@ export async function getAudioNoteEnhancementStatus(
       aiTemplateId: aiOutputs.templateId,
       generationStatus: aiOutputs.generationStatusValue,
       transcriptTextLength: sql<number | null>`length(btrim(${transcripts.fullText}))::int`,
+      transcriptProvider: transcripts.provider,
     })
     .from(mediaObjects)
     .leftJoin(notes, eq(notes.mediaObjectId, mediaObjects.id))
