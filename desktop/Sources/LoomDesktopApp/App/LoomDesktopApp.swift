@@ -1,4 +1,7 @@
 import SwiftUI
+import os.log
+
+private let settingsLog = Logger(subsystem: "cloud.dissonance.loom.desktop", category: "settings")
 
 @main
 struct LoomDesktopApp: App {
@@ -49,11 +52,13 @@ private struct NativeSettingsPanel: View {
         // Read the event here, in the same run-loop pass that presented
         // the scene: the accessor's callback lands a hop later, when a
         // mouse move could already have replaced the ⌘, key event.
-        let openedByUser = SettingsLaunchGuard.isUserOpened(eventType: NSApp.currentEvent?.type)
+        let eventType = NSApp.currentEvent?.type
+        let openedByUser = SettingsLaunchGuard.isUserOpened(eventType: eventType)
         SettingsSheet(onDismiss: { window?.close() })
             .background(WindowAccessor { settingsWindow in
                 window = settingsWindow
                 settingsWindow.isRestorable = false
+                settingsLog.info("Settings window attached (event: \(eventType.map { String($0.rawValue) } ?? "none"), userOpened: \(openedByUser))")
                 if !openedByUser {
                     Self.dismissAutoPresented(settingsWindow)
                 }
@@ -61,12 +66,34 @@ private struct NativeSettingsPanel: View {
     }
 
     /// The accessor runs before SwiftUI orders the window in, so a
-    /// synchronous close is a no-op. Close once it is visible, and keep
-    /// checking briefly in case the order-front lands a tick later.
-    private static func dismissAutoPresented(_ window: NSWindow, attempt: Int = 0) {
+    /// synchronous close is a no-op. Close the moment the window first
+    /// becomes visible (occlusion state flips as it is ordered in), and
+    /// keep polling briefly as a backstop: a cold first launch after an
+    /// install can order the window in well after the first second.
+    private static func dismissAutoPresented(_ window: NSWindow) {
+        var token: NSObjectProtocol?
+        token = NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeOcclusionStateNotification,
+            object: window,
+            queue: .main
+        ) { _ in
+            guard window.occlusionState.contains(.visible) else { return }
+            settingsLog.info("Settings window auto-presented at launch; closing")
+            window.close()
+            if let token { NotificationCenter.default.removeObserver(token) }
+        }
+        pollAndClose(window, attempt: 0) {
+            if let token { NotificationCenter.default.removeObserver(token) }
+        }
+    }
+
+    private static func pollAndClose(_ window: NSWindow, attempt: Int, done: @escaping () -> Void) {
         DispatchQueue.main.asyncAfter(deadline: .now() + (attempt == 0 ? 0 : 0.25)) {
-            if window.isVisible { window.close() }
-            if attempt < 6 { dismissAutoPresented(window, attempt: attempt + 1) }
+            if window.isVisible {
+                settingsLog.info("Settings window auto-presented at launch; closing (poll \(attempt))")
+                window.close()
+            }
+            if attempt < 12 { pollAndClose(window, attempt: attempt + 1, done: done) } else { done() }
         }
     }
 }
