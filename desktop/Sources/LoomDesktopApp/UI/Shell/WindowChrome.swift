@@ -16,16 +16,36 @@ struct WindowAccessor: NSViewRepresentable {
     let onWindow: (NSWindow) -> Void
 
     func makeNSView(context: Context) -> NSView {
-        let view = NSView()
+        let view = WindowReportingView()
+        view.onWindow = onWindow
         DispatchQueue.main.async {
-            if let window = view.window {
-                onWindow(window)
-            }
+            view.reportIfAttached()
         }
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {}
+
+    /// Reports the window once, whichever comes first: the hop after
+    /// creation (the original behaviour) or the view actually moving into
+    /// its window. The Settings scene attaches its hosting view later
+    /// than one run-loop hop at launch, so the async path alone never
+    /// saw a window there and the launch guard never ran.
+    final class WindowReportingView: NSView {
+        var onWindow: ((NSWindow) -> Void)?
+        private var reported = false
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            reportIfAttached()
+        }
+
+        func reportIfAttached() {
+            guard !reported, let window else { return }
+            reported = true
+            onWindow?(window)
+        }
+    }
 }
 
 @MainActor
