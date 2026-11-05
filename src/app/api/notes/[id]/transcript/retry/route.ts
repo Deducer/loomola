@@ -6,6 +6,7 @@ import { getAudioNoteEnhancementStatus } from "@/db/queries/notes";
 import { enqueueMixAudio, enqueueTranscription } from "@/lib/queue/boss";
 import { enableGranola } from "@/lib/feature-flags";
 import { requireAuth } from "@/lib/require-auth";
+import { noteTranscriptState } from "@/lib/notes/transcript-state";
 
 function granolaNotFound() {
   return NextResponse.json({ error: "not_found" }, { status: 404 });
@@ -23,10 +24,9 @@ export async function POST(
 
   // The live transcript survives an empty batch callback, so "has text"
   // alone would lock a note whose batch pass heard nothing out of retry.
-  const batchTranscriptReady =
-    (data.transcriptTextLength ?? 0) > 0 &&
-    data.transcriptProvider !== "deepgram-live";
-  if (batchTranscriptReady) {
+  // Same reading as the enhance status route, so the desktop's Retry
+  // button and this gate agree.
+  if (noteTranscriptState(data).transcriptState === "ready") {
     return NextResponse.json(
       { error: "transcript_already_ready" },
       { status: 409 }

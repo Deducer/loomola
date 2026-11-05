@@ -4,7 +4,6 @@ import { z } from "zod";
 import {
   getAudioNoteEnhancementStatus,
   getAudioNoteGenerationStatusLite,
-  type AudioNoteEnhancementStatus,
 } from "@/db/queries/notes";
 import {
   resetAiOutputForEnhancement,
@@ -17,30 +16,11 @@ import {
   DEFAULT_NOTE_TEMPLATE_ID,
 } from "@/lib/ai/note-templates";
 import { llmModelId } from "@/lib/ai/client";
+import { noteTranscriptState } from "@/lib/notes/transcript-state";
 
 const enhanceRequestSchema = z.object({
   templateId: z.string().optional(),
 });
-
-function noteTranscriptState(data: AudioNoteEnhancementStatus) {
-  const transcriptTextLength = data.transcriptTextLength ?? 0;
-  const transcriptState = data.transcriptTextLength == null
-    ? "missing"
-    : transcriptTextLength > 0
-      ? "ready"
-      : "empty";
-  const audioSourceKey =
-    data.r2MixedKey ?? data.r2MicKey ?? data.r2SystemaudioKey;
-  const canRetryTranscript =
-    transcriptState !== "ready" && Boolean(audioSourceKey);
-
-  return {
-    transcriptTextLength,
-    transcriptState,
-    audioSourceKey,
-    canRetryTranscript,
-  };
-}
 
 function granolaNotFound() {
   return NextResponse.json({ error: "not_found" }, { status: 404 });

@@ -167,6 +167,10 @@ struct NoteWorkspaceView: View {
     @State private var enhanceFailureIsRetryable = true
     @State private var transcriptRetryAvailable = false
     @State private var transcriptRetrying = false
+    /// Only the live-streaming snapshot exists (the batch pass never
+    /// replaced it). Notes still generate from it, but a Retry sits
+    /// beside the Generate pill so the note isn't stuck with it.
+    @State private var transcriptLiveOnly = false
     @State private var pollEnhanceTask: Task<Void, Never>? = nil
     @State private var suppressReviewAutosave = false
 
@@ -1480,6 +1484,10 @@ struct NoteWorkspaceView: View {
         HStack {
             Spacer()
             if enhanceStatus != .running, !awaitingStopTranscript {
+                if transcriptLiveOnly {
+                    liveTranscriptPill
+                        .padding(.trailing, DSSpacing.sm)
+                }
                 generateNotesPill
             }
             Spacer()
@@ -1602,6 +1610,47 @@ struct NoteWorkspaceView: View {
                 .strokeBorder(DSColor.Border.subtle, lineWidth: 1)
         }
         .help("Transcript changed since the last AI note generation")
+    }
+
+    /// Shown while the note's only transcript is the live snapshot.
+    /// Mirrors `transcriptUpdatedPill`: a status dot, a label, and the
+    /// one action that fixes it.
+    private var liveTranscriptPill: some View {
+        HStack(spacing: DSSpacing.sm) {
+            HStack(spacing: 7) {
+                Circle()
+                    .fill(DSColor.State.warning)
+                    .frame(width: 5, height: 5)
+                Text("Live transcript only")
+                    .font(DSFont.Body.md())
+                    .foregroundStyle(DSColor.Text.primary)
+            }
+            Button(action: retryTranscript) {
+                Text(transcriptRetrying ? "Retrying…" : "Retry transcript")
+                    .font(DSFont.Body.md().weight(.medium))
+                    .foregroundStyle(DSColor.Text.primary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(
+                        RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
+                            .fill(DSColor.Bg.subtle)
+                    )
+            }
+            .buttonStyle(.plain)
+            .disabled(transcriptRetrying)
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 8)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
+                .fill(DSColor.Bg.surfaceRaised)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
+                .strokeBorder(DSColor.Border.subtle, lineWidth: 1)
+        }
+        .help("The full transcript never replaced the live one. Retry re-runs transcription on the saved audio.")
     }
 
     private var failedGenerateNotesPill: some View {
@@ -3155,6 +3204,11 @@ struct NoteWorkspaceView: View {
 
     private func applyEnhancementReadiness(_ status: EnhanceStatusResponse) {
         guard status.transcriptReady == false else {
+            transcriptLiveOnly = EnhanceTrigger.offersLiveTranscriptRetry(
+                transcriptState: status.transcriptState,
+                canRetryTranscript: status.canRetryTranscript,
+                mediaStatus: status.mediaStatus
+            )
             if enhanceStatus == .failed, enhanceFailureIsRetryable == false {
                 enhanceStatus = .idle
                 enhanceFailureMessage = nil
@@ -3168,6 +3222,7 @@ struct NoteWorkspaceView: View {
         enhanceStatus = .failed
         enhanceFailureIsRetryable = false
         transcriptRetryAvailable = false
+        transcriptLiveOnly = false
         if status.canRetryTranscript == true {
             transcriptRetryAvailable = true
             enhanceFailureMessage = transcriptRecoveryMessage(
@@ -3545,6 +3600,7 @@ struct NoteWorkspaceView: View {
         pollEnhanceTask?.cancel()
         transcriptRetrying = true
         transcriptRetryAvailable = false
+        transcriptLiveOnly = false
         enhanceStatus = .failed
         enhanceFailureIsRetryable = false
         enhanceFailureMessage = "Preparing transcript"

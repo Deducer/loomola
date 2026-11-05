@@ -46,4 +46,18 @@ enum EnhanceTrigger {
         }
         return .noTranscript
     }
+
+    /// A note whose only transcript is the live snapshot can still
+    /// generate notes, but the batch pass never replaced it (or heard
+    /// nothing: a quiet capture on 2026-11-04). Offer a retry once the
+    /// pipeline is idle; while uploading or transcribing the live
+    /// snapshot is simply the normal post-Stop state.
+    static func offersLiveTranscriptRetry(
+        transcriptState: String?,
+        canRetryTranscript: Bool?,
+        mediaStatus: String?
+    ) -> Bool {
+        guard transcriptState == "live", canRetryTranscript == true else { return false }
+        return mediaStatus != "uploading" && mediaStatus != "transcribing"
+    }
 }
