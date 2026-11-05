@@ -5,6 +5,7 @@ import {
   enqueueTranscription,
 } from "@/lib/queue/boss";
 import type { MixSegment } from "@/lib/queue/jobs/mix-audio";
+import type { TrackKind } from "@/lib/recording/types";
 
 /** The columns that describe where a note's audio lives. */
 export type NoteAudioSource = {
@@ -73,4 +74,17 @@ export async function enqueueNoteAudioJobs(
     ]);
   }
   return plan.kind;
+}
+
+/** The track kinds a Resume segment must capture: whatever segment 1 had. */
+export function resumeTracksFor(note: {
+  r2MicKey: string | null;
+  r2SystemaudioKey: string | null;
+  r2MixedKey: string | null;
+}): TrackKind[] {
+  const tracks: TrackKind[] = [];
+  if (note.r2MicKey) tracks.push("mic");
+  if (note.r2SystemaudioKey) tracks.push("system-audio");
+  if (tracks.length === 0 && note.r2MixedKey) tracks.push("mic");
+  return tracks;
 }

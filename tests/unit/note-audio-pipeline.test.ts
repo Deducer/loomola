@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { noteAudioSegments, planNoteAudioJobs } from "@/lib/notes/audio-pipeline";
+import { noteAudioSegments, planNoteAudioJobs, resumeTracksFor } from "@/lib/notes/audio-pipeline";
 import { ffmpegMixArgs, ffmpegMixGraph, mixSegmentsFromJobData } from "@/lib/queue/jobs/mix-audio";
 import { keyForTrack } from "@/lib/recording/upload-keys";
 import { recordingPrefixFromTrackKey } from "@/lib/recording/audio-artifacts";
@@ -118,6 +118,15 @@ describe("ffmpegMixGraph", () => {
     expect(filter).not.toContain("sidechaincompress");
     expect(graph.hasActivity).toBe(false);
     expect(graph.args).not.toContain("pipe:3");
+  });
+});
+
+describe("resumeTracksFor", () => {
+  it("mirrors segment 1's track set", () => {
+    expect(resumeTracksFor(twoTrack)).toEqual(["mic", "system-audio"]);
+    expect(resumeTracksFor({ r2MicKey: null, r2SystemaudioKey: "s", r2MixedKey: "s" })).toEqual(["system-audio"]);
+    expect(resumeTracksFor({ r2MicKey: null, r2SystemaudioKey: null, r2MixedKey: "m" })).toEqual(["mic"]);
+    expect(resumeTracksFor({ r2MicKey: null, r2SystemaudioKey: null, r2MixedKey: null })).toEqual([]);
   });
 });
 

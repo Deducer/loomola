@@ -6,6 +6,7 @@ import { createMultipartUpload } from "@/lib/r2/multipart";
 import { keyForTrack } from "@/lib/recording/upload-keys";
 import type { TrackKind } from "@/lib/recording/types";
 import { enableGranola } from "@/lib/feature-flags";
+import { resumeTracksFor } from "@/lib/notes/audio-pipeline";
 import { requireAuth } from "@/lib/require-auth";
 
 function granolaNotFound() {
@@ -96,17 +97,4 @@ export async function POST(
     tracks,
     segmentIndex,
   });
-}
-
-/** The track kinds a resumed segment must capture: whatever segment 1 had. */
-export function resumeTracksFor(note: {
-  r2MicKey: string | null;
-  r2SystemaudioKey: string | null;
-  r2MixedKey: string | null;
-}): TrackKind[] {
-  const tracks: TrackKind[] = [];
-  if (note.r2MicKey) tracks.push("mic");
-  if (note.r2SystemaudioKey) tracks.push("system-audio");
-  if (tracks.length === 0 && note.r2MixedKey) tracks.push("mic");
-  return tracks;
 }
