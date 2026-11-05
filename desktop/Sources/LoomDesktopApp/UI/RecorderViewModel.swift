@@ -2076,7 +2076,10 @@ final class RecorderViewModel: ObservableObject {
                     orphan,
                     rescuedSlug: outcome.slug
                 )
-                statusMessage = "Recovered audio note uploaded as \(outcome.slug)."
+                let noteName = (orphan.title?.isEmpty == false) ? orphan.title! : "the saved note"
+                statusMessage = orphan.isResumedSegment
+                    ? "Recovered segment added to \(noteName); transcribing again."
+                    : "Recovered audio note uploaded as \(outcome.slug)."
                 _recentService?.refresh()
             } catch {
                 try? OrphanedRecordingStore.shared.updateError(

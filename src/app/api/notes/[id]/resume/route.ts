@@ -15,6 +15,19 @@ function granolaNotFound() {
 
 const AUDIO_MIME = "audio/mp4";
 
+/** Orphan recovery passes the time the segment was really recorded;
+ *  a live resume sends nothing and gets "now". */
+function recordedAtFrom(json: unknown): string | null {
+  const raw =
+    json && typeof json === "object" && "recordedAt" in json
+      ? (json as { recordedAt?: unknown }).recordedAt
+      : undefined;
+  if (typeof raw !== "string") return null;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime()) || parsed.getTime() > Date.now()) return null;
+  return parsed.toISOString();
+}
+
 /**
  * Resume after Stop. Opens multipart uploads for one more segment of a
  * saved audio note, using the same track set the note was recorded with
@@ -33,6 +46,8 @@ export async function POST(
   if (!enableGranola()) return granolaNotFound();
   const user = await requireAuth(request);
   const { id } = await params;
+  const body = await request.json().catch(() => ({}));
+  const recordedAt = recordedAtFrom(body);
 
   const [note] = await db
     .select({
@@ -62,8 +77,11 @@ export async function POST(
     return NextResponse.json({ error: "audio_source_missing" }, { status: 409 });
   }
   if (note.uploadMetadata || !(note.status === "ready" || note.status === "failed")) {
+    // A pending resume's start time lets orphan recovery tell its own
+    // abandoned attempt (safe to abort) from a resume in progress.
+    const pending = (note.uploadMetadata as { resumeSegment?: unknown } | null)?.resumeSegment;
     return NextResponse.json(
-      { error: "note_busy", mediaStatus: note.status },
+      { error: "note_busy", mediaStatus: note.status, resumeSegment: pending ?? null },
       { status: 409 }
     );
   }
@@ -77,9 +95,11 @@ export async function POST(
     uploads[kind] = { key, uploadId };
     uploadMetadata[kind] = { uploadId, key };
   }
+  const now = new Date().toISOString();
   uploadMetadata.resumeSegment = {
     index: segmentIndex,
-    startedAt: new Date().toISOString(),
+    startedAt: now,
+    recordedAt: recordedAt ?? now,
     // Discard (abort) puts the note back where it was instead of
     // trashing it like an abandoned first recording.
     previousStatus: note.status,

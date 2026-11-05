@@ -10,7 +10,7 @@ import type { TrackKind } from "@/lib/recording/types";
 type UploadMeta = {
   [K in TrackKind]?: { uploadId: string; key: string };
 } & {
-  resumeSegment?: { index: number; startedAt: string; previousStatus?: string };
+  resumeSegment?: { index: number; startedAt: string; recordedAt?: string; previousStatus?: string };
 };
 
 export async function POST(

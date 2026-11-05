@@ -27,9 +27,14 @@ actor BackendClient {
     /// Resume after Stop: open the uploads for one more segment of a
     /// saved audio note. Not replayed on ambiguous drops: a resume that
     /// did land leaves the note busy, and a second call would 409.
-    func resumeAudioNote(mediaId: String) async throws -> ResumeAudioNoteResponse {
-        try await withUploadRetry(label: "resume", retryAmbiguousDrops: false) {
-            try await self.post(path: "/api/notes/\(mediaId)/resume", body: EmptyRequest())
+    func resumeAudioNote(mediaId: String, recordedAt: Date? = nil) async throws -> ResumeAudioNoteResponse {
+        // `recordedAt` is for orphan recovery: the rescued segment keeps the
+        // time it was actually recorded rather than the time of the retry.
+        let body = ResumeAudioNoteRequest(
+            recordedAt: recordedAt.map { ISO8601DateFormatter().string(from: $0) }
+        )
+        return try await withUploadRetry(label: "resume", retryAmbiguousDrops: false) {
+            try await self.post(path: "/api/notes/\(mediaId)/resume", body: body)
         }
     }
 
@@ -888,6 +893,10 @@ struct StartRecordingResponse: Decodable, Equatable, Sendable {
 
 /// Same shape as StartRecordingResponse plus the track kinds the server
 /// wants captured (the note's original set) and the segment number.
+struct ResumeAudioNoteRequest: Encodable, Sendable {
+    let recordedAt: String?
+}
+
 struct ResumeAudioNoteResponse: Decodable, Equatable, Sendable {
     let recordingId: String
     let slug: String
@@ -1592,6 +1601,13 @@ enum BackendClientError: LocalizedError {
               let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any]
         else { return nil }
         return object["error"] as? String
+    }
+
+    /// The decoded JSON error body, for callers that need more than the
+    /// `error` code (e.g. the resume route's `resumeSegment` on 409).
+    var apiErrorBody: [String: Any]? {
+        guard case .badStatus(_, _, let body) = self else { return nil }
+        return try? JSONSerialization.jsonObject(with: body) as? [String: Any]
     }
 
     var apiErrorMessage: String? {

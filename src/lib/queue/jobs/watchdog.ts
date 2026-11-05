@@ -57,6 +57,19 @@ export function stuckReasonFor(
   return age > threshold.maxAgeMs ? threshold.reason : null;
 }
 
+/** Pure: the status a note goes back to when its Resume after Stop
+ *  upload is abandoned. Mirrors the abort route. */
+export function restoredStatusForAbandonedResume(
+  uploadMetadata: unknown
+): "ready" | "failed" | null {
+  const segment =
+    uploadMetadata && typeof uploadMetadata === "object" && "resumeSegment" in uploadMetadata
+      ? (uploadMetadata as { resumeSegment?: { previousStatus?: unknown } }).resumeSegment
+      : undefined;
+  if (!segment || typeof segment !== "object") return null;
+  return segment.previousStatus === "failed" ? "failed" : "ready";
+}
+
 /**
  * Marks recordings stuck in non-terminal states as failed. coalesce keeps
  * a more specific reason written at the point of failure (e.g. the LLM
@@ -68,6 +81,32 @@ export async function runWatchdogJob(now: Date = new Date()): Promise<number> {
   const failedByOwner = new Map<string, FailedRecordingEmailItem[]>();
   for (const threshold of STUCK_THRESHOLDS) {
     const cutoff = new Date(now.getTime() - threshold.maxAgeMs);
+    if (threshold.status === "uploading") {
+      // An abandoned Resume after Stop is not a lost note: the earlier
+      // segment(s) are intact and the desktop keeps the new one in
+      // Recovery. Put the note back the way it was (as abort does)
+      // instead of failing it and emailing the owner.
+      const restored = await db
+        .update(mediaObjects)
+        .set({
+          status: sql`case when ${mediaObjects.uploadMetadata}->'resumeSegment'->>'previousStatus' = 'failed' then 'failed' else 'ready' end`,
+          uploadMetadata: null,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(mediaObjects.status, "uploading"),
+            isNull(mediaObjects.deletedAt),
+            lt(mediaObjects.updatedAt, cutoff),
+            sql`${mediaObjects.uploadMetadata} ? 'resumeSegment'`
+          )
+        )
+        .returning({ id: mediaObjects.id });
+      for (const row of restored) {
+        console.warn(`[watchdog] ${row.id}: abandoned resume past 24h — note restored`);
+      }
+      total += restored.length;
+    }
     const rows = await db
       .update(mediaObjects)
       .set({

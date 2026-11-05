@@ -9,6 +9,11 @@ struct AudioRecordingSession: Equatable, Sendable {
     let meetingContext: MeetingContext?
     var backendRecordingId: String?
     var backendSlug: String?
+    /// Resume after Stop: the saved note this session appends a segment
+    /// to (same id as `backendRecordingId`). Nil for a new note. Orphan
+    /// recovery reads it so a failed segment upload is retried onto that
+    /// note instead of becoming a separate one.
+    var resumedNoteId: String?
 
     init(
         id: UUID = UUID(),
@@ -18,7 +23,8 @@ struct AudioRecordingSession: Equatable, Sendable {
         tracks: Set<TrackKind>,
         meetingContext: MeetingContext? = nil,
         backendRecordingId: String? = nil,
-        backendSlug: String? = nil
+        backendSlug: String? = nil,
+        resumedNoteId: String? = nil
     ) {
         self.id = id
         self.directory = directory
@@ -28,6 +34,7 @@ struct AudioRecordingSession: Equatable, Sendable {
         self.meetingContext = meetingContext
         self.backendRecordingId = backendRecordingId
         self.backendSlug = backendSlug
+        self.resumedNoteId = resumedNoteId
     }
 
     var startedAtISO8601: String {
@@ -82,6 +89,27 @@ struct AudioRecordingSessionSnapshot: Sendable {
     let backendRecordingId: String?
     let backendSlug: String?
     let meetingContext: MeetingContext?
+    let resumedNoteId: String?
+
+    init(
+        directory: URL,
+        tracks: Set<TrackKind>,
+        title: String?,
+        startedAt: Date,
+        backendRecordingId: String?,
+        backendSlug: String?,
+        meetingContext: MeetingContext?,
+        resumedNoteId: String? = nil
+    ) {
+        self.directory = directory
+        self.tracks = tracks
+        self.title = title
+        self.startedAt = startedAt
+        self.backendRecordingId = backendRecordingId
+        self.backendSlug = backendSlug
+        self.meetingContext = meetingContext
+        self.resumedNoteId = resumedNoteId
+    }
 
     func localFileURL(for track: TrackKind) -> URL? {
         switch track {

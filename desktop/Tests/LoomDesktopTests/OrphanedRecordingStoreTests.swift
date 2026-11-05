@@ -243,6 +243,52 @@ final class OrphanedRecordingStoreTests: XCTestCase {
         XCTAssertNotNil(loaded.compositeFileURL())
     }
 
+    func testCaptureKeepsTheResumedNoteIdAcrossReload() throws {
+        let sourceDir = makeTempDir()
+        defer { try? FileManager.default.removeItem(at: sourceDir) }
+        try Data([0x10]).write(to: sourceDir.appending(path: "mic.m4a"))
+
+        let store = makeStore()
+        let orphan = try store.capture(
+            from: AudioRecordingSessionSnapshot(
+                directory: sourceDir,
+                tracks: [.mic],
+                title: "Design review",
+                startedAt: Date(timeIntervalSince1970: 1746540253),
+                backendRecordingId: "note-uuid",
+                backendSlug: "noteSlug01",
+                meetingContext: nil,
+                resumedNoteId: "note-uuid"
+            ),
+            durationSeconds: 90,
+            lastError: "Upload failed"
+        )
+        XCTAssertTrue(orphan.isResumedSegment)
+        XCTAssertTrue(orphan.localCopyDetail.contains("adds this segment to the saved note"))
+
+        let reloaded = OrphanedRecordingStore(storeRoot: testStoreRoot)
+        let loaded = try XCTUnwrap(reloaded.orphans.first { $0.id == orphan.id })
+        XCTAssertEqual(loaded.resumedNoteId, "note-uuid")
+        XCTAssertTrue(loaded.isResumedSegment)
+    }
+
+    func testMetadataWithoutResumedNoteIdStillLoads() throws {
+        // Orphans written before Resume after Stop have no such key.
+        let dir = testStoreRoot.appending(path: "legacy-orphan", directoryHint: .isDirectory)
+        try? FileManager.default.removeItem(at: testStoreRoot)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let json = """
+        {"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","capturedAt":"2026-05-06T15:24:13Z",
+         "stoppedAt":"2026-05-06T15:26:13Z","durationSeconds":120,"tracks":["mic"]}
+        """
+        try json.write(to: dir.appending(path: "metadata.json"), atomically: true, encoding: .utf8)
+
+        let store = OrphanedRecordingStore(storeRoot: testStoreRoot)
+        let loaded = try XCTUnwrap(store.orphans.first)
+        XCTAssertNil(loaded.resumedNoteId)
+        XCTAssertFalse(loaded.isResumedSegment)
+    }
+
     // MARK: - Helpers
 
     private var testStoreRoot: URL {

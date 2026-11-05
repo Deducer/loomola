@@ -1,6 +1,10 @@
 // tests/unit/watchdog-thresholds.test.ts
 import { describe, expect, it } from "vitest";
-import { STUCK_THRESHOLDS, stuckReasonFor } from "@/lib/queue/jobs/watchdog";
+import {
+  STUCK_THRESHOLDS,
+  restoredStatusForAbandonedResume,
+  stuckReasonFor,
+} from "@/lib/queue/jobs/watchdog";
 
 const NOW = new Date("2026-06-10T12:00:00Z");
 const hoursAgo = (h: number) => new Date(NOW.getTime() - h * 60 * 60 * 1000);
@@ -32,5 +36,31 @@ describe("stuckReasonFor", () => {
       "transcribing",
       "uploading",
     ]);
+  });
+});
+
+describe("restoredStatusForAbandonedResume", () => {
+  it("puts an abandoned resume back to the status it had before", () => {
+    expect(
+      restoredStatusForAbandonedResume({
+        mic: { uploadId: "u", key: "k" },
+        resumeSegment: { index: 2, startedAt: "2026-11-05T18:00:00Z", previousStatus: "ready" },
+      })
+    ).toBe("ready");
+    expect(
+      restoredStatusForAbandonedResume({
+        resumeSegment: { index: 2, startedAt: "2026-11-05T18:00:00Z", previousStatus: "failed" },
+      })
+    ).toBe("failed");
+    expect(
+      restoredStatusForAbandonedResume({
+        resumeSegment: { index: 2, startedAt: "2026-11-05T18:00:00Z" },
+      })
+    ).toBe("ready");
+  });
+
+  it("is null for a first upload, which the watchdog fails as before", () => {
+    expect(restoredStatusForAbandonedResume({ mic: { uploadId: "u", key: "k" } })).toBeNull();
+    expect(restoredStatusForAbandonedResume(null)).toBeNull();
   });
 });

@@ -19,13 +19,16 @@ struct OrphanedRecording: Codable, Identifiable, Equatable, Sendable {
     let stoppedAt: Date
     let durationSeconds: Double
     let tracks: [TrackKind]
+    /// Resume after Stop: the saved note this segment belongs to. Retry
+    /// appends it to that note instead of creating a new one.
+    let resumedNoteId: String?
     var rescuedAt: Date?
     var rescuedSlug: String?
     var lastError: String?
 
     enum CodingKeys: String, CodingKey {
         case id, originalRecordingId, originalSlug, title
-        case capturedAt, stoppedAt, durationSeconds, tracks
+        case capturedAt, stoppedAt, durationSeconds, tracks, resumedNoteId
         case rescuedAt, rescuedSlug, lastError
         // storageDirectory is recomputed on load — don't persist it,
         // since the home directory path could change (rare) and the
@@ -42,6 +45,7 @@ struct OrphanedRecording: Codable, Identifiable, Equatable, Sendable {
         stoppedAt: Date,
         durationSeconds: Double,
         tracks: [TrackKind],
+        resumedNoteId: String? = nil,
         rescuedAt: Date? = nil,
         rescuedSlug: String? = nil,
         lastError: String? = nil
@@ -55,6 +59,7 @@ struct OrphanedRecording: Codable, Identifiable, Equatable, Sendable {
         self.stoppedAt = stoppedAt
         self.durationSeconds = durationSeconds
         self.tracks = tracks
+        self.resumedNoteId = resumedNoteId
         self.rescuedAt = rescuedAt
         self.rescuedSlug = rescuedSlug
         self.lastError = lastError
@@ -70,6 +75,7 @@ struct OrphanedRecording: Codable, Identifiable, Equatable, Sendable {
         stoppedAt = try c.decode(Date.self, forKey: .stoppedAt)
         durationSeconds = try c.decode(Double.self, forKey: .durationSeconds)
         tracks = try c.decode([TrackKind].self, forKey: .tracks)
+        resumedNoteId = try c.decodeIfPresent(String.self, forKey: .resumedNoteId)
         rescuedAt = try c.decodeIfPresent(Date.self, forKey: .rescuedAt)
         rescuedSlug = try c.decodeIfPresent(String.self, forKey: .rescuedSlug)
         lastError = try c.decodeIfPresent(String.self, forKey: .lastError)
@@ -93,6 +99,12 @@ struct OrphanedRecording: Codable, Identifiable, Equatable, Sendable {
         tracks.contains(.composite)
     }
 
+    /// A segment recorded with Resume after Stop. Its rescue appends to
+    /// the saved note; a new note would split the meeting in two.
+    var isResumedSegment: Bool {
+        resumedNoteId != nil
+    }
+
     /// Recovery keeps a local safety copy even after the cloud upload
     /// succeeds. These labels make the destructive boundary explicit in UI.
     var isRescued: Bool {
@@ -109,9 +121,13 @@ struct OrphanedRecording: Codable, Identifiable, Equatable, Sendable {
 
     var localCopyDetail: String {
         if isRescued {
-            return "Cloud copy uploaded. Local recovery files are still on this Mac."
+            return isResumedSegment
+                ? "Segment added to the saved note. Local recovery files are still on this Mac."
+                : "Cloud copy uploaded. Local recovery files are still on this Mac."
         }
-        return "Upload has not succeeded. These local files may be the only copy."
+        return isResumedSegment
+            ? "Upload has not succeeded. Retry adds this segment to the saved note; these local files may be its only copy."
+            : "Upload has not succeeded. These local files may be the only copy."
     }
 
     var discardConfirmationTitle: String {
@@ -186,6 +202,7 @@ struct OrphanedRecording: Codable, Identifiable, Equatable, Sendable {
             stoppedAt: copy.stoppedAt,
             durationSeconds: copy.durationSeconds,
             tracks: copy.tracks,
+            resumedNoteId: copy.resumedNoteId,
             rescuedAt: copy.rescuedAt,
             rescuedSlug: copy.rescuedSlug,
             lastError: copy.lastError
@@ -327,6 +344,7 @@ final class OrphanedRecordingStore: ObservableObject {
             stoppedAt: Date(),
             durationSeconds: durationSeconds,
             tracks: Array(snapshot.tracks),
+            resumedNoteId: snapshot.resumedNoteId,
             lastError: lastError
         )
         try writeMetadata(orphan)

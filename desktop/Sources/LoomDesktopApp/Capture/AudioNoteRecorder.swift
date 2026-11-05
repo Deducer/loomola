@@ -55,7 +55,8 @@ final class AudioNoteRecorder {
             startedAt: session.startedAt,
             backendRecordingId: session.backendRecordingId,
             backendSlug: session.backendSlug,
-            meetingContext: session.meetingContext
+            meetingContext: session.meetingContext,
+            resumedNoteId: session.resumedNoteId
         )
     }
 
@@ -140,7 +141,8 @@ final class AudioNoteRecorder {
                 tracks: serverTracks,
                 meetingContext: meetingContext,
                 backendRecordingId: response.recordingId,
-                backendSlug: response.slug
+                backendSlug: response.slug,
+                resumedNoteId: resuming.mediaId
             )
         } else {
             nextSession = AudioRecordingSession(

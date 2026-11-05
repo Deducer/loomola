@@ -16,6 +16,10 @@ private let log = Logger(subsystem: "cloud.dissonance.loom.desktop", category: "
 /// been aborted by retention). Easier and more idempotent to abort
 /// the old one and POST a fresh /api/recordings/start. The orphan
 /// metadata records the original slug for traceability.
+///
+/// The exception is a segment recorded with Resume after Stop: that
+/// note already holds the earlier segment(s), so the rescue goes back
+/// through /api/notes/[id]/resume and appends (`retryResumedSegment`).
 @MainActor
 final class OrphanRetryCoordinator {
     private let backend: BackendClient
@@ -39,7 +43,111 @@ final class OrphanRetryCoordinator {
         if orphan.isVideo {
             return try await retryVideo(orphan)
         }
+        if let noteId = orphan.resumedNoteId {
+            return try await retryResumedSegment(orphan, noteId: noteId)
+        }
+        return try await retryAsNewNote(orphan)
+    }
 
+    /// Resume after Stop rescue: append the segment to the note it was
+    /// recorded onto. The note is left exactly as it was if any step
+    /// fails (abort restores its previous status), so this is safe to
+    /// re-run.
+    private func retryResumedSegment(_ orphan: OrphanedRecording, noteId: String) async throws -> Outcome {
+        let uploadTracks = usableTracks(for: orphan)
+        guard !uploadTracks.isEmpty else { throw OrphanRetryError.noTracks }
+
+        let resumed: ResumeAudioNoteResponse
+        do {
+            resumed = try await openResume(noteId: noteId, orphan: orphan)
+        } catch let error as BackendClientError where error.apiErrorCode == "not_found" {
+            // The note was trashed since: nothing to append to. Keep the
+            // audio by saving it as its own note rather than failing forever.
+            log.notice("resumed-segment retry: note \(noteId, privacy: .public) is gone; saving as a new note")
+            return try await retryAsNewNote(orphan)
+        }
+        log.notice("resumed-segment retry: note=\(noteId, privacy: .public) segment=\(resumed.segmentIndex, privacy: .public)")
+
+        // From here the note is "uploading" under this attempt. If anything
+        // fails before /complete, put it back (abort restores its previous
+        // status), otherwise the next retry would mistake this attempt for
+        // a live recording and refuse to touch it. Abort after a successful
+        // /complete is a harmless 400 (no uploads pending).
+        do {
+            let uploader = MultipartUploadCoordinator(backend: backend)
+            var completedTracks: [TrackKind: [CompletedPart]] = [:]
+            for track in uploadTracks where resumed.tracks.contains(track) {
+                guard let fileURL = (track == .mic) ? orphan.micFileURL() : orphan.systemAudioFileURL() else { continue }
+                let parts = try await uploader.uploadFile(
+                    url: fileURL,
+                    recordingId: resumed.recordingId,
+                    track: track
+                )
+                if !parts.isEmpty {
+                    completedTracks[track] = parts
+                }
+            }
+            guard !completedTracks.isEmpty else {
+                throw OrphanRetryError.noUploadedTracks
+            }
+
+            let durationSeconds = await Self.recoveredDurationSeconds(for: uploadTracks, orphan: orphan)
+            let completeResponse = try await backend.complete(
+                recordingId: resumed.recordingId,
+                request: CompleteRecordingRequest(tracks: completedTracks, durationSeconds: durationSeconds)
+            )
+            log.notice("resumed-segment retry complete: slug=\(completeResponse.slug, privacy: .public)")
+            return Outcome(recordingId: resumed.recordingId, slug: completeResponse.slug)
+        } catch {
+            try? await backend.abort(recordingId: noteId)
+            log.error("resumed-segment retry failed; note restored: \(error.localizedDescription, privacy: .public)")
+            throw error
+        }
+    }
+
+    /// Opens the resume uploads. A 409 `note_busy` whose pending resume
+    /// began before this orphan was stopped is the orphan's own failed
+    /// attempt (or an older abandoned one): abort it and try once more.
+    /// A resume that began later is someone recording onto the note
+    /// right now, and must not be touched.
+    private func openResume(noteId: String, orphan: OrphanedRecording) async throws -> ResumeAudioNoteResponse {
+        do {
+            return try await backend.resumeAudioNote(mediaId: noteId, recordedAt: orphan.capturedAt)
+        } catch let error as BackendClientError where error.apiErrorCode == "note_busy" {
+            guard let decision = Self.staleResumeDecision(errorBody: error.apiErrorBody, orphanStoppedAt: orphan.stoppedAt) else {
+                throw OrphanRetryError.noteBusy(status: error.apiErrorBody?["mediaStatus"] as? String)
+            }
+            switch decision {
+            case .abortAndRetry:
+                try await backend.abort(recordingId: noteId)
+                log.notice("resumed-segment retry: cleared stale resume on \(noteId, privacy: .public)")
+                return try await backend.resumeAudioNote(mediaId: noteId, recordedAt: orphan.capturedAt)
+            case .liveElsewhere:
+                throw OrphanRetryError.noteBusy(status: "recording")
+            }
+        }
+    }
+
+    enum StaleResumeDecision: Equatable {
+        case abortAndRetry
+        case liveElsewhere
+    }
+
+    /// Pure: reads the resume route's 409 body. Nil when the note is busy
+    /// for another reason (transcribing, processing) — wait it out.
+    static func staleResumeDecision(errorBody: [String: Any]?, orphanStoppedAt: Date) -> StaleResumeDecision? {
+        guard let segment = errorBody?["resumeSegment"] as? [String: Any],
+              let startedAtRaw = segment["startedAt"] as? String
+        else { return nil }
+        let parser = ISO8601DateFormatter()
+        parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let startedAt = parser.date(from: startedAtRaw)
+            ?? ISO8601DateFormatter().date(from: startedAtRaw)
+        guard let startedAt else { return nil }
+        return startedAt <= orphanStoppedAt ? .abortAndRetry : .liveElsewhere
+    }
+
+    private func retryAsNewNote(_ orphan: OrphanedRecording) async throws -> Outcome {
         let originalNote: NoteBodyResponse?
         let originalRecent: RecentRecordingDTO?
         if let originalId = orphan.originalRecordingId {
@@ -247,6 +355,7 @@ final class OrphanRetryCoordinator {
 enum OrphanRetryError: LocalizedError {
     case noTracks
     case noUploadedTracks
+    case noteBusy(status: String?)
 
     var errorDescription: String? {
         switch self {
@@ -254,6 +363,11 @@ enum OrphanRetryError: LocalizedError {
             return "Orphaned recording has no tracks to upload."
         case .noUploadedTracks:
             return "No tracks were successfully uploaded; check disk for the original audio files."
+        case .noteBusy(let status):
+            if status == "recording" {
+                return "The note is being recorded onto right now. Retry after that recording stops."
+            }
+            return "The note is still \(status ?? "busy"). Retry once it finishes."
         }
     }
 }

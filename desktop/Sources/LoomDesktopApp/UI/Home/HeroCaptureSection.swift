@@ -477,6 +477,7 @@ private struct RecorderReadinessPopover: View {
         let mins = Int(orphan.durationSeconds / 60)
         let secs = Int(orphan.durationSeconds.truncatingRemainder(dividingBy: 60))
         let mb = Double(orphan.totalBytes()) / 1024 / 1024
-        return String(format: "%d:%02d · %.1f MB", mins, secs, mb)
+        let size = String(format: "%d:%02d · %.1f MB", mins, secs, mb)
+        return orphan.isResumedSegment ? "\(size) · segment of a saved note" : size
     }
 }

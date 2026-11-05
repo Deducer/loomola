@@ -484,7 +484,9 @@ Granola's greyed "Resume" on a saved note is now live. A saved audio note's `�
 | mix_audio | Accepts `segments[]`: per-track `concat`, then the usual duck + amix + loudnorm; activity pipes tap the joined tracks so "Me" evidence covers the whole note. A segment missing a track gets silence of its own length; a single-track note is joined and normalised. Single-segment args are byte-identical to before. |
 | Desktop | `NoteStopResumePill` modes `.resumeSaved` / `.resumeUnavailable(reason)`, gated by `NoteResumePolicy` (audio only, note ready or failed, nothing else recording). The workspace flushes the body, the view model seeds title + body into the live editor (`resumeSavedAudioNote`), the recorder calls `resumeAudioNote` instead of `startRecording`, and the live snapshot of the new segment is not published. Discarding a resumed segment reopens the note. |
 
-Known limits: a resumed segment whose upload fails is rescued by orphan recovery as a *separate* note (the original is untouched); the live transcript tab shows only the new segment while it records; enhanced notes regenerate after the batch transcript lands, as after any stop.
+| Rescue of a failed segment (2026-11-05, same day) | A resumed segment whose upload fails is kept in Recovery with the note it belongs to (`OrphanedRecording.resumedNoteId`) and retried through `/resume` → upload → `/complete`, so it lands on the original note instead of becoming a second one. The retry clears only its own abandoned attempt: `/resume` answers 409 `note_busy` with the pending `resumeSegment`, and a resume that began after the orphan stopped is left alone ("being recorded onto right now"). `/resume` takes an optional `recordedAt` so the rescued segment keeps its real time; a trashed note falls back to a new note. The watchdog restores an abandoned resume (24 h) to its previous status instead of failing the note and emailing. |
+
+Known limits: the live transcript tab shows only the new segment while it records; enhanced notes regenerate after the batch transcript lands, as after any stop.
 
 ## Open follow-ups (next milestones to spec)
 

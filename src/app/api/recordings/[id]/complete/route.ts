@@ -26,7 +26,7 @@ type UploadMeta = {
   [K in TrackKind]?: { uploadId: string; key: string };
 } & {
   /** Set by /api/notes/[id]/resume: this upload appends a segment. */
-  resumeSegment?: { index: number; startedAt: string };
+  resumeSegment?: { index: number; startedAt: string; recordedAt?: string };
 };
 
 export async function POST(
@@ -151,7 +151,7 @@ export async function POST(
         micKey: keyUpdates.r2MicKey ?? null,
         systemAudioKey: keyUpdates.r2SystemaudioKey ?? null,
         durationSeconds: body.durationSeconds,
-        recordedAt: resumeSegment.startedAt,
+        recordedAt: resumeSegment.recordedAt ?? resumeSegment.startedAt,
       };
       const previous = (recording.audioSegments ?? []) as AudioNoteSegment[];
       const priorDuration = Number(recording.durationSeconds ?? 0) || 0;
@@ -250,7 +250,7 @@ export async function POST(
                 micKey: keyUpdates.r2MicKey ?? null,
                 systemAudioKey: keyUpdates.r2SystemaudioKey ?? null,
                 durationSeconds: body.durationSeconds,
-                recordedAt: resumeSegment.startedAt,
+                recordedAt: resumeSegment.recordedAt ?? resumeSegment.startedAt,
               },
             ],
           }
