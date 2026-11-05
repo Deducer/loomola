@@ -38,6 +38,14 @@ const vector1536 = customType<{ data: number[]; driverData: string }>({
 // Enums
 // ---------------------------------------------------------------------------
 
+/** A raw-track segment appended by Resume (media_objects.audio_segments). */
+export type AudioNoteSegment = {
+  micKey: string | null;
+  systemAudioKey: string | null;
+  durationSeconds: number;
+  recordedAt: string;
+};
+
 export const mediaObjectType = pgEnum("media_object_type", ["video", "audio"]);
 
 export const mediaObjectStatus = pgEnum("media_object_status", [
@@ -236,6 +244,10 @@ export const mediaObjects = pgTable("media_objects", {
   // 100 ms mic/system loudness frames (activity.bin) from mix_audio —
   // the capture evidence behind "Me" detection. Speaker recognition v2.
   r2ActivityKey: text("r2_activity_key"),
+  // Resume after Stop: raw tracks recorded after the first segment, in
+  // order. Segment 1 stays in r2_mic_key / r2_systemaudio_key; mix_audio
+  // concatenates every segment's tracks before ducking and loudnorm.
+  audioSegments: jsonb("audio_segments").$type<AudioNoteSegment[]>(),
   obsidianSaveRequestedAt: timestamp("obsidian_save_requested_at", {
     withTimezone: true,
   }),

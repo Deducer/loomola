@@ -9,6 +9,8 @@ import type { TrackKind } from "@/lib/recording/types";
 
 type UploadMeta = {
   [K in TrackKind]?: { uploadId: string; key: string };
+} & {
+  resumeSegment?: { index: number; startedAt: string; previousStatus?: string };
 };
 
 export async function POST(
@@ -26,12 +28,25 @@ export async function POST(
   const meta = recording.uploadMetadata as UploadMeta | null;
   if (meta) {
     const aborts: Promise<void>[] = [];
-    for (const trackMeta of Object.values(meta)) {
-      if (trackMeta) {
-        aborts.push(abortMultipartUpload(trackMeta.key, trackMeta.uploadId));
-      }
+    for (const [kind, trackMeta] of Object.entries(meta)) {
+      if (kind === "resumeSegment" || !trackMeta) continue;
+      const upload = trackMeta as { uploadId: string; key: string };
+      aborts.push(abortMultipartUpload(upload.key, upload.uploadId));
     }
     await Promise.all(aborts);
+  }
+
+  // Resume after Stop was discarded: the note itself is untouched, so
+  // put it back in the state it had before the extra segment began.
+  if (meta?.resumeSegment) {
+    const previous = meta.resumeSegment.previousStatus === "failed" ? "failed" : "ready";
+    await db
+      .update(mediaObjects)
+      .set({ status: previous, uploadMetadata: null })
+      .where(
+        and(eq(mediaObjects.id, recording.id), eq(mediaObjects.ownerId, user.id))
+      );
+    return NextResponse.json({ ok: true, resumed: true });
   }
 
   // Discard semantics: a user-initiated abort means "this never

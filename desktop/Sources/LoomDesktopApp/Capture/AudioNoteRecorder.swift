@@ -7,6 +7,13 @@ private let audioNoteRecorderLog = Logger(
     category: "audio-note-recorder"
 )
 
+/// Resume after Stop: record one more segment onto this saved note
+/// instead of starting a new recording.
+struct AudioNoteResumeTarget: Equatable, Sendable {
+    let mediaId: String
+    let slug: String
+}
+
 @MainActor
 final class AudioNoteRecorder {
     var onAudioLevel: ((Double) -> Void)?
@@ -87,16 +94,17 @@ final class AudioNoteRecorder {
         meetingContext: MeetingContext? = nil,
         microphoneDeviceID: String? = nil,
         systemAudioCaptureMode: SystemAudioCaptureMode = .coreAudioTap,
-        systemAudioDeviceID: String? = nil
+        systemAudioDeviceID: String? = nil,
+        resuming: AudioNoteResumeTarget? = nil
     ) async throws -> AudioRecordingSession {
         guard session == nil else {
             throw AudioNoteRecorderError.alreadyRecording
         }
 
-        var tracks = Set<TrackKind>()
-        if includeMic { tracks.insert(.mic) }
-        if includeSystemAudio { tracks.insert(.systemAudio) }
-        guard !tracks.isEmpty else {
+        var requestedTracks = Set<TrackKind>()
+        if includeMic { requestedTracks.insert(.mic) }
+        if includeSystemAudio { requestedTracks.insert(.systemAudio) }
+        guard resuming != nil || !requestedTracks.isEmpty else {
             throw AudioNoteRecorderError.noTracksSelected
         }
 
@@ -116,15 +124,36 @@ final class AudioNoteRecorder {
         }
 
         let directory = try Self.createSessionDirectory()
-        var nextSession = AudioRecordingSession(
-            directory: directory,
-            title: title?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
-            tracks: tracks,
-            meetingContext: meetingContext
-        )
-        let response = try await backend.startRecording(nextSession.startRequest)
-        nextSession.backendRecordingId = response.recordingId
-        nextSession.backendSlug = response.slug
+        var nextSession: AudioRecordingSession
+        if let resuming {
+            // The server says which tracks the note was recorded with, so
+            // the new segment concatenates like with like.
+            let response = try await backend.resumeAudioNote(mediaId: resuming.mediaId)
+            let serverTracks = Set(response.tracks)
+            guard !serverTracks.isEmpty else {
+                throw AudioNoteRecorderError.noTracksSelected
+            }
+            audioNoteRecorderLog.notice("resuming note \(resuming.mediaId, privacy: .public) segment=\(response.segmentIndex, privacy: .public) tracks=\(serverTracks.count, privacy: .public)")
+            nextSession = AudioRecordingSession(
+                directory: directory,
+                title: title?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
+                tracks: serverTracks,
+                meetingContext: meetingContext,
+                backendRecordingId: response.recordingId,
+                backendSlug: response.slug
+            )
+        } else {
+            nextSession = AudioRecordingSession(
+                directory: directory,
+                title: title?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
+                tracks: requestedTracks,
+                meetingContext: meetingContext
+            )
+            let response = try await backend.startRecording(nextSession.startRequest)
+            nextSession.backendRecordingId = response.recordingId
+            nextSession.backendSlug = response.slug
+        }
+        let tracks = nextSession.tracks
         session = nextSession
 
         do {

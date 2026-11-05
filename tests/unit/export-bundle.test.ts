@@ -62,6 +62,7 @@ function baseItem(type: "audio" | "video"): ExportBundleMediaData {
       attendees: null,
       r2MixedKey: null,
       r2ActivityKey: null,
+      audioSegments: null,
       obsidianSaveRequestedAt: null,
       obsidianSyncedAt: null,
       sourceContextHint: null,

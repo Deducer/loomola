@@ -73,12 +73,15 @@ struct NoteSegmentedPill: View {
 }
 
 /// `■ Stop` while recording, `▶ Resume` while paused, `🎙 Resume`
-/// (disabled) after the note is saved. One capsule, Granola metrics.
+/// after the note is saved (records another segment onto it), greyed
+/// with a reason when the note can't take one right now. One capsule,
+/// Granola metrics.
 struct NoteStopResumePill: View {
-    enum Mode {
+    enum Mode: Equatable {
         case stop
         case resumePaused
         case resumeSaved
+        case resumeUnavailable(reason: String)
     }
 
     let mode: Mode
@@ -97,32 +100,38 @@ struct NoteStopResumePill: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(DSColor.Accent.ai)
                 Text("Resume")
-            case .resumeSaved:
+            case .resumeSaved, .resumeUnavailable:
                 Image(systemName: "mic")
                     .font(.system(size: 11, weight: .medium))
                 Text("Resume")
             }
         }
         .font(DSFont.Body.sm().weight(.medium))
-        .foregroundStyle(mode == .resumeSaved ? DSColor.Text.tertiary : DSColor.Text.primary)
+        .foregroundStyle(isDisabled ? DSColor.Text.tertiary : DSColor.Text.primary)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(Capsule().fill(DSColor.Bg.surfaceRaised))
         .overlay { Capsule().strokeBorder(DSColor.Border.subtle, lineWidth: 1) }
         .contentShape(Capsule())
         .overlay {
-            if mode != .resumeSaved {
+            if !isDisabled {
                 ActionHitArea(action: action).clipShape(Capsule())
             }
         }
         .help(helpText)
     }
 
+    private var isDisabled: Bool {
+        if case .resumeUnavailable = mode { return true }
+        return false
+    }
+
     private var helpText: String {
         switch mode {
         case .stop: return "Stop recording and save the note"
         case .resumePaused: return "Resume recording"
-        case .resumeSaved: return "Resume lands with the next release"
+        case .resumeSaved: return "Record more onto this note. The transcript is rebuilt over the whole note when you stop."
+        case .resumeUnavailable(let reason): return reason
         }
     }
 }

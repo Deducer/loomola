@@ -143,6 +143,11 @@ final class RecorderViewModel: ObservableObject {
     private var audioTitleAutosaveTask: Task<Void, Never>?
     private var liveTranscriptionCancellable: AnyCancellable?
     @Published private(set) var lastStoppedAudioRecordingForReview: RecentRecording?
+    /// Resume after Stop: the saved note the active audio recording is
+    /// appending a segment to. nil for a fresh note.
+    private var resumingSavedNote: AudioNoteResumeTarget?
+    /// The Recent row that note was opened from, so Discard returns to it.
+    private var resumingSavedNoteRecording: RecentRecording?
     private var lastSyncedAudioTitle: String = ""
     private var lastAudioLevelUpdate = Date.distantPast
     private var lastMeaningfulAudioAt: Date?
@@ -1424,8 +1429,34 @@ final class RecorderViewModel: ObservableObject {
         }
     }
 
-    private func startAudioNoteRecordingAfterReadiness() {
-        recorderLog.notice("startAudioNoteRecording — entered (isStartingRecording=\(self.isStartingRecording, privacy: .public), activeRecordingKind=\(String(describing: self.activeRecordingKind), privacy: .public))")
+    /// Resume after Stop: record another segment onto a saved audio note.
+    /// `title` and `body` are the workspace's current copies, so the live
+    /// editor opens on the note as it is and autosave never blanks it.
+    /// The server re-transcribes the whole note when this segment stops.
+    func resumeSavedAudioNote(_ recording: RecentRecording, title: String, body: String) {
+        guard recording.kind == .audio else { return }
+        Task { @MainActor in
+            guard await hardPreflight(.audio) else { return }
+            startAudioNoteRecordingAfterReadiness(
+                resume: AudioNoteResumeSeed(
+                    target: AudioNoteResumeTarget(mediaId: recording.id, slug: recording.slug),
+                    recording: recording,
+                    title: title,
+                    body: body
+                )
+            )
+        }
+    }
+
+    private struct AudioNoteResumeSeed {
+        let target: AudioNoteResumeTarget
+        let recording: RecentRecording
+        let title: String
+        let body: String
+    }
+
+    private func startAudioNoteRecordingAfterReadiness(resume: AudioNoteResumeSeed? = nil) {
+        recorderLog.notice("startAudioNoteRecording — entered (isStartingRecording=\(self.isStartingRecording, privacy: .public), activeRecordingKind=\(String(describing: self.activeRecordingKind), privacy: .public), resume=\(resume?.target.mediaId ?? "none", privacy: .public))")
         guard !isStartingRecording else {
             recorderLog.error("startAudioNoteRecording — blocked: isStartingRecording=true")
             statusMessage = "Another recording is still starting. Wait a moment, then try again."
@@ -1436,6 +1467,13 @@ final class RecorderViewModel: ObservableObject {
             return
         }
         prepareForFreshAudioNote()
+        if let resume {
+            resumingSavedNote = resume.target
+            resumingSavedNoteRecording = resume.recording
+            audioTitle = resume.title
+            audioTitleManuallyEdited = !resume.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            liveNotesBody = resume.body
+        }
         // SCStream + backend.startRecording can take 3-4 seconds.
         // Flip isStartingRecording so the button shows "Starting…"
         // and disables — without this the click looked dead.
@@ -1504,7 +1542,8 @@ final class RecorderViewModel: ObservableObject {
                     meetingContext: meetingContext,
                     microphoneDeviceID: microphoneDeviceID,
                     systemAudioCaptureMode: systemAudioCaptureMode,
-                    systemAudioDeviceID: systemAudioDeviceID
+                    systemAudioDeviceID: systemAudioDeviceID,
+                    resuming: resume?.target
                 )
                 recorderLog.notice("startAudioNoteRecording — succeeded (backendId=\(session.backendRecordingId ?? "nil", privacy: .public), slug=\(session.backendSlug ?? "nil", privacy: .public), tracks=\(session.tracks.count, privacy: .public))")
                 let recordingStartedAt = Date()
@@ -1513,23 +1552,33 @@ final class RecorderViewModel: ObservableObject {
                 activeAudioRecordingStartedAt = recordingStartedAt
                 activeAudioRecordingSlug = session.backendSlug
                 activeAudioRecordingId = session.backendRecordingId
-                lastSyncedAudioTitle = title ?? ""
-                audioTitleManuallyEdited = title != nil
+                if let resume {
+                    lastSyncedAudioTitle = resume.title
+                    audioTitleManuallyEdited = !resume.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    liveNotesBody = resume.body
+                } else {
+                    lastSyncedAudioTitle = title ?? ""
+                    audioTitleManuallyEdited = title != nil
+                    liveNotesBody = ""
+                }
                 isAudioNotePaused = false
                 audioNotePausedAt = nil
                 audioNotePausedAccumulatedSeconds = 0
-                liveNotesBody = ""
-                startNotesAutosave()
+                startNotesAutosave(initialSyncedBody: resume?.body ?? "")
                 audioLevel = 0
                 state = .recording
                 statusMessage = "Recording audio note with \(session.tracks.count) track(s)."
                 startAudioInactivityMonitor()
                 isStartingRecording = false
-                attachCalendarAttendees(recordingId: session.backendRecordingId)
+                if resume == nil {
+                    attachCalendarAttendees(recordingId: session.backendRecordingId)
+                }
             } catch {
                 liveTranscription.stop()
                 cancelAudioInactivityMonitor()
                 recorderLog.error("startAudioNoteRecording — FAILED: \(error.localizedDescription, privacy: .public) (\(String(describing: error), privacy: .public))")
+                resumingSavedNote = nil
+                resumingSavedNoteRecording = nil
                 activeRecordingKind = nil
                 finalizingRecordingKind = nil
                 activeAudioRecordingStartedAt = nil
@@ -1563,6 +1612,8 @@ final class RecorderViewModel: ObservableObject {
         activeAudioRecordingId = nil
         lastStoppedAudioRecordingForReview = nil
         isDiscardingAudioNote = false
+        resumingSavedNote = nil
+        resumingSavedNoteRecording = nil
         liveTranscription.reset()
     }
 
@@ -1574,7 +1625,8 @@ final class RecorderViewModel: ObservableObject {
         meetingContext: MeetingContext?,
         microphoneDeviceID: String?,
         systemAudioCaptureMode: SystemAudioCaptureMode,
-        systemAudioDeviceID: String?
+        systemAudioDeviceID: String?,
+        resuming: AudioNoteResumeTarget? = nil
     ) async throws -> AudioRecordingSession {
         let maxAttempts = 3
         var lastError: Error?
@@ -1588,7 +1640,8 @@ final class RecorderViewModel: ObservableObject {
                     meetingContext: meetingContext,
                     microphoneDeviceID: microphoneDeviceID,
                     systemAudioCaptureMode: systemAudioCaptureMode,
-                    systemAudioDeviceID: systemAudioDeviceID
+                    systemAudioDeviceID: systemAudioDeviceID,
+                    resuming: resuming
                 )
             } catch {
                 lastError = error
@@ -1662,6 +1715,12 @@ final class RecorderViewModel: ObservableObject {
         let pendingSlug = activeAudioRecordingSlug
         let pendingTitle = audioTitle
         let pendingBody = liveNotesBody
+        // A resumed segment's live snapshot covers only that segment; the
+        // server drops the old transcript and re-runs the batch pass over
+        // the joined audio when this upload completes, so don't publish it.
+        let isResumedSegment = resumingSavedNote != nil
+        resumingSavedNote = nil
+        resumingSavedNoteRecording = nil
         if let pendingMediaId, let pendingSlug {
             let title = pendingTitle.trimmingCharacters(in: .whitespacesAndNewlines)
             lastStoppedAudioRecordingForReview = RecentRecording(
@@ -1711,7 +1770,8 @@ final class RecorderViewModel: ObservableObject {
                     _ = await persistAudioTitle(mediaId: mediaId, title: pendingTitle)
                     let transcriptSnapshot = await liveTranscription.finishAndSnapshot()
                     finalTranscriptSnapshot = transcriptSnapshot
-                    if !transcriptSnapshot.fullText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    if !isResumedSegment,
+                       !transcriptSnapshot.fullText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         try? await backendClient?.persistLiveTranscript(
                             mediaId: mediaId,
                             snapshot: transcriptSnapshot
@@ -1845,9 +1905,9 @@ final class RecorderViewModel: ObservableObject {
     /// re-PUTting identical content on every debounce tick.
     private var lastSyncedNotesBody: String = ""
 
-    private func startNotesAutosave() {
+    private func startNotesAutosave(initialSyncedBody: String = "") {
         notesAutosaveTask?.cancel()
-        lastSyncedNotesBody = ""
+        lastSyncedNotesBody = initialSyncedBody
         notesAutosaveTask = Task { [weak self] in
             // 2-second idle window: every time liveNotesBody
             // changes, restart the wait. After 2s of no edits, push
@@ -1956,6 +2016,11 @@ final class RecorderViewModel: ObservableObject {
     private func discardAudioNoteRecording() async {
         guard let audioNoteRecorder, !isDiscardingAudioNote else { return }
         isDiscardingAudioNote = true
+        // A discarded Resume segment leaves the saved note as it was;
+        // reopen it in review instead of dropping to Home.
+        let resumedRecording = resumingSavedNoteRecording
+        resumingSavedNote = nil
+        resumingSavedNoteRecording = nil
         notesAutosaveTask?.cancel()
         notesAutosaveTask = nil
         audioTitleAutosaveTask?.cancel()
@@ -1979,10 +2044,10 @@ final class RecorderViewModel: ObservableObject {
         lastSyncedNotesBody = ""
         audioTitle = ""
         autoSuggestedAudioTitle = nil
-        lastStoppedAudioRecordingForReview = nil
+        lastStoppedAudioRecordingForReview = resumedRecording
         state = .signedInIdle
         isDiscardingAudioNote = false
-        statusMessage = "Audio note discarded."
+        statusMessage = resumedRecording == nil ? "Audio note discarded." : "Resumed segment discarded."
     }
 
     // MARK: - Orphan recovery

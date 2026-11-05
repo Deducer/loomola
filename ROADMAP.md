@@ -474,6 +474,18 @@ Side fixes found on the way: `RecentDateGrouping` caches its `DateFormatter`s (b
 
 Not built on purpose: the Ask-anything field (single-note Q&A is its own milestone), per-person sharing (Share shows the owner and the link), notes feedback persists nowhere yet (logged under `cloud.dissonance.loom.desktop` / `workspace`).
 
+## Stage 22 — Resume after Stop (🔨 built 2026-11-05)
+
+Granola's greyed "Resume" on a saved note is now live. A saved audio note's `🎙 Resume` pill records another segment onto the same note; Stop re-transcribes the whole note.
+
+| Piece | What shipped |
+|---|---|
+| Server | `media_objects.audio_segments` (migration 0035): raw tracks of segments 2+, in order; segment 1 keeps `r2_mic_key` / `r2_systemaudio_key`. `POST /api/notes/[id]/resume` opens multipart uploads for one more segment with the note's original track set (keys `<slug>/raw/<kind>-segN.m4a`) and marks `uploadMetadata.resumeSegment`. The existing `/complete` appends the segment, adds its duration, drops the old transcript and re-enqueues; `/abort` restores a resumed note instead of trashing it. `src/lib/notes/audio-pipeline.ts` decides mix vs direct transcription for complete and transcript retry alike. |
+| mix_audio | Accepts `segments[]`: per-track `concat`, then the usual duck + amix + loudnorm; activity pipes tap the joined tracks so "Me" evidence covers the whole note. A segment missing a track gets silence of its own length; a single-track note is joined and normalised. Single-segment args are byte-identical to before. |
+| Desktop | `NoteStopResumePill` modes `.resumeSaved` / `.resumeUnavailable(reason)`, gated by `NoteResumePolicy` (audio only, note ready or failed, nothing else recording). The workspace flushes the body, the view model seeds title + body into the live editor (`resumeSavedAudioNote`), the recorder calls `resumeAudioNote` instead of `startRecording`, and the live snapshot of the new segment is not published. Discarding a resumed segment reopens the note. |
+
+Known limits: a resumed segment whose upload fails is rescued by orphan recovery as a *separate* note (the original is untouched); the live transcript tab shows only the new segment while it records; enhanced notes regenerate after the batch transcript lands, as after any stop.
+
 ## Open follow-ups (next milestones to spec)
 
 | Topic | Why | Rough effort |

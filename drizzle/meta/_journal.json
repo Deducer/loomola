@@ -246,6 +246,13 @@
       "when": 1793145600000,
       "tag": "0034_speaker_v2_profile",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1793836800000,
+      "tag": "0035_audio_segments",
+      "breakpoints": true
     }
   ]
 }

@@ -24,6 +24,15 @@ actor BackendClient {
         }
     }
 
+    /// Resume after Stop: open the uploads for one more segment of a
+    /// saved audio note. Not replayed on ambiguous drops: a resume that
+    /// did land leaves the note busy, and a second call would 409.
+    func resumeAudioNote(mediaId: String) async throws -> ResumeAudioNoteResponse {
+        try await withUploadRetry(label: "resume", retryAmbiguousDrops: false) {
+            try await self.post(path: "/api/notes/\(mediaId)/resume", body: EmptyRequest())
+        }
+    }
+
     func partURL(recordingId: String, request: PartURLRequest) async throws -> PartURLResponse {
         try await withUploadRetry(label: "part-url", retryAmbiguousDrops: true) {
             try await self.post(path: "/api/recordings/\(recordingId)/part-url", body: request)
@@ -874,6 +883,47 @@ struct StartRecordingResponse: Decodable, Equatable, Sendable {
                 return (kind, upload)
             }
         )
+    }
+}
+
+/// Same shape as StartRecordingResponse plus the track kinds the server
+/// wants captured (the note's original set) and the segment number.
+struct ResumeAudioNoteResponse: Decodable, Equatable, Sendable {
+    let recordingId: String
+    let slug: String
+    let uploads: [TrackKind: StartRecordingResponse.Upload]
+    let tracks: [TrackKind]
+    let segmentIndex: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case recordingId
+        case slug
+        case uploads
+        case tracks
+        case segmentIndex
+    }
+
+    init(recordingId: String, slug: String, uploads: [TrackKind: StartRecordingResponse.Upload], tracks: [TrackKind], segmentIndex: Int) {
+        self.recordingId = recordingId
+        self.slug = slug
+        self.uploads = uploads
+        self.tracks = tracks
+        self.segmentIndex = segmentIndex
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        recordingId = try container.decode(String.self, forKey: .recordingId)
+        slug = try container.decode(String.self, forKey: .slug)
+        let keyedUploads = try container.decode([String: StartRecordingResponse.Upload].self, forKey: .uploads)
+        uploads = Dictionary(
+            uniqueKeysWithValues: keyedUploads.compactMap { key, upload in
+                guard let kind = TrackKind(rawValue: key) else { return nil }
+                return (kind, upload)
+            }
+        )
+        tracks = try container.decode([String].self, forKey: .tracks).compactMap(TrackKind.init(rawValue:))
+        segmentIndex = try container.decodeIfPresent(Int.self, forKey: .segmentIndex) ?? 2
     }
 }
 

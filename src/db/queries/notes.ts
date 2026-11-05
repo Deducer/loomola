@@ -9,6 +9,7 @@ import {
   speakerAssignments,
   transcripts,
 } from "@/db/schema";
+import type { AudioNoteSegment } from "@/db/schema";
 import { and, desc, eq, getTableColumns, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { generateSlug } from "@/lib/slug";
 
@@ -62,6 +63,7 @@ export type AudioNoteEnhancementStatus = {
   r2MixedKey: string | null;
   r2MicKey: string | null;
   r2SystemaudioKey: string | null;
+  audioSegments: AudioNoteSegment[] | null;
   noteTemplateId: string | null;
   titleSuggested: string | null;
   summary: string | null;
@@ -460,6 +462,7 @@ export async function getAudioNoteEnhancementStatus(
       r2MixedKey: mediaObjects.r2MixedKey,
       r2MicKey: mediaObjects.r2MicKey,
       r2SystemaudioKey: mediaObjects.r2SystemaudioKey,
+      audioSegments: mediaObjects.audioSegments,
       noteTemplateId: notes.templateId,
       titleSuggested: aiOutputs.titleSuggested,
       summary: aiOutputs.summary,

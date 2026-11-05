@@ -3,7 +3,7 @@ import { requireAuth } from "@/lib/require-auth";
 import { getRecordingOwned } from "@/db/queries/recordings";
 import { completeMultipartUpload } from "@/lib/r2/multipart";
 import { db } from "@/db";
-import { mediaObjects } from "@/db/schema";
+import { mediaObjects, transcripts, type AudioNoteSegment } from "@/db/schema";
 import { and, eq, sql } from "drizzle-orm";
 import type { TrackKind } from "@/lib/recording/types";
 import {
@@ -11,9 +11,8 @@ import {
   enqueuePreviewSprite,
   enqueueThumbnail,
   enqueueTranscription,
-  enqueueMixAudio,
-  enqueueAudioWaveform,
 } from "@/lib/queue/boss";
+import { enqueueNoteAudioJobs } from "@/lib/notes/audio-pipeline";
 import { enableGranola } from "@/lib/feature-flags";
 
 type CompleteRequest = {
@@ -25,6 +24,9 @@ type CompleteRequest = {
 
 type UploadMeta = {
   [K in TrackKind]?: { uploadId: string; key: string };
+} & {
+  /** Set by /api/notes/[id]/resume: this upload appends a segment. */
+  resumeSegment?: { index: number; startedAt: string };
 };
 
 export async function POST(
@@ -126,6 +128,9 @@ export async function POST(
     );
   }
 
+  const resumeSegment =
+    recording.type === "audio" && meta.resumeSegment ? meta.resumeSegment : null;
+
   try {
     const audioKey =
       recording.type === "audio"
@@ -137,26 +142,59 @@ export async function POST(
         { status: 400 }
       );
     }
-    if (
-      recording.type === "audio" &&
-      !(keyUpdates.r2MicKey && keyUpdates.r2SystemaudioKey)
-    ) {
-      keyUpdates.r2MixedKey = audioKey;
-    }
 
-    // Flip to 'transcribing' (was 'ready' pre-M5). Webhook moves to 'ready'.
-    await db
-      .update(mediaObjects)
-      .set({
-        ...keyUpdates,
-        durationSeconds: String(body.durationSeconds),
-        status: "transcribing",
-        uploadMetadata: null,
-        updatedAt: sql`now()`,
-      })
-      .where(
-        and(eq(mediaObjects.id, recording.id), eq(mediaObjects.ownerId, user.id))
-      );
+    if (resumeSegment) {
+      // Resume after Stop: keep segment 1's keys, append this one, and
+      // drop the old transcript so the batch pass over the joined audio
+      // is the only one the note shows (same reading as transcript retry).
+      const segment: AudioNoteSegment = {
+        micKey: keyUpdates.r2MicKey ?? null,
+        systemAudioKey: keyUpdates.r2SystemaudioKey ?? null,
+        durationSeconds: body.durationSeconds,
+        recordedAt: resumeSegment.startedAt,
+      };
+      const previous = (recording.audioSegments ?? []) as AudioNoteSegment[];
+      const priorDuration = Number(recording.durationSeconds ?? 0) || 0;
+      await db.transaction(async (tx) => {
+        await tx
+          .delete(transcripts)
+          .where(eq(transcripts.mediaObjectId, recording.id));
+        await tx
+          .update(mediaObjects)
+          .set({
+            audioSegments: [...previous, segment],
+            durationSeconds: String(priorDuration + body.durationSeconds),
+            status: "transcribing",
+            failureReason: null,
+            uploadMetadata: null,
+            updatedAt: sql`now()`,
+          })
+          .where(
+            and(eq(mediaObjects.id, recording.id), eq(mediaObjects.ownerId, user.id))
+          );
+      });
+    } else {
+      if (
+        recording.type === "audio" &&
+        !(keyUpdates.r2MicKey && keyUpdates.r2SystemaudioKey)
+      ) {
+        keyUpdates.r2MixedKey = audioKey;
+      }
+
+      // Flip to 'transcribing' (was 'ready' pre-M5). Webhook moves to 'ready'.
+      await db
+        .update(mediaObjects)
+        .set({
+          ...keyUpdates,
+          durationSeconds: String(body.durationSeconds),
+          status: "transcribing",
+          uploadMetadata: null,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(eq(mediaObjects.id, recording.id), eq(mediaObjects.ownerId, user.id))
+        );
+    }
   } catch (err) {
     console.error(`[complete] db update failed for recording=${recording.id}`, err);
     return NextResponse.json(
@@ -201,21 +239,28 @@ export async function POST(
 
   if (recording.type === "audio") {
     try {
-      if (keyUpdates.r2MicKey && keyUpdates.r2SystemaudioKey) {
-        await enqueueMixAudio({
-          mediaObjectId: recording.id,
-          micKey: keyUpdates.r2MicKey,
-          systemAudioKey: keyUpdates.r2SystemaudioKey,
-        });
-      } else {
-        const audioKey = keyUpdates.r2MicKey ?? keyUpdates.r2SystemaudioKey;
-        if (audioKey) {
-          await Promise.all([
-            enqueueTranscription({ mediaObjectId: recording.id, audioKey }),
-            enqueueAudioWaveform({ mediaObjectId: recording.id, audioKey }),
-          ]);
-        }
-      }
+      const source = resumeSegment
+        ? {
+            r2MicKey: recording.r2MicKey,
+            r2SystemaudioKey: recording.r2SystemaudioKey,
+            r2MixedKey: recording.r2MixedKey,
+            audioSegments: [
+              ...((recording.audioSegments ?? []) as AudioNoteSegment[]),
+              {
+                micKey: keyUpdates.r2MicKey ?? null,
+                systemAudioKey: keyUpdates.r2SystemaudioKey ?? null,
+                durationSeconds: body.durationSeconds,
+                recordedAt: resumeSegment.startedAt,
+              },
+            ],
+          }
+        : {
+            r2MicKey: keyUpdates.r2MicKey ?? null,
+            r2SystemaudioKey: keyUpdates.r2SystemaudioKey ?? null,
+            r2MixedKey: keyUpdates.r2MixedKey ?? null,
+            audioSegments: null,
+          };
+      await enqueueNoteAudioJobs(recording.id, source);
     } catch (err) {
       console.error("[complete] failed to enqueue audio jobs:", err);
     }

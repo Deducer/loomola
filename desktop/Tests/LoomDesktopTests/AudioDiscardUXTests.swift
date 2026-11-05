@@ -50,7 +50,7 @@ final class AudioDiscardUXTests: XCTestCase {
 
     func testNewAudioNoteStartsFromFreshDraftState() throws {
         let model = try source(at: "Sources/LoomDesktopApp/UI/RecorderViewModel.swift")
-        let start = try XCTUnwrap(model.range(of: "private func startAudioNoteRecordingAfterReadiness()"))
+        let start = try XCTUnwrap(model.range(of: "private func startAudioNoteRecordingAfterReadiness(resume: AudioNoteResumeSeed? = nil)"))
         let titleRead = try XCTUnwrap(
             model.range(of: "let trimmedTitle = audioTitle", range: start.upperBound..<model.endIndex)
         )

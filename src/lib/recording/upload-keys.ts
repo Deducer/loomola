@@ -7,11 +7,19 @@ export function extensionForMime(mimeType: string): "webm" | "mp4" | "m4a" {
   return "webm";
 }
 
+/**
+ * `segment` numbers a Resume-after-Stop segment (2, 3, ...). Segment 1 is
+ * the plain key, so every existing note's keys are unchanged. Segment keys
+ * stay under `<slug>/raw/` so recordingPrefixFromTrackKey still finds the
+ * note's prefix for mixed.m4a and activity.bin.
+ */
 export function keyForTrack(
   slug: string,
   kind: TrackKind,
-  mimeType: string
+  mimeType: string,
+  segment: number = 1
 ): string {
-  const suffix = kind === "composite" ? "composite" : `raw/${kind}`;
+  const segmentSuffix = segment > 1 ? `-seg${segment}` : "";
+  const suffix = kind === "composite" ? "composite" : `raw/${kind}${segmentSuffix}`;
   return `${slug}/${suffix}.${extensionForMime(mimeType)}`;
 }

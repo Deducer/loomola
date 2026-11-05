@@ -15,10 +15,17 @@ const SAMPLE_RATE = 8000;
 /** ffmpeg output args that stream input 0 (mic) and input 1 (system) as
  *  8 kHz mono PCM to fds 3 and 4. Appended to the mix_audio invocation so
  *  the tracks are downloaded and decoded once for both jobs. */
-export const ACTIVITY_OUTPUT_ARGS = [
-  "-map", "0:a", "-ac", "1", "-ar", String(SAMPLE_RATE), "-f", "s16le", "pipe:3",
-  "-map", "1:a", "-ac", "1", "-ar", String(SAMPLE_RATE), "-f", "s16le", "pipe:4",
-];
+export const ACTIVITY_OUTPUT_ARGS = activityOutputArgs("0:a", "1:a");
+
+/** The same two PCM pipes fed from arbitrary `-map` sources: raw inputs
+ *  ("0:a") for a single-segment note, filter-graph labels ("[micact]")
+ *  when mix_audio concatenates Resume segments first. */
+export function activityOutputArgs(micMap: string, systemMap: string): string[] {
+  return [
+    "-map", micMap, "-ac", "1", "-ar", String(SAMPLE_RATE), "-f", "s16le", "pipe:3",
+    "-map", systemMap, "-ac", "1", "-ar", String(SAMPLE_RATE), "-f", "s16le", "pipe:4",
+  ];
+}
 
 /**
  * Runs ffmpeg with `args` (which must end with ACTIVITY_OUTPUT_ARGS) and

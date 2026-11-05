@@ -171,6 +171,9 @@ struct NoteWorkspaceView: View {
     /// replaced it). Notes still generate from it, but a Retry sits
     /// beside the Generate pill so the note isn't stuck with it.
     @State private var transcriptLiveOnly = false
+    /// Latest media status the server reported for a reviewed note; the
+    /// Recent row's copy goes stale once transcription finishes.
+    @State private var reviewMediaStatus: String? = nil
     @State private var pollEnhanceTask: Task<Void, Never>? = nil
     @State private var suppressReviewAutosave = false
 
@@ -1041,8 +1044,38 @@ struct NoteWorkspaceView: View {
                     showDiscardAudioConfirmation = true
                 }
             }
-        case .reviewing:
-            NoteStopResumePill(mode: .resumeSaved) {}
+        case .reviewing(let recording):
+            switch NoteResumePolicy.availability(
+                kind: recording.kind,
+                mediaStatus: reviewMediaStatus ?? recording.status,
+                activeRecordingKind: viewModel.activeRecordingKind,
+                isStartingRecording: viewModel.isStartingRecording
+            ) {
+            case .available:
+                NoteStopResumePill(mode: .resumeSaved) {
+                    resumeSavedNote(recording)
+                }
+            case .unavailable(let reason):
+                NoteStopResumePill(mode: .resumeUnavailable(reason: reason)) {}
+            }
+        }
+    }
+
+    /// Resume after Stop. Flush the body the user may still be typing,
+    /// then hand the note to the view model; MainRecorderView swaps this
+    /// workspace into recording mode when the recorder starts, and back
+    /// to review when it stops.
+    private func resumeSavedNote(_ recording: RecentRecording) {
+        reviewAutosaveTask?.cancel()
+        pollEnhanceTask?.cancel()
+        let title = reviewTitle
+        let body = reviewBody
+        Task { @MainActor in
+            if body != reviewLastSaved, let backend = viewModel.backendClient {
+                try? await backend.putNoteBody(mediaId: recording.id, body: body)
+                reviewLastSaved = body
+            }
+            viewModel.resumeSavedAudioNote(recording, title: title, body: body)
         }
     }
 
@@ -3118,6 +3151,7 @@ struct NoteWorkspaceView: View {
                 .title
         case .reviewing(let recording):
             reviewTitle = recording.title
+            reviewMediaStatus = nil
             reviewFolderId = recording.folderId
             reviewFolderName = recording.folderName
             linkedCalendarEventTitle = recording.calendarEventTitle
@@ -3203,6 +3237,7 @@ struct NoteWorkspaceView: View {
     }
 
     private func applyEnhancementReadiness(_ status: EnhanceStatusResponse) {
+        reviewMediaStatus = status.mediaStatus
         guard status.transcriptReady == false else {
             transcriptLiveOnly = EnhanceTrigger.offersLiveTranscriptRetry(
                 transcriptState: status.transcriptState,
@@ -3431,6 +3466,7 @@ struct NoteWorkspaceView: View {
     /// status. A just-stopped note with a live transcript generates at
     /// once (Granola); otherwise the pill waits for a click.
     private func applyEnhanceDecision(_ status: EnhanceStatusResponse, recording: RecentRecording) {
+        reviewMediaStatus = status.mediaStatus
         let justStopped = recording.status == "uploading"
         let decision = EnhanceTrigger.decision(
             transcriptReady: status.transcriptReady ?? false,
