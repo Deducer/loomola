@@ -57,6 +57,9 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
   const [refreshing, setRefreshing] = useState(false);
   const [playerRoot, setPlayerRoot] = useState<HTMLElement | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
+  // The video's own shape ("1080 / 1920"). Desktop always uses a 16:9 stage;
+  // phones use this, capped in height (see .plyr-rounded rules in globals.css).
+  const [videoAspect, setVideoAspect] = useState<string | null>(null);
   // Seed from the durationSec prop (server-known value) so the seekbar
   // can paint immediately. `loadedmetadata` will overwrite this once
   // the browser parses the media — but for MediaRecorder webms with
@@ -78,6 +81,10 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
       plyrRef.current = new Plyr(videoRef.current, {
         // Self-host the SVG sprite so CSP does not block Plyr's default CDN.
         iconUrl: "/plyr.svg",
+        // YouTube-style fixed 16:9 stage: portrait or odd-shaped videos are
+        // scaled to fit inside it with bars, so the page layout is the same
+        // for every recording instead of a 9:16 video filling the screen.
+        ratio: "16:9",
         // Show elapsed time with total duration in "0:45 / 1:52" format,
         // not Plyr's default countdown (which renders weirdly when seconds
         // go briefly negative due to floating-point precision).
@@ -148,6 +155,9 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
         // our own bar; no need to grab a ref to it anymore.
         const root = plyrRef.current?.elements?.container as HTMLElement | undefined;
         if (root) setPlayerRoot(root);
+        // Metadata may have loaded before Plyr attached its listener.
+        const v = videoRef.current;
+        if (v?.videoWidth && v.videoHeight) setVideoAspect(`${v.videoWidth} / ${v.videoHeight}`);
         // Force-render the duration display when Chrome's
         // <video>.duration is Infinity (the well-known MediaRecorder webm
         // bug). Plyr's `duration` config option overrides player.duration,
@@ -160,6 +170,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
         }
       });
       plyrRef.current.on("loadedmetadata", () => {
+        const v = videoRef.current;
+        if (v?.videoWidth && v.videoHeight) setVideoAspect(`${v.videoWidth} / ${v.videoHeight}`);
         const dur = videoRef.current?.duration ?? 0;
         if (isFinite(dur) && dur > 0) setTotalDuration(dur);
         if (
@@ -261,7 +273,13 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
   }
 
   return (
-    <div className="plyr-wrapper plyr-rounded" style={{ ["--plyr-color-main" as never]: accentColor }}>
+    <div
+      className="plyr-wrapper plyr-rounded"
+      style={{
+        ["--plyr-color-main" as never]: accentColor,
+        ...(videoAspect ? { ["--video-aspect" as never]: videoAspect } : {}),
+      }}
+    >
       <video
         ref={videoRef}
         src={initialSignedUrl}
@@ -269,7 +287,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
         playsInline
         preload="metadata"
         onError={handleError}
-        className="w-full bg-black"
+        className="aspect-video w-full bg-black object-contain"
       />
       <Seekbar
         playerEl={playerRoot}

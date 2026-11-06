@@ -130,6 +130,34 @@ html, body {
 }
 
 /*
+ * Fixed 16:9 stage (Plyr `ratio: "16:9"`). A video of another shape is
+ * scaled to fit with bars beside or above it. The bars take a dark tint of
+ * the brand accent so they read as part of the branded page, not as black
+ * slabs. Phones get the video's own shape instead, capped at 75% of the
+ * screen height, because a 9:16 video inside a 16:9 box on a phone would be
+ * about 110px wide. Full screen drops the box so the video fills the screen.
+ * Plyr writes the ratio as an inline style, hence !important.
+ */
+.plyr-rounded {
+  --plyr-video-background: color-mix(in srgb, var(--plyr-color-main) 12%, black);
+}
+.plyr-rounded .plyr__video-wrapper video {
+  object-fit: contain;
+}
+@media (max-width: 640px) {
+  .plyr-rounded .plyr__video-wrapper--fixed-ratio {
+    aspect-ratio: var(--video-aspect, 16 / 9) !important;
+    max-height: 75svh;
+  }
+}
+.plyr-rounded .plyr:fullscreen .plyr__video-wrapper,
+.plyr-rounded .plyr--fullscreen-fallback .plyr__video-wrapper {
+  aspect-ratio: auto !important;
+  height: 100%;
+  max-height: none;
+}
+
+/*
  * Bigger center "play" overlay button, Loom-style. Plyr's default is a
  * ~60 px circle with an 18 px icon — feels small relative to the player.
  * Scale to a ~92 px circle with a 32 px icon. Padding is 30 px (15 px
