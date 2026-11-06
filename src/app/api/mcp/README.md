@@ -70,7 +70,7 @@ Write:
 
 - `loomola_upload_begin` → `loomola_upload_complete` — upload a finished mp4/mov/webm as a recording (see below)
 - `loomola_set_brand` — set, change or clear (`brand: null`) a recording's brand
-- `loomola_post_comment` — comment as the owner at a video timestamp (no notification email)
+- `loomola_post_comment` — comment as the owner at a video timestamp (no notification email). The display name is public: pass `name`, else it uses the profile name, the brand name, or "Creator", never the email
 - `loomola_delete_comment` — delete one comment (permanent)
 - `loomola_trash_recording` — move a recording to the trash (restorable until the purge window)
 

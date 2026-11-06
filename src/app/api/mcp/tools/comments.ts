@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod/v4";
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
+import { getBrandProfile } from "@/db/queries/brand-profiles";
 import {
   createComment,
   deleteCommentOwned,
@@ -67,7 +68,7 @@ export function registerCommentTools(server: McpServer): void {
     {
       title: "Post a comment on a recording",
       description:
-        "Post a comment on a recording as the account owner. It appears on the share page at `timestampSec` (seconds into the video, default 0). `name` overrides the display name (defaults to the owner's profile name, else their email). No notification email is sent.",
+        "Post a comment on a recording as the account owner. It appears on the share page at `timestampSec` (seconds into the video, default 0). `name` sets the public display name; without it the owner's profile name is used, else the recording's brand name, else 'Creator' (the owner's email is never shown). No notification email is sent.",
       inputSchema: z.object({
         recording: z.string().min(3),
         body: z.string().min(1).max(MAX_BODY),
@@ -82,9 +83,13 @@ export function registerCommentTools(server: McpServer): void {
       const body = input.body.trim();
       if (!body) return errorContent("empty_body", "Comment body is empty.");
       const owner = await ownerIdentity(ownerId);
+      // The name is public on the share page, so never fall back to the email.
+      const brandName = media.brandProfileId
+        ? (await getBrandProfile(media.brandProfileId, ownerId))?.name
+        : null;
       const row = await createComment({
         mediaObjectId: media.id,
-        name: input.name?.trim() || owner.name || owner.email,
+        name: input.name?.trim() || owner.name?.trim() || brandName || "Creator",
         email: owner.email,
         timestampSec: input.timestampSec,
         body,
