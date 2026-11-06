@@ -1,3 +1,5 @@
+// Superseded for agent use by scripts/loomola.mjs (MCP-token auth, --brand, comments).
+//
 // Upload an existing video file to Loomola as a finished recording.
 //
 // Uses the same API the browser recorder and desktop app use:

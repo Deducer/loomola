@@ -1,5 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerActionItemsTool } from "./tools/action-items";
+import { registerBrandTools } from "./tools/brands";
+import { registerCommentTools } from "./tools/comments";
+import { registerStatusTools } from "./tools/status";
+import { registerUploadTools } from "./tools/upload";
 import { registerGetMediaTool } from "./tools/get-media";
 import { registerRecentMeetingsTool } from "./tools/recent-meetings";
 import { registerRecentRecordingsTool } from "./tools/recent-recordings";
@@ -8,7 +12,7 @@ import { registerSearchTool } from "./tools/search";
 export function createLoomolaMcpServer(): McpServer {
   const server = new McpServer({
     name: "loomola",
-    version: "0.1.0",
+    version: "0.2.0",
   });
 
   server.registerTool(
@@ -32,6 +36,10 @@ export function createLoomolaMcpServer(): McpServer {
   registerRecentMeetingsTool(server);
   registerGetMediaTool(server);
   registerActionItemsTool(server);
+  registerBrandTools(server);
+  registerUploadTools(server);
+  registerStatusTools(server);
+  registerCommentTools(server);
 
   return server;
 }

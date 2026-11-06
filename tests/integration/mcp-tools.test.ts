@@ -154,18 +154,27 @@ describe("Loomola MCP tools", () => {
     vi.clearAllMocks();
   });
 
-  it("lists the five Phase 1 tools", async () => {
+  it("lists the Phase 1 and agent tools", async () => {
     const { client, server, clientTransport, serverTransport } =
       await connectClient();
     const tools = await client.listTools();
 
     expect(tools.tools.map((tool) => tool.name).sort()).toEqual([
       "loomola_action_items",
+      "loomola_delete_comment",
       "loomola_get_media",
+      "loomola_list_brands",
+      "loomola_list_comments",
       "loomola_ping",
+      "loomola_post_comment",
       "loomola_recent_meetings",
       "loomola_recent_recordings",
+      "loomola_recording_status",
       "loomola_search",
+      "loomola_set_brand",
+      "loomola_trash_recording",
+      "loomola_upload_begin",
+      "loomola_upload_complete",
     ]);
 
     await clientTransport.close();
