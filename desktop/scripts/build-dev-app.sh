@@ -14,9 +14,17 @@ BUILD_CONFIGURATION="${LOOM_DESKTOP_BUILD_CONFIGURATION:-debug}"
 LOGO_SOURCE="$REPO_ROOT/public/branding/loomola-logo-mark.png"
 EXTENSION_SOURCE="$REPO_ROOT/extension"
 
-swift build --package-path "$ROOT_DIR" --configuration "$BUILD_CONFIGURATION" --product LoomDesktop
-swift build --package-path "$ROOT_DIR" --configuration "$BUILD_CONFIGURATION" --product LoomDesktopNativeHost
-BIN_DIR="$(swift build --package-path "$ROOT_DIR" --configuration "$BUILD_CONFIGURATION" --show-bin-path)"
+# LOOM_DESKTOP_ARCHS="arm64 x86_64" builds a universal binary (needs full
+# Xcode, as on the CI runners). Unset = this Mac's own architecture, which
+# works with Command Line Tools alone.
+ARCH_ARGS=()
+for ARCH in ${LOOM_DESKTOP_ARCHS:-}; do
+  ARCH_ARGS+=(--arch "$ARCH")
+done
+
+swift build --package-path "$ROOT_DIR" --configuration "$BUILD_CONFIGURATION" ${ARCH_ARGS[@]+"${ARCH_ARGS[@]}"} --product LoomDesktop
+swift build --package-path "$ROOT_DIR" --configuration "$BUILD_CONFIGURATION" ${ARCH_ARGS[@]+"${ARCH_ARGS[@]}"} --product LoomDesktopNativeHost
+BIN_DIR="$(swift build --package-path "$ROOT_DIR" --configuration "$BUILD_CONFIGURATION" ${ARCH_ARGS[@]+"${ARCH_ARGS[@]}"} --show-bin-path)"
 
 rm -rf "$APP_PATH"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"

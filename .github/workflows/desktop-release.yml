@@ -67,7 +67,11 @@ jobs:
           LOOM_BUILD_COMMIT="$(git rev-parse --short HEAD)" \
           LOOM_DESKTOP_APP_PATH="$PWD/desktop/.build/Loomola.app" \
           LOOM_DESKTOP_BUILD_CONFIGURATION=release \
+          LOOM_DESKTOP_ARCHS="arm64 x86_64" \
             desktop/scripts/build-dev-app.sh
+          # Fail early if the bundle isn't universal (Intel Macs need x86_64).
+          lipo -archs desktop/.build/Loomola.app/Contents/MacOS/LoomDesktop | tee /dev/stderr | grep -q x86_64
+          lipo -archs desktop/.build/Loomola.app/Contents/Resources/LoomDesktopNativeHost | grep -q x86_64
 
       - name: Decide whether we can sign + notarize
         id: signing
