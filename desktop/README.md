@@ -6,6 +6,43 @@ This app is the capture surface for native screen recordings and Granola-style
 audio meeting notes. The web app still owns the broader library, metadata,
 comments, AI features, branding, editing, analytics, and share pages.
 
+## Install on a new Mac
+
+Two ways in. Use the release download unless you need an unreleased change.
+
+**A. Download a release (about 1 minute)**
+
+1. Open https://github.com/Deducer/loomola/releases and download the latest
+   `Loomola-<version>…zip` (or `.dmg`). Builds are universal, so they run on
+   Apple Silicon and Intel Macs.
+2. Unzip and drag `Loomola.app` into `/Applications`.
+3. If it's the unsigned zip, right-click the app, choose **Open**, then
+   **Open** again (Gatekeeper asks once).
+
+**B. Build from source (5–15 minutes; Intel Macs are the slow end)**
+
+You need Command Line Tools (`xcode-select --install`). Full Xcode isn't
+required.
+
+```bash
+gh repo clone Deducer/loomola && cd loomola
+doppler setup            # maintainer only: link the folder to the Loomola config once
+cd desktop && ./scripts/install-local-app.sh
+```
+
+The installer finds the Supabase URL and anon key in `desktop/.env.local`,
+then the repo-root `.env.local`, then Doppler (if the folder is linked). Self-hosters copy
+`desktop/.env.example` to `desktop/.env.local` and fill in their own values.
+The first run creates a local signing identity. If macOS asks for Keychain access
+for **Loomola Local Signing**, click **Always Allow**.
+
+**Then, either way:**
+
+1. Sign in.
+2. Allow **Microphone** when asked.
+3. System Settings → Privacy & Security → **Screen & System Audio Recording** →
+   turn Loomola on, then quit and reopen it.
+
 ## Architecture
 
 - Swift + SwiftUI for the main app shell.
