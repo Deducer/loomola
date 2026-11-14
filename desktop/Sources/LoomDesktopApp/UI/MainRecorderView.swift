@@ -36,7 +36,13 @@ struct MainRecorderView: View {
     /// and could not be dragged.
     @State private var noteTarget: NoteWorkspaceTarget? = nil
 
+    // Split into three pieces so the type-checker finishes on slower
+    // Macs (one long modifier chain timed out on an Intel build).
     var body: some View {
+        withStateHandlers(withWindowEvents(shellChrome))
+    }
+
+    private var shellChrome: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 if homeSidebarVisible {
@@ -96,6 +102,10 @@ struct MainRecorderView: View {
         }
         .animation(LoomolaMotion.medium, value: viewModel.activeRecordingKind)
         .animation(LoomolaMotion.medium, value: noteTarget)
+    }
+
+    private func withWindowEvents<Content: View>(_ content: Content) -> some View {
+        content
         .onAppear {
             AppActivation.bringRecorderToFront()
             viewModel.setReadinessMode(captureMode.readinessMode)
@@ -118,6 +128,10 @@ struct MainRecorderView: View {
         .task {
             await viewModel.restoreSession()
         }
+    }
+
+    private func withStateHandlers<Content: View>(_ content: Content) -> some View {
+        content
         .onChange(of: viewModel.meetingPromptContext) { _, _ in
             updateMeetingPromptWindow()
         }
