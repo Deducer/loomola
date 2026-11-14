@@ -31,7 +31,8 @@ This repo hosts **two products on one codebase**, gated by a single env flag:
 2. `git log --oneline -20` to see recent commits.
 3. Check `docs/superpowers/specs/` and `docs/superpowers/plans/` for any in-progress milestone.
 4. **Do NOT commit `.env.local`** (gitignored) — it holds the Doppler service token + Supabase service-role key.
-5. **Direct pushes to `main` are expected** (solo project, Coolify auto-deploys on push).
+5. **Direct pushes to `main` are expected** (solo project, Coolify auto-deploys on push). A deploy restarts the worker, so a recording that is mid-processing can be left stuck; check for one before pushing.
+6. **Never run a session-level `SET` against `DATABASE_URL`.** It goes through Supabase's transaction pooler (port 6543), where a `SET` stays on the shared server connection and is handed to the app afterwards. On 2026-11-13 `set default_transaction_read_only = on;` before some read-only checks left two pooled connections read-only, and uploads and pg-boss failed with "cannot execute UPDATE in a read-only transaction" until each connection was `RESET`. For read-only checks use `LOOMOLA_KB_READER_DATABASE_URL` (a role that is read-only by itself), or wrap the queries in one `begin read only; ... commit;`.
 
 ## Infrastructure References
 
