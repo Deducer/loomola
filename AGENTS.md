@@ -163,11 +163,11 @@ Agents (Claude Code, Codex, Hermes) drive Loomola through the MCP server at `/ap
 
 ## Folder suggestion (G-M12, shipped 2026-05-04)
 
-After `generate_title_summary` finishes for any recording (Loom or Granola) that arrived with no `folder_id`, a `suggest_folder` pg-boss job runs the user's note + their existing folders through Haiku 4.5 and persists `media_objects.suggested_folder_id` only when the model returns `confidence === "high"` AND the suggested folder is in the user's actual folder list (hallucination defense).
+After `generate_title_summary` finishes for any recording (Loom or Granola) that arrived with no `folder_id`, a `suggest_folder` pg-boss job runs the user's note + their existing folders through Haiku 5.5 and persists `media_objects.suggested_folder_id` only when the model returns `confidence === "high"` AND the suggested folder is in the user's actual folder list (hallucination defense).
 
 - **Schema columns:** `suggested_folder_id`, `suggested_folder_at`, `suggested_folder_dismissed_at` on `media_objects` (migration `0019_folder_suggestion.sql`).
 - **UI:** `<FolderSuggestionPill />` on dashboard cards. ✓ accepts via `POST /api/recordings/[id]/suggested-folder/accept`. ✗ dismisses via `POST /api/recordings/[id]/suggested-folder/dismiss`. Toast via the already-mounted sonner `<Toaster position="bottom-right" />`.
-- **Classifier model:** `LLM_CLASSIFIER_MODEL` env var (defaults to `claude-haiku-4-5-20251001`).
+- **Classifier model:** `LLM_CLASSIFIER_MODEL` env var (defaults to `claude-haiku-5-5`; on OpenRouter use `anthropic/claude-haiku-5.5`).
 - **Cost:** ~$0.005 per note. Best-effort; failures never block the title/summary write.
 
 ## Stage 4 — Desktop M2 (✅ shipped 2026-05-04)

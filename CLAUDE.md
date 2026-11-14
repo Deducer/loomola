@@ -174,11 +174,11 @@ After `generate_title_summary` completes for an **audio note** that has attendee
 
 ## Folder suggestion (G-M12, shipped 2026-05-04)
 
-After `generate_title_summary` finishes for any recording (Loom or Granola) that arrived with no `folder_id`, a `suggest_folder` pg-boss job runs the user's note + their existing folders through Haiku 4.5 and persists `media_objects.suggested_folder_id` only when the model returns `confidence === "high"` AND the suggested folder is in the user's actual folder list (hallucination defense).
+After `generate_title_summary` finishes for any recording (Loom or Granola) that arrived with no `folder_id`, a `suggest_folder` pg-boss job runs the user's note + their existing folders through Haiku 5.5 and persists `media_objects.suggested_folder_id` only when the model returns `confidence === "high"` AND the suggested folder is in the user's actual folder list (hallucination defense).
 
 - **Schema columns:** `suggested_folder_id`, `suggested_folder_at`, `suggested_folder_dismissed_at` on `media_objects` (migration `0019_folder_suggestion.sql`).
 - **UI:** `<FolderSuggestionPill />` renders on dashboard cards (both `recording-card.tsx` and `notes-list.tsx`) when `suggested_folder_id` is set and the user hasn't already filed it. ✓ accepts → `toast.success` via the already-mounted `<Toaster position="bottom-right" />`. ✗ dismisses with a sticky lock that's cleared on AI regen.
-- **Classifier model:** `LLM_CLASSIFIER_MODEL` env var (defaults to `claude-haiku-4-5-20251001`). Optional `LLM_CLASSIFIER_PROVIDER` falls back to `LLM_PROVIDER`.
+- **Classifier model:** `LLM_CLASSIFIER_MODEL` env var (defaults to `claude-haiku-5-5`; on OpenRouter use `anthropic/claude-haiku-5.5`). Optional `LLM_CLASSIFIER_PROVIDER` falls back to `LLM_PROVIDER`.
 - **Cost:** ~$0.005 per note. Job is best-effort; failures never block the title/summary write.
 - **Realtime:** suggestions appear on next page load — no client-side realtime subscription on the dashboard yet. That's a follow-up polish.
 

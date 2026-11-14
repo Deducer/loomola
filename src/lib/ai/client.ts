@@ -7,7 +7,7 @@ let cachedFallback: LanguageModel | null = null;
 let cachedClassifier: LanguageModel | null = null;
 
 /** Default primary model when LLM_MODEL / LLM_MODEL_ID are unset (Anthropic id). */
-export const DEFAULT_LLM_MODEL_ID = "claude-sonnet-5";
+export const DEFAULT_LLM_MODEL_ID = "claude-sonnet-5-5";
 
 /** The configured primary model id, also recorded on ai_outputs rows. */
 export function llmModelId(): string {
@@ -16,7 +16,7 @@ export function llmModelId(): string {
 
 /**
  * Returns a cached LanguageModel configured from env. Defaults to
- * claude-sonnet-5 on the Anthropic provider. Swapping providers/models
+ * claude-sonnet-5-5 on the Anthropic provider. Swapping providers/models
  * is a config change — set LLM_PROVIDER + LLM_MODEL_ID in Doppler.
  */
 export function getLlm(): LanguageModel {
@@ -45,7 +45,7 @@ export function getLlm(): LanguageModel {
 
 /**
  * Returns a cached LanguageModel for classification-style tasks (folder
- * suggestion, etc.) — defaults to Haiku 4.5 because classification is
+ * suggestion, etc.) — defaults to Haiku 5.5 because classification is
  * latency- and cost-sensitive and Sonnet's reasoning isn't required.
  * Override with LLM_CLASSIFIER_MODEL in Doppler.
  */
@@ -53,7 +53,7 @@ export function getClassifierLlm(): LanguageModel {
   if (cachedClassifier) return cachedClassifier;
   const provider = process.env.LLM_CLASSIFIER_PROVIDER ?? process.env.LLM_PROVIDER ?? "anthropic";
   const modelId =
-    process.env.LLM_CLASSIFIER_MODEL ?? "claude-haiku-4-5-20251001";
+    process.env.LLM_CLASSIFIER_MODEL ?? "claude-haiku-5-5";
 
   if (provider === "anthropic") {
     const apiKey = process.env.ANTHROPIC_API_KEY;
