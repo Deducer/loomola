@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   build-macos:
-    runs-on: macos-14
+    runs-on: macos-15
     env:
       # Public client config baked into Contents/Resources/DesktopConfig.plist.
       # Repo VARIABLES (not secrets) — these are public client values (anon
@@ -34,9 +34,9 @@ jobs:
         # a SwiftUI actor-isolation crash on macOS 26.x — the Swift 6 toolchain
         # is still required for SPM to parse the manifest.
         run: |
-          XCODE="$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1)"
+          XCODE="$(ls -d /Applications/Xcode_[0-9]*.app 2>/dev/null | sort -V | tail -1)"
           if [ -z "$XCODE" ]; then
-            echo "::error::No Xcode 16 on this runner image — switch runs-on to macos-15 or later."
+            echo "::error::No Xcode on this runner image — switch runs-on to a newer macOS image."
             exit 1
           fi
           sudo xcode-select -s "$XCODE/Contents/Developer"
