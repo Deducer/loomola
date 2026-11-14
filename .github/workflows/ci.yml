@@ -34,3 +34,23 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
           NEXT_PUBLIC_APP_URL: http://localhost:3000
+
+  desktop-build:
+    # Builds the macOS app and fails on any expression that is slow to
+    # type-check. On this fast runner a 400 ms expression can take minutes
+    # (or time out) on an Intel Mac with Command Line Tools — see PERS-350.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build desktop app and flag slow type-checking
+        working-directory: desktop
+        shell: bash
+        run: |
+          swift --version
+          swift build --product LoomDesktop \
+            -Xswiftc -Xfrontend -Xswiftc -warn-long-expression-type-checking=400 \
+            2>&1 | tee build.log
+          if grep -E "expression took [0-9]+ms to type-check" build.log; then
+            echo "::error::The expressions above are slow to type-check and can time out on slower Macs. Split them into smaller pieces (see MainRecorderView.body)."
+            exit 1
+          fi
