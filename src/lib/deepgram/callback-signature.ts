@@ -155,7 +155,10 @@ export async function pruneExpiredNonces(
   now: Date = new Date()
 ): Promise<number> {
   const deleted = await db.execute(
-    sql`DELETE FROM webhook_nonces WHERE expires_at < ${now}`
+    // ISO string, not a Date: the postgres driver can't serialize a Date
+    // in a raw sql template, so this threw (and was only logged) from May
+    // to November 2026. tests/integration/watchdog-db.test.ts covers it.
+    sql`DELETE FROM webhook_nonces WHERE expires_at < ${now.toISOString()}::timestamptz`
   );
   return Number((deleted as unknown as { count?: number }).count ?? 0);
 }

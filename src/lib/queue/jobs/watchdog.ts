@@ -89,7 +89,11 @@ export async function runWatchdogJob(now: Date = new Date()): Promise<number> {
       const restored = await db
         .update(mediaObjects)
         .set({
-          status: sql`case when ${mediaObjects.uploadMetadata}->'resumeSegment'->>'previousStatus' = 'failed' then 'failed' else 'ready' end`,
+          // A CASE of string literals is text, which Postgres won't assign to
+          // the enum column without a cast (42804; every run failed from
+          // 2026-11-06 until this cast). tests/integration/watchdog-db.test.ts
+          // runs this against a real database.
+          status: sql`(case when ${mediaObjects.uploadMetadata}->'resumeSegment'->>'previousStatus' = 'failed' then 'failed' else 'ready' end)::media_object_status`,
           uploadMetadata: null,
           updatedAt: sql`now()`,
         })
