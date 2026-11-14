@@ -56,11 +56,34 @@ set_env_from_file LOOM_SUPABASE_URL "$REPO_ROOT/.env.local" LOOM_SUPABASE_URL NE
 set_env_from_file LOOM_SUPABASE_ANON_KEY "$REPO_ROOT/.env.local" LOOM_SUPABASE_ANON_KEY NEXT_PUBLIC_SUPABASE_ANON_KEY SUPABASE_ANON_KEY
 set_env_from_file LOOM_API_BASE_URL "$REPO_ROOT/.env.local" LOOM_DESKTOP_API_BASE_URL LOOM_API_BASE_URL
 
+# Last resort: Doppler. Works when this folder is linked with
+# `doppler setup` (or DOPPLER_PROJECT / DOPPLER_CONFIG are set), so a fresh
+# clone installs with no .env.local. Values are read, never printed.
+set_env_from_doppler() {
+  local target="$1"
+  shift
+  if [[ -n "${!target:-}" ]] || ! command -v doppler >/dev/null 2>&1; then
+    return
+  fi
+  local key value
+  for key in "$@"; do
+    value="$(doppler secrets get "$key" --plain 2>/dev/null || true)"
+    if [[ -n "${value}" ]]; then
+      export "${target}=${value}"
+      return
+    fi
+  done
+}
+
+set_env_from_doppler LOOM_SUPABASE_URL LOOM_SUPABASE_URL NEXT_PUBLIC_SUPABASE_URL
+set_env_from_doppler LOOM_SUPABASE_ANON_KEY LOOM_SUPABASE_ANON_KEY NEXT_PUBLIC_SUPABASE_ANON_KEY
+
 export LOOM_API_BASE_URL="${LOOM_API_BASE_URL:-https://loom.dissonance.cloud}"
 
 if [[ -z "${LOOM_SUPABASE_URL:-}" || -z "${LOOM_SUPABASE_ANON_KEY:-}" ]]; then
   echo "Missing LOOM_SUPABASE_URL or LOOM_SUPABASE_ANON_KEY."
-  echo "Create desktop/.env.local from desktop/.env.example, or keep the public Supabase values in the repo-root .env.local."
+  echo "Create desktop/.env.local from desktop/.env.example, keep the public Supabase values in the repo-root .env.local,"
+  echo "or link this folder to Doppler once with: doppler setup  (the script then reads them itself)."
   exit 1
 fi
 
