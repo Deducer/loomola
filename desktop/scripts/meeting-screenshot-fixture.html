@@ -1,0 +1,107 @@
+<!doctype html>
+<!--
+  A simulated call for tuning and checking meeting screenshots.
+
+  The window title makes MeetingWindowMatcher treat this page as a Google Meet
+  tab. It runs through, 24 seconds each (?phase=N to change): slide 1, slide 2
+  (same template), a scrolling page, slide 3, an app being clicked through
+  (new screen every 4 s), then a gallery of faces. A strip of three moving
+  "participants" sits beside the stage throughout.
+
+  Open it in a real browser window that is on screen, then run
+    open -n -a /Applications/Loomola.app --args --meeting-screenshot-selftest /tmp/shots 160
+  and read /tmp/shots/report.json. Expected: one frame per slide, one or two
+  per held app screen, none while scrolling, none for the gallery.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Meet - abc-defg-hij</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #202124; font-family: -apple-system, Helvetica, Arial, sans-serif; overflow: hidden; }
+  #stage { position: absolute; left: 16px; top: 16px; bottom: 72px; right: 296px; background: #fff; border-radius: 8px; overflow: hidden; }
+  #side { position: absolute; right: 16px; top: 16px; bottom: 72px; width: 264px; display: flex; flex-direction: column; gap: 12px; }
+  #side canvas { flex: 1; width: 100%; border-radius: 8px; background: #3c4043; min-height: 0; }
+  #bar { position: absolute; left: 0; right: 0; bottom: 0; height: 56px; color: #e8eaed; display: flex; align-items: center; padding: 0 24px; font-size: 14px; }
+  .slide { padding: 56px 72px; color: #1f1f1f; }
+  .slide h1 { font-size: 52px; margin: 0 0 36px; }
+  .slide li { font-size: 30px; margin: 0 0 22px; }
+  .slide .foot { position: absolute; bottom: 28px; left: 72px; font-size: 18px; color: #777; }
+  #demo { position: absolute; inset: 0; background: #f4f6fb; overflow: hidden; }
+  #demo .row { height: 64px; margin: 14px 28px; border-radius: 10px; background: #fff; box-shadow: 0 1px 4px #0002; display: flex; align-items: center; padding: 0 20px; font-size: 22px; color: #333; }
+  body.gallery #stage { display: none; }
+  body.gallery #side { left: 16px; width: auto; flex-direction: row; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="side"><canvas></canvas><canvas></canvas><canvas></canvas></div>
+<div id="bar">abc-defg-hij &nbsp;·&nbsp; <span id="phase"></span></div>
+<script>
+const P = Number(new URLSearchParams(location.search).get("phase") || 24);
+const slides = [
+  ["Q3 roadmap", ["Ship the sound library to all cohorts", "Android parity for neurofeedback", "Loaner fleet tracker in Teable"], "Vayu Labs · Planning · 1 / 3"],
+  ["Cohort retention", ["Week 2 drop-off fell from 31% to 18%", "Recap email goes to every approved guest", "Next test: 16 Hz focus track as default"], "Vayu Labs · Planning · 2 / 3"],
+  ["Budget and owners", ["Harsha: session-save fix by 5 December", "Ian: workshop follow-up for Los Angeles", "Total spend to date: $4,280 of $6,000"], "Vayu Labs · Planning · 3 / 3"],
+];
+const phases = ["slide 1", "slide 2", "scrolling demo", "slide 3", "clicking through an app", "gallery only"];
+const stage = document.getElementById("stage");
+const started = Date.now();
+let shown = -1;
+function slide(i) {
+  const [title, bullets, foot] = slides[i];
+  stage.innerHTML = `<div class="slide"><h1>${title}</h1><ul>${bullets.map((b) => `<li>${b}</li>`).join("")}</ul><div class="foot">${foot}</div></div>`;
+}
+function demo(t) {
+  if (shown !== 2) stage.innerHTML = `<div id="demo">${Array.from({ length: 40 }, (_, i) => `<div class="row">Session ${i + 1} · ${(7 + i * 3) % 60} min · alpha ${(40 + i * 7) % 100}%</div>`).join("")}</div>`;
+  stage.firstChild.scrollTop = (t * 180) % 2400;
+}
+// An app someone clicks through: a new screen every 4 seconds.
+let appShown = -1;
+function app(n) {
+  if (n === appShown) return;
+  appShown = n;
+  const tabs = ["Sessions", "Library", "Profile", "Settings", "Insights", "Devices"];
+  const hue = (n * 67) % 360;
+  stage.innerHTML = `<div style="position:absolute;inset:0;background:#f7f7fa;font-size:24px;color:#222">
+    <div style="height:64px;background:hsl(${hue} 55% 38%);color:#fff;display:flex;align-items:center;padding:0 28px;font-size:28px">Second Attention · ${tabs[n % 6]}</div>
+    <div style="display:grid;grid-template-columns:repeat(${2 + (n % 3)},1fr);gap:20px;padding:28px">
+      ${Array.from({ length: 4 + (n % 5) }, (_, i) => `<div style="height:${120 + ((n + i) % 4) * 40}px;border-radius:14px;background:hsl(${(hue + i * 40) % 360} 60% ${70 + (i % 3) * 8}%);padding:18px">${tabs[(n + i) % 6]} ${i + 1}<br><b>${(n * 13 + i * 7) % 100}%</b></div>`).join("")}
+    </div></div>`;
+}
+function tick() {
+  const t = (Date.now() - started) / 1000;
+  const phase = Math.min(phases.length - 1, Math.floor(t / P));
+  document.getElementById("phase").textContent = `${phases[phase]} · ${t.toFixed(0)}s`;
+  document.body.classList.toggle("gallery", phase === 5);
+  if (phase === 4) app(Math.floor(t / 4));
+  if (phase === 0 && shown !== 0) slide(0);
+  if (phase === 1 && shown !== 1) slide(1);
+  if (phase === 2) demo(t);
+  if (phase === 3 && shown !== 3) slide(2);
+  shown = phase;
+  faces(t);
+  requestAnimationFrame(tick);
+}
+// Three "participants": a head that bobs, tilts and talks, so the strip moves
+// the way faces on a call do.
+const tiles = [...document.querySelectorAll("canvas")];
+const tones = ["#c58c6a", "#8d5b3e", "#e0b193"];
+function faces(t) {
+  tiles.forEach((c, i) => {
+    const w = (c.width = c.clientWidth), h = (c.height = c.clientHeight);
+    const g = c.getContext("2d");
+    g.fillStyle = ["#4a5568", "#3b4a3f", "#54464f"][i];
+    g.fillRect(0, 0, w, h);
+    const bob = Math.sin(t * (1.3 + i * 0.4)) * h * 0.035, sway = Math.sin(t * (0.7 + i * 0.3) + i) * w * 0.05;
+    const cx = w / 2 + sway, cy = h * 0.46 + bob, r = Math.min(w, h) * 0.24;
+    g.fillStyle = "#2d3748"; g.beginPath(); g.ellipse(cx, h * 1.02, r * 2.1, r * 1.5, 0, 0, 7); g.fill();
+    g.fillStyle = tones[i]; g.beginPath(); g.ellipse(cx, cy, r * 0.82, r, Math.sin(t + i) * 0.08, 0, 7); g.fill();
+    g.fillStyle = "#2b1d14"; g.beginPath(); g.ellipse(cx, cy - r * 0.72, r * 0.86, r * 0.5, 0, Math.PI, 0); g.fill();
+    g.fillStyle = "#3a1f1f"; g.beginPath(); g.ellipse(cx, cy + r * 0.45, r * 0.26, r * (0.05 + 0.1 * Math.abs(Math.sin(t * 7 + i))), 0, 0, 7); g.fill();
+  });
+}
+tick();
+</script>
+</body>
+</html>

@@ -72,6 +72,7 @@ The local app is production-grade for Ian's single-user workflow. It includes:
   parked in Stage Manager), and macOS will ask once in a while to let Loomola
   access the screen directly. Check the capture path without recording anything with
   `open -n -a /Applications/Loomola.app --args --meeting-screenshot-selftest /tmp/shots 60`.
+  `scripts/meeting-screenshot-fixture.html` is a simulated call to point it at.
 - Floating recording status overlays, draggable camera bubble, global hotkeys,
   permission preflight, and source pickers.
 - Multipart upload, orphaned-recording recovery, brownout detection, and retry
