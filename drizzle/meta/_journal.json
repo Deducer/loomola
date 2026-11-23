@@ -253,6 +253,13 @@
       "when": 1793836800000,
       "tag": "0035_audio_segments",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1795405435157,
+      "tag": "0036_note_screenshots",
+      "breakpoints": true
     }
   ]
 }

@@ -20,6 +20,13 @@ import {
   flipToReadyIfComplete,
 } from "@/db/queries/ai-outputs";
 import { presignGet } from "@/lib/r2/presigned-get";
+import { describePendingScreenshots } from "@/lib/notes/describe-screenshot";
+import {
+  SCREENSHOT_KIND,
+  screenshotPromptLines,
+  screenshotsForPrompt,
+  type ScreenshotForPrompt,
+} from "@/lib/notes/screenshots";
 import type { FinishReason, ModelMessage } from "ai";
 import {
   buildTemplateInstruction,
@@ -109,6 +116,8 @@ export function buildAudioNotesEnhancementPrompt(params: {
   template?: NoteTemplate;
   outputLanguageInstruction?: string;
   attachmentNames?: string[];
+  /** Automatic meeting-window screenshots, already described, oldest first. */
+  screenshots?: ScreenshotForPrompt[];
   attendeeNames?: string[];
   /** The note owner's own name (their is_self Person). Attendee lists
    * exclude the recorder, so without this the model credits the
@@ -148,6 +157,7 @@ export function buildAudioNotesEnhancementPrompt(params: {
     "- Use normal markdown bold (`**text**`), never doubled bold markers like `****text****`.",
     "- Include action items only when supported by the notes or transcript.",
     "- Use attached images as visual context when they clarify slides, whiteboards, product screens, diagrams, or UI bugs.",
+    "- Use the shared-screen screenshot descriptions, when present, to work out what speakers mean by \"this slide\", \"this screen\" or \"here\", and to get names, numbers and labels shown on screen right. Do not list or narrate the screenshots themselves.",
     "- Do not invent attendees, decisions, or commitments.",
     "- Match the user's apparent voice: terse notes stay terse; detailed notes can become detailed.",
     "- Use the entire transcript, from beginning to end. Do not stop after the first topic.",
@@ -167,6 +177,14 @@ export function buildAudioNotesEnhancementPrompt(params: {
         : "None"
     }`,
     "",
+    ...(params.screenshots?.length
+      ? [
+          "# Shared-screen screenshots",
+          "Saved automatically from the meeting window when the shared screen changed. Each line gives the time into the recording, what was on screen, and what was being said then.",
+          ...screenshotPromptLines(params.screenshots),
+          "",
+        ]
+      : []),
     "# Raw notes",
     params.rawNotes.trim() || "(No raw notes were typed.)",
     "",
@@ -275,7 +293,14 @@ async function runTitleSummaryJobInner(
     const preferences = await getUserPreferences(media.ownerId);
     const note = await getNotesByMediaObjectForJob(data.mediaObjectId);
     const attendeeNames = await listAttendeeNamesForMedia(data.mediaObjectId);
-    const attachments = await listNoteAttachmentsForJob(data.mediaObjectId);
+    const allAttachments = await describePendingScreenshots(
+      await listNoteAttachmentsForJob(data.mediaObjectId)
+    );
+    // Hand-attached images go to the model as images; automatic screenshots
+    // go as one line of text each.
+    const attachments = allAttachments.filter(
+      (attachment) => attachment.kind !== SCREENSHOT_KIND
+    );
     const imageAttachments = await Promise.all(
       attachments.slice(0, 6).map(async (attachment) => ({
         url: await presignGet(attachment.r2Key),
@@ -291,6 +316,10 @@ async function runTitleSummaryJobInner(
         transcriptLanguage: transcript.language,
       }),
       attachmentNames: attachments.map((attachment) => attachment.filename),
+      screenshots: screenshotsForPrompt(
+        allAttachments,
+        transcript.wordTimestamps
+      ),
       attendeeNames,
       recorderName: await getSelfDisplayName(media.ownerId),
       rawNotes: note?.body ?? "",

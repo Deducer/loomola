@@ -53,6 +53,10 @@ import type {
 } from "@/components/viewer/transcript-panel";
 import type { Word } from "@/lib/viewer/paragraphs";
 import { cn } from "@/lib/cn";
+import {
+  SCREENSHOT_KIND,
+  formatScreenshotOffset,
+} from "@/lib/notes/screenshots";
 import { useStatusPoll } from "@/lib/hooks/use-status-poll";
 
 type NotePageClientProps = {
@@ -118,6 +122,10 @@ type NoteTemplate = {
 
 type NoteAttachment = {
   id: string;
+  // "image" = attached by hand; "screenshot" = saved from the meeting window.
+  kind: string;
+  offsetMs: number | null;
+  description: string | null;
   filename: string;
   contentType: string;
   byteSize: number;
@@ -963,10 +971,18 @@ export function NotePageClient({
             <SaveIndicator state={folderState} />
           </div>
           <NoteAttachments
-            attachments={attachments}
+            attachments={attachments.filter(
+              (attachment) => attachment.kind !== SCREENSHOT_KIND
+            )}
             state={attachmentState}
             error={attachmentError}
             onUpload={uploadAttachmentFiles}
+            onRemove={removeAttachment}
+          />
+          <NoteScreenshots
+            screenshots={attachments.filter(
+              (attachment) => attachment.kind === SCREENSHOT_KIND
+            )}
             onRemove={removeAttachment}
           />
         </section>
@@ -1477,6 +1493,64 @@ function NoteAttachments({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Frames the desktop app saved from the meeting window, oldest first. */
+function NoteScreenshots({
+  screenshots,
+  onRemove,
+}: {
+  screenshots: NoteAttachment[];
+  onRemove: (attachmentId: string) => void;
+}) {
+  if (screenshots.length === 0) return null;
+  const ordered = [...screenshots].sort(
+    (a, b) => (a.offsetMs ?? 0) - (b.offsetMs ?? 0)
+  );
+  return (
+    <div className="mt-5">
+      <p className="text-xs font-medium uppercase tracking-wide text-text-subtle">
+        Meeting screenshots
+      </p>
+      <div className="mt-2 flex gap-2 overflow-x-auto pb-2">
+        {ordered.map((screenshot) => (
+          <div
+            key={screenshot.id}
+            className="group relative w-44 shrink-0 overflow-hidden rounded-lg border border-border bg-bg-subtle"
+          >
+            <a href={screenshot.url} target="_blank" rel="noreferrer">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={screenshot.url}
+                alt={screenshot.description || "Meeting screenshot"}
+                title={screenshot.description ?? undefined}
+                loading="lazy"
+                className="aspect-video w-full object-cover"
+              />
+            </a>
+            {screenshot.offsetMs !== null && (
+              <span className="absolute left-1.5 top-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-white">
+                {formatScreenshotOffset(screenshot.offsetMs)}
+              </span>
+            )}
+            {screenshot.description && (
+              <p className="line-clamp-2 px-2 py-1.5 text-[11px] leading-snug text-text-muted">
+                {screenshot.description}
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={() => onRemove(screenshot.id)}
+              className="absolute right-1.5 top-1.5 inline-flex h-7 w-7 items-center justify-center rounded-full bg-black/65 text-white opacity-0 transition-opacity hover:bg-red-500/80 group-hover:opacity-100"
+              aria-label="Remove screenshot"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

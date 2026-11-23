@@ -420,11 +420,19 @@ export const noteAttachments = pgTable(
       .notNull()
       .references(() => mediaObjects.id, { onDelete: "cascade" }),
     ownerId: uuid("owner_id").notNull(),
+    // "image" = attached by hand; "screenshot" = saved automatically from the
+    // meeting window by the desktop app while recording.
     kind: text("kind").notNull().default("image"),
     r2Key: text("r2_key").notNull(),
     filename: text("filename").notNull(),
     contentType: text("content_type").notNull(),
     byteSize: integer("byte_size").notNull(),
+    // Screenshots only. Recorded-audio time (pauses excluded), so it lines up
+    // with transcript word times.
+    offsetMs: integer("offset_ms"),
+    // Screenshots only. Model-written; "" means the model saw no shared
+    // content, null means not described yet.
+    description: text("description"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

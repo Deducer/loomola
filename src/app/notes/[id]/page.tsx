@@ -18,6 +18,7 @@ import {
   NotePageClient,
   type NoteActionItem,
 } from "@/components/notes/note-page-client";
+import { noteAttachmentJson } from "@/lib/notes/attachment-json";
 import { resolveObsidianPath } from "@/lib/notes/obsidian-path";
 import type { Word } from "@/lib/viewer/paragraphs";
 import {
@@ -105,16 +106,7 @@ export default async function NotesPage({
       transcriptVersion={
         data.transcript ? transcriptVersionOf(data.transcript.provider, data.transcript.createdAt) : null
       }
-      initialAttachments={await Promise.all(
-        attachments.map(async (attachment) => ({
-          id: attachment.id,
-          filename: attachment.filename,
-          contentType: attachment.contentType,
-          byteSize: attachment.byteSize,
-          createdAt: attachment.createdAt.toISOString(),
-          url: await presignGet(attachment.r2Key),
-        }))
-      )}
+      initialAttachments={await Promise.all(attachments.map(noteAttachmentJson))}
       initialEnhancedSummary={data.aiOutput?.summary ?? null}
       initialActionItems={normalizeActionItems(data.aiOutput?.actionItems)}
       initialGenerationStatus={data.aiOutput?.generationStatusValue ?? "idle"}

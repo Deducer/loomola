@@ -347,6 +347,9 @@ export async function createNoteAttachment(params: {
   filename: string;
   contentType: string;
   byteSize: number;
+  kind?: "image" | "screenshot";
+  offsetMs?: number | null;
+  description?: string | null;
 }): Promise<NoteAttachment> {
   const [row] = await db
     .insert(noteAttachments)
@@ -357,10 +360,38 @@ export async function createNoteAttachment(params: {
       filename: params.filename,
       contentType: params.contentType,
       byteSize: params.byteSize,
+      kind: params.kind ?? "image",
+      offsetMs: params.offsetMs ?? null,
+      description: params.description ?? null,
     })
     .returning();
 
   return row;
+}
+
+export async function countNoteScreenshots(
+  mediaObjectId: string
+): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(noteAttachments)
+    .where(
+      and(
+        eq(noteAttachments.mediaObjectId, mediaObjectId),
+        eq(noteAttachments.kind, "screenshot")
+      )
+    );
+  return row?.count ?? 0;
+}
+
+export async function setNoteAttachmentDescription(
+  id: string,
+  description: string
+): Promise<void> {
+  await db
+    .update(noteAttachments)
+    .set({ description })
+    .where(eq(noteAttachments.id, id));
 }
 
 export async function deleteNoteAttachment(params: {

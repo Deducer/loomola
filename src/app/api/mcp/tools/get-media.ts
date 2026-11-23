@@ -1,5 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod/v4";
+import { listNoteAttachmentsForJob } from "@/db/queries/notes";
+import { SCREENSHOT_KIND } from "@/lib/notes/screenshots";
+import { presignGet } from "@/lib/r2/presigned-get";
 import { getMediaById } from "@/lib/recordings/queries";
 import { getMcpOwnerId } from "./owner";
 import { jsonContent, toIso } from "./shared";
@@ -12,6 +15,7 @@ const includeSchema = z.enum([
   "chapters",
   "comments",
   "attendees",
+  "screenshots",
 ]);
 
 const inputSchema = z.object({
@@ -119,6 +123,24 @@ export function registerGetMediaTool(server: McpServer): void {
           : undefined,
         attendees: include.has("attendees")
           ? details.attendees.map((attendee) => attendee.name)
+          : undefined,
+        // What was on the shared screen during a meeting note: time into the
+        // recording, a short description, and a link to the image (1 hour).
+        screenshots: include.has("screenshots")
+          ? await Promise.all(
+              (await listNoteAttachmentsForJob(details.media.id))
+                .filter(
+                  (attachment) =>
+                    attachment.kind === SCREENSHOT_KIND &&
+                    attachment.offsetMs !== null
+                )
+                .sort((a, b) => (a.offsetMs ?? 0) - (b.offsetMs ?? 0))
+                .map(async (attachment) => ({
+                  offsetSec: Math.floor((attachment.offsetMs ?? 0) / 1000),
+                  description: attachment.description || null,
+                  url: await presignGet(attachment.r2Key),
+                }))
+            )
           : undefined,
       });
     }
