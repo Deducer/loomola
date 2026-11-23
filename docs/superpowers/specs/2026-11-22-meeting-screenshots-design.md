@@ -102,7 +102,7 @@ app, so this is how the capture path is checked without recording a meeting:
 
 ## Not in this version
 
-- Detecting screen share directly (no API for it; "changed and settled" plus
-  the model's no-shared-content verdict stand in).
+- Detecting screen share directly (no API for it; "new and holding still"
+  plus the model's no-shared-content verdict stand in).
 - Showing screenshots on shared pages.
 - Clicking a screenshot to seek the audio.

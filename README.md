@@ -11,7 +11,7 @@ Self-hosted screen recording + AI meeting notes. Open-source alternative to Loom
 Two products in one self-hosted codebase, gated by a single env flag (`ENABLE_GRANOLA`):
 
 - **Screen recording (Loom-shape).** Screen + camera + mic + system audio, captured in the browser via the [companion Chrome extension](extension/). Branded share pages with Slack/Discord link previews, comments, view tracking, AI-generated titles, summaries, chapters, action items, and hover-scrub thumbnails.
-- **AI meeting notes (Granola-shape).** Real-time audio transcription from a native macOS desktop app. Live notepad while the meeting runs. Manual AI notes generation when the user is ready. Attendee tracking, folder organization, speaker attribution.
+- **AI meeting notes (Granola-shape).** Real-time audio transcription from a native macOS desktop app. Live notepad while the meeting runs. Manual AI notes generation when the user is ready. Attendee tracking, folder organization, speaker attribution. Optional meeting screenshots: the desktop app saves a picture of the meeting window when the shared screen changes, and the notes use what was on screen.
 
 Both surfaces use the same Postgres / R2 / Deepgram / Claude pipeline. Same `media_objects` table with a `type` column, so adding a third product (something like MacWhisper, say) reuses everything.
 
@@ -327,6 +327,7 @@ For the tag and CHANGELOG convention, see [`docs/releasing.md`](docs/releasing.m
 - **Stage 8**: Granola-grade desktop note workspace.
 - **Stage 9**: reliability. Orphan recovery, Coolify brownout detection, boot-warmed pg-boss.
 - **Stage 10 (open-source readiness)**: one-command self-host (`docker compose`), bundled MinIO, `npm run doctor`, first-run admin setup, password reset, invite-based multi-user, failure UX with Retry, real `/api/health`, pluggable transcription (Deepgram + Whisper), configurable Chrome extension with options page, notarized desktop release workflow, GHCR image publishing, v1.0.0.
+- **Stage 23**: meeting screenshots. Automatic shared-screen pictures during an audio note, described by the model and fed to the AI notes (off by default; desktop Settings).
 - **Migration tools**: Granola to Loomola CLI (`migrate/`) using the official Granola Business API. Imports notes, transcripts, summaries, attendees, folders, speaker attribution. Loom import is the next major build.
 
 See [`ROADMAP.md`](ROADMAP.md) for the full status table.

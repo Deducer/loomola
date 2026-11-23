@@ -488,6 +488,10 @@ Granola's greyed "Resume" on a saved note is now live. A saved audio note's `�
 
 Known limits: the live transcript tab shows only the new segment while it records; enhanced notes regenerate after the batch transcript lands, as after any stop.
 
+## Share player: phone rotation (✅ shipped 2026-11-22)
+
+The share-page player had no orientation handling: on a phone turned sideways the 16:9 stage was taller than the screen and full screen never rotated the video. Now turning a phone sideways with the player on screen enters full screen and turning it back leaves; tapping full screen while upright locks a landscape video to landscape on Android (iOS refuses the lock and uses Plyr's overlay fallback); and the inline stage is capped to the screen height on a sideways phone. Portrait videos and tablets are unchanged. Checked in emulated-phone Chromium on both paths with `scripts/check-player-rotation.mjs`; not yet on a real iPhone.
+
 ## Stage 23 — Meeting screenshots (✅ shipped 2026-11-22)
 
 Granola saves pictures of the shared screen during a call; Loomola notes kept the transcript and lost the screen. Spec: [`2026-11-22-meeting-screenshots-design.md`](docs/superpowers/specs/2026-11-22-meeting-screenshots-design.md).
@@ -528,5 +532,9 @@ Known limits: thresholds were tuned on a simulated call, not yet against real Zo
 | **Native Windows app** | Direct gap to Loom (which has Windows). Lower priority than iOS for our user base. | Multi-week |
 
 ## Known gaps / bugs being tracked
+
+- **`npm run desktop-smoke` fails its last step** (seen 2026-11-22): the fixture note `201803ac…` is no longer among the 50 most recent audio items the smoke reads, so "known documentary note keeps its manual title" cannot find it. Steps 1–7 pass. Needs a pinned fixture lookup by id.
+- **`tests/unit/recording-update.test.ts` can time out under load** (seen 2026-11-22 at load average ~30): it is a bare dynamic import with the default 5 s timeout.
+- **Six recordings stuck since 2026-11-14** (one `transcribing`, five `uploading`), from the day of the pooler incident. Not cleaned up.
 
 See open issues: https://github.com/Deducer/loom-clone/issues

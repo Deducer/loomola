@@ -131,7 +131,7 @@ Agents (Claude Code, Codex, Hermes) drive Loomola through the MCP server at `/ap
 - **Chrome-only by design** — `getDisplayMedia` system-audio capture is Chrome-only; Document PiP is Chrome-only. Safari/Firefox would partially work (no system audio, no floating bubble).
 - **Recording the entire screen + bubble pip** — the bubble pip window is itself visible in a full-screen capture (along with Chrome's small window-chrome titlebar on the pip). For tab/window recordings it's invisible to the capture. The cleanest fix would be a Chrome extension that injects a true frameless circle bubble as a content-script DOM element in the captured tab — that's how Loom does it for the web.
 - **No adaptive bitrate** — R2 serves one composite file; mobile/cellular viewers eat the full bitrate. Deferred.
-- **Mobile** — designed desktop-first. No focused mobile pass yet; share page renders OK below 768px but not battle-tested.
+- **Mobile** — designed desktop-first. No focused mobile pass yet; share page renders OK below 768px but not battle-tested. The share player follows phone rotation since 2026-11-22 (sideways = full screen, upright = back; `video-player.tsx`), checked in an emulated phone with `scripts/check-player-rotation.mjs`, not yet on a real iPhone.
 - **Brand `fontFamily` is Google Fonts only** — the share page injects `<link href="https://fonts.googleapis.com/css2?family=<name>:wght@400;500;600;700">` and applies the family page-wide. Foundry/commercial fonts (Söhne, TT Norms, Pangram Pangram "Test ..." trial fonts, etc.) silently 404 and fall back to the system sans. Custom-font upload (R2 + `@font-face`) is the right next step but not built yet.
 
 ## Speaker recognition (G-M13 v1 shipped 2026-05-04; Path C deferred)

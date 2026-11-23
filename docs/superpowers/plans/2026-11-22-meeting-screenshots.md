@@ -30,8 +30,9 @@ Server first, because it is backward compatible with installed desktop builds.
    the matched window 0.7 s apart, JPEG, hand-off to an upload closure.
 4. `BackendClient.uploadNoteScreenshot`; DTO gains optional `kind`,
    `offsetMs`, `description`.
-5. `RecorderViewModel`: setting, start after the note starts, stop on
-   stop/discard/failure, offsets in recorded-audio time.
+5. `RecorderViewModel`: setting, start after the note starts, offsets in
+   recorded-audio time. The loop ends on its own once the note is no longer
+   the active recording, so stop, discard and failure need no hook.
 6. Settings toggle; workspace "Meeting screenshots" strip.
 7. `--meeting-screenshot-selftest <dir> [seconds]` launch argument: runs the
    real capturer against the windows on screen and writes frames plus a JSON
@@ -47,3 +48,12 @@ Server first, because it is backward compatible with installed desktop builds.
   desktop token, read it back, delete the note.
 - After the desktop install: self-test against a window titled like a Meet
   call whose content changes on a timer.
+- A real recording in the installed app against the simulated call
+  (`desktop/scripts/meeting-screenshot-fixture.html`).
+
+## Outcome (2026-11-22)
+
+All of the above done and deployed. The real recording stored four described
+frames and the model dropped a faces-only frame. Still open: a real Zoom or
+Meet call (thresholds may need tuning), and a generated note that actually
+used the screenshot lines (the test recording had no speech).

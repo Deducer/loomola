@@ -128,7 +128,8 @@ dashboard under Settings → Database → Backups. For self-hosted Supabase,
 configure your own `pg_dump` cron job.
 
 **Object storage** holds all video files, audio files, thumbnails, preview
-sprites, brand logos, and note image attachments. Back this up.
+sprites, brand logos, and note image attachments (including meeting
+screenshots). Back this up.
 
 For MinIO (the bundled compose option):
 

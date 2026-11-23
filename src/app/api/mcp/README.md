@@ -60,7 +60,7 @@ Read:
 - `loomola_ping` — health check
 - `loomola_search` — semantic search over summaries
 - `loomola_recent_recordings`, `loomola_recent_meetings` — recent videos / audio notes
-- `loomola_get_media` — one recording or note, with transcript, chapters, action items, comments, attendees
+- `loomola_get_media` — one recording or note, with transcript, chapters, action items, comments, attendees, and (`include: ["screenshots"]`) the meeting screenshots of a note: seconds into the recording, a short description of what was on the shared screen, and a one-hour image link
 - `loomola_action_items` — AI action items across notes
 - `loomola_recording_status` — processing state: transcode, thumbnail, scrub previews, transcript, AI title/summary, brand, comment count
 - `loomola_list_brands` — brand profiles that can theme a share page
