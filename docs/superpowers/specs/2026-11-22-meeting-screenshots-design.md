@@ -83,6 +83,23 @@ app, so this is how the capture path is checked without recording a meeting:
 
     open -n -a /Applications/Loomola.app --args --meeting-screenshot-selftest /tmp/shots 60
 
+## Limits found in testing
+
+- **The call window has to be on screen at full size.** macOS renders a
+  window parked in the Stage Manager strip only as a small thumbnail, and a
+  minimised window or one on another Space not at all. Capturing those gives
+  a thumbnail or nothing, so windows under 480×270 are skipped. In practice:
+  keep the call in front, or in the same stage as the Loomola note. The log
+  summary counts these looks as `callWindowParked`.
+- **macOS asks about screen access.** Taking screenshots without the system
+  picker makes macOS show "Loomola is requesting to bypass the system private
+  window picker and directly access your screen and audio" (Allow / Open
+  System Settings), and it asks again from time to time. Captures kept
+  working while the prompt was open during testing; allow it once so they
+  keep working. The self-test can raise the same prompt.
+- **A browser call shows its tab bar.** The whole browser window is captured,
+  so the titles of the other tabs in that window are in the picture.
+
 ## Not in this version
 
 - Detecting screen share directly (no API for it; "changed and settled" plus

@@ -500,7 +500,9 @@ Granola saves pictures of the shared screen during a call; Loomola notes kept th
 | Surfaces | Web note page row; MCP `loomola_get_media` `include: ["screenshots"]`. Shared pages never show attachments. |
 | Self-test | `Loomola --meeting-screenshot-selftest <dir> [seconds]` runs the capturer against the windows on screen and writes frames + `report.json` instead of uploading. |
 
-Known limits: thresholds were tuned on a simulated call, not yet against real Zoom/Meet video; a browser call is only captured while its tab is in front; a video playing in the shared screen never holds still, so it yields at most one frame.
+Checked end to end on 2026-11-22 with a real recording in the installed app against a simulated call: four frames stored with descriptions, a gallery-of-faces frame dropped by the model, loop ended with the recording.
+
+Known limits: thresholds were tuned on a simulated call, not yet against real Zoom/Meet video; the call window has to be on screen at full size (a window parked in the Stage Manager strip, minimised, or on another Space is only a thumbnail to macOS and is skipped); a browser call is only captured while its tab is in front; a video playing in the shared screen never holds still, so it yields at most one frame; macOS shows its "bypass the system private window picker" prompt for Loomola and repeats it from time to time.
 
 ## Open follow-ups (next milestones to spec)
 

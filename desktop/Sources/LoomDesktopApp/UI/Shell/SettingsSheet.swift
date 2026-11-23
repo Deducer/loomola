@@ -261,7 +261,7 @@ struct SettingsSheet: View {
                 )
                 settingsToggleRow(
                     title: "Meeting screenshots",
-                    subtitle: "While recording a note, save a picture of the meeting window when the shared screen changes. Only the meeting window is captured, and the pictures stay private to you.",
+                    subtitle: "While recording a note, save a picture of the meeting window when the shared screen changes. Only the meeting window is captured, and only while it is on screen at full size (not minimised or parked in Stage Manager). The pictures stay private to you.",
                     isOn: Binding(
                         get: { viewModel.meetingScreenshotsEnabled },
                         set: { enabled in

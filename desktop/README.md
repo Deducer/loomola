@@ -68,7 +68,9 @@ The local app is production-grade for Ian's single-user workflow. It includes:
   manual AI note generation.
 - Meeting screenshots (off by default, Settings → Meeting screenshots): while
   a note records, saves a picture of the meeting window when the shared screen
-  changes. Check the capture path without recording anything with
+  changes. The call window has to be on screen at full size (not minimised or
+  parked in Stage Manager), and macOS will ask once in a while to let Loomola
+  access the screen directly. Check the capture path without recording anything with
   `open -n -a /Applications/Loomola.app --args --meeting-screenshot-selftest /tmp/shots 60`.
 - Floating recording status overlays, draggable camera bubble, global hotkeys,
   permission preflight, and source pickers.

@@ -65,7 +65,8 @@ final class MeetingScreenshotCapturer: @unchecked Sendable {
     static let pairInterval: TimeInterval = 0.7
     /// Longest side of a stored frame, in pixels. Enough to read slide text.
     static let maxLongSide: CGFloat = 1600
-    /// Smaller windows are picture-in-picture strips, not the call itself.
+    /// Smaller windows are picture-in-picture strips or a call parked in the
+    /// Stage Manager strip (a thumbnail), not a readable call window.
     static let minimumWindowSize = CGSize(width: 480, height: 270)
 
     private let sampleInterval: TimeInterval
@@ -121,10 +122,11 @@ final class MeetingScreenshotCapturer: @unchecked Sendable {
         // is what there is to go on when a call produced too few or too many.
         var samples = 0
         var samplesWithWindow = 0
+        var samplesWithParkedWindow = 0
         var unsettledSamples = 0
         screenshotLog.notice("meeting screenshots started")
         defer {
-            screenshotLog.notice("meeting screenshots summary: samples=\(samples, privacy: .public) withCallWindow=\(samplesWithWindow, privacy: .public) unsettled=\(unsettledSamples, privacy: .public) kept=\(detector.keptCount, privacy: .public) sent=\(detector.attemptCount, privacy: .public)")
+            screenshotLog.notice("meeting screenshots summary: samples=\(samples, privacy: .public) withCallWindow=\(samplesWithWindow, privacy: .public) callWindowParked=\(samplesWithParkedWindow, privacy: .public) unsettled=\(unsettledSamples, privacy: .public) kept=\(detector.keptCount, privacy: .public) sent=\(detector.attemptCount, privacy: .public)")
         }
         while !Task.isCancelled {
             try? await Task.sleep(nanoseconds: UInt64(sampleInterval * 1_000_000_000))
@@ -145,7 +147,16 @@ final class MeetingScreenshotCapturer: @unchecked Sendable {
             }
 
             samples += 1
-            guard let candidate = largestMeetingWindow(in: onScreenWindows()) else {
+            let windows = onScreenWindows()
+            guard let candidate = largestMeetingWindow(in: windows) else {
+                // A call window that is there but tiny is parked in the Stage
+                // Manager strip: macOS only renders it as a thumbnail, so
+                // there is nothing readable to capture until it is in front.
+                if windows.contains(where: {
+                    MeetingWindowMatcher.isMeetingWindow(applicationName: $0.applicationName, title: $0.title)
+                }) {
+                    samplesWithParkedWindow += 1
+                }
                 onSample?(MeetingScreenshotSample(
                     seconds: seconds, windowTitle: nil, verdict: .init(), outcome: nil
                 ))
