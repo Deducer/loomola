@@ -71,6 +71,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
   // the Seekbar component mounts. We re-render after that mount so
   // the comment markers can pick up the new anchor element.
   const [seekbarEl, setSeekbarEl] = useState<HTMLElement | null>(null);
+  // True while full screen was entered by turning the phone, not by the button.
+  const rotatedIntoFullscreen = useRef(false);
 
   useEffect(() => {
     if (!videoRef.current) return;
@@ -147,6 +149,19 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
       plyrRef.current.on("play", () => onPlayStateChange?.(true));
       plyrRef.current.on("pause", () => onPlayStateChange?.(false));
       plyrRef.current.on("ended", () => onPlayStateChange?.(false));
+      // Tapping full screen with the phone upright turns a landscape video
+      // sideways (Android; iOS refuses the lock). Skipped when rotation got us
+      // here: a locked screen fires no event when the phone is turned back,
+      // so it could never leave full screen. Leaving full screen drops the lock.
+      plyrRef.current.on("enterfullscreen", () => {
+        const v = videoRef.current;
+        if (rotatedIntoFullscreen.current || !v || v.videoWidth <= v.videoHeight) return;
+        if (!isPhone() || isLandscape()) return;
+        const orientation = screen.orientation as
+          | (ScreenOrientation & { lock?: (o: string) => Promise<void> })
+          | undefined;
+        orientation?.lock?.("landscape").catch(() => {});
+      });
       plyrRef.current.on("ready", () => {
         onReady?.();
         // Plyr exposes its DOM via player.elements.container — that's
@@ -213,6 +228,33 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
     };
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
+  }, []);
+
+  // Phones, YouTube-style: turning the phone sideways while the player is on
+  // screen goes full screen, and turning it back upright leaves again.
+  // Portrait videos are left alone (sideways would only shrink them).
+  // screen.orientation's own event is the one Chrome accepts as the "user
+  // gesture" for requestFullscreen; older iOS only has orientationchange.
+  useEffect(() => {
+    const onRotate = () => {
+      const fs = plyrRef.current?.fullscreen;
+      const video = videoRef.current;
+      if (!fs || !video || !isPhone()) return;
+      if (!isLandscape()) {
+        if (fs.active && rotatedIntoFullscreen.current) fs.exit();
+        rotatedIntoFullscreen.current = false;
+        return;
+      }
+      if (fs.active || video.videoWidth <= video.videoHeight) return;
+      const box = video.getBoundingClientRect();
+      if (box.bottom <= 0 || box.top >= window.innerHeight) return;
+      rotatedIntoFullscreen.current = true;
+      fs.enter();
+    };
+    const target: EventTarget = screen.orientation ?? window;
+    const eventName = screen.orientation ? "change" : "orientationchange";
+    target.addEventListener(eventName, onRotate);
+    return () => target.removeEventListener(eventName, onRotate);
   }, []);
 
   useImperativeHandle(ref, () => ({
@@ -330,6 +372,20 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
     </div>
   );
 });
+
+// Touch device whose short side is phone-sized. Tablets keep the inline page.
+function isPhone() {
+  return (
+    window.matchMedia("(pointer: coarse)").matches &&
+    Math.min(screen.width, screen.height) <= 500
+  );
+}
+
+function isLandscape() {
+  return screen.orientation
+    ? screen.orientation.type.startsWith("landscape")
+    : Math.abs(Number(window.orientation)) === 90;
+}
 
 /**
  * Plyr's built-in duration display element doesn't render a value when

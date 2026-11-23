@@ -150,6 +150,14 @@ html, body {
     max-height: 75svh;
   }
 }
+/* A phone on its side is wider than 640px, so it gets the 16:9 stage, which
+   is taller than the screen. Cap it so the whole player and its controls fit
+   (2px = the player's border). */
+@media (orientation: landscape) and (max-height: 500px) {
+  .plyr-rounded .plyr__video-wrapper--fixed-ratio {
+    max-height: calc(100svh - 2px);
+  }
+}
 .plyr-rounded .plyr:fullscreen .plyr__video-wrapper,
 .plyr-rounded .plyr--fullscreen-fallback .plyr__video-wrapper {
   aspect-ratio: auto !important;

@@ -10,6 +10,8 @@ for the curated notes.
 
 ### Added
 
+- **Share-page player follows phone rotation.** Turning a phone sideways while the player is on screen goes full screen, and turning it back upright leaves again. Tapping full screen with the phone upright turns a landscape video sideways on Android (iOS does not let a page lock orientation). Out of full screen, the player on a sideways phone is capped to the screen height so its controls stay reachable. Portrait videos and tablets are unchanged.
+
 - **Self-hosted Supabase guide ([`docs/self-hosting-supabase.md`](docs/self-hosting-supabase.md)).** A step-by-step Coolify recipe to run Supabase on your own VPS — the $0-forever path with no external account and no usage caps. Loomola needs no code changes; self-hosted Supabase is the same software. `getClaims` auth works against the default HS256 setup (it validates against your own GoTrue).
 
 ### Changed
