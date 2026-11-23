@@ -83,6 +83,10 @@ final class RecorderViewModel: ObservableObject {
         UserDefaults.standard.object(forKey: "loomola.liveTranscriptionEnabled") as? Bool ?? true
     @Published private(set) var calendarAttendeesEnabled: Bool =
         UserDefaults.standard.object(forKey: "loomola.calendarAttendeesEnabled") as? Bool ?? true
+    /// Off unless the user turns it on: it saves pictures of the meeting
+    /// window (other people's shared screens) into the note.
+    @Published private(set) var meetingScreenshotsEnabled: Bool =
+        UserDefaults.standard.object(forKey: "loomola.meetingScreenshotsEnabled") as? Bool ?? false
     @Published private(set) var calendarRemindersEnabled: Bool =
         CalendarReminderPreferences.isEnabled
     @Published private(set) var nativeMessagingStatus = "Chrome bridge can be installed after the extension is loaded."
@@ -131,6 +135,10 @@ final class RecorderViewModel: ObservableObject {
     private(set) var backendClient: BackendClient?
     private var audioNoteRecorder: AudioNoteRecorder?
     let liveTranscription = LiveTranscriptionCoordinator()
+    private var meetingScreenshots: MeetingScreenshotCapturer?
+    /// Recorded-audio seconds already in the note when this segment started
+    /// (a resumed note), so screenshot offsets continue from there.
+    private var meetingScreenshotOffsetBase: TimeInterval = 0
     private var obsidianExportWriter: ObsidianExportWriter?
     private var obsidianRealtimeSubscriber: ObsidianRealtimeSubscriber?
     private var obsidianSyncTask: Task<Void, Never>?
@@ -615,6 +623,71 @@ final class RecorderViewModel: ObservableObject {
         statusMessage = enabled
             ? "Calendar reminders enabled."
             : "Calendar reminders disabled."
+    }
+
+    func setMeetingScreenshotsEnabled(_ enabled: Bool) {
+        guard meetingScreenshotsEnabled != enabled else { return }
+        meetingScreenshotsEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: "loomola.meetingScreenshotsEnabled")
+        if enabled {
+            startMeetingScreenshotsIfEnabled()
+        } else {
+            meetingScreenshots?.stop()
+            meetingScreenshots = nil
+        }
+        statusMessage = enabled
+            ? "Meeting screenshots enabled."
+            : "Meeting screenshots disabled."
+    }
+
+    /// Starts saving meeting-window screenshots to the active audio note.
+    /// The loop ends by itself once that note stops being the active one, so
+    /// the stop, discard and failure paths need no hook of their own.
+    private func startMeetingScreenshotsIfEnabled() {
+        meetingScreenshots?.stop()
+        meetingScreenshots = nil
+        guard meetingScreenshotsEnabled,
+              activeRecordingKind == .audio,
+              let mediaId = activeAudioRecordingId,
+              let backendClient,
+              CGPreflightScreenCaptureAccess()
+        else { return }
+        let capturer = MeetingScreenshotCapturer(
+            clock: { [weak self] in
+                await self?.meetingScreenshotClock(mediaId: mediaId) ?? .ended
+            },
+            upload: { shot in
+                do {
+                    let stored = try await backendClient.uploadNoteScreenshot(
+                        mediaId: mediaId,
+                        jpeg: shot.jpeg,
+                        offsetMs: shot.offsetMs
+                    )
+                    return stored == nil ? .noSharedContent : .stored
+                } catch let error as BackendClientError {
+                    if case .badStatus(409, _, _) = error { return .limitReached }
+                    return .failed
+                } catch {
+                    return .failed
+                }
+            }
+        )
+        meetingScreenshots = capturer
+        capturer.start()
+    }
+
+    private func meetingScreenshotClock(mediaId: String) -> MeetingScreenshotClock {
+        guard meetingScreenshotsEnabled,
+              activeRecordingKind == .audio,
+              activeAudioRecordingId == mediaId,
+              let startedAt = activeAudioRecordingStartedAt
+        else { return .ended }
+        if isAudioNotePaused { return .paused }
+        return .recording(
+            seconds: meetingScreenshotOffsetBase
+                + Date().timeIntervalSince(startedAt)
+                - audioNotePausedAccumulatedSeconds
+        )
     }
 
     func setLiveTranscriptionEnabled(_ enabled: Bool) {
@@ -1570,6 +1643,8 @@ final class RecorderViewModel: ObservableObject {
                 statusMessage = "Recording audio note with \(session.tracks.count) track(s)."
                 startAudioInactivityMonitor()
                 isStartingRecording = false
+                meetingScreenshotOffsetBase = resume?.recording.durationSeconds ?? 0
+                startMeetingScreenshotsIfEnabled()
                 if resume == nil {
                     attachCalendarAttendees(recordingId: session.backendRecordingId)
                 }

@@ -22,11 +22,19 @@ offset and a short text description, and the AI notes use those descriptions.
   tab is a Meet/Teams/Zoom call). Never the display. No meeting window, no
   capture. A browser window is only captured while the call tab is the active
   tab, because the window title is what identifies it.
-- **Keep only changes that have settled.** Sample every 6 seconds. Keep a frame
-  only when it differs from the last kept frame *and* matches the sample
-  before it. A slide that has just appeared is kept; a gallery of moving faces
-  or a scrolling demo is not, until it holds still. At most one kept frame per
-  12 seconds and 40 per recording.
+- **Keep only what is new and holding still.** Every 6 seconds the app takes
+  two frames 0.7 seconds apart. The pair says whether the screen is still
+  right now, so a scroll or a transition is skipped and a screen someone has
+  just clicked to is caught. The second frame is compared with the last kept
+  one by two rules: a *new slide* (a small change among cells that are
+  normally still, with restless cells such as faces set aside) or a *new
+  screen* (a large change anywhere). Kept frames are at least 12 seconds
+  apart, widening to 30 and then 60 as they accumulate, and capped at 60 per
+  recording. The thresholds were tuned on a simulated call (slides beside a
+  moving participant strip, a scrolling page, an app being clicked through,
+  a gallery of faces) and may need adjusting against real calls; the log line
+  `meeting screenshots summary` in the `screenshots` category is the place to
+  look.
 - **Describe once, at upload.** The server asks the cheap model
   (`getClassifierLlm`) for a one or two sentence description before storing
   the frame. If the model says the frame shows no shared content (participant
@@ -59,11 +67,21 @@ transcript word times.
 `POST /api/notes/:id/attachments` accepts two optional form fields,
 `kind=screenshot` and `offsetMs`. For a screenshot it returns
 `{ attachment }` (201) or `{ attachment: null, skipped: "no_shared_content" }`
-(200), and `409 screenshot_limit` past 60 per note. `GET` returns `kind`,
+(200), and `409 screenshot_limit` past 80 per note. `GET` returns `kind`,
 `offsetMs` and `description` on every attachment. Old desktop builds send
 neither field and behave as before.
 
 MCP `loomola_get_media` takes `include: ["screenshots"]`.
+
+## Checking it
+
+`Loomola --meeting-screenshot-selftest <dir> [seconds]` runs the real capturer
+against the windows on screen and writes the kept frames and a `report.json`
+(every look, with its numbers) to `<dir>` instead of uploading. It exits
+before the app starts. Screen Recording permission belongs to the installed
+app, so this is how the capture path is checked without recording a meeting:
+
+    open -n -a /Applications/Loomola.app --args --meeting-screenshot-selftest /tmp/shots 60
 
 ## Not in this version
 

@@ -10,6 +10,7 @@ for the curated notes.
 
 ### Added
 
+- **Meeting screenshots.** While an audio note records, the desktop app can save a picture of the meeting window each time the shared screen changes (Zoom, Teams, Webex, FaceTime, or a browser window whose front tab is a Meet, Teams or Zoom call). Only that window is captured, never the display. Each picture gets a time into the recording and a short description written by the cheap model; frames that show only participants are dropped before they are stored. The AI notes read those descriptions, so "this slide" and "this screen" resolve to what was actually shown. Screenshots appear in a "Meeting screenshots" row in the desktop note and on the web note page, stay private to the owner (shared pages never show attachments), and are available to agents through MCP `loomola_get_media` with `include: ["screenshots"]`. **Off by default:** turn on **Settings → Meeting screenshots** in the desktop app. Needs a desktop build from this version or later and migration `0036`. Design: [`docs/superpowers/specs/2026-11-22-meeting-screenshots-design.md`](docs/superpowers/specs/2026-11-22-meeting-screenshots-design.md).
 - **Share-page player follows phone rotation.** Turning a phone sideways while the player is on screen goes full screen, and turning it back upright leaves again. Tapping full screen with the phone upright turns a landscape video sideways on Android (iOS does not let a page lock orientation). Out of full screen, the player on a sideways phone is capped to the screen height so its controls stay reachable. Portrait videos and tablets are unchanged.
 
 - **Self-hosted Supabase guide ([`docs/self-hosting-supabase.md`](docs/self-hosting-supabase.md)).** A step-by-step Coolify recipe to run Supabase on your own VPS — the $0-forever path with no external account and no usage caps. Loomola needs no code changes; self-hosted Supabase is the same software. `getClaims` auth works against the default HS256 setup (it validates against your own GoTrue).
@@ -20,6 +21,7 @@ for the curated notes.
 
 ### Fixed
 
+- **Removing a note attachment now deletes the stored file.** `DELETE /api/notes/:id/attachments/:attachmentId` used to delete only the database row, leaving the image in object storage where nothing could find it again.
 - **Cut Supabase egress on the public share page.** Slimmed the slug → recording lookup so the 5s progress beacon and the view / refresh-url / preview-thumbnail endpoints no longer drag the full AI summary, chapters, and action items out of Postgres on every call. Lengthened the view-progress beacon from 5s to 30s. The transcript word-timing blob is now fetched lazily (only when a viewer scrolls to the transcript) instead of on every share-page load. Together these remove what tripped the Supabase egress quota.
 
 ## v1.0.0 — 2026-06-11

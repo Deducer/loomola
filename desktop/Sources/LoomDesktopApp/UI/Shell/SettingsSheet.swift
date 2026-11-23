@@ -260,6 +260,16 @@ struct SettingsSheet: View {
                     )
                 )
                 settingsToggleRow(
+                    title: "Meeting screenshots",
+                    subtitle: "While recording a note, save a picture of the meeting window when the shared screen changes. Only the meeting window is captured, and the pictures stay private to you.",
+                    isOn: Binding(
+                        get: { viewModel.meetingScreenshotsEnabled },
+                        set: { enabled in
+                            viewModel.setMeetingScreenshotsEnabled(enabled)
+                        }
+                    )
+                )
+                settingsToggleRow(
                     title: "Calendar attendees",
                     subtitle: calendarAttendeesSubtitle,
                     isOn: Binding(

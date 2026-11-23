@@ -488,6 +488,20 @@ Granola's greyed "Resume" on a saved note is now live. A saved audio note's `�
 
 Known limits: the live transcript tab shows only the new segment while it records; enhanced notes regenerate after the batch transcript lands, as after any stop.
 
+## Stage 23 — Meeting screenshots (✅ shipped 2026-11-22)
+
+Granola saves pictures of the shared screen during a call; Loomola notes kept the transcript and lost the screen. Spec: [`2026-11-22-meeting-screenshots-design.md`](docs/superpowers/specs/2026-11-22-meeting-screenshots-design.md).
+
+| Piece | What shipped |
+|---|---|
+| Server | `note_attachments.offset_ms` + `description` (migration 0036); screenshot rows have `kind = 'screenshot'`. `POST /api/notes/[id]/attachments` takes `kind=screenshot` + `offsetMs`, asks the classifier model for a one or two sentence description before storing, and drops frames that show only participants. 80 per note. |
+| Notes prompt | One line per screenshot: time, description, and the words spoken just after it (`src/lib/notes/screenshots.ts`). Hand-attached images still go to the model as images. |
+| Desktop | `MeetingScreenshotCapturer` looks at the meeting window every 6 s (two frames 0.7 s apart); `ScreenshotChangeDetector` keeps a frame for a new slide or a new screen; `MeetingWindowMatcher` decides which window is the call. Setting `loomola.meetingScreenshotsEnabled`, off by default. "Meeting screenshots" strip in the note workspace. |
+| Surfaces | Web note page row; MCP `loomola_get_media` `include: ["screenshots"]`. Shared pages never show attachments. |
+| Self-test | `Loomola --meeting-screenshot-selftest <dir> [seconds]` runs the capturer against the windows on screen and writes frames + `report.json` instead of uploading. |
+
+Known limits: thresholds were tuned on a simulated call, not yet against real Zoom/Meet video; a browser call is only captured while its tab is in front; a video playing in the shared screen never holds still, so it yields at most one frame.
+
 ## Open follow-ups (next milestones to spec)
 
 | Topic | Why | Rough effort |

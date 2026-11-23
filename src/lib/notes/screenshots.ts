@@ -3,8 +3,8 @@ import type { WordTimestamp } from "@/db/queries/transcripts";
 /** note_attachments.kind for frames the desktop app saves from the meeting window. */
 export const SCREENSHOT_KIND = "screenshot";
 
-/** The desktop app stops at 40; this is the server's ceiling for one note. */
-export const MAX_SCREENSHOTS_PER_NOTE = 60;
+/** The desktop app stops at 60; this is the server's ceiling for one note. */
+export const MAX_SCREENSHOTS_PER_NOTE = 80;
 
 const MAX_OFFSET_MS = 24 * 60 * 60 * 1000;
 

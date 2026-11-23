@@ -366,8 +366,11 @@ struct NoteWorkspaceView: View {
                         // them outside this ScrollView pinned them near the bottom
                         // controls and created a large false blank page after short
                         // Enhanced notes.
-                        if !attachments.isEmpty || uploadingCount > 0 {
+                        if !handAttachedImages.isEmpty || uploadingCount > 0 {
                             attachmentsStrip
+                        }
+                        if !meetingScreenshots.isEmpty {
+                            meetingScreenshotsStrip
                         }
                     }
                 }
@@ -2424,7 +2427,7 @@ struct NoteWorkspaceView: View {
             .foregroundStyle(DSColor.Text.secondary)
 
             HStack(spacing: 8) {
-                ForEach(attachments) { attachment in
+                ForEach(handAttachedImages) { attachment in
                     AttachmentThumbnail(
                         attachment: attachment,
                         onOpen: { previewedAttachment = attachment },
@@ -2437,6 +2440,56 @@ struct NoteWorkspaceView: View {
                     UploadingThumbnailPlaceholder()
                 }
                 Spacer()
+            }
+        }
+        .padding(.top, DSSpacing.md)
+    }
+
+    private var handAttachedImages: [NoteAttachmentDTO] {
+        attachments.filter { !$0.isMeetingScreenshot }
+    }
+
+    /// Frames saved from the meeting window during the recording, oldest first.
+    private var meetingScreenshots: [NoteAttachmentDTO] {
+        attachments
+            .filter(\.isMeetingScreenshot)
+            .sorted { ($0.offsetMs ?? 0) < ($1.offsetMs ?? 0) }
+    }
+
+    /// A recording can leave dozens of these, so the row scrolls sideways
+    /// instead of wrapping. Each thumb carries its time into the recording;
+    /// hovering shows what was on screen.
+    private var meetingScreenshotsStrip: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 4) {
+                Image(systemName: "rectangle.on.rectangle")
+                    .font(.system(size: 11, weight: .medium))
+                Text("Meeting screenshots")
+                    .font(DSFont.Body.sm())
+            }
+            .foregroundStyle(DSColor.Text.secondary)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: 8) {
+                    ForEach(meetingScreenshots) { screenshot in
+                        VStack(spacing: 3) {
+                            AttachmentThumbnail(
+                                attachment: screenshot,
+                                onOpen: { previewedAttachment = screenshot },
+                                onRemove: {
+                                    Task { await removeAttachment(screenshot) }
+                                }
+                            )
+                            if let label = screenshot.offsetLabel {
+                                Text(label)
+                                    .font(DSFont.Body.sm())
+                                    .monospacedDigit()
+                                    .foregroundStyle(DSColor.Text.secondary)
+                            }
+                        }
+                    }
+                }
+                .padding(.vertical, 2)
             }
         }
         .padding(.top, DSSpacing.md)
@@ -4555,7 +4608,11 @@ private struct AttachmentThumbnail: View {
         .scaleEffect(hovering ? 1.04 : 1.0)
         .onHover { hovering = $0 }
         .animation(LoomolaMotion.quick, value: hovering)
-        .help(attachment.filename)
+        .help(
+            attachment.isMeetingScreenshot
+                ? (attachment.description ?? "Meeting screenshot")
+                : attachment.filename
+        )
         .contentShape(Rectangle())
         .onTapGesture(perform: onOpen)
         .contextMenu {

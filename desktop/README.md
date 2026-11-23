@@ -66,6 +66,10 @@ The local app is production-grade for Ian's single-user workflow. It includes:
 - Native audio note recording with mic/system audio, live note workspace,
   markdown editor, attachments, pause/resume, live transcription, upload, and
   manual AI note generation.
+- Meeting screenshots (off by default, Settings → Meeting screenshots): while
+  a note records, saves a picture of the meeting window when the shared screen
+  changes. Check the capture path without recording anything with
+  `open -n -a /Applications/Loomola.app --args --meeting-screenshot-selftest /tmp/shots 60`.
 - Floating recording status overlays, draggable camera bubble, global hotkeys,
   permission preflight, and source pickers.
 - Multipart upload, orphaned-recording recovery, brownout detection, and retry

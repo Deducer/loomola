@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   countNoteScreenshots: vi.fn(),
   createNoteAttachment: vi.fn(),
   uploadBytes: vi.fn(),
+  deleteNoteAttachment: vi.fn(),
+  deleteObjects: vi.fn(),
 }));
 
 vi.mock("@/lib/feature-flags", () => ({ enableGranola: () => true }));
@@ -28,7 +30,9 @@ vi.mock("@/db/queries/notes", () => ({
   countNoteScreenshots: mocks.countNoteScreenshots,
   createNoteAttachment: mocks.createNoteAttachment,
   setNoteAttachmentDescription: vi.fn(),
+  deleteNoteAttachment: mocks.deleteNoteAttachment,
 }));
+vi.mock("@/lib/r2/delete-objects", () => ({ deleteObjects: mocks.deleteObjects }));
 vi.mock("@/lib/ai/client", () => ({ getClassifierLlm: () => ({}) }));
 vi.mock("@/lib/ai/with-fallback", () => ({ generateTextWithFallback: vi.fn() }));
 vi.mock("@/lib/notes/describe-screenshot", async (importOriginal) => ({
@@ -37,6 +41,7 @@ vi.mock("@/lib/notes/describe-screenshot", async (importOriginal) => ({
 }));
 
 import { POST } from "@/app/api/notes/[id]/attachments/route";
+import { DELETE } from "@/app/api/notes/[id]/attachments/[attachmentId]/route";
 import { parseScreenshotVerdict } from "@/lib/notes/describe-screenshot";
 import { buildAudioNotesEnhancementPrompt } from "@/lib/queue/jobs/generate-title-summary";
 
@@ -227,7 +232,7 @@ describe("POST /api/notes/:id/attachments (screenshots)", () => {
   });
 
   it("refuses screenshots past the per-note limit", async () => {
-    mocks.countNoteScreenshots.mockResolvedValue(60);
+    mocks.countNoteScreenshots.mockResolvedValue(80);
     const res = await POST(request({ kind: "screenshot", offsetMs: "0" }), params);
     expect(res.status).toBe(409);
     expect(mocks.describeScreenshot).not.toHaveBeenCalled();
@@ -245,5 +250,31 @@ describe("POST /api/notes/:id/attachments (screenshots)", () => {
   it("rejects a screenshot with a bad offset", async () => {
     const res = await POST(request({ kind: "screenshot", offsetMs: "soon" }), params);
     expect(res.status).toBe(400);
+  });
+});
+
+describe("DELETE /api/notes/:id/attachments/:attachmentId", () => {
+  const request = new Request("https://loom.example/api/notes/note-1/attachments/att-1", {
+    method: "DELETE",
+  });
+  const params = { params: Promise.resolve({ id: "note-1", attachmentId: "att-1" }) };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.deleteObjects.mockResolvedValue(undefined);
+  });
+
+  it("deletes the stored file along with the row", async () => {
+    mocks.deleteNoteAttachment.mockResolvedValue({ r2Key: "note-attachments/u/n/x.jpg" });
+    const res = await DELETE(request, params);
+    expect(await res.json()).toEqual({ removed: true });
+    expect(mocks.deleteObjects).toHaveBeenCalledWith(["note-attachments/u/n/x.jpg"]);
+  });
+
+  it("reports nothing removed when the attachment is not there", async () => {
+    mocks.deleteNoteAttachment.mockResolvedValue(null);
+    const res = await DELETE(request, params);
+    expect(await res.json()).toEqual({ removed: false });
+    expect(mocks.deleteObjects).not.toHaveBeenCalled();
   });
 });

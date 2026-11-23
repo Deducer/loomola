@@ -4,6 +4,7 @@ import {
   getAudioNoteAccess,
 } from "@/db/queries/notes";
 import { enableGranola } from "@/lib/feature-flags";
+import { deleteObjects } from "@/lib/r2/delete-objects";
 import { requireAuth } from "@/lib/require-auth";
 
 function granolaNotFound() {
@@ -25,6 +26,13 @@ export async function DELETE(
     mediaObjectId: data.id,
     ownerId: user.id,
   });
+  // Removing a picture removes the picture. Without this the stored file
+  // outlives its row and nothing ever finds it again.
+  if (removed) {
+    await deleteObjects([removed.r2Key]).catch((err) =>
+      console.warn("[attachments] could not delete stored file:", err)
+    );
+  }
 
-  return NextResponse.json({ removed });
+  return NextResponse.json({ removed: removed !== null });
 }

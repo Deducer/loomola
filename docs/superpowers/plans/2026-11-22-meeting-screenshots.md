@@ -24,9 +24,10 @@ Server first, because it is backward compatible with installed desktop builds.
 ## Desktop
 
 1. `MeetingWindowMatcher` (pure): is this window a call?
-2. `ScreenshotChangeDetector` (pure): changed-and-settled, spacing, cap.
-3. `MeetingScreenshotCapturer`: 6 s loop, ScreenCaptureKit single-frame
-   capture of the matched window, JPEG, hand-off to an upload closure.
+2. `ScreenshotChangeDetector` (pure): two-frame looks, new-slide and
+   new-screen rules, restless cells, spacing, cap.
+3. `MeetingScreenshotCapturer`: 6 s loop, two ScreenCaptureKit captures of
+   the matched window 0.7 s apart, JPEG, hand-off to an upload closure.
 4. `BackendClient.uploadNoteScreenshot`; DTO gains optional `kind`,
    `offsetMs`, `description`.
 5. `RecorderViewModel`: setting, start after the note starts, stop on

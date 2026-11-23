@@ -8,6 +8,7 @@ struct LoomDesktopApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     init() {
+        MeetingScreenshotSelfTest.runAndExitIfRequested()
         FontLoader.registerAll()
     }
 

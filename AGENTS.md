@@ -233,6 +233,15 @@ Ten ranked visual gaps against Granola's macOS app, one commit per rank (audit: 
 - **Perf fix worth remembering:** `RecentDateGrouping` caches `DateFormatter`s per calendar/locale/zone. Building one per row per render stalled the home for seconds with a few hundred notes.
 - Not built on purpose: Ask-anything field, per-person sharing, persisted notes feedback (logged only).
 
+## Stage 23 — Meeting screenshots (✅ shipped 2026-11-22) — read before touching note attachments
+
+Spec: [`docs/superpowers/specs/2026-11-22-meeting-screenshots-design.md`](docs/superpowers/specs/2026-11-22-meeting-screenshots-design.md).
+
+- **Two kinds of attachment.** `note_attachments.kind` is `image` (attached by hand) or `screenshot` (saved by the desktop app from the meeting window). Screenshots carry `offset_ms` (recorded-audio time: pauses excluded, a resumed segment continues from the saved duration) and `description` (`null` = not described yet, `""` = the model saw no shared content). Anything listing attachments must decide which kind it wants: the notes-list thumbnails and the model's image inputs are hand-attached only.
+- **Described at upload, in the request.** `POST /api/notes/[id]/attachments` with `kind=screenshot` calls `describeScreenshot` (classifier model, ~2 s) before storing and drops a no-shared-content frame without storing it. If the model is unavailable the frame is stored undescribed and `generate-title-summary` fills it in (`describePendingScreenshots`).
+- **Desktop.** `MeetingScreenshotCapturer` only ever captures a window `MeetingWindowMatcher` accepts. Its loop ends on its own when the clock closure says the note is no longer the active recording, so stop/discard paths have no hook. `ScreenshotChangeDetector` is pure and unit-tested; its thresholds were tuned on a simulated call, so tune them from the `meeting screenshots summary` log line (category `screenshots`) and the self-test rather than by feel.
+- **Self-test.** `open -n -a /Applications/Loomola.app --args --meeting-screenshot-selftest <dir> [seconds]` exits before the app starts (handled first thing in `LoomDesktopApp.init`), so it is safe beside a running instance and never touches the saved session.
+
 ## Out-of-Stage-1 Scope (deferred, separate spec when picked up)
 
 - Chrome extension companion (frameless circle bubble — see "Known Issues")

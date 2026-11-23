@@ -503,6 +503,52 @@ actor BackendClient {
         return envelope.attachment
     }
 
+    /// Upload one automatic meeting-window screenshot. Returns nil when the
+    /// server dropped it because nothing was being shared.
+    func uploadNoteScreenshot(mediaId: String, jpeg: Data, offsetMs: Int) async throws -> NoteAttachmentDTO? {
+        let path = "/api/notes/\(mediaId)/attachments"
+        let boundary = "Boundary-\(UUID().uuidString)"
+        let body = Self.screenshotMultipartBody(boundary: boundary, jpeg: jpeg, offsetMs: offsetMs)
+
+        let token = try await accessTokenProvider()
+        var request = URLRequest(url: makeURL(path: path))
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        // The server asks a model to describe the frame before it answers.
+        request.timeoutInterval = 60
+
+        let (responseData, response) = try await session.upload(for: request, from: body)
+        guard let http = response as? HTTPURLResponse else {
+            throw BackendClientError.nonHTTPResponse(path: path)
+        }
+        log.notice("POST screenshot → \(http.statusCode, privacy: .public) (\(jpeg.count, privacy: .public) bytes)")
+        if let serviceErr = detectServiceUnavailable(data: responseData, response: http, path: path) {
+            throw serviceErr
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw BackendClientError.badStatus(statusCode: http.statusCode, path: path, body: responseData)
+        }
+        return try JSONDecoder().decode(CreateScreenshotResponse.self, from: responseData).attachment
+    }
+
+    static func screenshotMultipartBody(boundary: String, jpeg: Data, offsetMs: Int) -> Data {
+        var body = Data()
+        func field(_ name: String, _ value: String) {
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".data(using: .utf8)!)
+            body.append("\(value)\r\n".data(using: .utf8)!)
+        }
+        field("kind", "screenshot")
+        field("offsetMs", String(max(0, offsetMs)))
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"meeting-screenshot.jpg\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
+        body.append(jpeg)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        return body
+    }
+
     static func attachmentUploadFailureMessage(_ error: Error, filename: String) -> String {
         guard let backendError = error as? BackendClientError else {
             return "Couldn't attach \(filename)"
@@ -1501,6 +1547,24 @@ struct NoteAttachmentDTO: Decodable, Equatable, Sendable, Identifiable {
     let byteSize: Int
     let createdAt: String
     let url: String
+    /// "image" (attached by hand) or "screenshot" (saved from the meeting
+    /// window). Absent from servers older than meeting screenshots.
+    var kind: String? = nil
+    var offsetMs: Int? = nil
+    var description: String? = nil
+
+    var isMeetingScreenshot: Bool { kind == "screenshot" }
+
+    /// Time into the recording, "4:07" or "1:02:09".
+    var offsetLabel: String? {
+        guard let offsetMs else { return nil }
+        let total = max(0, offsetMs / 1000)
+        let minutes = (total % 3600) / 60
+        let seconds = total % 60
+        return total >= 3600
+            ? String(format: "%d:%02d:%02d", total / 3600, minutes, seconds)
+            : String(format: "%d:%02d", minutes, seconds)
+    }
 }
 
 struct ListAttachmentsResponse: Decodable, Sendable {
@@ -1509,6 +1573,10 @@ struct ListAttachmentsResponse: Decodable, Sendable {
 
 struct CreateAttachmentResponse: Decodable, Sendable {
     let attachment: NoteAttachmentDTO
+}
+
+struct CreateScreenshotResponse: Decodable, Sendable {
+    let attachment: NoteAttachmentDTO?
 }
 
 struct EnhanceActionItemDTO: Decodable, Equatable, Sendable, Identifiable {

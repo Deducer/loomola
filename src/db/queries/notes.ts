@@ -398,7 +398,7 @@ export async function deleteNoteAttachment(params: {
   id: string;
   mediaObjectId: string;
   ownerId: string;
-}): Promise<boolean> {
+}): Promise<{ r2Key: string } | null> {
   const rows = await db
     .delete(noteAttachments)
     .where(
@@ -408,9 +408,9 @@ export async function deleteNoteAttachment(params: {
         eq(noteAttachments.ownerId, params.ownerId)
       )
     )
-    .returning({ id: noteAttachments.id });
+    .returning({ r2Key: noteAttachments.r2Key });
 
-  return rows.length > 0;
+  return rows[0] ?? null;
 }
 
 export async function getAudioNotePageData(
