@@ -76,10 +76,15 @@ struct RecentNoteRow: View {
                         .font(DSFont.Body.md())
                         .foregroundStyle(DSColor.Text.primary)
                         .lineLimit(1)
-                    Text(subtitle)
-                        .font(DSFont.Body.sm().weight(.regular))
-                        .foregroundStyle(DSColor.Text.tertiary)
-                        .lineLimit(1)
+                    HStack(spacing: DSSpacing.xs) {
+                        Text(subtitle)
+                            .font(DSFont.Body.sm().weight(.regular))
+                            .foregroundStyle(DSColor.Text.tertiary)
+                            .lineLimit(1)
+                        if recording.noSpeech {
+                            NoSpeechChip()
+                        }
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -378,5 +383,26 @@ private struct MenuItemRow: View {
         .contentShape(Rectangle())
         .overlay { ActionHitArea(action: action) }
         .onHover { hovering = $0 }
+    }
+}
+
+/// Small amber tag for a recording whose transcript came back empty,
+/// so a silent take is obvious in the list instead of passing as a
+/// normal recording.
+struct NoSpeechChip: View {
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "mic.slash.fill")
+                .font(.system(size: 9, weight: .semibold))
+            Text("No speech")
+                .font(DSFont.Body.sm().weight(.medium))
+        }
+        .foregroundStyle(DSColor.State.warning)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 1)
+        .background(Capsule().fill(DSColor.State.warning.opacity(0.14)))
+        .fixedSize()
+        .help("Transcription found no speech. The microphone may not have been recorded.")
+        .accessibilityLabel("No speech detected")
     }
 }

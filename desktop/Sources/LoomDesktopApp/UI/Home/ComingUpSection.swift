@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Granola's "Coming up" card at the top of home: the next few calendar
@@ -110,20 +111,40 @@ private struct ComingUpEventRow: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: DSSpacing.md) {
-            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                .fill(DSColor.Accent.calendar)
-                .frame(width: 2.5, height: 34)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(event.title)
-                    .font(DSFont.Body.lg().weight(.regular))
-                    .foregroundStyle(DSColor.Text.primary)
-                    .lineLimit(1)
-                Text(ComingUpGrouping.timeRange(for: event))
-                    .font(DSFont.Body.sm())
-                    .foregroundStyle(DSColor.Text.tertiary)
+        HStack(alignment: .center, spacing: DSSpacing.md) {
+            // The row itself (bar, title, time) starts a note; the hover
+            // buttons sit outside this hit area so their clicks are theirs.
+            HStack(alignment: .center, spacing: DSSpacing.md) {
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                    .fill(DSColor.Accent.calendar)
+                    .frame(width: 2.5, height: 34)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(event.title)
+                        .font(DSFont.Body.lg().weight(.regular))
+                        .foregroundStyle(DSColor.Text.primary)
+                        .lineLimit(1)
+                    Text(ComingUpGrouping.timeRange(for: event))
+                        .font(DSFont.Body.sm())
+                        .foregroundStyle(DSColor.Text.tertiary)
+                }
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+            .contentShape(Rectangle())
+            .overlay { ActionHitArea(action: onStart) }
+            .help("Start a note for this meeting")
+            // Actions appear on hover, Granola-style: join the call (when
+            // the invite has a link) and start a note titled after it.
+            if hovering {
+                HStack(spacing: DSSpacing.xs) {
+                    if let url = event.joinURL {
+                        rowAction("Join", icon: "video", help: "Open the meeting link") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    rowAction("Start note", icon: "square.and.pencil", help: "Start a note for this meeting", action: onStart)
+                }
+                .transition(.opacity)
+            }
         }
         .padding(.horizontal, DSSpacing.sm)
         .padding(.vertical, 4)
@@ -131,9 +152,32 @@ private struct ComingUpEventRow: View {
             RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous)
                 .fill(hovering ? DSColor.Bg.subtle : Color.clear)
         )
-        .contentShape(Rectangle())
-        .overlay { ActionHitArea(action: onStart) }
-        .onHover { hovering = $0 }
-        .help("Start a note for this meeting")
+        .onHover { isHovering in
+            withAnimation(LoomolaMotion.quick) { hovering = isHovering }
+        }
+    }
+
+    private func rowAction(
+        _ title: String,
+        icon: String,
+        help: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
+            Text(title)
+                .font(DSFont.Body.sm().weight(.medium))
+        }
+        .foregroundStyle(DSColor.Text.primary)
+        .padding(.horizontal, DSSpacing.sm)
+        .padding(.vertical, 4)
+        .background(Capsule().fill(DSColor.Bg.surfaceRaised))
+        .overlay { Capsule().strokeBorder(DSColor.Border.strong, lineWidth: 1) }
+        .contentShape(Capsule())
+        .overlay { ActionHitArea(action: action).clipShape(Capsule()) }
+        .help(help)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(.isButton)
     }
 }

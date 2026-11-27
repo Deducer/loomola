@@ -73,6 +73,9 @@ struct RecentCard: View {
                     Text(relativeTimestamp)
                         .font(DSFont.Body.sm())
                         .foregroundStyle(DSColor.Text.secondary)
+                    if recording.noSpeech {
+                        NoSpeechChip()
+                    }
                     folderPill
                 }
             }

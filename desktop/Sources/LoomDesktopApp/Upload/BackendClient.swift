@@ -1173,6 +1173,8 @@ struct RecentRecordingDTO: Decodable, Equatable, Sendable {
     /// Calendar-event provenance (Stage 16 Today pill).
     let calendarEventTitle: String?
     let calendarEventStartedAt: String?
+    /// Transcription finished and heard no words (silent recording).
+    let noSpeech: Bool?
 
     init(
         id: String,
@@ -1189,7 +1191,8 @@ struct RecentRecordingDTO: Decodable, Equatable, Sendable {
         transcriptReady: Bool? = nil,
         suggestedFolderId: String? = nil,
         calendarEventTitle: String? = nil,
-        calendarEventStartedAt: String? = nil
+        calendarEventStartedAt: String? = nil,
+        noSpeech: Bool? = nil
     ) {
         self.id = id
         self.slug = slug
@@ -1206,6 +1209,7 @@ struct RecentRecordingDTO: Decodable, Equatable, Sendable {
         self.suggestedFolderId = suggestedFolderId
         self.calendarEventTitle = calendarEventTitle
         self.calendarEventStartedAt = calendarEventStartedAt
+        self.noSpeech = noSpeech
     }
 }
 

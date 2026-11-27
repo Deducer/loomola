@@ -8,6 +8,7 @@ import SwiftUI
 struct HeroCaptureSection: View {
     @ObservedObject var viewModel: RecorderViewModel
     @Binding var captureMode: CaptureMode
+    @StateObject private var micCheck = MicCheckController()
 
     var body: some View {
         VStack(alignment: .leading, spacing: DSSpacing.md) {
@@ -15,7 +16,25 @@ struct HeroCaptureSection: View {
             actions
             divider
             pickers
+            if viewModel.activeRecordingKind == nil {
+                MicCheckRow(
+                    check: micCheck,
+                    deviceID: viewModel.selectedMicDeviceID,
+                    deviceName: selectedMicName
+                )
+            }
         }
+        .onChange(of: viewModel.selectedMicDeviceID) { _, _ in micCheck.cancel() }
+        .onChange(of: viewModel.isStartingRecording) { _, starting in
+            if starting { micCheck.cancel() }
+        }
+    }
+
+    private var selectedMicName: String {
+        guard let id = viewModel.selectedMicDeviceID,
+              let mic = viewModel.captureSources.microphones.first(where: { $0.id == id })
+        else { return "your mic" }
+        return mic.name
     }
 
     private var modeSelector: some View {

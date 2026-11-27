@@ -19,7 +19,8 @@ import Foundation
 ///
 /// System audio mixing is not in this slice — system audio is uploaded as
 /// the existing raw track and can be mixed server-side via ffmpeg if the
-/// user wants. Pause/resume PTS arithmetic is also deferred.
+/// user wants. Pause drops samples and closes the gap on resume
+/// (`CompositeMediaTimeline.pause()` / `resume()`).
 @available(macOS 14.0, *)
 final class CompositeRecorder: @unchecked Sendable {
     private(set) var outputURL: URL?
@@ -162,8 +163,9 @@ final class CompositeRecorder: @unchecked Sendable {
         if !pts.isValid || pts.isIndefinite { return }
 
         stateLock.lock()
-        let timing = timeline.noteVideoFrame(sourcePTS: pts)
+        let maybeTiming = timeline.noteVideoFrame(sourcePTS: pts)
         stateLock.unlock()
+        guard let timing = maybeTiming else { return }
         if timing.shouldStartSession {
             writer.startSession(atSourceTime: .zero)
         }
@@ -219,6 +221,20 @@ final class CompositeRecorder: @unchecked Sendable {
             audioSamplesWritten += 1
             stateLock.unlock()
         }
+    }
+
+    /// Stop writing frames and audio until `resume()`. The paused span
+    /// is cut out of the file rather than recorded as a freeze.
+    func pause() {
+        stateLock.lock()
+        timeline.pause()
+        stateLock.unlock()
+    }
+
+    func resume() {
+        stateLock.lock()
+        timeline.resume()
+        stateLock.unlock()
     }
 
     /// Finalizes the writer and returns the output URL. Idempotent.
@@ -420,37 +436,76 @@ final class CompositeRecorder: @unchecked Sendable {
 }
 
 struct CompositeMediaTimeline {
+    /// Spacing used to place the first frame after a resume right
+    /// after the last frame before the pause (one 30 fps frame).
+    static let resumeFrameGap = CMTime(value: 1, timescale: 30)
+
     private var hasVideoAnchor = false
     private var firstVideoSourcePTS: CMTime = .invalid
     private var latestVideoRelativePTS: CMTime = .zero
     private var audioSourceAnchorPTS: CMTime = .invalid
     private var audioRelativeAnchorPTS: CMTime = .zero
     private var lastAudioSourcePTS: CMTime = .invalid
+    /// Total source time removed by pauses; subtracted from every
+    /// video PTS so the file has no gap.
+    private var pausedVideoOffset: CMTime = .zero
+    private var resumePending = false
+    private(set) var isPaused = false
 
+    /// Frames and samples arriving while paused are dropped.
+    mutating func pause() {
+        guard !isPaused else { return }
+        isPaused = true
+    }
+
+    /// The next video frame continues one frame after the last one
+    /// written, and audio re-anchors to that point.
+    mutating func resume() {
+        guard isPaused else { return }
+        isPaused = false
+        resumePending = true
+        audioSourceAnchorPTS = .invalid
+    }
+
+    /// Returns nil while paused (drop the frame).
     mutating func noteVideoFrame(sourcePTS: CMTime) -> (
         relativePTS: CMTime,
         shouldStartSession: Bool
-    ) {
+    )? {
+        if isPaused { return nil }
         if !hasVideoAnchor {
             hasVideoAnchor = true
             firstVideoSourcePTS = sourcePTS
             latestVideoRelativePTS = .zero
+            resumePending = false
             return (.zero, true)
         }
 
-        let relativePTS = CMTimeSubtract(sourcePTS, firstVideoSourcePTS)
+        if resumePending {
+            resumePending = false
+            let target = CMTimeAdd(latestVideoRelativePTS, Self.resumeFrameGap)
+            let unpaused = CMTimeSubtract(sourcePTS, firstVideoSourcePTS)
+            pausedVideoOffset = max(.zero, CMTimeSubtract(unpaused, target))
+        }
+
+        let relativePTS = CMTimeSubtract(
+            CMTimeSubtract(sourcePTS, firstVideoSourcePTS),
+            pausedVideoOffset
+        )
         latestVideoRelativePTS = max(relativePTS, latestVideoRelativePTS)
         return (relativePTS, false)
     }
 
     mutating func noteAudioSample(sourcePTS: CMTime) -> CMTime? {
-        guard hasVideoAnchor else { return nil }
+        guard hasVideoAnchor, !isPaused else { return nil }
 
         let sourceMovedBackward = lastAudioSourcePTS.isValid
             && CMTimeCompare(sourcePTS, lastAudioSourcePTS) < 0
         if !audioSourceAnchorPTS.isValid || sourceMovedBackward {
             audioSourceAnchorPTS = sourcePTS
-            audioRelativeAnchorPTS = latestVideoRelativePTS
+            audioRelativeAnchorPTS = resumePending
+                ? CMTimeAdd(latestVideoRelativePTS, Self.resumeFrameGap)
+                : latestVideoRelativePTS
         }
 
         lastAudioSourcePTS = sourcePTS

@@ -93,8 +93,10 @@ enum DSColor {
         )
         /// Text and glyphs on a filled accent surface.
         static let onAccent = Color.white
-        /// Calendar event bars in the Coming up card.
-        static let calendar = Color(hex: 0x8B5CF6)
+        /// Calendar event bars in the Coming up card. Same blue as the
+        /// rest of the accent so the home reads as one product (it was
+        /// a separate purple, which clashed with the blue buttons).
+        static let calendar = primary
     }
 
     enum State {

@@ -39,7 +39,7 @@ struct MainRecorderView: View {
     // Split into three pieces so the type-checker finishes on slower
     // Macs (one long modifier chain timed out on an Intel build).
     var body: some View {
-        withStateHandlers(withWindowEvents(shellChrome))
+        withRecordingHandlers(withStateHandlers(withWindowEvents(shellChrome)))
     }
 
     private var shellChrome: some View {
@@ -157,12 +157,6 @@ struct MainRecorderView: View {
             RecorderCommands.isAudioRecording = (kind == .audio)
             updateWindowCloseState()
         }
-        .onChange(of: viewModel.audioLevel) { _, level in
-            videoRecordingWindow.updateLevel(level)
-        }
-        .onChange(of: viewModel.videoMicStatus) { _, status in
-            videoRecordingWindow.updateMicStatus(status)
-        }
         .onChange(of: viewModel.includeMicInAudioNote) { _, _ in
             updateMeetingPromptWindow()
             viewModel.refreshRecorderReadiness()
@@ -204,6 +198,21 @@ struct MainRecorderView: View {
                     viewModel.acknowledgeUploadComplete()
                 }
             }
+        }
+    }
+
+    /// Video HUD updates, kept apart from `withStateHandlers` so neither
+    /// modifier chain is too long for the type-checker.
+    private func withRecordingHandlers<Content: View>(_ content: Content) -> some View {
+        content
+        .onChange(of: viewModel.audioLevel) { _, level in
+            videoRecordingWindow.updateLevel(level)
+        }
+        .onChange(of: viewModel.videoMicStatus) { _, status in
+            videoRecordingWindow.updateMicStatus(status)
+        }
+        .onChange(of: viewModel.isVideoPaused) { _, _ in
+            syncVideoPauseToHUD()
         }
     }
 
@@ -296,47 +305,71 @@ struct MainRecorderView: View {
             .help(sidebarOpen ? "Close sidebar (⌘S)" : "Open sidebar (⌘S)")
     }
 
-    /// Granola's top-right `+ New note` pill (or `+ New recording`
-    /// on the Videos surface). Starts capture straight away.
+    /// Top-right capture buttons. Both are always there so starting a
+    /// video never depends on which surface is showing: an outlined
+    /// "Record video" (⌥⇧R) and the filled "New note".
     private var newCaptureButton: some View {
+        HStack(spacing: DSSpacing.sm) {
+            captureButton(
+                title: "Record video",
+                icon: "record.circle",
+                filled: false,
+                help: "Record your screen and camera (⌥⇧R)"
+            ) {
+                viewModel.startLocalRecording()
+            }
+            captureButton(
+                title: "New note",
+                icon: "plus",
+                filled: true,
+                help: "Start a new note"
+            ) {
+                viewModel.startAudioNoteRecording()
+            }
+        }
+        .opacity(viewModel.activeRecordingKind == nil && !viewModel.isStartingRecording ? 1 : 0.4)
+        .allowsHitTesting(viewModel.activeRecordingKind == nil && !viewModel.isStartingRecording)
+    }
+
+    private func captureButton(
+        title: String,
+        icon: String,
+        filled: Bool,
+        help: String,
+        action: @escaping () -> Void
+    ) -> some View {
         HStack(spacing: 6) {
-            Image(systemName: "plus")
+            Image(systemName: icon)
                 .font(.system(size: 11, weight: .semibold))
-            Text(captureMode == .audio ? "New note" : "New recording")
+                .foregroundStyle(filled ? DSColor.Accent.onAccent : DSColor.State.recording)
+            Text(title)
                 .font(DSFont.Body.md().weight(.medium))
         }
-        // Filled Loomola blue: the one brand-coloured CTA on the home,
-        // where Granola's is a neutral outline.
-        .foregroundStyle(DSColor.Accent.onAccent)
+        .foregroundStyle(filled ? DSColor.Accent.onAccent : DSColor.Text.primary)
         .padding(.horizontal, DSSpacing.md)
         .padding(.vertical, 6)
-        .background(Capsule().fill(DSColor.Accent.primary))
+        .background(Capsule().fill(filled ? DSColor.Accent.primary : DSColor.Bg.surface))
+        .overlay {
+            if !filled {
+                Capsule().strokeBorder(DSColor.Border.strong, lineWidth: 1)
+            }
+        }
         .contentShape(Capsule())
         .overlay {
-            ActionHitArea {
-                if captureMode == .audio {
-                    viewModel.startAudioNoteRecording()
-                } else {
-                    viewModel.startLocalRecording()
-                }
-            }
-            .clipShape(Capsule())
+            ActionHitArea(action: action)
+                .clipShape(Capsule())
         }
-        .opacity(viewModel.activeRecordingKind == nil ? 1 : 0.4)
-        .allowsHitTesting(viewModel.activeRecordingKind == nil)
-        .help(captureMode == .audio ? "Start a new note" : "Start a new recording")
+        .help(help)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(.isButton)
     }
 
     private var titleBarActions: some View {
         HStack(spacing: DSSpacing.sm) {
             IconButton(icon: "gearshape", size: 30, action: { showSettings.toggle() })
                 .help("Settings")
-            IconButton(
-                text: viewModel.email.first.map { String($0).uppercased() } ?? "?",
-                size: 30,
-                action: { showAccountMenu.toggle() }
-            )
-            .help("Account")
+            IconButton(icon: "person.crop.circle", size: 30, action: { showAccountMenu.toggle() })
+            .help(viewModel.email.isEmpty ? "Account" : "Account: \(viewModel.email)")
             .popover(isPresented: $showAccountMenu, arrowEdge: .top) {
                 AccountMenuPopover(
                     email: viewModel.email.isEmpty ? nil : viewModel.email,
@@ -566,7 +599,24 @@ struct MainRecorderView: View {
             audioLevel: viewModel.audioLevel,
             micStatus: viewModel.videoMicStatus,
             stop: { viewModel.stopLocalRecordingAndUpload() },
-            discard: { viewModel.cancelLocalRecording() }
+            discard: { _ = viewModel.cancelLocalRecording() },
+            togglePause: {
+                if viewModel.isVideoPaused {
+                    viewModel.resumeVideoRecording()
+                } else {
+                    viewModel.pauseVideoRecording()
+                }
+            },
+            restart: { viewModel.restartVideoRecording() }
+        )
+        syncVideoPauseToHUD()
+    }
+
+    private func syncVideoPauseToHUD() {
+        videoRecordingWindow.updatePause(
+            isPaused: viewModel.isVideoPaused,
+            pausedSince: viewModel.videoPausedSince,
+            pausedAccumulated: viewModel.videoPausedAccumulatedSeconds
         )
     }
 

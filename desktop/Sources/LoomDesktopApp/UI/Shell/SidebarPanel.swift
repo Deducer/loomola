@@ -34,6 +34,9 @@ struct SidebarPanel: View {
     let onSignOut: () -> Void
 
     @State private var showAccountMenu = false
+    /// Collapsed state per section, remembered across launches.
+    @AppStorage("loomola.sidebar.favoritesCollapsed") private var favoritesCollapsed = false
+    @AppStorage("loomola.sidebar.spacesCollapsed") private var spacesCollapsed = false
 
     @FocusState private var searchFocused: Bool
     @State private var emojiEditingFolder: FolderDTO?
@@ -134,9 +137,17 @@ struct SidebarPanel: View {
                     searchResultsSection
                 }
                 if !favoriteFolders.isEmpty {
-                    folderSection(title: "Favorites", sectionFolders: favoriteFolders)
+                    folderSection(
+                        title: "Favorites",
+                        sectionFolders: favoriteFolders,
+                        collapsed: $favoritesCollapsed
+                    )
                 }
-                folderSection(title: "Spaces", sectionFolders: regularFolders)
+                folderSection(
+                    title: "Spaces",
+                    sectionFolders: regularFolders,
+                    collapsed: $spacesCollapsed
+                )
             }
             .padding(.horizontal, DSSpacing.sm)
             .padding(.top, DSSpacing.xs)
@@ -261,12 +272,10 @@ struct SidebarPanel: View {
         HStack(spacing: DSSpacing.sm) {
             IconButton(icon: "gearshape", size: 28, action: onOpenSettings)
                 .help("Settings")
-            IconButton(
-                text: email.first.map { String($0).uppercased() } ?? "?",
-                size: 28,
-                action: { showAccountMenu.toggle() }
-            )
-            .help("Account")
+            // A person glyph, not the email's first letter: an address
+            // like "theiancross@" made the avatar read "T".
+            IconButton(icon: "person.crop.circle", size: 28, action: { showAccountMenu.toggle() })
+            .help(email.isEmpty ? "Account" : "Account: \(email)")
             .popover(isPresented: $showAccountMenu, arrowEdge: .top) {
                 AccountMenuPopover(
                     email: email.isEmpty ? nil : email,
@@ -286,15 +295,26 @@ struct SidebarPanel: View {
         .padding(.vertical, DSSpacing.md)
     }
 
-    private func folderSection(title: String, sectionFolders: [FolderDTO]) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(DSFont.Body.sm())
-                .foregroundStyle(DSColor.Text.tertiary)
-                .padding(.horizontal, DSSpacing.sm)
-                .padding(.vertical, 4)
+    private func folderSection(
+        title: String,
+        sectionFolders: [FolderDTO],
+        collapsed: Binding<Bool>
+    ) -> some View {
+        // A search always shows its matches, collapsed or not.
+        let isCollapsed = collapsed.wrappedValue && trimmedQuery.isEmpty
+        return VStack(alignment: .leading, spacing: 4) {
+            SidebarSectionHeader(
+                title: title,
+                count: sectionFolders.count,
+                isCollapsed: isCollapsed,
+                toggle: {
+                    withAnimation(LoomolaMotion.quick) { collapsed.wrappedValue.toggle() }
+                }
+            )
 
-            if sectionFolders.isEmpty {
+            if isCollapsed {
+                EmptyView()
+            } else if sectionFolders.isEmpty {
                 Text(query.isEmpty ? "No folders yet" : "No matches")
                     .font(DSFont.Body.sm())
                     .foregroundStyle(DSColor.Text.tertiary)
@@ -346,6 +366,43 @@ struct SidebarPanel: View {
     }
 }
 
+private struct SidebarSectionHeader: View {
+    let title: String
+    let count: Int
+    let isCollapsed: Bool
+    let toggle: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(title)
+                .font(DSFont.Body.sm())
+                .foregroundStyle(DSColor.Text.tertiary)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(DSColor.Text.tertiary)
+                .rotationEffect(.degrees(isCollapsed ? 0 : 90))
+                .opacity(hovering || isCollapsed ? 1 : 0)
+            Spacer(minLength: 0)
+            if isCollapsed && count > 0 {
+                Text("\(count)")
+                    .font(DSFont.Body.sm())
+                    .foregroundStyle(DSColor.Text.tertiary)
+            }
+        }
+        .padding(.horizontal, DSSpacing.sm)
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .overlay { ActionHitArea(action: toggle) }
+        .onHover { hovering = $0 }
+        .help(isCollapsed ? "Show \(title)" : "Hide \(title)")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title), \(isCollapsed ? "collapsed" : "expanded")")
+        .accessibilityAddTraits(.isButton)
+    }
+}
+
 private struct SidebarNavRow: View {
     let label: String
     let systemImage: String
@@ -382,6 +439,9 @@ private struct SidebarNavRow: View {
         .contentShape(Rectangle())
         .overlay { ActionHitArea(action: action) }
         .onHover { hovering = $0 }
+        // Long folder names truncate at rail width; the tooltip shows
+        // the whole name.
+        .help(label)
     }
 
     private var rowBackground: Color {

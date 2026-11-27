@@ -67,6 +67,12 @@ final class RecorderViewModel: ObservableObject {
     /// /api/notes/<mediaId> while recording.
     @Published var liveNotesBody: String = ""
     @Published private(set) var activeVideoRecordingStartedAt: Date?
+    /// Video pause state. While paused the composite drops frames and
+    /// audio, so the file skips the paused span.
+    @Published private(set) var isVideoPaused = false
+    @Published private(set) var videoPausedSince: Date?
+    @Published private(set) var videoPausedAccumulatedSeconds: TimeInterval = 0
+    private var videoMicResumedAt: Date?
     /// True while the composite recorder is being set up off the
     /// main actor. The Start button binds to !isStartingRecording so
     /// double-clicks during cold-start can't re-enter and the UI
@@ -1202,6 +1208,7 @@ final class RecorderViewModel: ObservableObject {
 
         compositeRecorder = compositor
         videoMicStatus = .starting
+        resetVideoPauseState()
         activeVideoRecordingStartedAt = Date()
         activeRecordingURL = outputURL
         finalizingRecordingKind = nil
@@ -1337,18 +1344,26 @@ final class RecorderViewModel: ObservableObject {
                 guard let self, let compositor,
                       self.activeCompositeRecordingToken == token
                 else { return }
+                // Nothing is written while paused; judge the mic again
+                // from the moment recording resumes.
+                if self.isVideoPaused { continue }
                 let now = Date()
                 let count = compositor.writtenAudioSampleCount
                 if count > lastCount {
                     lastCount = count
                     lastWriteAt = now
                 }
+                var lastSoundAt = self.videoMicLastSoundAt
+                if let resumedAt = self.videoMicResumedAt {
+                    if let written = lastWriteAt, written < resumedAt { lastWriteAt = resumedAt }
+                    if lastSoundAt.map({ $0 < resumedAt }) ?? true { lastSoundAt = resumedAt }
+                }
                 let next = VideoMicStatus.evaluate(
                     current: self.videoMicStatus,
                     now: now,
                     startedAt: startedAt,
                     lastWriteAt: lastWriteAt,
-                    lastSoundAt: self.videoMicLastSoundAt
+                    lastSoundAt: lastSoundAt
                 )
                 if next != self.videoMicStatus {
                     recorderLog.notice("video mic status \(String(describing: next), privacy: .public) written=\(count, privacy: .public)")
@@ -1378,7 +1393,11 @@ final class RecorderViewModel: ObservableObject {
               let compositor = compositeRecorder as? CompositeRecorder
         else { return }
         let micCoordinator = compositeMicCoordinator
-        let startedAt = activeVideoRecordingStartedAt ?? Date()
+        // Shift the start forward by the paused time so every duration
+        // computed from it below matches what was actually recorded.
+        let startedAt = (activeVideoRecordingStartedAt ?? Date())
+            .addingTimeInterval(videoPausedSeconds(now: Date()))
+        resetVideoPauseState()
         let audioSamples = compositor.writtenAudioSampleCount
         if audioSamples == 0 {
             recorderLog.error("video stop: no microphone audio was written to this recording")
@@ -1512,8 +1531,10 @@ final class RecorderViewModel: ObservableObject {
     /// Discard the active composite recording without uploading. Stops
     /// capture, finalizes the writer (so resources release cleanly),
     /// and best-effort deletes the temp file.
-    func cancelLocalRecording() {
-        guard #available(macOS 14.0, *) else { return }
+    @discardableResult
+    func cancelLocalRecording() -> Task<Void, Never>? {
+        guard #available(macOS 14.0, *) else { return nil }
+        resetVideoPauseState()
         if isStartingRecording {
             compositeStartWatchdogTask?.cancel()
             pendingCompositeMicTask?.cancel()
@@ -1525,11 +1546,11 @@ final class RecorderViewModel: ObservableObject {
             finalizingRecordingKind = nil
             state = .signedInIdle
             statusMessage = "Recording start cancelled."
-            return
+            return nil
         }
         guard let screenCaptureCoordinator,
               let compositor = compositeRecorder as? CompositeRecorder
-        else { return }
+        else { return nil }
         let micCoordinator = compositeMicCoordinator
         let outputURL = activeRecordingURL
         compositeStartWatchdogTask?.cancel()
@@ -1547,7 +1568,7 @@ final class RecorderViewModel: ObservableObject {
         activeRecordingURL = nil
         state = .signedInIdle
         statusMessage = "Recording discarded."
-        Task {
+        return Task {
             try? await screenCaptureCoordinator.stop()
             screenCaptureCoordinator.onScreenSampleBuffer = nil
             _ = try? await micCoordinator?.stop()
@@ -1556,6 +1577,56 @@ final class RecorderViewModel: ObservableObject {
                 try? FileManager.default.removeItem(at: outputURL)
             }
         }
+    }
+
+    func pauseVideoRecording() {
+        guard #available(macOS 14.0, *),
+              activeRecordingKind == .video, !isVideoPaused,
+              let compositor = compositeRecorder as? CompositeRecorder
+        else { return }
+        compositor.pause()
+        isVideoPaused = true
+        videoPausedSince = Date()
+        recorderLog.notice("video paused")
+    }
+
+    func resumeVideoRecording() {
+        guard #available(macOS 14.0, *),
+              activeRecordingKind == .video, isVideoPaused,
+              let compositor = compositeRecorder as? CompositeRecorder
+        else { return }
+        let now = Date()
+        compositor.resume()
+        if let since = videoPausedSince {
+            videoPausedAccumulatedSeconds += now.timeIntervalSince(since)
+        }
+        videoPausedSince = nil
+        isVideoPaused = false
+        videoMicResumedAt = now
+        recorderLog.notice("video resumed paused_total=\(self.videoPausedAccumulatedSeconds, privacy: .public)")
+    }
+
+    /// Throw this take away and start a new one with the same sources.
+    func restartVideoRecording() {
+        guard activeRecordingKind == .video else { return }
+        recorderLog.notice("video restart requested")
+        let cleanup = cancelLocalRecording()
+        Task { @MainActor [weak self] in
+            await cleanup?.value
+            self?.startLocalRecording()
+        }
+    }
+
+    /// Paused time so far, including a pause still in progress.
+    func videoPausedSeconds(now: Date) -> TimeInterval {
+        videoPausedAccumulatedSeconds + (videoPausedSince.map { now.timeIntervalSince($0) } ?? 0)
+    }
+
+    private func resetVideoPauseState() {
+        isVideoPaused = false
+        videoPausedSince = nil
+        videoPausedAccumulatedSeconds = 0
+        videoMicResumedAt = nil
     }
 
     func startAudioNoteRecording() {

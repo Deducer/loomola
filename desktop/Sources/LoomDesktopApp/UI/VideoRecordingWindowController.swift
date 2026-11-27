@@ -20,11 +20,15 @@ final class VideoRecordingWindowController {
         audioLevel: Double,
         micStatus: VideoMicStatus,
         stop: @escaping () -> Void,
-        discard: @escaping () -> Void
+        discard: @escaping () -> Void,
+        togglePause: @escaping () -> Void,
+        restart: @escaping () -> Void
     ) {
         state.startedAt = startedAt
         state.audioLevel = audioLevel
         state.micStatus = micStatus
+        state.togglePause = togglePause
+        state.restart = restart
         state.stop = { [weak self] in
             self?.hide()
             stop()
@@ -78,7 +82,13 @@ final class VideoRecordingWindowController {
         state.micStatus = status
     }
 
-    fileprivate static let width: CGFloat = 340
+    func updatePause(isPaused: Bool, pausedSince: Date?, pausedAccumulated: TimeInterval) {
+        state.isPaused = isPaused
+        state.pausedSince = pausedSince
+        state.pausedAccumulated = pausedAccumulated
+    }
+
+    fileprivate static let width: CGFloat = 420
 
     func hide() {
         panel?.orderOut(nil)
@@ -102,20 +112,27 @@ private final class VideoRecordingWindowState: ObservableObject {
     @Published var startedAt = Date()
     @Published var audioLevel = 0.0
     @Published var micStatus: VideoMicStatus = .starting
+    @Published var isPaused = false
+    @Published var pausedSince: Date?
+    @Published var pausedAccumulated: TimeInterval = 0
     var stop: () -> Void = {}
     var discard: () -> Void = {}
+    var togglePause: () -> Void = {}
+    var restart: () -> Void = {}
 }
 
 private struct VideoRecordingPanelView: View {
     @ObservedObject var state: VideoRecordingWindowState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hovering = false
+    /// Restart throws the take away, so it needs a second click.
+    @State private var confirmingRestart = false
 
     var body: some View {
         HStack(spacing: 12) {
-            RecordingDot(reduceMotion: reduceMotion)
+            RecordingDot(reduceMotion: reduceMotion, isPaused: state.isPaused)
             VStack(alignment: .leading, spacing: 1) {
-                Text("REC")
+                Text(state.isPaused ? "PAUSED" : "REC")
                     .font(DSFont.Mono.body())
                     .tracking(1.5)
                     .foregroundStyle(.white.opacity(0.55))
@@ -126,9 +143,46 @@ private struct VideoRecordingPanelView: View {
                 }
             }
 
-            MicIndicator(status: state.micStatus, level: state.audioLevel)
+            MicIndicator(
+                status: state.isPaused ? .starting : state.micStatus,
+                level: state.audioLevel,
+                isPaused: state.isPaused
+            )
 
             Spacer()
+
+            hudButton(
+                icon: state.isPaused ? "play.fill" : "pause.fill",
+                tint: .white,
+                help: state.isPaused ? "Resume recording" : "Pause recording",
+                action: state.togglePause
+            )
+
+            if confirmingRestart {
+                Text("Restart?")
+                    .font(DSFont.Body.sm().weight(.semibold))
+                    .foregroundStyle(DSColor.State.warning)
+                    .padding(.horizontal, 10)
+                    .frame(height: 28)
+                    .background(Color.white.opacity(0.12), in: Capsule())
+                    .contentShape(Capsule())
+                    .overlay {
+                        ActionHitArea {
+                            confirmingRestart = false
+                            state.restart()
+                        }
+                        .clipShape(Capsule())
+                    }
+                    .help("Discard this take and start again")
+                    .transition(.opacity)
+            } else {
+                hudButton(
+                    icon: "arrow.counterclockwise",
+                    tint: .white,
+                    help: "Restart: discard this take and start again",
+                    action: askToRestart
+                )
+            }
 
             Image(systemName: "stop.fill")
                 .font(.system(size: 13, weight: .bold))
@@ -167,7 +221,33 @@ private struct VideoRecordingPanelView: View {
         }
     }
 
+    private func hudButton(
+        icon: String,
+        tint: Color,
+        help: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Image(systemName: icon)
+            .font(.system(size: 12, weight: .bold))
+            .foregroundStyle(tint)
+            .frame(width: 28, height: 28)
+            .background(Color.white.opacity(hovering ? 0.16 : 0.10), in: Circle())
+            .contentShape(Circle())
+            .overlay { ActionHitArea(action: action).clipShape(Circle()) }
+            .help(help)
+            .accessibilityLabel(help)
+    }
+
+    private func askToRestart() {
+        withAnimation(.easeOut(duration: 0.12)) { confirmingRestart = true }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            withAnimation(.easeOut(duration: 0.12)) { confirmingRestart = false }
+        }
+    }
+
     private var borderColor: Color {
+        if state.isPaused { return DSColor.State.warning.opacity(0.7) }
         switch state.micStatus {
         case .noMic: return DSColor.State.recording
         case .quiet: return DSColor.State.warning.opacity(0.7)
@@ -176,7 +256,8 @@ private struct VideoRecordingPanelView: View {
     }
 
     private func elapsedText(now: Date) -> String {
-        let elapsed = max(0, Int(now.timeIntervalSince(state.startedAt)))
+        let paused = state.pausedAccumulated + (state.pausedSince.map { now.timeIntervalSince($0) } ?? 0)
+        let elapsed = max(0, Int(now.timeIntervalSince(state.startedAt) - paused))
         let minutes = elapsed / 60
         let seconds = elapsed % 60
         return String(format: "%02d:%02d", minutes, seconds)
@@ -185,9 +266,14 @@ private struct VideoRecordingPanelView: View {
 
 private struct RecordingDot: View {
     let reduceMotion: Bool
+    var isPaused = false
 
     var body: some View {
-        if reduceMotion {
+        if isPaused {
+            Circle()
+                .fill(DSColor.State.warning)
+                .frame(width: 10, height: 10)
+        } else if reduceMotion {
             Circle()
                 .fill(DSColor.State.recording)
                 .frame(width: 10, height: 10)
@@ -215,6 +301,7 @@ private struct RecordingDot: View {
 private struct MicIndicator: View {
     let status: VideoMicStatus
     let level: Double
+    var isPaused = false
 
     var body: some View {
         HStack(spacing: 6) {
@@ -222,6 +309,20 @@ private struct MicIndicator: View {
                 .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(color)
                 .frame(width: 14)
+            if isPaused {
+                label("Paused")
+            } else {
+                statusContent
+            }
+        }
+        .frame(width: 92, alignment: .leading)
+        .help(isPaused ? "Recording is paused" : helpText)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(isPaused ? "Recording is paused" : helpText)
+    }
+
+    @ViewBuilder
+    private var statusContent: some View {
             switch status {
             case .live:
                 VideoLevelBars(level: level)
@@ -233,11 +334,6 @@ private struct MicIndicator: View {
             case .noMic:
                 label("No mic")
             }
-        }
-        .frame(width: 92, alignment: .leading)
-        .help(helpText)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(helpText)
     }
 
     private func label(_ text: String) -> some View {
