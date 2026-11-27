@@ -50,6 +50,8 @@ export type RecordingListItem = Pick<
   aiTitle: string | null;
   viewCount: number;
   commentCount: number;
+  /** Transcription finished and heard nothing (isNoSpeechTranscript). */
+  noSpeech: boolean;
 };
 
 type BrandJoinFields = {

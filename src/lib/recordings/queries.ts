@@ -12,6 +12,7 @@ import {
 } from "@/db/schema";
 import { listImageAttachmentsForMediaIds } from "@/db/queries/notes";
 import { presignGet } from "@/lib/r2/presigned-get";
+import { noSpeechSql } from "@/lib/transcript/no-speech";
 import {
   and,
   desc,
@@ -49,6 +50,8 @@ export type RecentMediaItem = {
   calendarEventTitle: string | null;
   calendarEventStartedAt: Date | null;
   attendees: Array<{ id: string; name: string; email: string | null }>;
+  /// Transcription finished and heard nothing (see isNoSpeechTranscript).
+  noSpeech: boolean;
 };
 
 export type MediaDetails = {
@@ -242,6 +245,7 @@ export async function recentMediaItems(params: {
       // out of Postgres (large DB egress) just to derive a boolean, and it was
       // discarded entirely for video rows. See egress audit 2026-06-05.
       transcriptReady: sql<boolean>`(${transcripts.fullText} is not null and length(btrim(${transcripts.fullText})) > 0)`,
+      noSpeech: noSpeechSql,
     })
     .from(mediaObjects)
     .leftJoin(aiOutputs, eq(aiOutputs.mediaObjectId, mediaObjects.id))
@@ -291,6 +295,7 @@ export async function recentMediaItems(params: {
         calendarEventTitle: row.calendarEventTitle,
         calendarEventStartedAt: row.calendarEventStartedAt,
         attendees: attendeeMap.get(row.id) ?? [],
+        noSpeech: row.noSpeech === true,
       };
     })
   );

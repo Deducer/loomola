@@ -12,6 +12,7 @@ import {
   type WordTimestamp,
 } from "@/db/queries/transcripts";
 import { buildTimedTranscript } from "@/lib/transcript/timed-transcript";
+import { transcriptTextIsEmpty } from "@/lib/transcript/no-speech";
 import {
   updateTitleSummary,
   updateChapters,
@@ -43,7 +44,7 @@ async function runVideoInsightsJobInner(
   }
 
   const text = transcript.fullText.trim();
-  if (text.length === 0) {
+  if (transcriptTextIsEmpty(text)) {
     await updateTitleSummary(data.mediaObjectId, {
       title: "Untitled recording",
       summary: "This recording has no detected speech.",

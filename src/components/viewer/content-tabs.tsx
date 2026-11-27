@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
+import { cn } from "@/lib/cn";
 
 type TabKey = "transcript" | "comments";
 
@@ -8,12 +9,17 @@ export function ContentTabs({
   transcript,
   comments,
   commentCount = 0,
+  panelOnXl = false,
 }: {
   transcript: ReactNode;
   comments: ReactNode;
   commentCount?: number;
+  /** At xl, render as a full-height side panel: tabs pinned at the top,
+   *  the active tab's content scrolling underneath. Parent sets the height. */
+  panelOnXl?: boolean;
 }) {
   const [active, setActive] = useState<TabKey>("transcript");
+  const idBase = useId();
 
   // Hydrate from URL ?tab=... on mount.
   useEffect(() => {
@@ -40,14 +46,29 @@ export function ContentTabs({
   ];
 
   return (
-    <div className="mt-8 sm:mt-12">
-      <div role="tablist" className="flex gap-6 border-b border-border">
+    <div
+      className={cn(
+        "mt-8 sm:mt-12",
+        panelOnXl &&
+          "xl:mt-0 xl:flex xl:h-full xl:flex-col xl:overflow-hidden xl:rounded-xl xl:border xl:border-border xl:bg-bg-subtle/40"
+      )}
+    >
+      <div
+        role="tablist"
+        aria-label="Transcript and comments"
+        className={cn(
+          "flex gap-6 border-b border-border",
+          panelOnXl && "xl:shrink-0 xl:px-4"
+        )}
+      >
         {tabs.map((t) => {
           const isActive = active === t.key;
           return (
             <button
               key={t.key}
               role="tab"
+              id={`${idBase}-tab-${t.key}`}
+              aria-controls={`${idBase}-panel`}
               aria-selected={isActive}
               type="button"
               onClick={() => selectTab(t.key)}
@@ -79,7 +100,18 @@ export function ContentTabs({
           );
         })}
       </div>
-      <div className="mt-6">
+      <div
+        role="tabpanel"
+        id={`${idBase}-panel`}
+        aria-labelledby={`${idBase}-tab-${active}`}
+        className={cn(
+          "mt-6",
+          panelOnXl && "xl:mt-0 xl:min-h-0 xl:flex-1 xl:overflow-y-auto xl:p-2",
+          // Comments scroll here; the transcript scrolls its own list so
+          // auto-follow can move it without touching the page.
+          panelOnXl && active === "comments" && "xl:p-4"
+        )}
+      >
         {active === "transcript" ? transcript : comments}
       </div>
     </div>

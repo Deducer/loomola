@@ -13,6 +13,7 @@ import { ShareStatusWatcher } from "@/components/processing-status-watcher";
 import { PasswordGate } from "@/components/viewer/password-gate";
 import { ViewerThemeToggle } from "@/components/viewer/viewer-theme-toggle";
 import { cookieName, verifyUnlockToken } from "@/lib/viewer/unlock-cookie";
+import { isNoSpeechTranscript } from "@/lib/transcript/no-speech";
 import type { Word } from "@/lib/viewer/paragraphs";
 import type { Metadata } from "next";
 
@@ -140,6 +141,12 @@ export default async function SharePage({
   const playbackKey = rec.playbackMp4Key ?? rec.r2CompositeKey;
   const signedVideoUrl = isReady && playbackKey ? await presignGet(playbackKey) : null;
   const playerAccent = accent ?? "#8b5cf6";
+  const noSpeech = isNoSpeechTranscript(transcript);
+  // Ready pages widen at xl to fit the transcript column beside the player.
+  // The title band shares this container so the title lines up with the
+  // player's left edge at every width.
+  const contentWidth =
+    isReady && signedVideoUrl ? "max-w-5xl xl:max-w-[1360px]" : "max-w-5xl";
 
   return (
     <BrandFrame brand={brand}>
@@ -150,15 +157,13 @@ export default async function SharePage({
         showCta={!isOwner}
       />
 
-      {/* Title band — title + meta sit flush-left to the page edge
-          (just inside the standard px-4/sm:px-6 gutter), not within
-          the centered video column. Reads as a "page header" tag
-          rather than a centered headline, while the player below
-          stays centered as the visual focal point. The radial brand
-          glow shines through the bg-subtle/40 tint. */}
-      <section className="border-b border-border/40 bg-bg-subtle/40 px-4 py-4 sm:px-6 sm:py-5">
-        <div className="max-w-3xl">
-          <h1 className="text-2xl font-semibold tracking-[-0.01em] text-text sm:text-[28px] sm:leading-[1.2]">
+      {/* Title band — full-width tint, but the title + meta sit in the
+          same centred container as the player below, so they line up
+          with the player's left edge. The radial brand glow shines
+          through the bg-subtle/40 tint. */}
+      <section className="border-b border-border/40 bg-bg-subtle/40 py-4 sm:py-5">
+        <div className={`mx-auto ${contentWidth} px-4 sm:px-6`}>
+          <h1 className="max-w-3xl text-2xl font-semibold tracking-[-0.01em] text-text sm:text-[28px] sm:leading-[1.2]">
             {displayTitle}
           </h1>
           <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-text-muted">
@@ -171,6 +176,16 @@ export default async function SharePage({
               </>
             )}
             <span>{formatRelativeTime(rec.createdAt)}</span>
+            {noSpeech && (
+              <>
+                <span aria-hidden="true" className="text-text-subtle">
+                  ·
+                </span>
+                <span className="rounded-full border border-border px-2 py-px text-xs text-text-subtle">
+                  No speech detected
+                </span>
+              </>
+            )}
             {!isReady && (
               <>
                 <span aria-hidden="true" className="text-text-subtle">
@@ -189,9 +204,10 @@ export default async function SharePage({
         </div>
       </section>
 
-      <main className="mx-auto max-w-5xl px-4 pb-10 pt-6 sm:px-6 sm:pb-14 sm:pt-8">
+      <main className={`mx-auto ${contentWidth} px-4 pb-10 pt-6 sm:px-6 sm:pb-14 sm:pt-8`}>
         {isReady && signedVideoUrl ? (
           <ViewerShell
+            layout="split"
             slug={slug}
             signedVideoUrl={signedVideoUrl}
             accentColor={playerAccent}
@@ -339,7 +355,9 @@ function BrandFrame({
     ? `try{var s=localStorage.getItem('theme');if(!s){var t='${brandDefaultTheme}';document.documentElement.classList.remove('light','dark');document.documentElement.classList.add(t);}}catch(e){}`
     : null;
   return (
-    <div className="relative min-h-screen overflow-hidden" style={style}>
+    // overflow-x-clip, not overflow-hidden: a hidden-overflow ancestor
+    // becomes the scroll container and breaks the sticky transcript column.
+    <div className="relative min-h-screen overflow-x-clip" style={style}>
       {themeBootstrap && (
         <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
       )}

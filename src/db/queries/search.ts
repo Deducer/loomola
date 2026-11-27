@@ -10,6 +10,7 @@ import {
 } from "@/db/schema";
 import { and, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import type { RecordingListItem } from "./recordings";
+import { noSpeechSql } from "@/lib/transcript/no-speech";
 
 export type SearchSort =
   | "date_desc"
@@ -173,6 +174,7 @@ export async function searchRecordings(params: {
       aiTitle: aiOutputs.titleSuggested,
       viewCount: viewCountExpr,
       commentCount: commentCountExpr,
+      noSpeech: noSpeechSql,
       rank: rankExpr.as("rank"),
     })
     .from(mediaObjects)
@@ -222,6 +224,7 @@ export async function searchRecordings(params: {
       aiTitle: r.aiTitle,
       viewCount: r.viewCount ?? 0,
       commentCount: r.commentCount ?? 0,
+      noSpeech: r.noSpeech === true,
     };
   });
 }

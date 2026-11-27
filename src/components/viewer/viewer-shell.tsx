@@ -43,6 +43,10 @@ export type ViewerShellProps = {
   afterPlayer?: ReactNode;
   stickyPlayer?: boolean;
   showCommentForm?: boolean;
+  /** "split": at xl (>=1280px) the Transcript/Comments tabs move into a
+   *  sticky, viewport-height column beside the player (share page).
+   *  Below xl, and for "stacked", they sit under the chapters. */
+  layout?: "stacked" | "split";
 };
 
 export function ViewerShell({
@@ -63,7 +67,9 @@ export function ViewerShell({
   afterPlayer,
   stickyPlayer = false,
   showCommentForm = true,
+  layout = "stacked",
 }: ViewerShellProps) {
+  const split = layout === "split";
   const playerRef = useRef<VideoPlayerHandle | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -137,8 +143,37 @@ export function ViewerShell({
     </>
   );
 
-  return (
-    <div>
+  const tabs = (
+    <ContentTabs
+      panelOnXl={split}
+      transcript={
+        <TranscriptPanel
+          words={words}
+          wordsEndpoint={`/api/v/${slug}/transcript-words`}
+          fullText={fullText}
+          currentTime={currentTime}
+          onSeek={handleSeek}
+          showTimestamps
+          fillHeightOnXl={split}
+        />
+      }
+      comments={
+        <CommentsSection
+          comments={comments}
+          slug={slug}
+          isOwner={isOwner}
+          onSeek={handleSeek}
+          getCurrentTime={getCurrentTime}
+          onCommentAdded={addOptimisticComment}
+          showForm={showCommentForm}
+        />
+      }
+      commentCount={comments.length}
+    />
+  );
+
+  const mainColumn = (
+    <>
       {stickyPlayer ? (
         <div className="lg:sticky lg:top-6 lg:z-20">{playerBlock}</div>
       ) : (
@@ -148,30 +183,27 @@ export function ViewerShell({
       <SummaryBlock summary={summary} />
       <ActionItemsBlock actionItems={actionItems} onSeek={handleSeek} />
       <ChaptersList chapters={chapters} onSeek={handleSeek} />
+    </>
+  );
 
-      <ContentTabs
-        transcript={
-          <TranscriptPanel
-            words={words}
-            wordsEndpoint={`/api/v/${slug}/transcript-words`}
-            fullText={fullText}
-            currentTime={currentTime}
-            onSeek={handleSeek}
-          />
-        }
-        comments={
-          <CommentsSection
-            comments={comments}
-            slug={slug}
-            isOwner={isOwner}
-            onSeek={handleSeek}
-            getCurrentTime={getCurrentTime}
-            onCommentAdded={addOptimisticComment}
-            showForm={showCommentForm}
-          />
-        }
-        commentCount={comments.length}
-      />
+  if (!split) {
+    return (
+      <div>
+        {mainColumn}
+        {tabs}
+      </div>
+    );
+  }
+
+  // One ContentTabs instance at every width (so the transcript is fetched
+  // once and there is one comment form): the grid moves it into a sticky
+  // right column at xl; below xl, block flow leaves it under the chapters.
+  return (
+    <div className="xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(340px,400px)] xl:gap-8">
+      <div className="min-w-0">{mainColumn}</div>
+      <aside aria-label="Transcript and comments" className="min-w-0">
+        <div className="xl:sticky xl:top-6 xl:h-[calc(100dvh-3rem)]">{tabs}</div>
+      </aside>
     </div>
   );
 }

@@ -33,6 +33,21 @@ export type TranscriptSpeakerAssignment = {
   } | null;
 };
 
+/** How long a manual scroll of the transcript pauses auto-follow. */
+export const AUTO_FOLLOW_PAUSE_MS = 4000;
+
+export function autoFollowPaused(lastUserScrollAt: number, now: number): boolean {
+  return now - lastUserScrollAt < AUTO_FOLLOW_PAUSE_MS;
+}
+
+export function formatTranscriptTimestamp(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = (total % 60).toString().padStart(2, "0");
+  return h > 0 ? `${h}:${m.toString().padStart(2, "0")}:${s}` : `${m}:${s}`;
+}
+
 export function TranscriptPanel({
   mediaId,
   words,
@@ -45,6 +60,8 @@ export function TranscriptPanel({
   onSpeakerAssignmentsChange,
   tone = "accent",
   transcriptVersion,
+  showTimestamps = false,
+  fillHeightOnXl = false,
 }: {
   mediaId?: string;
   words: Word[];
@@ -65,6 +82,11 @@ export function TranscriptPanel({
   /** Version of the transcript being shown; sent with label writes so the
    *  server refuses a label made against a transcript that was replaced. */
   transcriptVersion?: string | null;
+  /** Render a clickable mm:ss button before each paragraph. */
+  showTimestamps?: boolean;
+  /** At the xl breakpoint, drop the card chrome and fill the parent's
+   *  height (the share page's sticky side panel) instead of max-h-96. */
+  fillHeightOnXl?: boolean;
 }) {
   const [fetchedWords, setFetchedWords] = useState<Word[] | null>(null);
   const outerRef = useRef<HTMLDivElement | null>(null);
@@ -92,20 +114,45 @@ export function TranscriptPanel({
   const [labelDraft, setLabelDraft] = useState("");
   const [busySpeaker, setBusySpeaker] = useState<number | null>(null);
 
+  // Auto-follow: keep the active paragraph in view as playback moves, but
+  // back off for a few seconds after the viewer scrolls the panel themselves.
+  // Our own smooth scrolls also fire `scroll` events, so those are ignored
+  // until `programmaticScrollUntil` passes.
+  const lastUserScrollAt = useRef(0);
+  const programmaticScrollUntil = useRef(0);
+  const hasParagraphs = paragraphs.length > 0;
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const onScroll = () => {
+      const now = Date.now();
+      if (now > programmaticScrollUntil.current) lastUserScrollAt.current = now;
+    };
+    container.addEventListener("scroll", onScroll, { passive: true });
+    return () => container.removeEventListener("scroll", onScroll);
+  }, [hasParagraphs]);
+
   useEffect(() => {
     if (activeIdx < 0) return;
     const container = containerRef.current;
     const el = paragraphRefs.current[activeIdx];
     if (!container || !el) return;
+    const now = Date.now();
+    if (autoFollowPaused(lastUserScrollAt.current, now)) return;
     // Scroll only the transcript container — never the document. Element.scrollIntoView
     // walks every ancestor scroll container including <html>, which yanks the share
     // page away from the player every time the active paragraph changes.
     const containerRect = container.getBoundingClientRect();
     const elRect = el.getBoundingClientRect();
     if (elRect.top >= containerRect.top && elRect.bottom <= containerRect.bottom) return;
-    const targetTop = container.scrollTop + (elRect.top - containerRect.top);
-    container.scrollTo({ top: targetTop, behavior: "smooth" });
-  }, [activeIdx]);
+    // Land the active paragraph a third of the way down so the next lines show.
+    const targetTop =
+      container.scrollTop + (elRect.top - containerRect.top) - container.clientHeight / 3;
+    programmaticScrollUntil.current = now + 1000;
+    container.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
+    // currentTime is a dependency so following resumes once the pause
+    // window ends, even if the active paragraph hasn't changed since.
+  }, [activeIdx, currentTime]);
 
   // Lazy word fetch: only fires when the panel enters the viewport.
   useEffect(() => {
@@ -271,15 +318,24 @@ export function TranscriptPanel({
   }
 
   return (
-    <div ref={outerRef}>
+    <div ref={outerRef} className={cn(fillHeightOnXl && "xl:h-full")}>
       {paragraphs.length === 0 ? (
-        <p className="rounded-xl border border-border bg-bg-subtle/60 p-4 text-sm leading-7 text-text-muted">
+        <p
+          className={cn(
+            "rounded-xl border border-border bg-bg-subtle/60 p-4 text-sm leading-7 text-text-muted",
+            fillHeightOnXl && "xl:rounded-none xl:border-0 xl:bg-transparent"
+          )}
+        >
           {fullText || "(empty transcript)"}
         </p>
       ) : (
       <div
         ref={containerRef}
-        className="max-h-96 overflow-y-auto rounded-xl border border-border bg-bg-subtle/60 p-2"
+        className={cn(
+          "max-h-96 overflow-y-auto rounded-xl border border-border bg-bg-subtle/60 p-2",
+          fillHeightOnXl &&
+            "xl:h-full xl:max-h-none xl:rounded-none xl:border-0 xl:bg-transparent"
+        )}
       >
         {paragraphs.map((p, i) => {
           const speakerIdx =
@@ -429,22 +485,40 @@ export function TranscriptPanel({
                   )}
                 </div>
               )}
-              <button
-                type="button"
-                ref={(el) => {
-                  paragraphRefs.current[i] = el;
-                }}
-                onClick={() => onSeek(p.startSec)}
-                className={`block w-full rounded-md px-3 py-2 text-left text-sm leading-7 transition-colors ${
-                  i === activeIdx
-                    ? tone === "neutral"
-                      ? "bg-bg-elevated text-text"
-                      : "bg-accent/10 text-text"
-                    : "text-text-muted hover:bg-bg-elevated hover:text-text"
-                }`}
-              >
-                {p.text}
-              </button>
+              <div className="flex items-start gap-1">
+                {showTimestamps && (
+                  <button
+                    type="button"
+                    onClick={() => onSeek(p.startSec)}
+                    aria-label={`Play from ${formatTranscriptTimestamp(p.startSec)}`}
+                    className={cn(
+                      "mt-2 shrink-0 rounded px-1.5 py-0.5 font-mono text-[11px] tabular-nums transition-colors",
+                      i === activeIdx
+                        ? "bg-accent/15 text-accent"
+                        : "text-text-subtle hover:bg-bg-elevated hover:text-accent"
+                    )}
+                  >
+                    {formatTranscriptTimestamp(p.startSec)}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  ref={(el) => {
+                    paragraphRefs.current[i] = el;
+                  }}
+                  onClick={() => onSeek(p.startSec)}
+                  aria-current={i === activeIdx ? "true" : undefined}
+                  className={`block w-full min-w-0 rounded-md px-3 py-2 text-left text-sm leading-7 transition-colors ${
+                    i === activeIdx
+                      ? tone === "neutral"
+                        ? "bg-bg-elevated text-text"
+                        : "bg-accent/10 text-text"
+                      : "text-text-muted hover:bg-bg-elevated hover:text-text"
+                  }`}
+                >
+                  {p.text}
+                </button>
+              </div>
             </div>
           );
         })}

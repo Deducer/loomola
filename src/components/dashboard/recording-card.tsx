@@ -213,6 +213,11 @@ export function RecordingCard({
                 <span className="truncate">{rec.brand.name}</span>
               </>
             )}
+            {rec.noSpeech && (
+              <span className="ml-auto shrink-0 rounded-full border border-border px-1.5 py-px text-[10px] text-text-subtle">
+                No speech detected
+              </span>
+            )}
           </div>
           <div className="mt-2 flex items-center gap-4 text-xs text-text-subtle">
             <span className="inline-flex items-center gap-1">
