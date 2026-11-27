@@ -160,6 +160,9 @@ struct MainRecorderView: View {
         .onChange(of: viewModel.audioLevel) { _, level in
             videoRecordingWindow.updateLevel(level)
         }
+        .onChange(of: viewModel.videoMicStatus) { _, status in
+            videoRecordingWindow.updateMicStatus(status)
+        }
         .onChange(of: viewModel.includeMicInAudioNote) { _, _ in
             updateMeetingPromptWindow()
             viewModel.refreshRecorderReadiness()
@@ -561,6 +564,7 @@ struct MainRecorderView: View {
         videoRecordingWindow.show(
             startedAt: startedAt,
             audioLevel: viewModel.audioLevel,
+            micStatus: viewModel.videoMicStatus,
             stop: { viewModel.stopLocalRecordingAndUpload() },
             discard: { viewModel.cancelLocalRecording() }
         )

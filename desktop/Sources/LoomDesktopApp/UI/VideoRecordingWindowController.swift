@@ -18,11 +18,13 @@ final class VideoRecordingWindowController {
     func show(
         startedAt: Date,
         audioLevel: Double,
+        micStatus: VideoMicStatus,
         stop: @escaping () -> Void,
         discard: @escaping () -> Void
     ) {
         state.startedAt = startedAt
         state.audioLevel = audioLevel
+        state.micStatus = micStatus
         state.stop = { [weak self] in
             self?.hide()
             stop()
@@ -32,7 +34,7 @@ final class VideoRecordingWindowController {
             discard()
         }
 
-        let size = NSSize(width: 280, height: 56)
+        let size = NSSize(width: Self.width, height: 56)
         let isNewPanel = panel == nil
         let panel = panel ?? NSPanel(
             contentRect: NSRect(origin: .zero, size: size),
@@ -72,6 +74,12 @@ final class VideoRecordingWindowController {
         state.audioLevel = level
     }
 
+    func updateMicStatus(_ status: VideoMicStatus) {
+        state.micStatus = status
+    }
+
+    fileprivate static let width: CGFloat = 340
+
     func hide() {
         panel?.orderOut(nil)
     }
@@ -93,6 +101,7 @@ final class VideoRecordingWindowController {
 private final class VideoRecordingWindowState: ObservableObject {
     @Published var startedAt = Date()
     @Published var audioLevel = 0.0
+    @Published var micStatus: VideoMicStatus = .starting
     var stop: () -> Void = {}
     var discard: () -> Void = {}
 }
@@ -117,8 +126,7 @@ private struct VideoRecordingPanelView: View {
                 }
             }
 
-            VideoLevelBars(level: state.audioLevel)
-                .frame(width: 32, height: 24)
+            MicIndicator(status: state.micStatus, level: state.audioLevel)
 
             Spacer()
 
@@ -142,20 +150,28 @@ private struct VideoRecordingPanelView: View {
         }
         .padding(.horizontal, DSSpacing.lg)
         .padding(.vertical, DSSpacing.md)
-        .frame(width: 280, height: 56)
+        .frame(width: VideoRecordingWindowController.width, height: 56)
         .background(
             RoundedRectangle(cornerRadius: DSRadius.lg)
                 .fill(Color(red: 0.10, green: 0.10, blue: 0.11).opacity(0.94))
         )
         .overlay(
             RoundedRectangle(cornerRadius: DSRadius.lg)
-                .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                .stroke(borderColor, lineWidth: state.micStatus == .noMic ? 2 : 1)
         )
         .shadow(color: .black.opacity(0.36), radius: 18, x: 0, y: 10)
         .onHover { isHovering in
             withAnimation(.easeOut(duration: 0.12)) {
                 hovering = isHovering
             }
+        }
+    }
+
+    private var borderColor: Color {
+        switch state.micStatus {
+        case .noMic: return DSColor.State.recording
+        case .quiet: return DSColor.State.warning.opacity(0.7)
+        case .starting, .live: return Color.white.opacity(0.10)
         }
     }
 
@@ -190,6 +206,68 @@ private struct RecordingDot: View {
         let t = date.timeIntervalSinceReferenceDate
         let phase = (sin(t * 2 * .pi) + 1) / 2  // 0..1
         return 0.55 + phase * 0.45
+    }
+}
+
+/// Mic state in the HUD: green mic + live bars while sound is being
+/// recorded, amber "No sound" after a stretch of silence, red "No mic"
+/// when no audio is reaching the file at all.
+private struct MicIndicator: View {
+    let status: VideoMicStatus
+    let level: Double
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: iconName)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(color)
+                .frame(width: 14)
+            switch status {
+            case .live:
+                VideoLevelBars(level: level)
+                    .frame(width: 32, height: 24)
+            case .starting:
+                label("Mic…")
+            case .quiet:
+                label("No sound")
+            case .noMic:
+                label("No mic")
+            }
+        }
+        .frame(width: 92, alignment: .leading)
+        .help(helpText)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(helpText)
+    }
+
+    private func label(_ text: String) -> some View {
+        Text(text)
+            .font(DSFont.Mono.body())
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .fixedSize()
+    }
+
+    private var iconName: String {
+        status == .noMic ? "mic.slash.fill" : "mic.fill"
+    }
+
+    private var color: Color {
+        switch status {
+        case .live: return DSColor.State.success
+        case .starting: return .white.opacity(0.55)
+        case .quiet: return DSColor.State.warning
+        case .noMic: return DSColor.State.recording
+        }
+    }
+
+    private var helpText: String {
+        switch status {
+        case .live: return "Microphone is recording"
+        case .starting: return "Starting microphone"
+        case .quiet: return "Microphone is on but hasn't picked up sound for 10 seconds"
+        case .noMic: return "No audio is being recorded. Check the microphone in Settings."
+        }
     }
 }
 

@@ -2,6 +2,9 @@
 @preconcurrency import AVFoundation
 import CoreGraphics
 import Foundation
+import OSLog
+
+private let bubbleLog = Logger(subsystem: "cloud.dissonance.loom.desktop", category: "bubble")
 
 enum BubbleOverlayMousePolicy {
     static func shouldReceiveMouseEvents(
@@ -142,6 +145,7 @@ final class BubbleOverlayWindowController {
 
         panel.orderFrontRegardless()
         hostPanel = panel
+        bubbleLog.notice("bubble panel created: window=\(panel.windowNumber, privacy: .public) screen=\(NSStringFromRect(screen.frame), privacy: .public) bubble=\(NSStringFromRect(self.currentBubbleFrameInScreen), privacy: .public)")
 
         startHoverTracking()
         publishCurrentPlacement()
@@ -272,8 +276,10 @@ final class BubbleOverlayWindowController {
         )
         if shouldReceiveMouseEvents && panel.ignoresMouseEvents {
             panel.ignoresMouseEvents = false
+            bubbleLog.notice("hover enter: accepting mouse (cursor=\(NSStringFromPoint(cursor), privacy: .public) visible=\(panel.isVisible, privacy: .public) onActiveSpace=\(panel.isOnActiveSpace, privacy: .public))")
         } else if !shouldReceiveMouseEvents && !panel.ignoresMouseEvents {
             panel.ignoresMouseEvents = true
+            bubbleLog.notice("hover exit: passing clicks through (cursor=\(NSStringFromPoint(cursor), privacy: .public) dragging=\(bubbleView.isDragging, privacy: .public))")
         }
     }
 
@@ -404,6 +410,7 @@ private final class CameraBubbleView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        bubbleLog.notice("bubble mouseDown at \(NSStringFromPoint(NSEvent.mouseLocation), privacy: .public)")
         dragMouseDownInScreen = NSEvent.mouseLocation
         // Translate self.frame.origin (container coords) → screen
         // coords by going through window.
@@ -441,6 +448,7 @@ private final class CameraBubbleView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        bubbleLog.notice("bubble mouseUp at \(NSStringFromPoint(NSEvent.mouseLocation), privacy: .public)")
         if let initial = bubbleScreenOriginAtMouseDown {
             dragHandler?(
                 BubbleDragEvent(

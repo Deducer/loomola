@@ -73,6 +73,10 @@ final class RecorderViewModel: ObservableObject {
     /// reads as "starting…" instead of dead.
     @Published private(set) var isStartingRecording: Bool = false
     @Published private(set) var audioLevel = 0.0
+    /// What the video recording HUD shows about the microphone. Driven
+    /// by `monitorVideoMic`, which watches audio actually reaching the
+    /// composite file, not just the mic meter.
+    @Published private(set) var videoMicStatus: VideoMicStatus = .starting
     @Published private(set) var meetingContext: MeetingContext?
     @Published private(set) var meetingPromptContext: MeetingContext?
     @Published private(set) var meetingDetectionEnabled: Bool =
@@ -182,6 +186,8 @@ final class RecorderViewModel: ObservableObject {
     private var compositeMicCoordinator: MicrophoneCaptureCoordinator?
     private var compositeStartWatchdogTask: Task<Void, Never>?
     private var pendingCompositeMicTask: Task<Void, Never>?
+    private var videoMicMonitorTask: Task<Void, Never>?
+    private var videoMicLastSoundAt: Date?
     private var pendingCompositeStartToken: UUID?
     private var activeCompositeRecordingToken: UUID?
 
@@ -1195,6 +1201,7 @@ final class RecorderViewModel: ObservableObject {
         }
 
         compositeRecorder = compositor
+        videoMicStatus = .starting
         activeVideoRecordingStartedAt = Date()
         activeRecordingURL = outputURL
         finalizingRecordingKind = nil
@@ -1257,12 +1264,18 @@ final class RecorderViewModel: ObservableObject {
         token: UUID
     ) {
         pendingCompositeMicTask?.cancel()
+        videoMicStatus = .starting
+        videoMicLastSoundAt = nil
+        monitorVideoMic(compositor: compositor, token: token)
         let micCoordinator = MicrophoneCaptureCoordinator()
         micCoordinator.onSampleBuffer = { [weak compositor] sampleBuffer in
             compositor?.appendMicSample(sampleBuffer)
         }
         micCoordinator.onLevel = { [weak self] level in
             Task { @MainActor in
+                if level >= VideoMicStatus.soundThreshold {
+                    self?.videoMicLastSoundAt = Date()
+                }
                 self?.recordAudioLevel(level)
             }
         }
@@ -1274,10 +1287,12 @@ final class RecorderViewModel: ObservableObject {
                     voiceProcessingEnabled: false
                 )
             } catch {
-                print("[recorder] mic start failed: \(error.localizedDescription)")
+                recorderLog.error("video mic start failed: \(error.localizedDescription, privacy: .public)")
+                self?.markVideoMicFailed(token: token)
                 self?.clearPendingCompositeMicTask(token: token)
                 return
             }
+            recorderLog.notice("video mic started device=\(deviceID ?? "system default", privacy: .public)")
 
             if Task.isCancelled {
                 self?.stopLateCompositeMicCoordinator(micCoordinator)
@@ -1301,6 +1316,48 @@ final class RecorderViewModel: ObservableObject {
         pendingCompositeMicTask = nil
     }
 
+    private func markVideoMicFailed(token: UUID) {
+        guard activeCompositeRecordingToken == token else { return }
+        videoMicStatus = .noMic
+    }
+
+    /// Once a second while a video records, decide what the HUD says
+    /// about audio. The truth is the composite file: if no mic buffers
+    /// were written in the last few seconds the video is silent, even
+    /// if the mic itself looks fine. Ends on its own when the recording
+    /// it was started for is no longer the active one.
+    private func monitorVideoMic(compositor: CompositeRecorder, token: UUID) {
+        videoMicMonitorTask?.cancel()
+        videoMicMonitorTask = Task { [weak self, weak compositor] in
+            let startedAt = Date()
+            var lastCount = 0
+            var lastWriteAt: Date?
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard let self, let compositor,
+                      self.activeCompositeRecordingToken == token
+                else { return }
+                let now = Date()
+                let count = compositor.writtenAudioSampleCount
+                if count > lastCount {
+                    lastCount = count
+                    lastWriteAt = now
+                }
+                let next = VideoMicStatus.evaluate(
+                    current: self.videoMicStatus,
+                    now: now,
+                    startedAt: startedAt,
+                    lastWriteAt: lastWriteAt,
+                    lastSoundAt: self.videoMicLastSoundAt
+                )
+                if next != self.videoMicStatus {
+                    recorderLog.notice("video mic status \(String(describing: next), privacy: .public) written=\(count, privacy: .public)")
+                    self.videoMicStatus = next
+                }
+            }
+        }
+    }
+
     private func clearPendingCompositeMicTask(token: UUID) {
         guard activeCompositeRecordingToken == token else { return }
         pendingCompositeMicTask = nil
@@ -1322,6 +1379,12 @@ final class RecorderViewModel: ObservableObject {
         else { return }
         let micCoordinator = compositeMicCoordinator
         let startedAt = activeVideoRecordingStartedAt ?? Date()
+        let audioSamples = compositor.writtenAudioSampleCount
+        if audioSamples == 0 {
+            recorderLog.error("video stop: no microphone audio was written to this recording")
+        } else {
+            recorderLog.notice("video stop: audio buffers written=\(audioSamples, privacy: .public)")
+        }
         compositeStartWatchdogTask?.cancel()
         pendingCompositeMicTask?.cancel()
         compositeStartWatchdogTask = nil

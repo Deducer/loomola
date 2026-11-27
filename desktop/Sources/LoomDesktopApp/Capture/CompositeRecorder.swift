@@ -39,6 +39,16 @@ final class CompositeRecorder: @unchecked Sendable {
     nonisolated(unsafe) private var timeline = CompositeMediaTimeline()
     nonisolated(unsafe) private var outputSize: CGSize = .zero
     nonisolated(unsafe) private var hasFinished = false
+    nonisolated(unsafe) private var audioSamplesWritten = 0
+
+    /// Mic buffers actually appended to the MP4 so far. The recording
+    /// HUD polls this: if it stops climbing, the video is silent no
+    /// matter what the mic meter says.
+    var writtenAudioSampleCount: Int {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return audioSamplesWritten
+    }
 
     init(
         bubbleController: BubblePositionController,
@@ -204,7 +214,11 @@ final class CompositeRecorder: @unchecked Sendable {
             sampleBuffer,
             presentationTime: relativePTS
         ) else { return }
-        _ = audioInput.append(retimedBuffer)
+        if audioInput.append(retimedBuffer) {
+            stateLock.lock()
+            audioSamplesWritten += 1
+            stateLock.unlock()
+        }
     }
 
     /// Finalizes the writer and returns the output URL. Idempotent.
