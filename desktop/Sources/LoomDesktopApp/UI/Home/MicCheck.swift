@@ -59,13 +59,21 @@ final class MicCheckController: ObservableObject {
             do {
                 try await coordinator.startWithTimeout(deviceID: deviceID, outputURL: nil)
             } catch {
+                guard let self, !Task.isCancelled, self.coordinator === coordinator else { return }
                 micCheckLog.error("mic check could not start: \(error.localizedDescription, privacy: .public)")
-                self?.finish(failedToStart: true)
+                self.finish(failedToStart: true)
+                return
+            }
+            // Cancelled (or replaced) while the mic was still opening: the
+            // cancel's stop() found no engine yet, so stop it now or the
+            // mic stays open with nobody owning it.
+            guard let self, !Task.isCancelled, self.coordinator === coordinator else {
+                _ = try? await coordinator.stop()
                 return
             }
             try? await Task.sleep(nanoseconds: UInt64(Self.listenSeconds * 1_000_000_000))
-            guard !Task.isCancelled else { return }
-            self?.finish(failedToStart: false)
+            guard !Task.isCancelled, self.coordinator === coordinator else { return }
+            self.finish(failedToStart: false)
         }
     }
 

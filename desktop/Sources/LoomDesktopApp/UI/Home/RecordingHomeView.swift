@@ -21,7 +21,7 @@ struct RecordingHomeView: View {
 
             VStack(spacing: DSSpacing.md) {
                 pulsingDot
-                Text("Recording")
+                Text(viewModel.isVideoPaused ? "Paused" : "Recording")
                     .font(DSFont.Display.lg())
                     .foregroundStyle(DSColor.Text.primary)
             }
@@ -64,7 +64,9 @@ struct RecordingHomeView: View {
     @ViewBuilder
     private var timer: some View {
         TimelineView(.periodic(from: startedAt, by: 1)) { ctx in
-            Text(formatElapsed(seconds: ctx.date.timeIntervalSince(startedAt)))
+            Text(formatElapsed(
+                seconds: ctx.date.timeIntervalSince(startedAt) - viewModel.videoPausedSeconds(now: ctx.date)
+            ))
         }
     }
 

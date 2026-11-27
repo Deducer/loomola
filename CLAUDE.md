@@ -339,6 +339,14 @@ Spec: [`docs/superpowers/specs/2026-11-22-meeting-screenshots-design.md`](docs/s
 - **Reading the log:** `/usr/bin/log show --last 30m --predicate 'subsystem == "cloud.dissonance.loom.desktop" AND category == "screenshots"'` (in zsh, plain `log` is a shell builtin and prints nothing useful).
 - **Self-test.** `open -n -a /Applications/Loomola.app --args --meeting-screenshot-selftest <dir> [seconds]` exits before the app starts (handled first thing in `LoomDesktopApp.init`), so it is safe beside a running instance and never touches the saved session.
 
+## Stage 24 — Recording polish (✅ shipped 2026-11-28)
+
+- **Video mic status** comes from buffers actually appended to the composite (`CompositeRecorder.writtenAudioSampleCount`), not the level meter: `VideoMicStatus.evaluate` (pure, tested). The monitor loop skips while paused and re-bases on resume.
+- **Video pause** lives in `CompositeMediaTimeline` (drop while paused, offset PTS on resume). `stopLocalRecordingAndUpload` shifts the start by the paused time so durations match the file. `cancelLocalRecording()` returns its cleanup Task; Restart awaits it before starting again.
+- **Test mic** (`UI/Home/MicCheck.swift`) only runs on request: opening a Bluetooth headset's mic switches it to its call profile.
+- **`noSpeech`** on the recent/list DTOs; the rule is `src/lib/transcript/no-speech.ts` (empty live-caption transcripts don't count).
+- **Share page** wide layout: tabs render once and CSS moves them between columns; the wrapper is `overflow-x-clip` (not `overflow-hidden`) so the sticky panel works.
+
 ## Out-of-Stage-1 Scope (deferred, separate spec when picked up)
 
 - ~~**macOS desktop app**~~ — ✅ shipped Stage 4 (premium recorder) + Stage 5 (visual restructure) + Stage 7 (stability + Granola UX).

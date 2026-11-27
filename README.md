@@ -328,6 +328,7 @@ For the tag and CHANGELOG convention, see [`docs/releasing.md`](docs/releasing.m
 - **Stage 9**: reliability. Orphan recovery, Coolify brownout detection, boot-warmed pg-boss.
 - **Stage 10 (open-source readiness)**: one-command self-host (`docker compose`), bundled MinIO, `npm run doctor`, first-run admin setup, password reset, invite-based multi-user, failure UX with Retry, real `/api/health`, pluggable transcription (Deepgram + Whisper), configurable Chrome extension with options page, notarized desktop release workflow, GHCR image publishing, v1.0.0.
 - **Stage 23**: meeting screenshots. Automatic shared-screen pictures during an audio note, described by the model and fed to the AI notes (off by default; desktop Settings).
+- **Stage 24**: recording polish. Live mic badge and a "Test mic" check before recording, pause/restart on the video HUD, an always-visible Record video button, a "No speech" tag for silent recordings, and a share page with the transcript beside the player on wide screens.
 - **Migration tools**: Granola to Loomola CLI (`migrate/`) using the official Granola Business API. Imports notes, transcripts, summaries, attendees, folders, speaker attribution. Loom import is the next major build.
 
 See [`ROADMAP.md`](ROADMAP.md) for the full status table.

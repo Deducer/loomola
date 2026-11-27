@@ -65,7 +65,7 @@ final class CompositeMediaTimelineTests: XCTestCase {
         _ = timeline.noteVideoFrame(sourcePTS: time(14))
         timeline.pause()
         _ = timeline.noteVideoFrame(sourcePTS: time(20))
-        timeline.resume()
+        timeline.resume(hostTime: time(60))
 
         let resumed = try XCTUnwrap(timeline.noteVideoFrame(sourcePTS: time(60)))
         XCTAssertEqual(seconds(resumed.relativePTS), 4 + 1.0 / 30, accuracy: 0.001)
@@ -80,14 +80,57 @@ final class CompositeMediaTimelineTests: XCTestCase {
         _ = timeline.noteAudioSample(sourcePTS: time(100))
         _ = timeline.noteVideoFrame(sourcePTS: time(12))
         timeline.pause()
-        timeline.resume()
+        timeline.resume(hostTime: time(40))
 
-        // Audio arriving before the first resumed frame lands where
-        // that frame will go.
         let audio = try XCTUnwrap(timeline.noteAudioSample(sourcePTS: time(130)))
         XCTAssertEqual(seconds(audio), 2 + 1.0 / 30, accuracy: 0.001)
         let next = try XCTUnwrap(timeline.noteAudioSample(sourcePTS: time(130.5)))
         XCTAssertEqual(seconds(next), 2.5 + 1.0 / 30, accuracy: 0.001)
+    }
+
+    /// Talking over a still slide: ScreenCaptureKit sends no frames, so
+    /// audio runs ahead of video. Resume must continue after the audio,
+    /// never before it.
+    func testStaticScreenBeforePauseKeepsAudioInOrder() throws {
+        var timeline = CompositeMediaTimeline()
+        _ = timeline.noteVideoFrame(sourcePTS: time(10))
+        var t = 100.0
+        while t < 120 {
+            _ = timeline.noteAudioSample(sourcePTS: time(t), duration: time(0.5))
+            t += 0.5
+        }
+        timeline.pause()
+        timeline.resume(hostTime: time(70))
+
+        let audio = try XCTUnwrap(timeline.noteAudioSample(sourcePTS: time(300), duration: time(0.5)))
+        XCTAssertEqual(seconds(audio), 20, accuracy: 0.001)
+
+        // Screen stays still 5 s after resume; the first new frame lands 5 s on.
+        let frame = try XCTUnwrap(timeline.noteVideoFrame(sourcePTS: time(75)))
+        XCTAssertEqual(seconds(frame.relativePTS), 25, accuracy: 0.001)
+    }
+
+    func testRepeatedPausesAccumulate() throws {
+        var timeline = CompositeMediaTimeline()
+        _ = timeline.noteVideoFrame(sourcePTS: time(0))
+        _ = timeline.noteVideoFrame(sourcePTS: time(10))
+        timeline.pause()
+        timeline.resume(hostTime: time(30))
+        _ = timeline.noteVideoFrame(sourcePTS: time(30))
+        _ = timeline.noteVideoFrame(sourcePTS: time(35))
+        timeline.pause()
+        timeline.resume(hostTime: time(100))
+        let frame = try XCTUnwrap(timeline.noteVideoFrame(sourcePTS: time(100)))
+        XCTAssertEqual(seconds(frame.relativePTS), 15 + 2.0 / 30, accuracy: 0.001)
+    }
+
+    func testFrameFromBeforeResumeIsDropped() {
+        var timeline = CompositeMediaTimeline()
+        _ = timeline.noteVideoFrame(sourcePTS: time(0))
+        _ = timeline.noteVideoFrame(sourcePTS: time(10))
+        timeline.pause()
+        timeline.resume(hostTime: time(50))
+        XCTAssertNil(timeline.noteVideoFrame(sourcePTS: time(49)))
     }
 
     private func time(_ seconds: Double) -> CMTime {

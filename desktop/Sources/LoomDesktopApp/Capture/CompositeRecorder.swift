@@ -208,7 +208,10 @@ final class CompositeRecorder: @unchecked Sendable {
         if !sourcePTS.isValid || sourcePTS.isIndefinite { return }
 
         stateLock.lock()
-        let relativePTS = timeline.noteAudioSample(sourcePTS: sourcePTS)
+        let relativePTS = timeline.noteAudioSample(
+            sourcePTS: sourcePTS,
+            duration: CMSampleBufferGetDuration(sampleBuffer)
+        )
         stateLock.unlock()
         guard let relativePTS else { return }
 
@@ -232,8 +235,9 @@ final class CompositeRecorder: @unchecked Sendable {
     }
 
     func resume() {
+        let now = CMClockGetTime(CMClockGetHostTimeClock())
         stateLock.lock()
-        timeline.resume()
+        timeline.resume(hostTime: now)
         stateLock.unlock()
     }
 
@@ -437,7 +441,7 @@ final class CompositeRecorder: @unchecked Sendable {
 
 struct CompositeMediaTimeline {
     /// Spacing used to place the first frame after a resume right
-    /// after the last frame before the pause (one 30 fps frame).
+    /// after the last media written before the pause (one 30 fps frame).
     static let resumeFrameGap = CMTime(value: 1, timescale: 30)
 
     private var hasVideoAnchor = false
@@ -446,28 +450,44 @@ struct CompositeMediaTimeline {
     private var audioSourceAnchorPTS: CMTime = .invalid
     private var audioRelativeAnchorPTS: CMTime = .zero
     private var lastAudioSourcePTS: CMTime = .invalid
+    /// End (PTS + duration) of the latest audio written. On a static
+    /// screen ScreenCaptureKit sends no frames, so video can lag far
+    /// behind audio; re-anchoring must never place audio before this.
+    private var latestAudioRelativeEnd: CMTime = .zero
     /// Total source time removed by pauses; subtracted from every
     /// video PTS so the file has no gap.
     private var pausedVideoOffset: CMTime = .zero
-    private var resumePending = false
+    /// Where output continues after the latest resume, until the first
+    /// audio sample re-anchors there.
+    private var resumeTarget: CMTime?
     private(set) var isPaused = false
+
+    /// Output time to continue from: just after whichever track ran furthest.
+    private var continuationPoint: CMTime {
+        max(CMTimeAdd(latestVideoRelativePTS, Self.resumeFrameGap), latestAudioRelativeEnd)
+    }
 
     /// Frames and samples arriving while paused are dropped.
     mutating func pause() {
-        guard !isPaused else { return }
         isPaused = true
     }
 
-    /// The next video frame continues one frame after the last one
-    /// written, and audio re-anchors to that point.
-    mutating func resume() {
+    /// `hostTime` is the host clock now, the clock ScreenCaptureKit
+    /// stamps frames with. Output continues at `continuationPoint`, and
+    /// a frame captured N seconds after the resume lands N seconds after
+    /// it, even when the screen stays still for a while.
+    mutating func resume(hostTime: CMTime) {
         guard isPaused else { return }
         isPaused = false
-        resumePending = true
+        guard hasVideoAnchor else { return }
+        let target = continuationPoint
+        resumeTarget = target
+        pausedVideoOffset = max(.zero, CMTimeSubtract(CMTimeSubtract(hostTime, firstVideoSourcePTS), target))
         audioSourceAnchorPTS = .invalid
     }
 
-    /// Returns nil while paused (drop the frame).
+    /// Returns nil when the frame must be dropped (paused, or it would
+    /// not move the video track forward).
     mutating func noteVideoFrame(sourcePTS: CMTime) -> (
         relativePTS: CMTime,
         shouldStartSession: Bool
@@ -477,41 +497,42 @@ struct CompositeMediaTimeline {
             hasVideoAnchor = true
             firstVideoSourcePTS = sourcePTS
             latestVideoRelativePTS = .zero
-            resumePending = false
             return (.zero, true)
-        }
-
-        if resumePending {
-            resumePending = false
-            let target = CMTimeAdd(latestVideoRelativePTS, Self.resumeFrameGap)
-            let unpaused = CMTimeSubtract(sourcePTS, firstVideoSourcePTS)
-            pausedVideoOffset = max(.zero, CMTimeSubtract(unpaused, target))
         }
 
         let relativePTS = CMTimeSubtract(
             CMTimeSubtract(sourcePTS, firstVideoSourcePTS),
             pausedVideoOffset
         )
-        latestVideoRelativePTS = max(relativePTS, latestVideoRelativePTS)
+        // A frame captured just before the resume would land before
+        // frames already written; AVAssetWriter rejects that.
+        if CMTimeCompare(relativePTS, latestVideoRelativePTS) <= 0 { return nil }
+        latestVideoRelativePTS = relativePTS
         return (relativePTS, false)
     }
 
-    mutating func noteAudioSample(sourcePTS: CMTime) -> CMTime? {
+    mutating func noteAudioSample(sourcePTS: CMTime, duration: CMTime = .zero) -> CMTime? {
         guard hasVideoAnchor, !isPaused else { return nil }
 
         let sourceMovedBackward = lastAudioSourcePTS.isValid
             && CMTimeCompare(sourcePTS, lastAudioSourcePTS) < 0
         if !audioSourceAnchorPTS.isValid || sourceMovedBackward {
             audioSourceAnchorPTS = sourcePTS
-            audioRelativeAnchorPTS = resumePending
-                ? CMTimeAdd(latestVideoRelativePTS, Self.resumeFrameGap)
-                : latestVideoRelativePTS
+            if let resumeTarget {
+                audioRelativeAnchorPTS = resumeTarget
+                self.resumeTarget = nil
+            } else {
+                audioRelativeAnchorPTS = max(latestVideoRelativePTS, latestAudioRelativeEnd)
+            }
         }
 
         lastAudioSourcePTS = sourcePTS
 
         let audioElapsed = CMTimeSubtract(sourcePTS, audioSourceAnchorPTS)
-        return CMTimeAdd(audioRelativeAnchorPTS, audioElapsed)
+        let relative = CMTimeAdd(audioRelativeAnchorPTS, audioElapsed)
+        let validDuration = duration.isValid ? duration : .zero
+        latestAudioRelativeEnd = max(latestAudioRelativeEnd, CMTimeAdd(relative, validDuration))
+        return relative
     }
 }
 

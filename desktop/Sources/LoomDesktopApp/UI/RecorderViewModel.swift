@@ -73,6 +73,8 @@ final class RecorderViewModel: ObservableObject {
     @Published private(set) var videoPausedSince: Date?
     @Published private(set) var videoPausedAccumulatedSeconds: TimeInterval = 0
     private var videoMicResumedAt: Date?
+    /// True while a discarded take's capture is still shutting down.
+    @Published private(set) var videoTeardownInFlight = false
     /// True while the composite recorder is being set up off the
     /// main actor. The Start button binds to !isStartingRecording so
     /// double-clicks during cold-start can't re-enter and the UI
@@ -1101,7 +1103,7 @@ final class RecorderViewModel: ObservableObject {
             statusMessage = "No active display found."
             return
         }
-        guard activeRecordingKind == nil, !isStartingRecording else {
+        guard activeRecordingKind == nil, !isStartingRecording, !videoTeardownInFlight else {
             // Defensive: ignore double-clicks or re-entry while already
             // setting up.
             return
@@ -1361,7 +1363,8 @@ final class RecorderViewModel: ObservableObject {
                 let next = VideoMicStatus.evaluate(
                     current: self.videoMicStatus,
                     now: now,
-                    startedAt: startedAt,
+                    // A pause before the mic's first buffer restarts its grace.
+                    startedAt: max(startedAt, self.videoMicResumedAt ?? startedAt),
                     lastWriteAt: lastWriteAt,
                     lastSoundAt: lastSoundAt
                 )
@@ -1568,9 +1571,14 @@ final class RecorderViewModel: ObservableObject {
         activeRecordingURL = nil
         state = .signedInIdle
         statusMessage = "Recording discarded."
-        return Task {
+        // Clear the frame callback now, not after stop(): a new take
+        // started during the await installs its own, which a late
+        // clear would wipe. Starts wait for this teardown to finish.
+        screenCaptureCoordinator.onScreenSampleBuffer = nil
+        videoTeardownInFlight = true
+        return Task { @MainActor [weak self] in
+            defer { self?.videoTeardownInFlight = false }
             try? await screenCaptureCoordinator.stop()
-            screenCaptureCoordinator.onScreenSampleBuffer = nil
             _ = try? await micCoordinator?.stop()
             _ = try? await compositor.finish()
             if let outputURL {

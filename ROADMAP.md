@@ -508,6 +508,23 @@ Checked end to end on 2026-11-22 with a real recording in the installed app agai
 
 Known limits: thresholds were tuned on a simulated call, not yet against real Zoom/Meet video; the call window has to be on screen at full size (a window parked in the Stage Manager strip, minimised, or on another Space is only a thumbnail to macOS and is skipped); a browser call is only captured while its tab is in front; a video playing in the shared screen never holds still, so it yields at most one frame; macOS shows its "bypass the system private window picker" prompt for Loomola and repeats it from time to time.
 
+## Stage 24 — Recording polish: mic confidence, Record button, share-page layout (✅ shipped 2026-11-28)
+
+Prompted by a silent video recording (the mic never reached the file and nothing said so) and a design pass against Loom, Arcade, Riverside and Grain on Mobbin.
+
+| Area | What changed |
+|---|---|
+| Mic confidence | Video HUD badge: green mic + bars when audio is reaching the file, amber "No sound" after 10 s of silence, red "No mic" when no buffers are written (`VideoMicStatus`, driven by `CompositeRecorder.writtenAudioSampleCount`). "Test mic" on the video home card: 5 s listen with a live meter and a verdict (`MicCheck.swift`). Mic start failures are logged (category `recorder`, `miccheck`). |
+| Record button | The title row always shows **Record video** (⌥⇧R) and **New note**, whichever surface is open. |
+| Video HUD | Pause/Resume (`CompositeMediaTimeline.pause()/resume()`: the paused span is cut from the file, timer and uploaded duration exclude it) and Restart (second click confirms; discards the take and starts again). |
+| Accent | Calendar bars use the accent blue instead of a separate purple. |
+| Coming up | Hover shows **Join** (when the invite has a link) and **Start note**. |
+| Sidebar | Tooltips on truncated folder names, collapsible Favorites/Spaces (remembered), a person glyph instead of the email's first letter. |
+| No speech | `noSpeech` on `GET /api/recordings/recent` and the dashboard list (transcript exists, text empty, not a live-caption transcript; rule in `src/lib/transcript/no-speech.ts`). Tag on desktop Recent rows/cards, web cards and the share page. |
+| Share page | At ≥1280px Transcript/Comments sit in a sticky right column beside the player, with timestamp buttons, current-line highlight and auto-follow that backs off for 4 s after a manual scroll. Narrower screens keep the stacked layout. |
+
+Not verified by hand: the wide share layout in a browser against a real recording, and pause/resume on a real recording (timeline maths is unit-tested).
+
 ## Open follow-ups (next milestones to spec)
 
 | Topic | Why | Rough effort |

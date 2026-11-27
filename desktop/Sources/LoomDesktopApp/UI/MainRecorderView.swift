@@ -327,8 +327,14 @@ struct MainRecorderView: View {
                 viewModel.startAudioNoteRecording()
             }
         }
-        .opacity(viewModel.activeRecordingKind == nil && !viewModel.isStartingRecording ? 1 : 0.4)
-        .allowsHitTesting(viewModel.activeRecordingKind == nil && !viewModel.isStartingRecording)
+        .opacity(canStartCapture ? 1 : 0.4)
+        .allowsHitTesting(canStartCapture)
+    }
+
+    private var canStartCapture: Bool {
+        viewModel.activeRecordingKind == nil &&
+            !viewModel.isStartingRecording &&
+            !viewModel.videoTeardownInFlight
     }
 
     private func captureButton(

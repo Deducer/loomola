@@ -127,6 +127,7 @@ private struct VideoRecordingPanelView: View {
     @State private var hovering = false
     /// Restart throws the take away, so it needs a second click.
     @State private var confirmingRestart = false
+    @State private var restartResetTask: Task<Void, Never>?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -211,7 +212,7 @@ private struct VideoRecordingPanelView: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: DSRadius.lg)
-                .stroke(borderColor, lineWidth: state.micStatus == .noMic ? 2 : 1)
+                .stroke(borderColor, lineWidth: state.micStatus == .noMic && !state.isPaused ? 2 : 1)
         )
         .shadow(color: .black.opacity(0.36), radius: 18, x: 0, y: 10)
         .onHover { isHovering in
@@ -240,8 +241,10 @@ private struct VideoRecordingPanelView: View {
 
     private func askToRestart() {
         withAnimation(.easeOut(duration: 0.12)) { confirmingRestart = true }
-        Task { @MainActor in
+        restartResetTask?.cancel()
+        restartResetTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.12)) { confirmingRestart = false }
         }
     }
