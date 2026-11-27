@@ -116,23 +116,31 @@ export function TranscriptPanel({
 
   // Auto-follow: keep the active paragraph in view as playback moves, but
   // back off for a few seconds after the viewer scrolls the panel themselves.
-  // Our own smooth scrolls also fire `scroll` events, so those are ignored
-  // until `programmaticScrollUntil` passes.
+  // User intent comes from input events (wheel, touch, pointer on the
+  // scrollbar, keys), not `scroll`: our own smooth scrolls fire `scroll` too,
+  // and a time window to ignore them also swallowed the user's scrolls.
   const lastUserScrollAt = useRef(0);
-  const programmaticScrollUntil = useRef(0);
+  const previousTime = useRef(currentTime);
   const hasParagraphs = paragraphs.length > 0;
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    const onScroll = () => {
-      const now = Date.now();
-      if (now > programmaticScrollUntil.current) lastUserScrollAt.current = now;
+    const markUser = () => {
+      lastUserScrollAt.current = Date.now();
     };
-    container.addEventListener("scroll", onScroll, { passive: true });
-    return () => container.removeEventListener("scroll", onScroll);
+    const events = ["wheel", "touchstart", "pointerdown", "keydown"] as const;
+    for (const name of events) container.addEventListener(name, markUser, { passive: true });
+    return () => {
+      for (const name of events) container.removeEventListener(name, markUser);
+    };
   }, [hasParagraphs]);
 
   useEffect(() => {
+    // A jump of more than a couple of seconds is a seek (chapter, comment,
+    // action item, timestamp): bring the new line into view straight away.
+    const jumped = Math.abs(currentTime - previousTime.current) > 2;
+    previousTime.current = currentTime;
+    if (jumped) lastUserScrollAt.current = 0;
     if (activeIdx < 0) return;
     const container = containerRef.current;
     const el = paragraphRefs.current[activeIdx];
@@ -148,7 +156,6 @@ export function TranscriptPanel({
     // Land the active paragraph a third of the way down so the next lines show.
     const targetTop =
       container.scrollTop + (elRect.top - containerRect.top) - container.clientHeight / 3;
-    programmaticScrollUntil.current = now + 1000;
     container.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
     // currentTime is a dependency so following resumes once the pause
     // window ends, even if the active paragraph hasn't changed since.
@@ -490,6 +497,9 @@ export function TranscriptPanel({
                   <button
                     type="button"
                     onClick={() => onSeek(p.startSec)}
+                    // The paragraph text is the keyboard stop; this is a
+                    // mouse shortcut, so it doesn't double the tab order.
+                    tabIndex={-1}
                     aria-label={`Play from ${formatTranscriptTimestamp(p.startSec)}`}
                     className={cn(
                       "mt-2 shrink-0 rounded px-1.5 py-0.5 font-mono text-[11px] tabular-nums transition-colors",
