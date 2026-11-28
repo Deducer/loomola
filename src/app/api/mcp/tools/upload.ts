@@ -21,6 +21,8 @@ import { getMcpOwnerId } from "./owner";
 import { brandPickError, findOwnedMedia, resolveBrand } from "./lookup";
 import { errorContent, jsonContent } from "./shared";
 import { sanitizeFps } from "@/lib/review/frames";
+import { baseTitle } from "@/lib/review/versions";
+import { addToStack } from "@/db/queries/versions";
 
 const MIB = 1024 * 1024;
 const MIN_PART = 8 * MIB; // R2 needs >= 5 MiB for every part but the last
@@ -54,12 +56,13 @@ export function registerUploadTools(server: McpServer): void {
     {
       title: "Begin a video upload",
       description:
-        "Step 1 of uploading a finished video file (mp4/mov/webm) as a Loomola recording. Creates the recording (optionally titled and branded) and returns presigned R2 PUT URLs, one per part of `partSize` bytes. PUT each byte range to its URL, keep each response's ETag header, then call loomola_upload_complete. Shell agents: `node scripts/loomola.mjs upload <file> --brand <name>` in the Loomola repo does all three steps.",
+        "Step 1 of uploading a finished video file (mp4/mov/webm) as a Loomola recording. Creates the recording (optionally titled and branded) and returns presigned R2 PUT URLs, one per part of `partSize` bytes. PUT each byte range to its URL, keep each response's ETag header, then call loomola_upload_complete. Pass `versionOf` (id, slug or share URL of any version) to add the upload as the next version of that recording's stack: it inherits the brand, folder and password, and without a `title` it is titled '<base title> vN'. Shell agents: `loomola upload <file> --brand <name> [--version-of <slug>]` does all three steps.",
       inputSchema: z.object({
         filename: z.string().min(1),
         sizeBytes: z.number().int().positive().max(MAX_BYTES),
         title: z.string().max(300).optional(),
         brand: z.string().min(1).optional(),
+        versionOf: z.string().min(3).optional(),
       }),
     },
     async (input) => {
@@ -79,6 +82,12 @@ export function registerUploadTools(server: McpServer): void {
         brand = pick.brand;
       }
 
+      // The stack this upload joins, resolved before anything is created.
+      const base = input.versionOf ? await findOwnedMedia(ownerId, input.versionOf) : null;
+      if (input.versionOf && (!base || base.type !== "video")) {
+        return errorContent("not_found", `No video matches versionOf "${input.versionOf}".`);
+      }
+
       const slug = generateSlug();
       const key = keyForTrack(slug, "composite", mimeType);
       const uploadId = await createMultipartUpload(key, mimeType);
@@ -91,10 +100,27 @@ export function registerUploadTools(server: McpServer): void {
           slug,
           title: input.title?.trim() || fallbackTitle || null,
           status: "uploading",
-          brandProfileId: brand?.id ?? null,
+          brandProfileId: brand?.id ?? base?.brandProfileId ?? null,
+          folderId: base?.folderId ?? null,
           uploadMetadata: { composite: { uploadId, key } },
         })
         .returning({ id: mediaObjects.id });
+
+      let version: { number: number; groupId: string } | null = null;
+      if (base) {
+        const added = await addToStack({ ownerId, baseId: base.id, newId: row.id });
+        if (!added.ok) {
+          return errorContent("version_failed", `Could not add to the stack: ${added.error}.`);
+        }
+        version = { number: added.number, groupId: added.groupId };
+        if (!input.title?.trim()) {
+          const stem = baseTitle(base.title) || fallbackTitle || "Untitled";
+          await db
+            .update(mediaObjects)
+            .set({ title: `${stem} v${added.number}` })
+            .where(eq(mediaObjects.id, row.id));
+        }
+      }
 
       const { partSize, partCount } = planParts(input.sizeBytes);
       const parts = await Promise.all(
@@ -108,6 +134,7 @@ export function registerUploadTools(server: McpServer): void {
         recordingId: row.id,
         slug,
         brand,
+        version,
         shareUrl: mediaShareUrl({ type: "video", slug }),
         partSize,
         partCount,

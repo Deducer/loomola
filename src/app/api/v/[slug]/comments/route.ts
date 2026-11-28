@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { getRecordingRefBySlug } from "@/db/queries/recordings";
 import {
   createComment,
   getTopLevelComment,
   listCommentsForRecording,
 } from "@/db/queries/comments";
-import { cookieName, verifyUnlockToken } from "@/lib/viewer/unlock-cookie";
+import { isUnlockedForStack } from "@/lib/viewer/stack-unlock";
 import { hashVisitor } from "@/lib/viewer/visitor-id";
 import { checkAndBump } from "@/lib/comments/rate-limit";
 import { sendEmail } from "@/lib/mail/mailgun";
@@ -24,9 +23,7 @@ async function canView(slug: string, rec: Ref): Promise<boolean> {
   if (!rec.passwordHash) return true;
   const user = await getOptionalAuthUser();
   if (user && user.id === rec.ownerId) return true;
-  const jar = await cookies();
-  const token = jar.get(cookieName(slug))?.value ?? "";
-  return verifyUnlockToken({ slug, passwordHash: rec.passwordHash, token });
+  return isUnlockedForStack(slug, rec);
 }
 
 /** Public list: top-level comments by time, each with its replies nested.

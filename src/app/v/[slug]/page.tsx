@@ -1,6 +1,5 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { cookies } from "next/headers";
 import { ArrowLeft, ExternalLink, Pencil } from "lucide-react";
 import { getOptionalAuthUser } from "@/lib/require-auth";
 import { getRecordingBySlug } from "@/db/queries/recordings";
@@ -13,14 +12,25 @@ import { ViewerShell } from "@/components/viewer/viewer-shell";
 import { ShareStatusWatcher } from "@/components/processing-status-watcher";
 import { PasswordGate } from "@/components/viewer/password-gate";
 import { ViewerThemeToggle } from "@/components/viewer/viewer-theme-toggle";
-import { cookieName, verifyUnlockToken } from "@/lib/viewer/unlock-cookie";
+import { isUnlockedForStack } from "@/lib/viewer/stack-unlock";
+import { listStack, type StackVersion } from "@/db/queries/versions";
+import { compareDefaults } from "@/lib/review/versions";
+import type { CompareSide } from "@/components/viewer/compare-view";
 import { isNoSpeechTranscript } from "@/lib/transcript/no-speech";
 import type { Word } from "@/lib/viewer/paragraphs";
 import type { Metadata } from "next";
 
 type SharePageParams = {
   params: Promise<{ slug: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
+
+function positionParam(raw: string | string[] | undefined): number | null {
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  if (!v) return null;
+  const n = Number.parseInt(v, 10);
+  return Number.isFinite(n) && n >= 1 ? n : null;
+}
 
 export async function generateMetadata({
   params,
@@ -78,8 +88,10 @@ type BrandLike = {
 
 export default async function SharePage({
   params,
+  searchParams,
 }: SharePageParams) {
   const { slug } = await params;
+  const query = (await searchParams) ?? {};
   const rec = await getRecordingBySlug(slug);
   if (!rec) notFound();
 
@@ -89,15 +101,29 @@ export default async function SharePage({
   const brand = rec.brand ?? null;
   const accent = brand?.accentColor ?? null;
 
-  let unlocked = true;
-  if (rec.passwordHash && !isOwner) {
-    const jar = await cookies();
-    const token = jar.get(cookieName(slug))?.value ?? "";
-    unlocked = verifyUnlockToken({
-      slug,
-      passwordHash: rec.passwordHash,
-      token,
-    });
+  // One unlock covers every version in the stack (they share a password).
+  const unlocked = isOwner || (await isUnlockedForStack(slug, rec));
+
+  // Version stack. ?v=N opens version N; ?compare=N puts version N beside
+  // this one (this page's version is always the right-hand player, so the
+  // comments column follows it).
+  const stack: StackVersion[] = rec.versionGroupId ? await listStack(rec) : [];
+  const current = stack.find((v) => v.id === rec.id)?.number ?? 1;
+  const wantV = positionParam(query.v);
+  if (wantV && stack[wantV - 1] && stack[wantV - 1].id !== rec.id) {
+    redirect(`/v/${stack[wantV - 1].slug}`);
+  }
+  const wantCompare = query.compare !== undefined && stack.length >= 2;
+  let comparePair: { left: number; right: number } | null = null;
+  if (wantCompare) {
+    const asked = positionParam(query.compare);
+    comparePair =
+      asked && asked !== current && stack[asked - 1]
+        ? { left: asked, right: current }
+        : compareDefaults(stack.length, current);
+    if (comparePair && comparePair.right !== current) {
+      redirect(`/v/${stack[comparePair.right - 1].slug}?compare=${comparePair.left}`);
+    }
   }
 
   if (!unlocked) {
@@ -125,6 +151,27 @@ export default async function SharePage({
 
   const rawComments = await listCommentsForRecording(rec.id);
   const commentRows = rawComments.map(toReviewComment);
+
+  let compareWith: CompareSide | null = null;
+  if (comparePair) {
+    const left = await getRecordingBySlug(stack[comparePair.left - 1].slug);
+    const leftKey = left ? left.playbackMp4Key ?? left.r2CompositeKey : null;
+    if (left && left.status === "ready" && leftKey) {
+      compareWith = {
+        slug: left.slug,
+        number: comparePair.left,
+        signedUrl: await presignGet(leftKey),
+        durationSec: left.durationSeconds != null ? Number(left.durationSeconds) : null,
+        fps: left.fps != null ? Number(left.fps) : null,
+        previewThumbnailsVttUrl: left.previewSpriteKey
+          ? `/api/v/${left.slug}/preview-thumbnails.vtt`
+          : null,
+        trimStartSec: left.trimStartSec != null ? Number(left.trimStartSec) : null,
+        trimEndSec: left.trimEndSec != null ? Number(left.trimEndSec) : null,
+        comments: (await listCommentsForRecording(left.id)).map(toReviewComment),
+      };
+    }
+  }
 
   const trimStartSec =
     rec.trimStartSec != null ? parseFloat(String(rec.trimStartSec)) : null;
@@ -158,9 +205,19 @@ export default async function SharePage({
           through the bg-subtle/40 tint. */}
       <section className="border-b border-border/40 bg-bg-subtle/40 py-4 sm:py-5">
         <div className={`mx-auto ${contentWidth} px-4 sm:px-6`}>
-          <h1 className="max-w-3xl text-2xl font-semibold tracking-[-0.01em] text-text sm:text-[28px] sm:leading-[1.2]">
-            {displayTitle}
-          </h1>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <h1 className="max-w-3xl text-2xl font-semibold tracking-[-0.01em] text-text sm:text-[28px] sm:leading-[1.2]">
+              {displayTitle}
+            </h1>
+            {stack.length > 1 && (
+              <VersionSwitcher
+                stack={stack}
+                current={current}
+                comparing={!!compareWith}
+                compareLeft={compareWith?.number ?? null}
+              />
+            )}
+          </div>
           <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-text-muted">
             {brand?.name && (
               <>
@@ -214,6 +271,9 @@ export default async function SharePage({
             isOwner={isOwner}
             comments={commentRows}
             fps={rec.fps != null ? Number(rec.fps) : null}
+            versionNumber={stack.length > 1 ? current : null}
+            versions={stack.map((v) => ({ number: v.number, slug: v.slug }))}
+            compareWith={compareWith}
             trimStartSec={trimStartSec}
             trimEndSec={trimEndSec}
             durationSec={
@@ -273,6 +333,63 @@ export default async function SharePage({
 
       <BrandFooter brand={brand} />
     </BrandFrame>
+  );
+}
+
+/** v1 · v2 · v3 links beside the title, the latest marked, plus Compare. */
+function VersionSwitcher({
+  stack,
+  current,
+  comparing,
+  compareLeft,
+}: {
+  stack: StackVersion[];
+  current: number;
+  comparing: boolean;
+  compareLeft: number | null;
+}) {
+  const latest = stack.length;
+  return (
+    <nav aria-label="Versions" className="flex flex-wrap items-center gap-1 text-xs">
+      {stack.map((v) => {
+        const isCurrent = v.number === current;
+        const isLeft = comparing && v.number === compareLeft;
+        return (
+          <Link
+            key={v.id}
+            href={`/v/${v.slug}`}
+            aria-current={isCurrent ? "page" : undefined}
+            title={`${v.title ?? "Version " + v.number}${v.number === latest ? " (latest)" : ""}`}
+            className={
+              "rounded-full border px-2 py-0.5 font-mono tabular-nums transition-colors " +
+              (isCurrent
+                ? "border-accent bg-accent/15 text-accent"
+                : isLeft
+                  ? "border-border-strong text-text"
+                  : "border-border text-text-muted hover:border-border-strong hover:text-text")
+            }
+          >
+            v{v.number}
+            {v.number === latest && <span className="ml-1 font-sans text-[10px] opacity-70">latest</span>}
+          </Link>
+        );
+      })}
+      {comparing ? (
+        <Link
+          href={`/v/${stack[current - 1].slug}`}
+          className="ml-1 rounded-full border border-border px-2.5 py-0.5 text-text-muted hover:border-border-strong hover:text-text"
+        >
+          Exit compare
+        </Link>
+      ) : (
+        <Link
+          href={`/v/${stack[current - 1].slug}?compare`}
+          className="ml-1 rounded-full border border-border px-2.5 py-0.5 text-text-muted hover:border-accent hover:text-text"
+        >
+          Compare
+        </Link>
+      )}
+    </nav>
   );
 }
 

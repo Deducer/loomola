@@ -381,6 +381,9 @@ struct RecentRecording: Identifiable, Equatable {
     var calendarEventTitle: String?
     /// Silent recording: flag it so it doesn't pass for a normal one.
     var noSpeech = false
+    /// Version stack: the list shows only the latest draft, badged "v3".
+    var versionCount = 1
+    var versionNumber = 1
 
     init(
         id: String,
@@ -439,6 +442,8 @@ struct RecentRecording: Identifiable, Equatable {
         self.suggestedFolderId = dto.suggestedFolderId
         self.calendarEventTitle = dto.calendarEventTitle
         self.noSpeech = dto.noSpeech ?? false
+        self.versionCount = max(1, dto.versionCount ?? 1)
+        self.versionNumber = max(1, dto.versionNumber ?? 1)
     }
 
     /// Builds a copy with overridden folder assignment. Used by the

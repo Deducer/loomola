@@ -14,6 +14,11 @@ import { listImageAttachmentsForMediaIds } from "@/db/queries/notes";
 import { presignGet } from "@/lib/r2/presigned-get";
 import { noSpeechSql } from "@/lib/transcript/no-speech";
 import {
+  latestVersionOnlySql,
+  versionCountSql,
+  versionPositionSql,
+} from "@/db/queries/versions";
+import {
   and,
   desc,
   eq,
@@ -52,6 +57,10 @@ export type RecentMediaItem = {
   attendees: Array<{ id: string; name: string; email: string | null }>;
   /// Transcription finished and heard nothing (see isNoSpeechTranscript).
   noSpeech: boolean;
+  /// Version stack (Stage 25): only the latest version is listed; these say
+  /// how many the stack holds and which one this is.
+  versionCount: number;
+  versionNumber: number;
 };
 
 export type MediaDetails = {
@@ -217,6 +226,7 @@ export async function recentMediaItems(params: {
   if (params.type) conditions.push(eq(mediaObjects.type, params.type));
   const since = sinceDate(params.daysBack);
   if (since) conditions.push(gte(mediaObjects.createdAt, since));
+  conditions.push(latestVersionOnlySql);
 
   const rows = await db
     .select({
@@ -246,6 +256,8 @@ export async function recentMediaItems(params: {
       // discarded entirely for video rows. See egress audit 2026-06-05.
       transcriptReady: sql<boolean>`(${transcripts.fullText} is not null and length(btrim(${transcripts.fullText})) > 0)`,
       noSpeech: noSpeechSql,
+      versionCount: versionCountSql,
+      versionNumber: versionPositionSql,
     })
     .from(mediaObjects)
     .leftJoin(aiOutputs, eq(aiOutputs.mediaObjectId, mediaObjects.id))
@@ -296,6 +308,8 @@ export async function recentMediaItems(params: {
         calendarEventStartedAt: row.calendarEventStartedAt,
         attendees: attendeeMap.get(row.id) ?? [],
         noSpeech: row.noSpeech === true,
+        versionCount: Number(row.versionCount ?? 1),
+        versionNumber: Number(row.versionNumber ?? 1),
       };
     })
   );

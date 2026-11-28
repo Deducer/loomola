@@ -18,6 +18,7 @@ import { Tracking } from "./tracking";
 import { CommentsSection } from "./comments-section";
 import { AnnotationOverlay, type DrawTool } from "./annotation-overlay";
 import { EMPTY_DRAFT, type ReviewDraft } from "./review-draft";
+import { CompareView, type CompareSide } from "./compare-view";
 import type { Word } from "@/lib/viewer/paragraphs";
 import { toast } from "sonner";
 import {
@@ -61,6 +62,11 @@ export type ViewerShellProps = {
    *  sticky, viewport-height column beside the player (share page).
    *  Below xl, and for "stacked", they sit under the chapters. */
   layout?: "stacked" | "split";
+  /** Version stack: this page's position (null = not stacked), every
+   *  version for the compare pickers, and the version shown beside it. */
+  versionNumber?: number | null;
+  versions?: Array<{ number: number; slug: string }>;
+  compareWith?: CompareSide | null;
 };
 
 export function ViewerShell({
@@ -83,6 +89,9 @@ export function ViewerShell({
   stickyPlayer = false,
   showCommentForm = true,
   layout = "stacked",
+  versionNumber = null,
+  versions = [],
+  compareWith = null,
 }: ViewerShellProps) {
   const split = layout === "split";
   const playerRef = useRef<VideoPlayerHandle | null>(null);
@@ -257,8 +266,7 @@ export function ViewerShell({
     return null;
   };
 
-  const playerBlock = (
-    <>
+  const mainPlayer = (muted?: boolean) => (
       <VideoPlayer
         ref={playerRef}
         slug={slug}
@@ -280,7 +288,26 @@ export function ViewerShell({
         // Once something is drawn it belongs to this frame: no stepping
         // away from it while the tool is out.
         lockFrame={draft.tool !== null && !isEmptyAnnotation(draft.annotation)}
+        muted={muted}
       />
+  );
+
+  const playerBlock = (
+    <>
+      {compareWith && versionNumber ? (
+        <CompareView
+          left={compareWith}
+          rightNumber={versionNumber}
+          versions={versions}
+          currentSlug={slug}
+          primaryRef={playerRef}
+          renderPrimary={({ muted }) => mainPlayer(muted)}
+          primaryFps={fps}
+          accentColor={accentColor}
+        />
+      ) : (
+        mainPlayer()
+      )}
       {!isOwner && (
         <Tracking
           slug={slug}

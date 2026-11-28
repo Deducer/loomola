@@ -84,6 +84,9 @@ struct RecentNoteRow: View {
                         if recording.noSpeech {
                             NoSpeechChip()
                         }
+                        if recording.versionCount > 1 {
+                            VersionChip(number: recording.versionNumber, count: recording.versionCount)
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -389,6 +392,25 @@ private struct MenuItemRow: View {
 /// Small amber tag for a recording whose transcript came back empty,
 /// so a silent take is obvious in the list instead of passing as a
 /// normal recording.
+/// "v3" on a recording that is the latest of several drafts (version stack).
+struct VersionChip: View {
+    let number: Int
+    let count: Int
+
+    var body: some View {
+        Text("v\(number)")
+            .font(DSFont.Mono.body().weight(.semibold))
+            .foregroundStyle(DSColor.Text.secondary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(Capsule().fill(DSColor.Bg.subtle))
+            .overlay(Capsule().stroke(DSColor.Border.subtle, lineWidth: 1))
+            .fixedSize()
+            .help("Version \(number) of \(count). Open the share page to switch or compare versions.")
+            .accessibilityLabel("Version \(number) of \(count)")
+    }
+}
+
 struct NoSpeechChip: View {
     var body: some View {
         HStack(spacing: 3) {

@@ -35,6 +35,17 @@ final class RecentRecordingTests: XCTestCase {
         XCTAssertEqual(r?.folderName, "Vayu Labs")
     }
 
+    func testVersionFieldsDecodeAndDefault() throws {
+        let json = #"{"id":"v9","slug":"s9","title":"Cut D","kind":"video","createdAt":"2026-11-28T10:00:00Z","durationSeconds":4,"thumbnailUrl":null,"folderId":null,"folderName":null,"versionCount":4,"versionNumber":4}"#
+        let dto = try JSONDecoder().decode(RecentRecordingDTO.self, from: Data(json.utf8))
+        let r = try XCTUnwrap(RecentRecording(dto: dto))
+        XCTAssertEqual(r.versionCount, 4)
+        XCTAssertEqual(r.versionNumber, 4)
+        // Older servers omit the fields: a stack of one.
+        let old = try XCTUnwrap(RecentRecording(dto: video))
+        XCTAssertEqual(old.versionCount, 1)
+    }
+
     func testUnsupportedKindReturnsNil() {
         let dto = RecentRecordingDTO(
             id: "x",

@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { getRecordingRefBySlug } from "@/db/queries/recordings";
 import { presignGet } from "@/lib/r2/presigned-get";
-import { cookieName, verifyUnlockToken } from "@/lib/viewer/unlock-cookie";
+import { isUnlockedForStack } from "@/lib/viewer/stack-unlock";
 import { getOptionalAuthUser } from "@/lib/require-auth";
 
 export async function POST(
@@ -22,12 +21,7 @@ export async function POST(
     const user = await getOptionalAuthUser(request);
     const isOwner = !!user && user.id === rec.ownerId;
 
-    const jar = await cookies();
-    const token = jar.get(cookieName(slug))?.value ?? "";
-    if (
-      !isOwner &&
-      !verifyUnlockToken({ slug, passwordHash: rec.passwordHash, token })
-    ) {
+    if (!isOwner && !(await isUnlockedForStack(slug, rec))) {
       return NextResponse.json({ error: "locked" }, { status: 403 });
     }
   }

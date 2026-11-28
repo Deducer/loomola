@@ -194,8 +194,16 @@ export function RecordingCard({
           )}
         </div>
         <div className="flex flex-col gap-1 p-3">
-          <h3 className="truncate text-sm font-medium text-text">
-            {displayTitle}
+          <h3 className="flex items-center gap-1.5 text-sm font-medium text-text">
+            <span className="truncate">{displayTitle}</span>
+            {rec.versionCount > 1 && (
+              <span
+                className="shrink-0 rounded-full border border-border px-1.5 py-px font-mono text-[10px] text-text-muted"
+                title={`Version ${rec.versionNumber} of ${rec.versionCount}`}
+              >
+                v{rec.versionNumber}
+              </span>
+            )}
           </h3>
           {rec.status === "failed" && (
             <p

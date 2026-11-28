@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { getRecordingRefBySlug } from "@/db/queries/recordings";
 import { getTranscriptWordsByRecording } from "@/db/queries/transcripts";
-import { cookieName, verifyUnlockToken } from "@/lib/viewer/unlock-cookie";
+import { isUnlockedForStack } from "@/lib/viewer/stack-unlock";
 import { getOptionalAuthUser } from "@/lib/require-auth";
 
 /**
@@ -23,15 +22,8 @@ export async function GET(
   const user = await getOptionalAuthUser(request);
   const isOwner = !!user && user.id === rec.ownerId;
 
-  if (rec.passwordHash && !isOwner) {
-    const jar = await cookies();
-    const token = jar.get(cookieName(slug))?.value ?? "";
-    const unlocked = verifyUnlockToken({
-      slug,
-      passwordHash: rec.passwordHash,
-      token,
-    });
-    if (!unlocked) return NextResponse.json({ error: "locked" }, { status: 403 });
+  if (rec.passwordHash && !isOwner && !(await isUnlockedForStack(slug, rec))) {
+    return NextResponse.json({ error: "locked" }, { status: 403 });
   }
 
   const words = await getTranscriptWordsByRecording(rec.id);

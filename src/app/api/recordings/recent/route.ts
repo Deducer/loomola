@@ -24,6 +24,9 @@ import { recentMediaItems } from "@/lib/recordings/queries";
 ///   (`isNoSpeechTranscript`), computed in the same query. The desktop
 ///   decodes it as an optional Bool.
 ///
+/// `versionCount` / `versionNumber`: version stacks list only their latest
+///   version; these badge it ("v3"). The desktop decodes them as optional.
+///
 /// `folderId` / `folderName`: included so the desktop's Recent rows
 ///   can render a folder pill without a second round trip. Null when
 ///   the recording isn't filed.
@@ -66,6 +69,8 @@ export async function GET(request: Request) {
     calendarEventStartedAt: r.calendarEventStartedAt?.toISOString() ?? null,
     attendees: r.attendees,
     noSpeech: r.noSpeech,
+    versionCount: r.versionCount,
+    versionNumber: r.versionNumber,
   }));
 
   return NextResponse.json({ items });

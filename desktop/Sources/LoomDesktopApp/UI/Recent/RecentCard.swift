@@ -81,6 +81,9 @@ struct RecentCard: View {
                     if recording.noSpeech {
                         NoSpeechChip()
                     }
+                    if recording.versionCount > 1 {
+                        VersionChip(number: recording.versionNumber, count: recording.versionCount)
+                    }
                     folderPill
                 }
             }

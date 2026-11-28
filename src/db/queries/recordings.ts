@@ -52,6 +52,9 @@ export type RecordingListItem = Pick<
   commentCount: number;
   /** Transcription finished and heard nothing (isNoSpeechTranscript). */
   noSpeech: boolean;
+  /** Version stack: live versions in the stack, and this row's position. */
+  versionCount: number;
+  versionNumber: number;
 };
 
 type BrandJoinFields = {
@@ -219,6 +222,7 @@ export async function getRecordingRefBySlug(slug: string) {
       r2CompositeKey: mediaObjects.r2CompositeKey,
       previewSpriteKey: mediaObjects.previewSpriteKey,
       durationSeconds: mediaObjects.durationSeconds,
+      versionGroupId: mediaObjects.versionGroupId,
     })
     .from(mediaObjects)
     .leftJoin(aiOutputs, eq(aiOutputs.mediaObjectId, mediaObjects.id))

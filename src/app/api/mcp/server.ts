@@ -4,6 +4,7 @@ import { registerBrandTools } from "./tools/brands";
 import { registerCommentTools } from "./tools/comments";
 import { registerStatusTools } from "./tools/status";
 import { registerUploadTools } from "./tools/upload";
+import { registerVersionTools } from "./tools/versions";
 import { registerGetMediaTool } from "./tools/get-media";
 import { registerRecentMeetingsTool } from "./tools/recent-meetings";
 import { registerRecentRecordingsTool } from "./tools/recent-recordings";
@@ -38,6 +39,7 @@ export function createLoomolaMcpServer(): McpServer {
   registerActionItemsTool(server);
   registerBrandTools(server);
   registerUploadTools(server);
+  registerVersionTools(server);
   registerStatusTools(server);
   registerCommentTools(server);
 

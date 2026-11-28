@@ -3,7 +3,15 @@ import bcrypt from "bcryptjs";
 import { requireAuth } from "@/lib/require-auth";
 import { db } from "@/db";
 import { mediaObjects } from "@/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
+import { stackMemberIds } from "@/db/queries/versions";
+
+// Versions in a stack share one password (one unlock covers them all), so
+// a change on any version applies to the whole stack.
+async function stackIds(ownerId: string, id: string): Promise<string[]> {
+  const ids = await stackMemberIds(ownerId, id);
+  return ids.length > 0 ? ids : [id];
+}
 
 export async function PUT(
   request: Request,
@@ -23,7 +31,7 @@ export async function PUT(
   const result = await db
     .update(mediaObjects)
     .set({ passwordHash: hash })
-    .where(and(eq(mediaObjects.id, id), eq(mediaObjects.ownerId, user.id)))
+    .where(and(inArray(mediaObjects.id, await stackIds(user.id, id)), eq(mediaObjects.ownerId, user.id)))
     .returning({ id: mediaObjects.id });
   if (result.length === 0) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
@@ -40,7 +48,7 @@ export async function DELETE(
   const result = await db
     .update(mediaObjects)
     .set({ passwordHash: null })
-    .where(and(eq(mediaObjects.id, id), eq(mediaObjects.ownerId, user.id)))
+    .where(and(inArray(mediaObjects.id, await stackIds(user.id, id)), eq(mediaObjects.ownerId, user.id)))
     .returning({ id: mediaObjects.id });
   if (result.length === 0) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });

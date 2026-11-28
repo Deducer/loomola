@@ -18,6 +18,8 @@ import { TrimEditor } from "@/components/viewer/trim-editor";
 import { DownloadsList } from "@/components/viewer/downloads-list";
 import { DropoffChart } from "@/components/edit/dropoff-chart";
 import { DangerZone } from "@/components/edit/danger-zone";
+import { VersionsCard } from "@/components/edit/versions-card";
+import { listStack, listStackCandidates } from "@/db/queries/versions";
 import { ViewerShell } from "@/components/viewer/viewer-shell";
 import { ProcessingStatusWatcher } from "@/components/processing-status-watcher";
 import { extensionForKey } from "@/lib/recordings/artifact-keys";
@@ -91,6 +93,8 @@ export default async function EditRecordingPage({
     transcript,
     rawComments,
     maxWatched,
+    stack,
+    stackCandidates,
   ] = await Promise.all([
     Promise.all(
       downloadKinds
@@ -109,6 +113,8 @@ export default async function EditRecordingPage({
     getTranscriptByRecording(rec.id),
     listCommentsForRecording(rec.id),
     isReady ? listMaxWatched(rec.id) : Promise.resolve([]),
+    rec.type === "video" ? listStack(rec) : Promise.resolve([]),
+    rec.type === "video" ? listStackCandidates(user.id, rec.id) : Promise.resolve([]),
   ]);
 
   const signedVideoUrl =
@@ -232,6 +238,25 @@ export default async function EditRecordingPage({
                   name: brand.name,
                 }))}
               />
+            }
+            versions={
+              rec.type === "video" ? (
+                <VersionsCard
+                  recordingId={rec.id}
+                  versions={stack.map((v) => ({
+                    id: v.id,
+                    slug: v.slug,
+                    title: v.title,
+                    number: v.number,
+                    status: v.status,
+                  }))}
+                  candidates={stackCandidates.map((c) => ({
+                    id: c.id,
+                    title: c.title,
+                    createdAt: c.createdAt.toISOString(),
+                  }))}
+                />
+              ) : null
             }
             trim={
               <section>

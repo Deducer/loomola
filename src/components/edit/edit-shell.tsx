@@ -4,6 +4,7 @@ export function EditShell({
   preview,
   header,
   settings,
+  versions = null,
   trim,
   clips,
   downloads,
@@ -14,6 +15,7 @@ export function EditShell({
   preview: ReactNode;
   header: ReactNode;
   settings: ReactNode;
+  versions?: ReactNode;
   trim: ReactNode;
   clips: ReactNode;
   downloads: ReactNode;
@@ -27,6 +29,7 @@ export function EditShell({
   // reconciler happy without changing rendered DOM.
   const slots: Array<{ key: string; node: ReactNode }> = [
     { key: "settings", node: settings },
+    { key: "versions", node: versions },
     { key: "trim", node: trim },
     { key: "clips", node: clips },
     { key: "downloads", node: downloads },

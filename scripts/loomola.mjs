@@ -3,13 +3,15 @@
 // shell-only agents and for the one thing MCP can't do on its own: read a
 // local video file and PUT its bytes to R2.
 //
-//   node scripts/loomola.mjs upload <file> [--title T] [--brand NAME|ID] [--wait]
+//   node scripts/loomola.mjs upload <file> [--title T] [--brand NAME|ID] [--version-of REC] [--wait]
+//   node scripts/loomola.mjs versions <recording>
 //   node scripts/loomola.mjs brands
 //   node scripts/loomola.mjs set-brand <recording> <NAME|ID|none>
 //   node scripts/loomola.mjs status <recording> [--wait]
 //   node scripts/loomola.mjs get <recording> [--transcript]
 //   node scripts/loomola.mjs comments <recording>
-//   node scripts/loomola.mjs comment <recording> "text" [--at 1:23] [--name N]
+//   node scripts/loomola.mjs comment <recording> "text" [--at 1:23] [--name N] [--reply-to ID]
+//   node scripts/loomola.mjs resolve <commentId> [--reopen]
 //   node scripts/loomola.mjs delete-comment <commentId>
 //   node scripts/loomola.mjs trash <recording>
 //   node scripts/loomola.mjs tools
@@ -190,10 +192,12 @@ async function upload(file, flags) {
     sizeBytes: size,
     ...(typeof flags.title === "string" ? { title: flags.title } : {}),
     ...(typeof flags.brand === "string" ? { brand: flags.brand } : {}),
+    ...(typeof flags["version-of"] === "string" ? { versionOf: flags["version-of"] } : {}),
   });
   process.stderr.write(
     `uploading ${basename(path)} (${(size / 1e6).toFixed(1)} MB, ${duration.toFixed(1)} s) as ${begin.slug}` +
       (begin.brand ? ` under brand "${begin.brand.name}"` : "") +
+      (begin.version ? ` as version ${begin.version.number}` : "") +
       ` in ${begin.partCount} part(s)\n`
   );
 
@@ -229,7 +233,7 @@ async function upload(file, flags) {
     ...(fps ? { fps } : {}),
     parts: etags,
   });
-  const result = { ...done, brand: begin.brand };
+  const result = { ...done, brand: begin.brand, version: begin.version ?? null };
   if (flags.wait) result.final = await waitForReady(begin.recordingId);
   print(result);
 }
@@ -242,7 +246,7 @@ const need = (n, usage) => {
 
 switch (command) {
   case "upload":
-    need(1, "upload <file> [--title T] [--brand NAME|ID] [--wait]");
+    need(1, "upload <file> [--title T] [--brand NAME|ID] [--version-of REC] [--wait]");
     await upload(positional[0], flags);
     break;
   case "brands":
@@ -272,15 +276,24 @@ switch (command) {
     print(await call("loomola_list_comments", { recording: positional[0] }));
     break;
   case "comment":
-    need(2, 'comment <recording> "text" [--at 1:23] [--name N]');
+    need(2, 'comment <recording> "text" [--at 1:23] [--name N] [--reply-to ID]');
     print(
       await call("loomola_post_comment", {
         recording: positional[0],
         body: positional[1],
         timestampSec: parseTimestamp(flags.at),
         ...(typeof flags.name === "string" ? { name: flags.name } : {}),
+        ...(typeof flags["reply-to"] === "string" ? { parentId: flags["reply-to"] } : {}),
       })
     );
+    break;
+  case "resolve":
+    need(1, "resolve <commentId> [--reopen]");
+    print(await call("loomola_resolve_comment", { commentId: positional[0], resolved: !flags.reopen }));
+    break;
+  case "versions":
+    need(1, "versions <recording>");
+    print(await call("loomola_list_versions", { recording: positional[0] }));
     break;
   case "delete-comment":
     need(1, "delete-comment <commentId>");
@@ -301,7 +314,7 @@ switch (command) {
     break;
   default:
     process.stderr.write(
-      "usage: node scripts/loomola.mjs <upload|brands|set-brand|status|get|comments|comment|delete-comment|trash|tools|call> ...\n"
+      "usage: node scripts/loomola.mjs <upload|versions|brands|set-brand|status|get|comments|comment|resolve|delete-comment|trash|tools|call> ...\n"
     );
     process.exit(2);
 }

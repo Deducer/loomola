@@ -1175,6 +1175,10 @@ struct RecentRecordingDTO: Decodable, Equatable, Sendable {
     let calendarEventStartedAt: String?
     /// Transcription finished and heard no words (silent recording).
     let noSpeech: Bool?
+    /// Version stack (Stage 25): how many drafts the stack holds and this
+    /// row's place in it. Absent from older servers.
+    let versionCount: Int?
+    let versionNumber: Int?
 
     init(
         id: String,
@@ -1192,7 +1196,9 @@ struct RecentRecordingDTO: Decodable, Equatable, Sendable {
         suggestedFolderId: String? = nil,
         calendarEventTitle: String? = nil,
         calendarEventStartedAt: String? = nil,
-        noSpeech: Bool? = nil
+        noSpeech: Bool? = nil,
+        versionCount: Int? = nil,
+        versionNumber: Int? = nil
     ) {
         self.id = id
         self.slug = slug
@@ -1210,6 +1216,8 @@ struct RecentRecordingDTO: Decodable, Equatable, Sendable {
         self.calendarEventTitle = calendarEventTitle
         self.calendarEventStartedAt = calendarEventStartedAt
         self.noSpeech = noSpeech
+        self.versionCount = versionCount
+        self.versionNumber = versionNumber
     }
 }
 

@@ -11,6 +11,7 @@ import {
 import { and, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import type { RecordingListItem } from "./recordings";
 import { noSpeechSql } from "@/lib/transcript/no-speech";
+import { latestVersionOnlySql, versionCountSql, versionPositionSql } from "./versions";
 
 export type SearchSort =
   | "date_desc"
@@ -107,6 +108,9 @@ export async function searchRecordings(params: {
   if (params.brandId) {
     conditions.push(eq(mediaObjects.brandProfileId, params.brandId));
   }
+  // Grids show one card per version stack (the latest draft). A text
+  // search still finds every version, since the match may be in an old one.
+  if (!hasQuery) conditions.push(latestVersionOnlySql);
 
   const rankExpr = hasQuery
     ? sql<number>`ts_rank(
@@ -175,6 +179,8 @@ export async function searchRecordings(params: {
       viewCount: viewCountExpr,
       commentCount: commentCountExpr,
       noSpeech: noSpeechSql,
+      versionCount: versionCountSql,
+      versionNumber: versionPositionSql,
       rank: rankExpr.as("rank"),
     })
     .from(mediaObjects)
@@ -225,6 +231,8 @@ export async function searchRecordings(params: {
       viewCount: r.viewCount ?? 0,
       commentCount: r.commentCount ?? 0,
       noSpeech: r.noSpeech === true,
+      versionCount: Number(r.versionCount ?? 1),
+      versionNumber: Number(r.versionNumber ?? 1),
     };
   });
 }
