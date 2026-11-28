@@ -525,6 +525,26 @@ Prompted by a silent video recording (the mic never reached the file and nothing
 
 Not verified by hand: the wide share layout in a browser against a real recording, and pause/resume on a real recording (timeline maths is unit-tested).
 
+## Stage 25 — Review comments and versions (✅ shipped 2026-11-28)
+
+Frame.io-style review on share pages, for review links on AI film drafts. Spec: [`2026-11-28-review-comments-and-versions-design.md`](docs/superpowers/specs/2026-11-28-review-comments-and-versions-design.md). Migration `0037_review_comments.sql` (all columns nullable).
+
+| Piece | What shipped |
+|---|---|
+| Pins and drawings | Pin, Pen, Arrow, Box and five palette colours in the comment composer (desktop only). Marks are stored as fractions of the picture (letterbox bars excluded) and validated with Zod. Clicking a comment seeks to its frame, pauses and draws its marks with its number; while playing, small numbered pins show near their moment. |
+| Range comments | Range sets an out point at the playhead; ranges show as a bar on the seek bar. |
+| Threads | One level of replies (name and email remembered in the browser), owner resolve/reopen, All/Open/Resolved filter, resolved comments collapse and leave the seek bar. Numbered seek-bar markers. |
+| Frames | `media_objects.fps` probed (thumbnail job, playback transcode, CLI upload). Timecodes `m:ss:ff`; Space plays/pauses, ←/→ and `,` `.` step one frame while paused. |
+| Versions | Stacks via `version_group_id`/`version_number`. `loomola upload --version-of`, MCP `versionOf`, `loomola_list_versions`, `loomola_set_version_order`. Edit-page Versions card (reorder, add existing, remove). Dashboard and desktop list only the latest version with a `vN` badge. |
+| Compare | `v1 · v2 · v3` switcher beside the title, `?v=N`, and `?compare=N`: two synced players side by side (stacked on narrow screens), sound from one chosen side, comments follow the right-hand player. One unlock covers the stack. |
+| Agents | `loomola_list_comments` returns numbered threads with replies, `loomola_post_comment { parentId }`, new `loomola_resolve_comment`. |
+
+Also changed: visitor comment limit 3 → 10 per 5 minutes; the owner's own replies skip the limit and the email.
+
+Not verified by hand: drawing alignment on 16:9 and 9:16 videos at two window sizes and full screen, compare sync against real network seeks, touch viewing on a phone. Seek-bar markers still don't show in full screen. XCTest couldn't run on the build Mac (the desktop change is decode-only and `swift build` passes).
+
+Follow-ups: export comments as markers/EDL for Premiere/Resolve, approval statuses, wipe/overlay compare, drawing on touch, backfill `fps` for older recordings.
+
 ## Open follow-ups (next milestones to spec)
 
 | Topic | Why | Rough effort |

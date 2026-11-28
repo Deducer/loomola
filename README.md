@@ -10,7 +10,7 @@ Self-hosted screen recording + AI meeting notes. Open-source alternative to Loom
 
 Two products in one self-hosted codebase, gated by a single env flag (`ENABLE_GRANOLA`):
 
-- **Screen recording (Loom-shape).** Screen + camera + mic + system audio, captured in the browser via the [companion Chrome extension](extension/). Branded share pages with Slack/Discord link previews, comments, view tracking, AI-generated titles, summaries, chapters, action items, and hover-scrub thumbnails.
+- **Screen recording (Loom-shape).** Screen + camera + mic + system audio, captured in the browser via the [companion Chrome extension](extension/). Branded share pages with Slack/Discord link previews, Frame.io-style review comments (pins, drawings, ranges, replies, resolve) and version stacks with side-by-side compare, view tracking, AI-generated titles, summaries, chapters, action items, and hover-scrub thumbnails.
 - **AI meeting notes (Granola-shape).** Real-time audio transcription from a native macOS desktop app. Live notepad while the meeting runs. Manual AI notes generation when the user is ready. Attendee tracking, folder organization, speaker attribution. Optional meeting screenshots: the desktop app saves a picture of the meeting window when the shared screen changes, and the notes use what was on screen.
 
 Both surfaces use the same Postgres / R2 / Deepgram / Claude pipeline. Same `media_objects` table with a `type` column, so adding a third product (something like MacWhisper, say) reuses everything.
@@ -329,6 +329,7 @@ For the tag and CHANGELOG convention, see [`docs/releasing.md`](docs/releasing.m
 - **Stage 10 (open-source readiness)**: one-command self-host (`docker compose`), bundled MinIO, `npm run doctor`, first-run admin setup, password reset, invite-based multi-user, failure UX with Retry, real `/api/health`, pluggable transcription (Deepgram + Whisper), configurable Chrome extension with options page, notarized desktop release workflow, GHCR image publishing, v1.0.0.
 - **Stage 23**: meeting screenshots. Automatic shared-screen pictures during an audio note, described by the model and fed to the AI notes (off by default; desktop Settings).
 - **Stage 24**: recording polish. Live mic badge and a "Test mic" check before recording, pause/restart on the video HUD, an always-visible Record video button, a "No speech" tag for silent recordings, and a share page with the transcript beside the player on wide screens.
+- **Stage 25**: Frame.io-style review. Pins and pen/arrow/box drawings on the paused frame, range comments, replies, resolve with an All/Open/Resolved filter, frame-accurate timecodes with frame stepping, and version stacks with a version switcher and side-by-side compare of two drafts.
 - **Migration tools**: Granola to Loomola CLI (`migrate/`) using the official Granola Business API. Imports notes, transcripts, summaries, attendees, folders, speaker attribution. Loom import is the next major build.
 
 See [`ROADMAP.md`](ROADMAP.md) for the full status table.
@@ -339,7 +340,7 @@ For user-facing release notes, see [`CHANGELOG.md`](CHANGELOG.md).
 
 - **Team workspaces / sharing between users.** Invite-based multi-user exists (each user manages their own recordings, folders, and notes in isolation). Shared folders, cross-user permissions, and team-level workspaces are not built yet.
 - **iOS / Android / Windows desktop.** macOS only for native capture. The web `/record` flow works on any Chrome.
-- **Loom's advanced editing surface.** Basic trim (start / end) is shipped. Filler-word removal, edit-by-transcript, AI silence-removal, speed ramps, cursor-zoom, drawing — none built yet.
+- **Loom's advanced editing surface.** Basic trim (start / end) is shipped. Filler-word removal, edit-by-transcript, AI silence-removal, speed ramps, cursor-zoom — none built yet. (Drawing on a frame exists for review comments, not for editing the video.)
 - **Voice-biometric speaker recognition.** ("Here's this teammate's voice across all my recordings.") Spec'd, deferred. See [`docs/superpowers/specs/2026-05-04-speaker-recognition-design.md`](docs/superpowers/specs/2026-05-04-speaker-recognition-design.md).
 - **Loom migration tool.** The Granola migrator (`migrate/`) is shipped; Loom import is a separate piece of work.
 - **Custom share-page domains** per brand profile (something like `videos.acme.com` mapping to a Loomola brand). Pairs with Brand Layer 2.
