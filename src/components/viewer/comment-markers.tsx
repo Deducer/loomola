@@ -2,14 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-
-export type CommentMarker = {
-  id: string;
-  commenterName: string;
-  body: string;
-  timestampSec: number;
-  createdAt: string;
-};
+import type { CommentThread } from "@/lib/review/comments";
 
 const MARKER_SIZE = 18;
 const POPUP_WIDTH = 240;
@@ -31,18 +24,20 @@ const POPUP_WIDTH = 240;
  */
 export function CommentMarkersOverlay({
   progressEl,
-  comments,
+  threads,
   totalDuration,
   accentColor,
-  onSeek,
+  onSelect,
 }: {
   progressEl: HTMLElement | null;
-  comments: CommentMarker[];
+  /** Numbered threads already filtered for display (resolved ones hidden
+   *  by the caller unless the Resolved filter is on). */
+  threads: CommentThread[];
   totalDuration: number;
   /** Brand accent — drives the marker fill so comments read as part of
    *  the same visual identity as the seekbar playhead and chapter fill. */
   accentColor: string;
-  onSeek: (sec: number) => void;
+  onSelect: (thread: CommentThread) => void;
 }) {
   const [mounted, setMounted] = useState(false);
   const overlayRef = useRef<HTMLDivElement | null>(null);
@@ -89,7 +84,7 @@ export function CommentMarkersOverlay({
     !mounted ||
     !progressEl ||
     totalDuration <= 0 ||
-    comments.length === 0
+    threads.length === 0
   ) {
     return null;
   }
@@ -110,25 +105,46 @@ export function CommentMarkersOverlay({
         zIndex: 11,
       }}
     >
-      {comments.map((c) => {
+      {threads.map((c) => {
         const pct = Math.min(
           100,
           Math.max(0, (c.timestampSec / totalDuration) * 100)
         );
+        const endPct =
+          c.endSec != null
+            ? Math.min(100, Math.max(pct, (c.endSec / totalDuration) * 100))
+            : null;
         // Decide whether the popup goes left, center, or right of the
         // marker so it doesn't run off the edge of the seekbar. ~120px
         // half-width, then a margin.
         const popupAlignment: "left" | "center" | "right" =
           pct < 18 ? "left" : pct > 82 ? "right" : "center";
         return (
-          <Marker
-            key={c.id}
-            comment={c}
-            leftPct={pct}
-            popupAlignment={popupAlignment}
-            accentColor={accentColor}
-            onSeek={onSeek}
-          />
+          <div key={c.id}>
+            {endPct != null && (
+              <div
+                aria-hidden="true"
+                style={{
+                  position: "absolute",
+                  left: `${pct}%`,
+                  width: `${Math.max(0.4, endPct - pct)}%`,
+                  top: MARKER_SIZE / 2 - 2,
+                  height: 4,
+                  borderRadius: 2,
+                  background: accentColor,
+                  opacity: c.resolvedAt ? 0.35 : 0.75,
+                  pointerEvents: "none",
+                }}
+              />
+            )}
+            <Marker
+              comment={c}
+              leftPct={pct}
+              popupAlignment={popupAlignment}
+              accentColor={accentColor}
+              onSelect={onSelect}
+            />
+          </div>
         );
       })}
     </div>
@@ -142,13 +158,13 @@ function Marker({
   leftPct,
   popupAlignment,
   accentColor,
-  onSeek,
+  onSelect,
 }: {
-  comment: CommentMarker;
+  comment: CommentThread;
   leftPct: number;
   popupAlignment: "left" | "center" | "right";
   accentColor: string;
-  onSeek: (sec: number) => void;
+  onSelect: (thread: CommentThread) => void;
 }) {
   const [hover, setHover] = useState(false);
 
@@ -165,7 +181,7 @@ function Marker({
       type="button"
       onClick={(e) => {
         e.stopPropagation();
-        onSeek(comment.timestampSec);
+        onSelect(comment);
       }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
@@ -181,6 +197,7 @@ function Marker({
         border: "1.5px solid white",
         borderRadius: "50%",
         background: hover ? "white" : accentColor,
+        opacity: comment.resolvedAt ? 0.6 : 1,
         color: hover ? accentColor : "white",
         cursor: "pointer",
         pointerEvents: "auto",
@@ -194,10 +211,10 @@ function Marker({
         justifyContent: "center",
         lineHeight: 1,
       }}
-      title={`${comment.commenterName} at ${formatTs(comment.timestampSec)}`}
-      aria-label={`Comment by ${comment.commenterName} at ${formatTs(comment.timestampSec)}`}
+      title={`#${comment.number} ${comment.commenterName} at ${formatTs(comment.timestampSec)}`}
+      aria-label={`Comment ${comment.number} by ${comment.commenterName} at ${formatTs(comment.timestampSec)}`}
     >
-      <span aria-hidden="true">{initialOf(comment.commenterName)}</span>
+      <span aria-hidden="true">{comment.number}</span>
       {hover && (
         <div
           aria-hidden="true"
@@ -229,7 +246,9 @@ function Marker({
               marginBottom: 4,
             }}
           >
-            <span style={{ fontWeight: 600 }}>{comment.commenterName}</span>
+            <span style={{ fontWeight: 600 }}>
+              {comment.number}. {comment.commenterName}
+            </span>
             <span style={{ fontSize: 11, color: "var(--text-subtle)" }}>
               {formatRelative(new Date(comment.createdAt))}
             </span>
@@ -256,16 +275,16 @@ function Marker({
             }}
           >
             {formatTs(comment.timestampSec)}
+            {comment.endSec != null ? `–${formatTs(comment.endSec)}` : ""}
+            {comment.annotation ? " · drawing" : ""}
+            {comment.replies.length > 0
+              ? ` · ${comment.replies.length} repl${comment.replies.length === 1 ? "y" : "ies"}`
+              : ""}
           </div>
         </div>
       )}
     </button>
   );
-}
-
-function initialOf(name: string): string {
-  const first = name.split(/[\s@.]+/).filter(Boolean)[0];
-  return (first?.[0] ?? "?").toUpperCase();
 }
 
 function formatTs(seconds: number): string {

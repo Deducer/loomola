@@ -1,15 +1,31 @@
 "use client";
 
 import "plyr/dist/plyr.css";
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { CommentMarkersOverlay, type CommentMarker } from "./comment-markers";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
+import { CommentMarkersOverlay } from "./comment-markers";
 import { Seekbar } from "./seekbar";
+import { effectiveFps, stepFrame } from "@/lib/review/frames";
+import type { CommentThread } from "@/lib/review/comments";
 
 export type Chapter = { start_sec: number; title: string };
 
 export type VideoPlayerHandle = {
   seek: (sec: number) => void;
   getCurrentTime: () => number;
+  play: () => void;
+  pause: () => void;
+  isPaused: () => boolean;
+  /** One frame forward/back (pauses first). */
+  stepFrame: (dir: 1 | -1) => void;
+  getVideoElement: () => HTMLVideoElement | null;
 };
 
 type Props = {
@@ -29,8 +45,20 @@ type Props = {
   // VTT URL for hover-scrub thumbnails (Plyr's previewThumbnails feature).
   // When null, hover-scrub is silently disabled.
   previewThumbnailsVttUrl?: string | null;
-  // Comments to render as markers on the seekbar (frame.io style).
-  comments?: CommentMarker[];
+  // Numbered comment threads to render as markers on the seekbar.
+  threads?: CommentThread[];
+  onSelectThread?: (thread: CommentThread) => void;
+  /** Probed frame rate; null = unknown (frame steps use 30 fps). */
+  fps?: number | null;
+  /** Space / arrow / , . shortcuts. Only one player on a page should own them. */
+  keyboard?: boolean;
+  /** Review layer, portaled into Plyr's video wrapper (follows full screen). */
+  renderOverlay?: (video: HTMLVideoElement) => ReactNode;
+  /** A drawing tool is active: hide controls so the pen owns the frame. */
+  drawing?: boolean;
+  muted?: boolean;
+  /** Seek-bar markers off (e.g. while drawing). */
+  hideMarkers?: boolean;
 };
 
 export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
@@ -46,7 +74,14 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
     trimEndSec,
     durationSec,
     previewThumbnailsVttUrl,
-    comments,
+    threads,
+    onSelectThread,
+    fps,
+    keyboard = true,
+    renderOverlay,
+    drawing = false,
+    muted,
+    hideMarkers = false,
   },
   ref
 ) {
@@ -56,6 +91,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [playerRoot, setPlayerRoot] = useState<HTMLElement | null>(null);
+  const [videoWrapper, setVideoWrapper] = useState<HTMLElement | null>(null);
+  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   // The video's own shape ("1080 / 1920"). Desktop always uses a 16:9 stage;
   // phones use this, capped in height (see .plyr-rounded rules in globals.css).
@@ -91,6 +128,9 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
         // not Plyr's default countdown (which renders weirdly when seconds
         // go briefly negative due to floating-point precision).
         invertTime: false,
+        // Review shortcuts (Space, arrows = one frame while paused) are
+        // handled below; Plyr's own would seek 10 s on the same keys.
+        keyboard: { focused: false, global: false },
         toggleInvert: false,
         displayDuration: true,
         // Chrome reports Infinity for <video>.duration on MediaRecorder
@@ -170,6 +210,9 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
         // our own bar; no need to grab a ref to it anymore.
         const root = plyrRef.current?.elements?.container as HTMLElement | undefined;
         if (root) setPlayerRoot(root);
+        const wrapper = plyrRef.current?.elements?.wrapper as HTMLElement | undefined;
+        if (wrapper) setVideoWrapper(wrapper);
+        setVideoEl(videoRef.current);
         // Metadata may have loaded before Plyr attached its listener.
         const v = videoRef.current;
         if (v?.videoWidth && v.videoHeight) setVideoAspect(`${v.videoWidth} / ${v.videoHeight}`);
@@ -257,31 +300,93 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
     return () => target.removeEventListener(eventName, onRotate);
   }, []);
 
+  const fpsRef = useRef(effectiveFps(fps));
+  fpsRef.current = effectiveFps(fps);
+  const durationRef = useRef(totalDuration);
+  durationRef.current = totalDuration;
+
+  function seekTo(sec: number) {
+    const video = videoRef.current;
+    if (!video) return;
+    // Metadata must be loaded before a seek takes effect; otherwise the
+    // browser silently stores the request and only applies it once data
+    // arrives, which feels like a dead click. If unloaded, trigger a load
+    // and apply the seek once `loadedmetadata` fires.
+    const apply = () => {
+      video.currentTime = sec;
+      if (plyrRef.current) plyrRef.current.currentTime = sec;
+    };
+    if (video.readyState >= 1) {
+      apply();
+    } else {
+      const onMeta = () => {
+        apply();
+        video.removeEventListener("loadedmetadata", onMeta);
+      };
+      video.addEventListener("loadedmetadata", onMeta);
+      video.load();
+    }
+  }
+
+  function step(dir: 1 | -1) {
+    const video = videoRef.current;
+    if (!video) return;
+    if (!video.paused) video.pause();
+    seekTo(stepFrame(video.currentTime, fpsRef.current, dir, durationRef.current || undefined));
+  }
+
+  const stepRef = useRef(step);
+  stepRef.current = step;
+
   useImperativeHandle(ref, () => ({
-    seek: (sec: number) => {
+    seek: seekTo,
+    getCurrentTime: () => plyrRef.current?.currentTime ?? videoRef.current?.currentTime ?? 0,
+    play: () => {
+      void videoRef.current?.play().catch(() => {});
+    },
+    pause: () => videoRef.current?.pause(),
+    isPaused: () => videoRef.current?.paused ?? true,
+    stepFrame: (dir) => stepRef.current(dir),
+    getVideoElement: () => videoRef.current,
+  }));
+
+  // Review shortcuts. Space toggles play; while paused ←/→ (and , / .) step
+  // one frame, while playing ←/→ jump 5 s. Ignored while typing.
+  useEffect(() => {
+    if (!keyboard) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      // A focused button keeps Space for itself.
+      if (t?.tagName === "BUTTON" && e.key === " ") return;
       const video = videoRef.current;
       if (!video) return;
-      // Metadata must be loaded before a seek takes effect; otherwise the
-      // browser silently stores the request and only applies it once data
-      // arrives, which feels like a dead click. If unloaded, trigger a load
-      // and apply the seek once `loadedmetadata` fires.
-      const apply = () => {
-        video.currentTime = sec;
-        if (plyrRef.current) plyrRef.current.currentTime = sec;
-      };
-      if (video.readyState >= 1) {
-        apply();
-      } else {
-        const onMeta = () => {
-          apply();
-          video.removeEventListener("loadedmetadata", onMeta);
-        };
-        video.addEventListener("loadedmetadata", onMeta);
-        video.load();
+      if (e.key === " ") {
+        e.preventDefault();
+        if (video.paused) void video.play().catch(() => {});
+        else video.pause();
+        return;
       }
-    },
-    getCurrentTime: () => plyrRef.current?.currentTime ?? videoRef.current?.currentTime ?? 0,
-  }));
+      if (e.key === "," || e.key === ".") {
+        e.preventDefault();
+        stepRef.current(e.key === "." ? 1 : -1);
+        return;
+      }
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        e.preventDefault();
+        const dir = e.key === "ArrowRight" ? 1 : -1;
+        if (video.paused) stepRef.current(dir);
+        else seekTo(Math.max(0, video.currentTime + dir * 5));
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [keyboard]);
+
+  useEffect(() => {
+    if (videoRef.current && muted !== undefined) videoRef.current.muted = muted;
+  }, [muted]);
 
   async function refreshUrl() {
     if (refreshing) return;
@@ -317,6 +422,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
   return (
     <div
       className="plyr-wrapper plyr-rounded"
+      data-drawing={drawing ? "true" : undefined}
       style={{
         ["--plyr-color-main" as never]: accentColor,
         ...(videoAspect ? { ["--video-aspect" as never]: videoAspect } : {}),
@@ -347,17 +453,15 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
         onBarElementChange={setSeekbarEl}
       />
       <CommentMarkersOverlay
-        progressEl={seekbarEl}
-        comments={comments ?? []}
+        progressEl={hideMarkers || drawing ? null : seekbarEl}
+        threads={threads ?? []}
         totalDuration={totalDuration}
         accentColor={accentColor}
-        onSeek={(sec) => {
-          const video = videoRef.current;
-          if (!video) return;
-          video.currentTime = sec;
-          if (plyrRef.current) plyrRef.current.currentTime = sec;
-        }}
+        onSelect={(thread) => onSelectThread?.(thread)}
       />
+      {videoWrapper && videoEl && renderOverlay
+        ? createPortal(renderOverlay(videoEl), videoWrapper)
+        : null}
       {error && (
         <div className="mt-2 flex items-center gap-3 rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm">
           <span className="opacity-80">Playback interrupted ({error}).</span>

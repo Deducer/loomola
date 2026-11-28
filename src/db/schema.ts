@@ -13,8 +13,10 @@ import {
   uniqueIndex,
   index,
   customType,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import type { ReviewAnnotation } from "../lib/review/annotation";
 
 const tsvector = customType<{ data: string; driverData: string }>({
   dataType() {
@@ -270,6 +272,14 @@ export const mediaObjects = pgTable("media_objects", {
   // merge-idempotent imports.
   importSource: text("import_source"),
   importSourceId: text("import_source_id"),
+  // Probed frame rate of the uploaded video (thumbnail job / CLI upload).
+  // Null = unknown; the share page then shows m:ss and steps at 30 fps.
+  fps: numeric("fps"),
+  // Version stack (Stage 25): rows sharing version_group_id (the id of the
+  // first version) are drafts of one piece; version_number orders them
+  // (an order key with possible gaps, see src/lib/review/versions.ts).
+  versionGroupId: uuid("version_group_id"),
+  versionNumber: integer("version_number"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -370,6 +380,17 @@ export const comments = pgTable("comments", {
   commenterName: text("commenter_name").notNull(),
   commenterEmail: text("commenter_email").notNull(),
   timestampSec: numeric("timestamp_sec").notNull(),
+  // Range comment end (null = a single moment). Stage 25.
+  endSec: numeric("end_sec"),
+  // Pin and/or drawing on the frame at timestampSec. Shape and caps live
+  // in src/lib/review/annotation.ts (validated on every write).
+  annotation: jsonb("annotation").$type<ReviewAnnotation>(),
+  // Reply to a top-level comment (one level deep). Cascades on delete.
+  parentId: uuid("parent_id").references((): AnyPgColumn => comments.id, {
+    onDelete: "cascade",
+  }),
+  // Owner-set; only top-level comments resolve.
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   body: text("body").notNull(),
   readByCreatorAt: timestamp("read_by_creator_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })

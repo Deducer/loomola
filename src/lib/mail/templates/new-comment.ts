@@ -18,17 +18,29 @@ export function renderNewCommentEmail(params: {
   commenterEmail: string;
   body: string;
   timestampSec: number;
+  /** Range comment end ("on 0:12–0:18"). */
+  endSec?: number | null;
+  hasDrawing?: boolean;
+  isReply?: boolean;
   shareUrl: string;
 }): { subject: string; text: string; html: string } {
-  const ts = formatTs(params.timestampSec);
+  const ts =
+    params.endSec != null
+      ? `${formatTs(params.timestampSec)}–${formatTs(params.endSec)}`
+      : formatTs(params.timestampSec);
+  const verb = params.isReply ? "replied" : "commented";
+  const where = params.endSec != null ? "on" : "at";
+  const drawing = params.hasDrawing ? " with a drawing" : "";
   const deepLink = `${params.shareUrl}#t=${Math.max(0, Math.floor(params.timestampSec))}`;
 
-  const rawSubject = `New comment from ${params.commenterName} on ${params.recordingTitle}`;
+  const rawSubject = params.isReply
+    ? `New reply from ${params.commenterName} on ${params.recordingTitle}`
+    : `New comment from ${params.commenterName} on ${params.recordingTitle}`;
   const subject =
     rawSubject.length <= 100 ? rawSubject : rawSubject.slice(0, 97) + "...";
 
   const text = [
-    `${params.commenterName} (${params.commenterEmail}) commented at ${ts}:`,
+    `${params.commenterName} (${params.commenterEmail}) ${verb} ${where} ${ts}${drawing}:`,
     "",
     params.body,
     "",
@@ -40,7 +52,7 @@ export function renderNewCommentEmail(params: {
   <p style="margin: 0 0 12px;">
     <strong>${escapeHtml(params.commenterName)}</strong>
     <span style="opacity: 0.7;">&lt;${escapeHtml(params.commenterEmail)}&gt;</span>
-    commented at <code style="background: #f3f4f6; padding: 2px 4px; border-radius: 4px;">${ts}</code>:
+    ${verb} ${where} <code style="background: #f3f4f6; padding: 2px 4px; border-radius: 4px;">${ts}</code>${drawing}:
   </p>
   <blockquote style="margin: 0 0 16px; padding: 12px 16px; border-left: 3px solid #e5e7eb; background: #f9fafb; white-space: pre-wrap;">${escapeHtml(params.body)}</blockquote>
   <p style="margin: 0;">

@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getRecordingRefBySlug } from "@/db/queries/recordings";
-import { createComment } from "@/db/queries/comments";
+import {
+  createComment,
+  getTopLevelComment,
+  listCommentsForRecording,
+} from "@/db/queries/comments";
 import { cookieName, verifyUnlockToken } from "@/lib/viewer/unlock-cookie";
 import { hashVisitor } from "@/lib/viewer/visitor-id";
 import { checkAndBump } from "@/lib/comments/rate-limit";
@@ -9,53 +13,70 @@ import { sendEmail } from "@/lib/mail/mailgun";
 import { renderNewCommentEmail } from "@/lib/mail/templates/new-comment";
 import { getSupabaseService } from "@/lib/supabase/service";
 import { getUserPreferences } from "@/db/queries/user-preferences";
+import { getOptionalAuthUser } from "@/lib/require-auth";
+import { parseCommentInput } from "@/lib/review/comment-input";
+import { buildThreads, toReviewComment } from "@/lib/review/comments";
+import { isEmptyAnnotation } from "@/lib/review/annotation";
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const MAX_BODY = 2000;
+type Ref = NonNullable<Awaited<ReturnType<typeof getRecordingRefBySlug>>>;
+
+async function canView(slug: string, rec: Ref): Promise<boolean> {
+  if (!rec.passwordHash) return true;
+  const user = await getOptionalAuthUser();
+  if (user && user.id === rec.ownerId) return true;
+  const jar = await cookies();
+  const token = jar.get(cookieName(slug))?.value ?? "";
+  return verifyUnlockToken({ slug, passwordHash: rec.passwordHash, token });
+}
+
+/** Public list: top-level comments by time, each with its replies nested.
+ *  Commenter emails are never returned. */
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ slug: string }> }
+) {
+  const { slug } = await params;
+  const rec = await getRecordingRefBySlug(slug);
+  if (!rec) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  if (!(await canView(slug, rec))) {
+    return NextResponse.json({ error: "locked" }, { status: 403 });
+  }
+  const rows = await listCommentsForRecording(rec.id);
+  const threads = buildThreads(rows.map(toReviewComment));
+  return NextResponse.json({ comments: threads });
+}
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ slug: string }> }
 ) {
   const { slug } = await params;
-  const body = (await request.json().catch(() => ({}))) as {
-    name?: string;
-    email?: string;
-    timestampSec?: number;
-    body?: string;
-  };
-
-  const name = (body.name ?? "").trim();
-  const email = (body.email ?? "").trim();
-  const content = (body.body ?? "").trim();
-  const tsRaw =
-    typeof body.timestampSec === "number" && isFinite(body.timestampSec)
-      ? body.timestampSec
-      : 0;
-  const timestampSec = Math.max(0, tsRaw);
-
-  if (!name || !content) {
-    return NextResponse.json({ error: "missing_fields" }, { status: 400 });
+  const parsed = parseCommentInput(await request.json().catch(() => ({})));
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
-  if (!EMAIL_RE.test(email)) {
-    return NextResponse.json({ error: "bad_email" }, { status: 400 });
-  }
-  if (content.length > MAX_BODY) {
-    return NextResponse.json({ error: "body_too_long" }, { status: 400 });
-  }
+  const input = parsed.value;
 
   const rec = await getRecordingRefBySlug(slug);
   if (!rec) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
 
-  // Password-locked recordings require a valid unlock cookie to comment.
-  if (rec.passwordHash) {
-    const jar = await cookies();
-    const token = jar.get(cookieName(slug))?.value ?? "";
-    if (!verifyUnlockToken({ slug, passwordHash: rec.passwordHash, token })) {
-      return NextResponse.json({ error: "locked" }, { status: 403 });
+  // Password-locked recordings require a valid unlock cookie (or the
+  // owner's session) to comment.
+  if (!(await canView(slug, rec))) {
+    return NextResponse.json({ error: "locked" }, { status: 403 });
+  }
+
+  // A reply must hang off a top-level comment on this same recording, and
+  // shows at its parent's time.
+  let timestampSec = input.timestampSec;
+  if (input.parentId) {
+    const parent = await getTopLevelComment(rec.id, input.parentId);
+    if (!parent) {
+      return NextResponse.json({ error: "bad_parent" }, { status: 400 });
     }
+    timestampSec = Number(parent.timestampSec);
   }
 
   // Rate-limit keyed on the visitor hash (same derivation as view tracking).
@@ -70,22 +91,18 @@ export async function POST(
 
   const row = await createComment({
     mediaObjectId: rec.id,
-    name,
-    email,
+    name: input.name,
+    email: input.email,
     timestampSec,
-    body: content,
+    body: input.body,
+    endSec: input.endSec,
+    annotation: input.annotation,
+    parentId: input.parentId,
   });
 
-  // Shape for the client's optimistic update — same fields as the
-  // share page's server-fetched commentRows so the UI can prepend
-  // the new comment immediately without waiting for router.refresh.
-  const created = {
-    id: row.id,
-    commenterName: row.commenterName,
-    body: row.body,
-    timestampSec: parseFloat(String(row.timestampSec)),
-    createdAt: row.createdAt.toISOString(),
-  };
+  // Same shape as the share page's server-rendered rows, so the client can
+  // add it to local state without waiting for router.refresh.
+  const created = toReviewComment(row);
 
   // Fire Mailgun in the background — never awaited, never blocks the
   // response. Errors caught and logged; comment is still persisted.
@@ -106,10 +123,13 @@ export async function POST(
       }
       const tpl = renderNewCommentEmail({
         recordingTitle: rec.title ?? rec.aiTitle ?? "Untitled recording",
-        commenterName: name,
-        commenterEmail: email,
-        body: content,
+        commenterName: input.name,
+        commenterEmail: input.email,
+        body: input.body,
         timestampSec,
+        endSec: input.endSec,
+        hasDrawing: !isEmptyAnnotation(input.annotation),
+        isReply: !!input.parentId,
         shareUrl,
       });
       await sendEmail({

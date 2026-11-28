@@ -132,6 +132,23 @@ function durationSeconds(file) {
   fail(`ffprobe could not read the duration of ${file} (is ffprobe installed?)`);
 }
 
+/** Frame rate from ffprobe ("30000/1001" -> 29.97); undefined if unknown. */
+function frameRate(file) {
+  try {
+    const out = execFileSync(
+      "ffprobe",
+      ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=avg_frame_rate", "-of", "default=nw=1:nk=1", file],
+      { encoding: "utf8" }
+    ).trim();
+    const [n, d] = out.split("/").map(Number);
+    const fps = d ? n / d : n;
+    if (Number.isFinite(fps) && fps >= 1 && fps <= 120) return Math.round(fps * 1000) / 1000;
+  } catch {
+    // optional
+  }
+  return undefined;
+}
+
 async function putPart(url, buf, attempts = 4) {
   let lastErr;
   for (let i = 1; i <= attempts; i++) {
@@ -166,6 +183,7 @@ async function upload(file, flags) {
   if (!existsSync(path) || !statSync(path).isFile()) fail(`no such file: ${path}`);
   const size = statSync(path).size;
   const duration = durationSeconds(path);
+  const fps = frameRate(path);
 
   const begin = await call("loomola_upload_begin", {
     filename: basename(path),
@@ -208,6 +226,7 @@ async function upload(file, flags) {
   const done = await call("loomola_upload_complete", {
     recordingId: begin.recordingId,
     durationSeconds: duration,
+    ...(fps ? { fps } : {}),
     parts: etags,
   });
   const result = { ...done, brand: begin.brand };

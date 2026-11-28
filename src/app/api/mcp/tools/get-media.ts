@@ -117,6 +117,9 @@ export function registerGetMediaTool(server: McpServer): void {
               id: comment.id,
               name: comment.commenterName,
               timestampSec: Number(comment.timestampSec),
+              endSec: comment.endSec == null ? null : Number(comment.endSec),
+              parentId: comment.parentId,
+              resolved: !!comment.resolvedAt,
               body: comment.body,
               createdAt: toIso(comment.createdAt),
             }))

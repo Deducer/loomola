@@ -6,6 +6,7 @@ import { getOptionalAuthUser } from "@/lib/require-auth";
 import { getRecordingBySlug } from "@/db/queries/recordings";
 import { getTranscriptByRecording } from "@/db/queries/transcripts";
 import { listCommentsForRecording } from "@/db/queries/comments";
+import { toReviewComment } from "@/lib/review/comments";
 import { presignGet } from "@/lib/r2/presigned-get";
 import { BrandLogo } from "@/components/brand/brand-logo";
 import { ViewerShell } from "@/components/viewer/viewer-shell";
@@ -123,13 +124,7 @@ export default async function SharePage({
   const words: Word[] = [];
 
   const rawComments = await listCommentsForRecording(rec.id);
-  const commentRows = rawComments.map((c) => ({
-    id: c.id,
-    commenterName: c.commenterName,
-    body: c.body,
-    timestampSec: parseFloat(String(c.timestampSec)),
-    createdAt: c.createdAt.toISOString(),
-  }));
+  const commentRows = rawComments.map(toReviewComment);
 
   const trimStartSec =
     rec.trimStartSec != null ? parseFloat(String(rec.trimStartSec)) : null;
@@ -218,6 +213,7 @@ export default async function SharePage({
             fullText={transcript?.fullText ?? ""}
             isOwner={isOwner}
             comments={commentRows}
+            fps={rec.fps != null ? Number(rec.fps) : null}
             trimStartSec={trimStartSec}
             trimEndSec={trimEndSec}
             durationSec={

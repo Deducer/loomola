@@ -10,6 +10,7 @@ export function ContentTabs({
   comments,
   commentCount = 0,
   panelOnXl = false,
+  request,
 }: {
   transcript: ReactNode;
   comments: ReactNode;
@@ -17,9 +18,16 @@ export function ContentTabs({
   /** At xl, render as a full-height side panel: tabs pinned at the top,
    *  the active tab's content scrolling underneath. Parent sets the height. */
   panelOnXl?: boolean;
+  /** Switch tabs from outside (e.g. a seek-bar marker opens Comments);
+   *  a new `nonce` re-applies the same tab. */
+  request?: { tab: TabKey; nonce: number } | null;
 }) {
   const [active, setActive] = useState<TabKey>("transcript");
   const idBase = useId();
+
+  useEffect(() => {
+    if (request) setActive(request.tab);
+  }, [request]);
 
   // Hydrate from URL ?tab=... on mount.
   useEffect(() => {

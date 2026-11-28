@@ -20,6 +20,7 @@ import { mediaShareUrl } from "@/lib/recordings/queries";
 import { getMcpOwnerId } from "./owner";
 import { brandPickError, findOwnedMedia, resolveBrand } from "./lookup";
 import { errorContent, jsonContent } from "./shared";
+import { sanitizeFps } from "@/lib/review/frames";
 
 const MIB = 1024 * 1024;
 const MIN_PART = 8 * MIB; // R2 needs >= 5 MiB for every part but the last
@@ -125,6 +126,11 @@ export function registerUploadTools(server: McpServer): void {
       inputSchema: z.object({
         recordingId: z.string().uuid(),
         durationSeconds: z.number().positive(),
+        fps: z
+          .number()
+          .positive()
+          .optional()
+          .describe("Frame rate if known (ffprobe avg_frame_rate); enables frame-accurate comment timecodes."),
         parts: z
           .array(z.object({ partNumber: z.number().int().min(1), etag: z.string().min(1) }))
           .min(1),
@@ -159,6 +165,7 @@ export function registerUploadTools(server: McpServer): void {
         .set({
           r2CompositeKey: track.key,
           durationSeconds: String(input.durationSeconds),
+          ...(sanitizeFps(input.fps) != null ? { fps: String(sanitizeFps(input.fps)) } : {}),
           status: "transcribing",
           uploadMetadata: null,
           updatedAt: sql`now()`,

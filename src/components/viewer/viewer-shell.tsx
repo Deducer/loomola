@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -15,15 +16,20 @@ import { ActionItemsBlock } from "./action-items-block";
 import { ContentTabs } from "./content-tabs";
 import { Tracking } from "./tracking";
 import { CommentsSection } from "./comments-section";
+import { AnnotationOverlay, type DrawTool } from "./annotation-overlay";
+import { EMPTY_DRAFT, type ReviewDraft } from "./review-draft";
 import type { Word } from "@/lib/viewer/paragraphs";
-
-type CommentRow = {
-  id: string;
-  commenterName: string;
-  body: string;
-  timestampSec: number;
-  createdAt: string;
-};
+import { isEmptyAnnotation } from "@/lib/review/annotation";
+import { effectiveFps, snapToFrame } from "@/lib/review/frames";
+import {
+  annotationAnchor,
+  buildThreads,
+  filterThreads,
+  threadsNearTime,
+  type CommentFilter,
+  type CommentThread,
+  type ReviewComment,
+} from "@/lib/review/comments";
 
 export type ViewerShellProps = {
   slug: string;
@@ -35,11 +41,13 @@ export type ViewerShellProps = {
   words: Word[];
   fullText: string;
   isOwner: boolean;
-  comments: CommentRow[];
+  comments: ReviewComment[];
   trimStartSec: number | null;
   trimEndSec: number | null;
   durationSec: number | null;
   previewThumbnailsVttUrl: string | null;
+  /** Probed frame rate (null = unknown). */
+  fps?: number | null;
   afterPlayer?: ReactNode;
   stickyPlayer?: boolean;
   showCommentForm?: boolean;
@@ -64,6 +72,7 @@ export function ViewerShell({
   trimEndSec,
   durationSec,
   previewThumbnailsVttUrl,
+  fps = null,
   afterPlayer,
   stickyPlayer = false,
   showCommentForm = true,
@@ -73,27 +82,32 @@ export function ViewerShell({
   const playerRef = useRef<VideoPlayerHandle | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const fpsEff = effectiveFps(fps);
 
-  // Local comments state seeded from the server-rendered comments.
-  // CommentForm submits then calls addOptimisticComment which prepends
-  // the new row immediately, so the seekbar marker + comment list both
-  // update without waiting for router.refresh's round-trip.
-  // useEffect re-syncs when the server comments change (post-refresh),
-  // overwriting any optimistic dupes — safe because the API returns
-  // the SAME id/createdAt that the next server fetch will produce.
+  // Local comments seeded from the server render. The form adds the new row
+  // immediately; router.refresh() later re-seeds with the same ids.
   const [comments, setComments] = useState(serverComments);
   useEffect(() => {
     setComments(serverComments);
   }, [serverComments]);
 
-  const addOptimisticComment = useCallback((c: CommentRow) => {
-    setComments((prev) => {
-      // Guard against duplicates if the server fetch races us.
-      if (prev.some((p) => p.id === c.id)) return prev;
-      const next = [...prev, c];
-      next.sort((a, b) => a.timestampSec - b.timestampSec);
-      return next;
-    });
+  const threads = useMemo(() => buildThreads(comments), [comments]);
+  const [filter, setFilter] = useState<CommentFilter>("all");
+  // Resolved comments leave the seek bar unless you're looking at them.
+  const markerThreads = useMemo(
+    () => filterThreads(threads, filter === "resolved" ? "resolved" : "open"),
+    [threads, filter]
+  );
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const activeThread = threads.find((t) => t.id === activeId) ?? null;
+  const [draft, setDraft] = useState<ReviewDraft>(EMPTY_DRAFT);
+  const [tabRequest, setTabRequest] = useState<{ tab: "comments"; nonce: number } | null>(null);
+
+  const addComment = useCallback((c: ReviewComment) => {
+    setComments((prev) => (prev.some((p) => p.id === c.id) ? prev : [...prev, c]));
+  }, []);
+  const replaceComment = useCallback((c: ReviewComment) => {
+    setComments((prev) => prev.map((p) => (p.id === c.id ? c : p)));
   }, []);
 
   const handleSeek = useCallback((sec: number) => {
@@ -103,6 +117,71 @@ export function ViewerShell({
   const getCurrentTime = useCallback(() => {
     return playerRef.current?.getCurrentTime() ?? 0;
   }, []);
+
+  const handlePlayState = useCallback((playing: boolean) => {
+    setIsPlaying(playing);
+    if (playing) {
+      // The frame overlay clears on play.
+      setActiveId(null);
+      setDraft((d) => (d.tool ? { ...d, tool: null } : d));
+    }
+  }, []);
+
+  const selectThread = useCallback(
+    (t: CommentThread) => {
+      playerRef.current?.pause();
+      playerRef.current?.seek(snapToFrame(t.timestampSec, fpsEff));
+      setActiveId(t.id);
+      setDraft((d) => (d.tool ? { ...d, tool: null } : d));
+      setTabRequest({ tab: "comments", nonce: Date.now() });
+    },
+    [fpsEff]
+  );
+
+  const selectThreadById = useCallback(
+    (id: string) => {
+      const t = threads.find((x) => x.id === id);
+      if (t) selectThread(t);
+    },
+    [threads, selectThread]
+  );
+
+  const changeTool = useCallback(
+    (tool: DrawTool | null) => {
+      if (tool) playerRef.current?.pause();
+      setActiveId(null);
+      setDraft((d) => ({
+        ...d,
+        tool,
+        anchorSec:
+          tool && d.anchorSec === null
+            ? snapToFrame(playerRef.current?.getCurrentTime() ?? 0, fpsEff)
+            : d.anchorSec,
+      }));
+    },
+    [fpsEff]
+  );
+
+  const changeAnnotation = useCallback(
+    (annotation: ReviewDraft["annotation"]) => {
+      setDraft((d) => ({
+        ...d,
+        annotation,
+        // The first mark pins the comment to the frame it was drawn on.
+        anchorSec: isEmptyAnnotation(d.annotation)
+          ? snapToFrame(playerRef.current?.getCurrentTime() ?? 0, fpsEff)
+          : d.anchorSec,
+      }));
+    },
+    [fpsEff]
+  );
+
+  const showDraft = useCallback(() => {
+    if (draft.anchorSec === null) return;
+    playerRef.current?.pause();
+    playerRef.current?.seek(draft.anchorSec);
+    setActiveId(null);
+  }, [draft.anchorSec]);
 
   const handleReady = useCallback(() => {
     if (typeof window === "undefined") return;
@@ -115,6 +194,55 @@ export function ViewerShell({
     }
   }, []);
 
+  const atDraftFrame =
+    draft.anchorSec !== null && Math.abs(currentTime - draft.anchorSec) < 0.75 / fpsEff;
+  const renderOverlay = (video: HTMLVideoElement) => {
+    if (draft.tool || (!isPlaying && atDraftFrame && !isEmptyAnnotation(draft.annotation))) {
+      return (
+        <AnnotationOverlay
+          videoEl={video}
+          annotation={draft.annotation}
+          label={null}
+          tool={draft.tool}
+          color={draft.color}
+          accentColor={accentColor}
+          onChange={changeAnnotation}
+        />
+      );
+    }
+    if (!isPlaying && activeThread?.annotation) {
+      return (
+        <AnnotationOverlay
+          videoEl={video}
+          annotation={activeThread.annotation}
+          label={activeThread.number}
+          tool={null}
+          color={draft.color}
+          accentColor={accentColor}
+        />
+      );
+    }
+    if (isPlaying) {
+      const pins = threadsNearTime(markerThreads, currentTime).flatMap((t) => {
+        const a = annotationAnchor(t.annotation);
+        return a ? [{ id: t.id, number: t.number, x: a.x, y: a.y }] : [];
+      });
+      if (pins.length === 0) return null;
+      return (
+        <AnnotationOverlay
+          videoEl={video}
+          annotation={null}
+          tool={null}
+          color={draft.color}
+          accentColor={accentColor}
+          pins={pins}
+          onPinClick={selectThreadById}
+        />
+      );
+    }
+    return null;
+  };
+
   const playerBlock = (
     <>
       <VideoPlayer
@@ -124,13 +252,17 @@ export function ViewerShell({
         chapters={chapters}
         accentColor={accentColor}
         onTimeUpdate={setCurrentTime}
-        onPlayStateChange={setIsPlaying}
+        onPlayStateChange={handlePlayState}
         onReady={handleReady}
         trimStartSec={trimStartSec}
         trimEndSec={trimEndSec}
         durationSec={durationSec}
         previewThumbnailsVttUrl={previewThumbnailsVttUrl}
-        comments={comments}
+        threads={markerThreads}
+        onSelectThread={selectThread}
+        fps={fps}
+        renderOverlay={renderOverlay}
+        drawing={draft.tool !== null}
       />
       {!isOwner && (
         <Tracking
@@ -146,6 +278,7 @@ export function ViewerShell({
   const tabs = (
     <ContentTabs
       panelOnXl={split}
+      request={tabRequest}
       transcript={
         <TranscriptPanel
           words={words}
@@ -159,16 +292,26 @@ export function ViewerShell({
       }
       comments={
         <CommentsSection
-          comments={comments}
+          threads={threads}
           slug={slug}
+          fps={fps}
           isOwner={isOwner}
-          onSeek={handleSeek}
+          filter={filter}
+          onFilterChange={setFilter}
+          activeId={activeId}
+          onSelect={selectThread}
+          currentTime={currentTime}
           getCurrentTime={getCurrentTime}
-          onCommentAdded={addOptimisticComment}
+          onCommentAdded={addComment}
+          onCommentChanged={replaceComment}
+          draft={draft}
+          onDraftChange={setDraft}
+          onToolChange={changeTool}
+          onShowDraft={showDraft}
           showForm={showCommentForm}
         />
       }
-      commentCount={comments.length}
+      commentCount={threads.length}
     />
   );
 

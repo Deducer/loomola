@@ -7,6 +7,7 @@ import { listMaxWatched } from "@/db/queries/views";
 import { listBrandProfiles } from "@/db/queries/brand-profiles";
 import { getTranscriptByRecording } from "@/db/queries/transcripts";
 import { listCommentsForRecording } from "@/db/queries/comments";
+import { toReviewComment } from "@/lib/review/comments";
 import { presignGet } from "@/lib/r2/presigned-get";
 import { bucketize } from "@/lib/viewer/dropoff";
 import { EditShell } from "@/components/edit/edit-shell";
@@ -133,13 +134,7 @@ export default async function EditRecordingPage({
   const words: Word[] = Array.isArray(transcript?.wordTimestamps)
     ? (transcript.wordTimestamps as Word[])
     : [];
-  const commentRows = rawComments.map((comment) => ({
-    id: comment.id,
-    commenterName: comment.commenterName,
-    body: comment.body,
-    timestampSec: parseFloat(String(comment.timestampSec)),
-    createdAt: comment.createdAt.toISOString(),
-  }));
+  const commentRows = rawComments.map(toReviewComment);
   const displayTitle = rec.title || rec.aiTitle || "Untitled recording";
 
   return (
@@ -202,6 +197,7 @@ export default async function EditRecordingPage({
                   fullText={transcript?.fullText ?? ""}
                   isOwner={true}
                   comments={commentRows}
+                  fps={rec.fps != null ? Number(rec.fps) : null}
                   trimStartSec={trimStartSec}
                   trimEndSec={trimEndSec}
                   durationSec={durationSec}

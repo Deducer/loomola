@@ -191,6 +191,7 @@ export function Seekbar({
   return createPortal(
     <div
       ref={hitRef}
+      className="review-seekbar"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}

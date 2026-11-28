@@ -165,6 +165,16 @@ html, body {
   max-height: none;
 }
 
+/* While a review drawing tool is active the frame belongs to the pen: hide
+   Plyr's controls, our seekbar and the big play button so strokes can reach
+   the bottom of the picture and a click never toggles playback. */
+.plyr-rounded[data-drawing="true"] .plyr__controls,
+.plyr-rounded[data-drawing="true"] .review-seekbar,
+.plyr-rounded[data-drawing="true"] .plyr__control--overlaid {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
 /*
  * Bigger center "play" overlay button, Loom-style. Plyr's default is a
  * ~60 px circle with an 18 px icon — feels small relative to the player.
