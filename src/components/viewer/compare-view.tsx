@@ -48,14 +48,22 @@ function useCompareSync(
     const half = 0.5 / fps;
     const quiet = (el: HTMLVideoElement) => quietUntil.set(el, performance.now() + 400);
     const isQuiet = (el: HTMLVideoElement) => (quietUntil.get(el) ?? 0) > performance.now();
+    // Past the end of the shorter draft there's nothing to mirror to.
+    const beyond = (el: HTMLVideoElement, t: number) =>
+      Number.isFinite(el.duration) && el.duration > 0 && t >= el.duration - half;
     const seekTo = (el: HTMLVideoElement, t: number) => {
-      pendingSeek.add(el);
+      if (beyond(el, t)) return;
+      // Without metadata no `seeked` fires, so only flag a real seek.
+      if (el.readyState >= 1) pendingSeek.add(el);
       el.currentTime = t;
     };
 
     const bind = (from: HTMLVideoElement, to: HTMLVideoElement) => {
       const onPlay = () => {
         if (isQuiet(from)) return;
+        // The other draft already ended (it's shorter): leave it on its last
+        // frame rather than restarting it from 0.
+        if (to.ended || beyond(to, from.currentTime)) return;
         if (to.paused) {
           quiet(to);
           void to.play().catch(() => {});
@@ -63,6 +71,8 @@ function useCompareSync(
       };
       const onPause = () => {
         if (isQuiet(from)) return;
+        // A shorter draft reaching its end pauses itself; don't stop the other.
+        if (from.ended) return;
         if (!to.paused) {
           quiet(to);
           to.pause();
@@ -90,11 +100,16 @@ function useCompareSync(
     if (Math.abs(a.currentTime - b.currentTime) > half) seekTo(b, a.currentTime);
 
     const timer = window.setInterval(() => {
-      if (a.paused || b.paused || pendingSeek.has(b) || b.seeking) return;
-      const target = driftCorrection(a.currentTime, b.currentTime, fps);
-      if (target != null) seekTo(b, target);
+      if (a.paused || b.paused || pendingSeek.has(b) || b.seeking) {
+        if (b.playbackRate !== 1) b.playbackRate = 1;
+        return;
+      }
+      const fix = driftCorrection(a.currentTime, b.currentTime, fps);
+      if (fix.seekTo != null) seekTo(b, fix.seekTo);
+      if (b.playbackRate !== fix.rate) b.playbackRate = fix.rate;
     }, 500);
     return () => {
+      b.playbackRate = 1;
       unbindA();
       unbindB();
       window.clearInterval(timer);

@@ -104,6 +104,21 @@ export default async function SharePage({
   // One unlock covers every version in the stack (they share a password).
   const unlocked = isOwner || (await isUnlockedForStack(slug, rec));
 
+  if (!unlocked) {
+    return (
+      <BrandFrame brand={brand}>
+        <BrandHeader
+          brand={brand}
+          isOwner={false}
+          recordingId={rec.id}
+          showCta={true}
+        />
+        <PasswordGate slug={slug} />
+        <BrandFooter brand={brand} />
+      </BrandFrame>
+    );
+  }
+
   // Version stack. ?v=N opens version N; ?compare=N puts version N beside
   // this one (this page's version is always the right-hand player, so the
   // comments column follows it).
@@ -126,21 +141,6 @@ export default async function SharePage({
     }
   }
 
-  if (!unlocked) {
-    return (
-      <BrandFrame brand={brand}>
-        <BrandHeader
-          brand={brand}
-          isOwner={false}
-          recordingId={rec.id}
-          showCta={true}
-        />
-        <PasswordGate slug={slug} />
-        <BrandFooter brand={brand} />
-      </BrandFrame>
-    );
-  }
-
   // Skip the heavy wordTimestamps blob here — ViewerShell's TranscriptPanel
   // fetches it lazily via /api/v/[slug]/transcript-words only once a viewer
   // scrolls to the transcript. Cuts Supabase egress on share-page loads.
@@ -156,7 +156,10 @@ export default async function SharePage({
   if (comparePair) {
     const left = await getRecordingBySlug(stack[comparePair.left - 1].slug);
     const leftKey = left ? left.playbackMp4Key ?? left.r2CompositeKey : null;
-    if (left && left.status === "ready" && leftKey) {
+    // Versions share one password; if this one somehow doesn't, the
+    // unlock that opened this page doesn't cover it.
+    const sharesLock = !left?.passwordHash || isOwner || left.passwordHash === rec.passwordHash;
+    if (left && sharesLock && left.status === "ready" && leftKey) {
       compareWith = {
         slug: left.slug,
         number: comparePair.left,

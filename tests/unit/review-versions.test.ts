@@ -53,9 +53,16 @@ describe("baseTitle", () => {
 });
 
 describe("driftCorrection", () => {
-  it("corrects only past one frame", () => {
-    expect(driftCorrection(10, 10.02, 30)).toBeNull();
-    expect(driftCorrection(10, 10.05, 30)).toBe(10);
-    expect(driftCorrection(10, 9.9, 0)).toBe(10);
+  it("leaves players within a frame alone", () => {
+    expect(driftCorrection(10, 10.02, 30)).toEqual({ seekTo: null, rate: 1 });
+  });
+  it("nudges speed for small drift, toward the reference", () => {
+    expect(driftCorrection(10, 9.9, 30).rate).toBeGreaterThan(1);
+    expect(driftCorrection(10, 10.1, 30).rate).toBeLessThan(1);
+    expect(driftCorrection(10, 9.9, 30).seekTo).toBeNull();
+    expect(driftCorrection(10, 9.8, 30).rate).toBeLessThanOrEqual(1.1);
+  });
+  it("seeks only past a quarter second", () => {
+    expect(driftCorrection(10, 9.5, 0)).toEqual({ seekTo: 10, rate: 1 });
   });
 });

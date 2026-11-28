@@ -13,6 +13,8 @@ type Candidate = { id: string; title: string | null; createdAt: string };
 
 const ERRORS: Record<string, string> = {
   already_stacked: "That recording is already in a version stack. Remove it from that stack first.",
+  password_mismatch:
+    "That recording has a password and this one doesn't. Versions share one password, so set this recording's password first.",
   not_video: "Only videos can be versions.",
   same_recording: "Pick a different recording.",
   bad_order: "The stack changed. Reload and try again.",
@@ -28,15 +30,18 @@ export function VersionsCard({
   recordingId,
   versions,
   candidates,
+  inStack,
 }: {
   recordingId: string;
   versions: Version[];
   candidates: Candidate[];
+  /** In a stack even if the other versions are in the trash. */
+  inStack: boolean;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [pick, setPick] = useState("");
-  const stacked = versions.length > 1;
+  const stacked = inStack;
 
   async function call(method: string, url: string, body?: unknown) {
     setBusy(true);

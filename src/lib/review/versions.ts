@@ -56,9 +56,23 @@ export function baseTitle(title: string | null | undefined): string {
   return (title ?? "").replace(/\s+v\d+$/i, "").trim();
 }
 
-/** Follower seek target when two compare players drift more than a frame
- *  apart; null when they're close enough. `reference` is the lead player. */
-export function driftCorrection(reference: number, follower: number, fps: number): number | null {
+export const DRIFT_SEEK_SEC = 0.25;
+
+/**
+ * Keep a compare follower within a frame of the reference player. A seek on
+ * a playing video lands on a keyframe and rebuffers, so small drift is
+ * closed by nudging playbackRate (up to 10% for a second or so) and only
+ * drift past DRIFT_SEEK_SEC seeks. Within a frame: normal speed.
+ */
+export function driftCorrection(
+  reference: number,
+  follower: number,
+  fps: number
+): { seekTo: number | null; rate: number } {
   const frame = 1 / (fps > 0 ? fps : 30);
-  return Math.abs(reference - follower) > frame ? reference : null;
+  const behind = reference - follower;
+  if (Math.abs(behind) > DRIFT_SEEK_SEC) return { seekTo: reference, rate: 1 };
+  if (Math.abs(behind) <= frame) return { seekTo: null, rate: 1 };
+  const nudge = Math.max(-0.1, Math.min(0.1, behind * 0.5));
+  return { seekTo: null, rate: Math.round((1 + nudge) * 1000) / 1000 };
 }

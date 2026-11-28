@@ -108,9 +108,16 @@ export async function searchRecordings(params: {
   if (params.brandId) {
     conditions.push(eq(mediaObjects.brandProfileId, params.brandId));
   }
-  // Grids show one card per version stack (the latest draft). A text
-  // search still finds every version, since the match may be in an old one.
-  if (!hasQuery) conditions.push(latestVersionOnlySql);
+  // Grids show one card per version stack (the latest ready draft). A text
+  // search or a folder/brand/status filter still lists every matching
+  // version: the collapse runs before those filters, so it could otherwise
+  // hide a whole stack whose latest version sits in another folder.
+  const filtered =
+    hasQuery ||
+    params.folderId !== undefined ||
+    !!params.brandId ||
+    (params.status?.length ?? 0) > 0;
+  if (!filtered) conditions.push(latestVersionOnlySql);
 
   const rankExpr = hasQuery
     ? sql<number>`ts_rank(

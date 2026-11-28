@@ -243,6 +243,7 @@ export default async function EditRecordingPage({
               rec.type === "video" ? (
                 <VersionsCard
                   recordingId={rec.id}
+                  inStack={rec.versionGroupId !== null}
                   versions={stack.map((v) => ({
                     id: v.id,
                     slug: v.slug,

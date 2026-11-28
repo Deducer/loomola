@@ -43,12 +43,15 @@ export const versionPositionSql = sql<number>`(case when ${mediaObjects.versionG
       or (v.version_number = ${mediaObjects.versionNumber} and v.id = ${mediaObjects.id}))
 ) end)`;
 
-/** Hides every version but the latest live one of its stack. */
+/** Hides a version when a later live version of its stack is ready. A
+ *  newer draft still uploading or failed doesn't hide the good one (both
+ *  show until it's ready). */
 export const latestVersionOnlySql = sql`(${mediaObjects.versionGroupId} is null or not exists (
   select 1 from media_objects v
   where v.version_group_id = ${mediaObjects.versionGroupId}
     and v.owner_id = ${mediaObjects.ownerId}
     and v.deleted_at is null
+    and v.status = 'ready'
     and v.version_number > ${mediaObjects.versionNumber}
 ))`;
 
@@ -109,7 +112,8 @@ export type StackError =
   | "not_found"
   | "not_video"
   | "same_recording"
-  | "already_stacked";
+  | "already_stacked"
+  | "password_mismatch";
 
 /**
  * Add `newId` as the next version of `baseId`'s stack (starting the stack if
@@ -123,7 +127,17 @@ export async function addToStack(params: {
   newId: string;
 }): Promise<{ ok: true; groupId: string; number: number } | { ok: false; error: StackError }> {
   if (params.baseId === params.newId) return { ok: false, error: "same_recording" };
+  // Lock order everywhere: the stack's advisory lock first, then rows (as
+  // removeFromStack / setStackOrder do), so add and remove can't deadlock.
+  const [peek] = await db
+    .select({ id: mediaObjects.id, versionGroupId: mediaObjects.versionGroupId })
+    .from(mediaObjects)
+    .where(and(eq(mediaObjects.id, params.baseId), eq(mediaObjects.ownerId, params.ownerId)))
+    .limit(1);
+  if (!peek) return { ok: false, error: "not_found" };
+  const expectedGroup = peek.versionGroupId ?? peek.id;
   return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${expectedGroup}))`);
     const lockRow = async (id: string) => {
       const [row] = await tx
         .select({
@@ -155,17 +169,24 @@ export async function addToStack(params: {
       return { ok: false as const, error: "not_video" as const };
     }
     if (added.versionGroupId) return { ok: false as const, error: "already_stacked" as const };
+    // Versions share the stack's password. Joining an open stack would strip
+    // a protected recording's password, so that is refused; joining a
+    // protected stack only adds protection.
+    if (added.passwordHash && !base.passwordHash) {
+      return { ok: false as const, error: "password_mismatch" as const };
+    }
 
     const groupId = base.versionGroupId ?? base.id;
+    // The stack was re-keyed between the peek and the lock: ask to retry
+    // rather than number under a lock we don't hold.
+    if (groupId !== expectedGroup) return { ok: false as const, error: "not_found" as const };
     if (!base.versionGroupId) {
       await tx
         .update(mediaObjects)
         .set({ versionGroupId: groupId, versionNumber: 1 })
         .where(eq(mediaObjects.id, base.id));
     }
-    // Serialise numbering per stack (trashed rows still hold their numbers,
-    // so the max covers them too).
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${groupId}))`);
+    // Trashed rows still hold their numbers, so the max covers them too.
     const [{ max }] = await tx
       .select({ max: sql<number | null>`max(${mediaObjects.versionNumber})` })
       .from(mediaObjects)

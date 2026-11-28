@@ -5,10 +5,12 @@ import { db } from "@/db";
 import { mediaObjects } from "@/db/schema";
 import { generateSlug } from "@/lib/slug";
 import {
+  abortMultipartUpload,
   completeMultipartUpload,
   createMultipartUpload,
   presignUploadPart,
 } from "@/lib/r2/multipart";
+import { moveRecordingToFolder } from "@/db/queries/folders";
 import { keyForTrack } from "@/lib/recording/upload-keys";
 import {
   enqueuePlaybackTranscode,
@@ -101,7 +103,6 @@ export function registerUploadTools(server: McpServer): void {
           title: input.title?.trim() || fallbackTitle || null,
           status: "uploading",
           brandProfileId: brand?.id ?? base?.brandProfileId ?? null,
-          folderId: base?.folderId ?? null,
           uploadMetadata: { composite: { uploadId, key } },
         })
         .returning({ id: mediaObjects.id });
@@ -110,7 +111,15 @@ export function registerUploadTools(server: McpServer): void {
       if (base) {
         const added = await addToStack({ ownerId, baseId: base.id, newId: row.id });
         if (!added.ok) {
+          // Nothing has been uploaded yet: drop the row and the multipart.
+          await abortMultipartUpload(key, uploadId);
+          await db.delete(mediaObjects).where(eq(mediaObjects.id, row.id));
           return errorContent("version_failed", `Could not add to the stack: ${added.error}.`);
+        }
+        // Same folder as the stack, through the helper that also writes
+        // media_folder_assignments.
+        if (base.folderId) {
+          await moveRecordingToFolder({ recordingId: row.id, ownerId, folderId: base.folderId });
         }
         version = { number: added.number, groupId: added.groupId };
         if (!input.title?.trim()) {
