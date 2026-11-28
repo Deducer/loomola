@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
+  CLIENT_POINTS_PER_STROKE,
   DEFAULT_STROKE_WIDTH,
   MAX_STROKES,
   simplifyStroke,
@@ -161,7 +162,7 @@ export function AnnotationOverlay({
     stop(e);
     let finished: AnnotationStroke;
     if (cur.tool === "pen") {
-      const points = simplifyStroke(cur.points);
+      const points = simplifyStroke(cur.points, 0.004, CLIENT_POINTS_PER_STROKE);
       if (points.length < 2) return;
       finished = { ...cur, points };
     } else {

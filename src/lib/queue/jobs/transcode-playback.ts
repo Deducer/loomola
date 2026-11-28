@@ -6,7 +6,8 @@ import { presignGet } from "@/lib/r2/presigned-get";
 import { uploadFile } from "@/lib/r2/upload-bytes";
 import { db } from "@/db";
 import { mediaObjects } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
+import { probeFps } from "@/lib/review/probe-fps";
 import { playbackKeyForComposite } from "@/lib/recordings/artifact-keys";
 
 export const TRANSCODE_PLAYBACK_JOB = "transcode_playback";
@@ -34,6 +35,16 @@ export async function runTranscodePlaybackJob(
       .update(mediaObjects)
       .set({ playbackMp4Key: playbackKey })
       .where(eq(mediaObjects.id, data.mediaObjectId));
+
+    // The thumbnail job probes the source; when that couldn't tell (browser
+    // webm), the constant-rate-ish MP4 we just wrote usually can.
+    const fps = await probeFps(outputPath).catch(() => null);
+    if (fps != null) {
+      await db
+        .update(mediaObjects)
+        .set({ fps: String(fps) })
+        .where(and(eq(mediaObjects.id, data.mediaObjectId), isNull(mediaObjects.fps)));
+    }
 
     console.log(`[transcode-playback] saved ${playbackKey} for ${data.mediaObjectId}`);
   } finally {

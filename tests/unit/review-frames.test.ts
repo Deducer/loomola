@@ -35,6 +35,20 @@ describe("frame maths", () => {
     expect(formatTimecode(3725, null)).toBe("1:02:05");
   });
 
+  it("never repeats or overflows frame numbers at 29.97", () => {
+    const fps = 30000 / 1001;
+    const seen = new Set<string>();
+    for (let f = 0; f < 5 * 60 * 30; f++) {
+      const code = formatTimecode((f + 0.5) / fps, fps);
+      const ff = Number(code.split(":").pop());
+      expect(ff).toBeGreaterThanOrEqual(0);
+      expect(ff).toBeLessThan(30);
+      expect(seen.has(code)).toBe(false);
+      seen.add(code);
+    }
+    expect(formatTimecode((510 + 0.5) / fps, fps)).toBe("0:17:00");
+  });
+
   it("parses and sanity-checks probed rates", () => {
     expect(parseFrameRate("30000/1001")).toBeCloseTo(29.97, 2);
     expect(parseFrameRate("24/1")).toBe(24);

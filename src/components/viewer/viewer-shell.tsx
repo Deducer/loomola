@@ -19,7 +19,13 @@ import { CommentsSection } from "./comments-section";
 import { AnnotationOverlay, type DrawTool } from "./annotation-overlay";
 import { EMPTY_DRAFT, type ReviewDraft } from "./review-draft";
 import type { Word } from "@/lib/viewer/paragraphs";
-import { isEmptyAnnotation } from "@/lib/review/annotation";
+import { toast } from "sonner";
+import {
+  MAX_ANNOTATION_BYTES,
+  MAX_STROKES,
+  annotationBytes,
+  isEmptyAnnotation,
+} from "@/lib/review/annotation";
 import { effectiveFps, snapToFrame } from "@/lib/review/frames";
 import {
   annotationAnchor,
@@ -164,6 +170,14 @@ export function ViewerShell({
 
   const changeAnnotation = useCallback(
     (annotation: ReviewDraft["annotation"]) => {
+      // Refuse the mark here rather than fail the post after typing.
+      if (annotationBytes(annotation) > MAX_ANNOTATION_BYTES - 512) {
+        toast.error("That drawing is as detailed as a comment can hold. Post it, or undo a stroke.");
+        return;
+      }
+      if ((annotation.strokes?.length ?? 0) >= MAX_STROKES) {
+        toast.message(`${MAX_STROKES} marks is the most one comment can hold.`);
+      }
       setDraft((d) => ({
         ...d,
         annotation,
@@ -263,6 +277,9 @@ export function ViewerShell({
         fps={fps}
         renderOverlay={renderOverlay}
         drawing={draft.tool !== null}
+        // Once something is drawn it belongs to this frame: no stepping
+        // away from it while the tool is out.
+        lockFrame={draft.tool !== null && !isEmptyAnnotation(draft.annotation)}
       />
       {!isOwner && (
         <Tracking

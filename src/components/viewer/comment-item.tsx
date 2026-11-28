@@ -98,7 +98,6 @@ export function CommentItem({
   onCommentChanged,
   getCurrentTime,
 }: Props) {
-  const router = useRouter();
   const [replying, setReplying] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [resolving, setResolving] = useState(false);
@@ -123,7 +122,6 @@ export function CommentItem({
       }
       const data = (await res.json()) as { comment: ReviewComment };
       onCommentChanged(data.comment);
-      router.refresh();
     } finally {
       setResolving(false);
     }

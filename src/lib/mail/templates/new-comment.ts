@@ -36,8 +36,10 @@ export function renderNewCommentEmail(params: {
   const rawSubject = params.isReply
     ? `New reply from ${params.commenterName} on ${params.recordingTitle}`
     : `New comment from ${params.commenterName} on ${params.recordingTitle}`;
+  // Names are visitor-typed; keep the subject one line.
+  const oneLine = rawSubject.replace(/[\r\n]+/g, " ");
   const subject =
-    rawSubject.length <= 100 ? rawSubject : rawSubject.slice(0, 97) + "...";
+    oneLine.length <= 100 ? oneLine : oneLine.slice(0, 97) + "...";
 
   const text = [
     `${params.commenterName} (${params.commenterEmail}) ${verb} ${where} ${ts}${drawing}:`,

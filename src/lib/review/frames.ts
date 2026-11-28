@@ -52,6 +52,8 @@ export function formatTimecode(t: number, fps: number | null | undefined): strin
   const s = totalSec % 60;
   const base = h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
   if (!known) return base;
-  const ff = frameIndex(safe, known) - Math.round(totalSec * known);
+  // Frames since the first frame of this second (ceil: at 29.97 the second
+  // starts mid-frame), so ff runs 0..ceil(fps)-1 and never repeats.
+  const ff = frameIndex(safe, known) - Math.ceil(totalSec * known - 1e-9);
   return `${base}:${String(Math.max(0, ff)).padStart(2, "0")}`;
 }

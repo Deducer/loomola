@@ -20,6 +20,9 @@ export type AnnotationTool = (typeof ANNOTATION_TOOLS)[number];
 
 export const MAX_STROKES = 20;
 export const MAX_POINTS_PER_STROKE = 500;
+/** The client simplifies pen strokes to this many points so a drawing of
+ *  several strokes stays under MAX_ANNOTATION_BYTES. */
+export const CLIENT_POINTS_PER_STROKE = 120;
 export const MAX_ANNOTATION_BYTES = 16 * 1024;
 export const DEFAULT_STROKE_WIDTH = 0.004;
 
@@ -47,6 +50,11 @@ export const annotationSchema = z
 
 export type ReviewAnnotation = z.infer<typeof annotationSchema>;
 export type AnnotationStroke = NonNullable<ReviewAnnotation["strokes"]>[number];
+
+/** Serialised size, for refusing a new mark before the server would. */
+export function annotationBytes(a: ReviewAnnotation): number {
+  return JSON.stringify(a).length;
+}
 
 export function isEmptyAnnotation(a: ReviewAnnotation | null | undefined): boolean {
   return !a || (!a.pin && (a.strokes?.length ?? 0) === 0);

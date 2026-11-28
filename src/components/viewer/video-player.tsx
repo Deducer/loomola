@@ -59,6 +59,8 @@ type Props = {
   muted?: boolean;
   /** Seek-bar markers off (e.g. while drawing). */
   hideMarkers?: boolean;
+  /** Frame stepping is refused (a drawing belongs to this frame). */
+  lockFrame?: boolean;
 };
 
 export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
@@ -82,10 +84,13 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
     drawing = false,
     muted,
     hideMarkers = false,
+    lockFrame = false,
   },
   ref
 ) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const chaptersKey = JSON.stringify(chapters);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const plyrRef = useRef<any>(null);
   const [error, setError] = useState<string | null>(null);
@@ -247,7 +252,10 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
       plyrRef.current?.destroy();
       plyrRef.current = null;
     };
-  }, [chapters, onTimeUpdate, onPlayStateChange, onReady, trimStartSec, trimEndSec]);
+    // chaptersKey, not chapters: router.refresh() hands down an equal but
+    // new array after every comment action, which would rebuild Plyr.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chaptersKey, onTimeUpdate, onPlayStateChange, onReady, trimStartSec, trimEndSec]);
 
   // 60 fps polling of <video>.currentTime for the chapter bars. The
   // browser's native `timeupdate` event fires roughly every 250 ms, which
@@ -300,6 +308,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
     return () => target.removeEventListener(eventName, onRotate);
   }, []);
 
+  const lockRef = useRef(lockFrame);
+  lockRef.current = lockFrame;
   const fpsRef = useRef(effectiveFps(fps));
   fpsRef.current = effectiveFps(fps);
   const durationRef = useRef(totalDuration);
@@ -330,7 +340,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
 
   function step(dir: 1 | -1) {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || lockRef.current) return;
     if (!video.paused) video.pause();
     seekTo(stepFrame(video.currentTime, fpsRef.current, dir, durationRef.current || undefined));
   }
@@ -356,10 +366,15 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
     if (!keyboard) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // Only when nothing in particular has focus, or focus is in this
+      // player (its buttons keep Space). Buttons, links, tabs and the
+      // comment filter elsewhere keep their own keys.
       const t = e.target as HTMLElement | null;
+      const inPlayer = !!t && !!wrapperRef.current?.contains(t);
+      const idle = !t || t === document.body || t === document.documentElement;
+      if (!inPlayer && !idle) return;
       if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
-      // A focused button keeps Space for itself.
-      if (t?.tagName === "BUTTON" && e.key === " ") return;
+      if (inPlayer && t?.tagName === "BUTTON" && e.key === " ") return;
       const video = videoRef.current;
       if (!video) return;
       if (e.key === " ") {
@@ -421,6 +436,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
 
   return (
     <div
+      ref={wrapperRef}
       className="plyr-wrapper plyr-rounded"
       data-drawing={drawing ? "true" : undefined}
       style={{

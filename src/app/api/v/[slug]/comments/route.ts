@@ -79,12 +79,16 @@ export async function POST(
     timestampSec = Number(parent.timestampSec);
   }
 
+  // The owner replying from their own page is neither rate-limited nor
+  // emailed about it.
+  const viewer = await getOptionalAuthUser();
+  const byOwner = !!viewer && viewer.id === rec.ownerId;
+
   // Rate-limit keyed on the visitor hash (same derivation as view tracking).
-  const visitorHash = hashVisitor(request);
-  const rate = await checkAndBump(visitorHash);
+  const rate = byOwner ? { allowed: true as const } : await checkAndBump(hashVisitor(request));
   if (!rate.allowed) {
     return NextResponse.json(
-      { error: "rate_limited", retryAfterSec: rate.retryAfterSec ?? 60 },
+      { error: "rate_limited", retryAfterSec: "retryAfterSec" in rate ? (rate.retryAfterSec ?? 60) : 60 },
       { status: 429 }
     );
   }
@@ -107,6 +111,7 @@ export async function POST(
   // Fire Mailgun in the background — never awaited, never blocks the
   // response. Errors caught and logged; comment is still persisted.
   void (async () => {
+    if (byOwner) return;
     try {
       const preferences = await getUserPreferences(rec.ownerId);
       if (!preferences.notifyComments) return;

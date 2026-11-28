@@ -6,7 +6,7 @@ import { mediaObjects } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { flipToReadyIfComplete } from "@/db/queries/ai-outputs";
 import { thumbnailKeyForComposite } from "@/lib/recordings/artifact-keys";
-import { parseFrameRate } from "@/lib/review/frames";
+import { probeFps } from "@/lib/review/probe-fps";
 
 export const THUMBNAIL_JOB = "generate_thumbnail";
 
@@ -15,7 +15,6 @@ export type ThumbnailJobData = { mediaObjectId: string; compositeKey: string };
 // System ffmpeg: apk-installed in the container (musl-native, correct DNS).
 // Local dev needs `brew install ffmpeg` (or similar). Override via FFMPEG_PATH.
 const ffmpegPath = process.env.FFMPEG_PATH ?? "ffmpeg";
-const ffprobePath = process.env.FFPROBE_PATH ?? "ffprobe";
 
 /**
  * Extracts a JPG frame at the 1-second mark from the composite video using
@@ -94,45 +93,6 @@ function ffmpegExtractFrame(url: string, seekSec: number): Promise<Uint8Array> {
         return;
       }
       resolve(new Uint8Array(Buffer.concat(chunks)));
-    });
-  });
-}
-
-/** avg_frame_rate of the first video stream (falls back to r_frame_rate);
- *  null when neither is plausible (see sanitizeFps). */
-function probeFps(url: string): Promise<number | null> {
-  return new Promise((resolve, reject) => {
-    const args = [
-      "-v",
-      "error",
-      "-select_streams",
-      "v:0",
-      "-show_entries",
-      "stream=avg_frame_rate,r_frame_rate",
-      "-of",
-      "json",
-      url,
-    ];
-    const proc = spawn(ffprobePath, args, { stdio: ["ignore", "pipe", "pipe"] });
-    const chunks: Buffer[] = [];
-    proc.stdout.on("data", (c) => chunks.push(c));
-    proc.on("error", reject);
-    const timer = setTimeout(() => proc.kill("SIGKILL"), 60_000);
-    proc.on("close", (code) => {
-      clearTimeout(timer);
-      if (code !== 0) {
-        reject(new Error(`ffprobe exited with ${code}`));
-        return;
-      }
-      try {
-        const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
-          streams?: Array<{ avg_frame_rate?: string; r_frame_rate?: string }>;
-        };
-        const stream = parsed.streams?.[0];
-        resolve(parseFrameRate(stream?.avg_frame_rate) ?? parseFrameRate(stream?.r_frame_rate));
-      } catch (err) {
-        reject(err);
-      }
     });
   });
 }

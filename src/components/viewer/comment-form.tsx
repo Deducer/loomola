@@ -75,6 +75,7 @@ export function CommentForm({
   const [knownIdentity, setKnownIdentity] = useState(false);
   const [body, setBody] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [hint, setHint] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const fpsEff = effectiveFps(fps);
 
@@ -109,14 +110,14 @@ export function CommentForm({
       // First click marks the in point; the next one (after moving the
       // playhead) sets the out point.
       update({ anchorSec: now });
-      setError("In point set. Move to the out point and click Range again.");
+      setHint("In point set. Move to the out point and click Range again.");
       return;
     }
     if (now <= d.anchorSec) {
-      setError("Move the playhead past the in point, then click Range.");
+      setHint("Move the playhead past the in point, then click Range.");
       return;
     }
-    setError(null);
+    setHint(null);
     update({ endSec: now });
   }
 
@@ -140,6 +141,7 @@ export function CommentForm({
     try {
       const timestampSec = isReply ? 0 : d.anchorSec ?? snapToFrame(Math.max(0, getCurrentTime()), fpsEff);
       const res = await fetch(`/api/v/${slug}/comments`, {
+        signal: AbortSignal.timeout(20_000),
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -170,6 +172,8 @@ export function CommentForm({
       if (!isReply) onDraftChange?.({ ...EMPTY_DRAFT, color: d.color });
       onCancel?.();
       router.refresh();
+    } catch {
+      setError("Couldn't reach the server. Your comment is still here; try again.");
     } finally {
       setSubmitting(false);
     }
@@ -320,7 +324,8 @@ export function CommentForm({
             with a drawing · show
           </button>
         )}
-        {d.anchorSec !== null && (
+        {/* A drawing belongs to its frame, so it can't follow the playhead. */}
+        {d.anchorSec !== null && !hasDrawing && (
           <button
             type="button"
             onClick={() => update({ anchorSec: null, endSec: null })}
@@ -340,6 +345,7 @@ export function CommentForm({
           </button>
         )}
       </div>
+      {hint && <p className="text-xs text-text-muted">{hint}</p>}
       {error && <p className="text-xs text-destructive">{error}</p>}
       <div className="flex items-center justify-between gap-3 text-xs text-text-subtle">
         <span>Your email is only used to notify the creator.</span>
