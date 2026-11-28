@@ -214,7 +214,31 @@ function Marker({
       title={`#${comment.number} ${comment.commenterName} at ${formatTs(comment.timestampSec)}`}
       aria-label={`Comment ${comment.number} by ${comment.commenterName} at ${formatTs(comment.timestampSec)}`}
     >
-      <span aria-hidden="true">{comment.number}</span>
+      {/* Who commented, at a glance (Loom/Frame.io style); the small badge
+          is the thread number used in the list and on the frame. */}
+      <span aria-hidden="true">{initialOf(comment.commenterName)}</span>
+      <span
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          top: -7,
+          right: -7,
+          minWidth: 12,
+          height: 12,
+          padding: "0 3px",
+          borderRadius: 6,
+          background: "var(--bg-elevated)",
+          color: "var(--text)",
+          border: "1px solid var(--border-strong)",
+          fontSize: 8,
+          fontWeight: 700,
+          lineHeight: "10px",
+          textAlign: "center",
+          pointerEvents: "none",
+        }}
+      >
+        {comment.number}
+      </span>
       {hover && (
         <div
           aria-hidden="true"
@@ -285,6 +309,11 @@ function Marker({
       )}
     </button>
   );
+}
+
+function initialOf(name: string): string {
+  const first = name.split(/[\s@.]+/).filter(Boolean)[0];
+  return (first?.[0] ?? "?").toUpperCase();
 }
 
 function formatTs(seconds: number): string {
