@@ -40,9 +40,14 @@ struct RecentCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: DSSpacing.sm) {
-            thumbnail
+            // A fixed 16:9 box the image fills and is cropped to. Putting
+            // aspectRatio on the scaledToFill image itself let a very wide
+            // or tall thumbnail spill over the neighbouring cards.
+            Color.clear
                 .frame(maxWidth: .infinity)
                 .aspectRatio(16.0 / 9.0, contentMode: .fit)
+                .overlay { thumbnail }
+                .clipped()
                 .clipShape(RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
